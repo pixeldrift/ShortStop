@@ -179,17 +179,26 @@ landscape (1180×820) viewports.
   at the top of the "everything else" region (below the map/rider region
   in portrait, to its right in landscape), doesn't scroll away.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
-  bar, dark border, dashed white center line. Turn steps get a small
-  circular marker with a mini direction arrow; stop steps get a small
-  map-pin marker. With a 22-step route these would overlap into an
-  unreadable clump at full density, so markers are thinned (greedy,
-  left to right, minimum gap between shown markers) - the current step
-  and both route endpoints always show, everything else only shows if
-  it's far enough from the last shown marker. Markers sit in their own
-  row above the road (not on top of it). A bus icon rides above that, at
-  the current position, with a yellow/black caret pointing down at it;
-  its position is clamped a bit short of 0%/100% so the icon (wider than
-  a marker) doesn't get clipped by the screen edge at the very start/end.
+  bar, dark border, dashed white center line (precisely centered via
+  `top-1/2 -translate-y-1/2`, not just `top-1/2` on a zero-height
+  element, which left it a hair off). Turn steps get a small circular
+  marker with a mini direction arrow, sitting close above the road; stop
+  steps get a small map-pin marker. Every step gets its own marker at a
+  fixed 48px spacing (`PX_PER_STEP`) - no thinning/hiding - so a longer
+  route just makes the underlying track wider than the visible window
+  instead of crowding markers together. That window (`overflow-hidden`
+  outer container) shows a `ResizeObserver`-measured slice of the track,
+  auto-scrolled (via a CSS `transform: translateX()`, not native
+  scrolling - nothing on this app scrolls, see above) to keep the
+  current position roughly centered, clamped so it never scrolls past
+  either end of the track. A CSS `mask-image` fades whichever edge(s)
+  actually have hidden content - neither edge fades if the whole route
+  fits without scrolling, only the trailing edge fades near the very
+  start, only the leading edge fades near the very end. A bus icon rides
+  above the markers at the current position, with a yellow/black caret
+  pointing down at it close beneath it; its position is clamped a bit
+  short of the track's own start/end so the icon (wider than a marker)
+  doesn't get clipped there.
 - **Progress caption**: "Stop X of Y" rather than a raw instruction
   count - the number of turn steps between stops isn't meaningful to a
   driver, so it always shows the stop just reached or the one being
@@ -282,9 +291,11 @@ drop-offs modeled yet - see Next steps).
 - `driverName: "Otto Mann"`, `distance: "8.4 mi"`, and
   `durationMinutes: 28` in `page.tsx` are all placeholders, not real
   data - swap them in once there's an actual driver/routing source
-- The progress bar's marker-thinning is a stopgap for density, not a
-  real fix - a scrollable/zoomable bar, or clustering nearby stops into
-  one marker with a count, would scale better on longer routes
+- The progress bar auto-scrolls but isn't draggable - a driver can't
+  manually pan it to peek further up the route; it only ever tracks the
+  current step. Pinch-zoom on a very long route would also help, since
+  right now the fixed 48px-per-step spacing just makes the track (and
+  the auto-scrolling) longer rather than ever shrinking markers down
 - Move route data into the doc's actual data model
   (District/School/Route/RouteStop/etc.) instead of a flat CSV, once
   there's more than one route

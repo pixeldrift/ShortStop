@@ -1,33 +1,30 @@
+"use client";
+
 import Image from "next/image";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDownIcon, TurnArrow } from "./icons";
 import type { NavigationStep } from "@/lib/types";
 
-/** Minimum spacing between rendered markers, as a percent of the bar's
- * width. With a route dense enough to put several markers within this
- * gap (e.g. six stops in a row), only some render - see markersToShow. */
-const MIN_MARKER_GAP_PCT = 7;
+/** Fixed spacing between adjacent markers, so a long route just makes the
+ * track longer (scrolled/faded into view) instead of crowding markers
+ * together. */
+const PX_PER_STEP = 48;
+const EDGE_FADE_PX = 28;
 
-function percentFor(index: number, total: number): number {
-  if (total <= 1) return 0;
-  return (index / (total - 1)) * 100;
+function pixelFor(index: number): number {
+  return index * PX_PER_STEP;
 }
 
-function markersToShow(steps: NavigationStep[], currentIndex: number) {
-  const total = steps.length;
-  const shown: { step: NavigationStep; pct: number }[] = [];
-  let lastPct = -Infinity;
-
-  steps.forEach((step, index) => {
-    if (step.kind !== "turn" && step.kind !== "stop") return;
-    const pct = percentFor(index, total);
-    const mustShow = index === currentIndex || index === 0 || index === total - 1;
-    if (mustShow || pct - lastPct >= MIN_MARKER_GAP_PCT) {
-      shown.push({ step, pct });
-      lastPct = pct;
-    }
-  });
-
-  return shown;
+/** Builds the left/right fade as a CSS mask - only on whichever edge(s)
+ * actually have hidden content, so a route that fits with no scrolling
+ * needed shows no fade at all. */
+function buildFadeMask(showLeft: boolean, showRight: boolean): string | undefined {
+  if (!showLeft && !showRight) return undefined;
+  const left = showLeft ? `transparent, black ${EDGE_FADE_PX}px` : "black 0px";
+  const right = showRight
+    ? `black calc(100% - ${EDGE_FADE_PX}px), transparent`
+    : "black 100%";
+  return `linear-gradient(to right, ${left}, ${right})`;
 }
 
 export function RouteProgressBar({
@@ -38,56 +35,101 @@ export function RouteProgressBar({
   currentIndex: number;
 }) {
   const total = steps.length;
-  const progressPct = percentFor(currentIndex, total);
-  // The bus icon is wide enough that centering it at true 0%/100% would
-  // push it past the screen edge - keep it well inside the bar's ends.
-  const busPct = Math.min(90, Math.max(10, progressPct));
+  const trackWidth = Math.max(pixelFor(total - 1), 1);
+  const currentPx = pixelFor(currentIndex);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0].contentRect.width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Keep the current position roughly centered in the visible window,
+  // clamped so we never scroll past either end of the track.
+  const { offset, showLeftFade, showRightFade } = useMemo(() => {
+    if (containerWidth === 0 || trackWidth <= containerWidth) {
+      return { offset: 0, showLeftFade: false, showRightFade: false };
+    }
+    const minOffset = containerWidth - trackWidth; // negative
+    const idealOffset = containerWidth / 2 - currentPx;
+    const clamped = Math.min(0, Math.max(minOffset, idealOffset));
+    return {
+      offset: clamped,
+      showLeftFade: clamped < -0.5,
+      showRightFade: clamped > minOffset + 0.5,
+    };
+  }, [containerWidth, trackWidth, currentPx]);
+
+  const maskImage = buildFadeMask(showLeftFade, showRightFade);
+
+  // The bus icon is wide enough that letting it sit exactly at the
+  // track's own start/end would push part of it past the track edge -
+  // keep it a little inside.
+  const busPx = Math.min(trackWidth - 12, Math.max(12, currentPx));
 
   return (
-    <div className="w-full px-8 pt-2">
-      {/* Bus + caret row - its own row so it never overlaps the markers */}
-      <div className="relative h-16">
+    <div
+      ref={containerRef}
+      className="w-full overflow-hidden px-4 pt-1"
+      style={{ WebkitMaskImage: maskImage, maskImage }}
+    >
+      <div
+        className="relative h-24 transition-transform duration-300 ease-out"
+        style={{ width: trackWidth, transform: `translateX(${offset}px)` }}
+      >
+        {/* Bus + caret */}
         <div
-          className="absolute bottom-0 flex -translate-x-1/2 flex-col items-center transition-[left] duration-300 ease-out"
-          style={{ left: `${busPct}%` }}
+          className="absolute bottom-11 flex -translate-x-1/2 flex-col items-center transition-[left] duration-300 ease-out"
+          style={{ left: busPx }}
         >
           <Image
             src="/assets/bus.png"
             alt=""
-            width={677}
-            height={462}
-            className="h-8 w-auto drop-shadow-md sm:h-10"
+            width={780}
+            height={465}
+            className="h-[1.5rem] w-auto drop-shadow-md sm:h-[1.875rem]"
           />
-          <ChevronDownIcon className="mt-1.5 h-3 w-4" />
+          <ChevronDownIcon className="mt-0.5 h-3 w-4" />
         </div>
-      </div>
 
-      {/* Turn/stop markers, sitting above the road rather than on it */}
-      <div className="relative mt-1 h-5">
-        {markersToShow(steps, currentIndex).map(({ step, pct }) => (
-          <div
-            key={step.id}
-            className="absolute bottom-0 -translate-x-1/2"
-            style={{ left: `${pct}%` }}
-          >
-            {step.kind === "stop" ? (
-              <Image
-                src="/assets/pin.png"
-                alt=""
-                width={350}
-                height={548}
-                className="h-5 w-auto drop-shadow-sm"
-              />
-            ) : (
-              step.direction && <TurnArrow direction={step.direction} className="h-5 w-5" />
-            )}
-          </div>
-        ))}
-      </div>
+        {/* Turn/stop markers - sitting close above the road */}
+        {steps.map((step, index) => {
+          if (step.kind !== "turn" && step.kind !== "stop") return null;
+          return (
+            <div
+              key={step.id}
+              className="absolute bottom-5 -translate-x-1/2"
+              style={{ left: pixelFor(index) }}
+            >
+              {step.kind === "stop" ? (
+                <Image
+                  src="/assets/pin.png"
+                  alt=""
+                  width={350}
+                  height={548}
+                  className="h-5 w-auto drop-shadow-sm"
+                />
+              ) : (
+                step.direction && <TurnArrow direction={step.direction} className="h-5 w-5" />
+              )}
+            </div>
+          );
+        })}
 
-      {/* The road */}
-      <div className="relative mt-1 h-4 w-full rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600">
-        <div className="absolute inset-x-2 top-1/2 border-t-2 border-dashed border-white/90" />
+        {/* The road */}
+        <div
+          className="absolute bottom-0 h-4 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600"
+          style={{ width: trackWidth }}
+        >
+          <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/90" />
+        </div>
       </div>
     </div>
   );
