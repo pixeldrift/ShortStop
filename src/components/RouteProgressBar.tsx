@@ -56,7 +56,7 @@ export function RouteProgressBar({
             alt=""
             width={677}
             height={462}
-            className="h-10 w-auto drop-shadow-md sm:h-12"
+            className="h-8 w-auto drop-shadow-md sm:h-10"
           />
           <ChevronDownIcon className="mt-1.5 h-3 w-4" />
         </div>

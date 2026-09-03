@@ -238,6 +238,10 @@ drop-offs modeled yet - see Next steps).
 
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
+- It'd be nice to show each stop's estimated time alongside the actual
+  current time, once real stop-time estimates exist (depends on the
+  `time` column above and, eventually, real routing/traffic data) - lets
+  a driver see at a glance whether they're running ahead or behind
 - `driverName: "Otto Mann"`, `distance: "8.4 mi"`, and
   `durationMinutes: 28` in `page.tsx` are all placeholders, not real
   data - swap them in once there's an actual driver/routing source

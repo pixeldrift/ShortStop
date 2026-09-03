@@ -179,7 +179,7 @@ function StopContent({
       <div className="relative">
         <Image src="/assets/pin.png" alt="" width={350} height={548} className="h-28 w-auto sm:h-36" />
         {stopNumber && (
-          <span className="font-heading absolute top-[30%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-2xl font-black text-red-700 sm:text-3xl">
+          <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-3xl font-black text-red-700 sm:text-4xl">
             {stopNumber}
           </span>
         )}
