@@ -70,10 +70,13 @@ export function useRouteStepper(route: Route) {
   // paused. Each part (stop number / location / rider count) is queued
   // as its own utterance rather than joined into one string, so there's
   // an audible pause between them instead of one run-on sentence. The
-  // very first announcement after the route starts is prefaced with
-  // "Starting route.", and the last step's is followed by "Route
-  // completed." - both queued alongside the step's own parts so a
-  // pause-triggered cancel() (below) can't wipe one out before it plays.
+  // very first announcement after the route starts is prefaced with the
+  // route number and school ("Starting route 125 from Lavergne Lake
+  // Elementary." - "from" for a dropoff route, since the bus departs the
+  // school; "to" for a pickup route, since the school is the
+  // destination), and the last step's is followed by "Route completed."
+  // - both queued alongside the step's own parts so a pause-triggered
+  // cancel() (below) can't wipe one out before it plays.
   const announcedStartRef = useRef(false);
   useEffect(() => {
     if (
@@ -87,7 +90,8 @@ export function useRouteStepper(route: Route) {
     window.speechSynthesis.cancel();
     const parts = [...currentStep.announcement];
     if (!announcedStartRef.current) {
-      parts.unshift("Starting route.");
+      const preposition = route.tripType === "dropoff" ? "from" : "to";
+      parts.unshift(`Starting route ${route.routeNumber} ${preposition} ${route.schoolName}.`);
       announcedStartRef.current = true;
     }
     if (isLastStep) {
@@ -96,7 +100,15 @@ export function useRouteStepper(route: Route) {
     for (const part of parts) {
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(part));
     }
-  }, [currentStep, started, paused, isLastStep]);
+  }, [
+    currentStep,
+    started,
+    paused,
+    isLastStep,
+    route.routeNumber,
+    route.schoolName,
+    route.tripType,
+  ]);
 
   // Cancel any in-progress announcement the moment the route is paused.
   useEffect(() => {

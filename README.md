@@ -108,6 +108,17 @@ under Visual design above, and `parseRouteCsv.ts` for the spoken "On the
 right"/"On the left" announcement) — replace with the real values once
 they exist.
 
+`Route.schoolName`/`schoolAddress` (set in `ROUTE_META`, `page.tsx`) are
+what the start screen's "School" row and the "Starting route..."
+announcement (see Audio below) both read from. They used to be
+hardcoded directly in `StartScreen.tsx`'s JSX instead of coming from the
+route data at all - harmless while only one screen used them, but it
+meant the spoken announcement had no way to say the same name, so
+they're proper `Route` fields now. Also corrected the school's name
+along the way: "Laverne Lake Elementary" was a typo for "Lavergne Lake
+Elementary" - this route is set in La Vergne, TN (Sam Ridley Pkwy is a
+real road there), so "Lavergne" is very likely what was actually meant.
+
 `notes` is spoken and shown on screen the same way as a turn's - two
 stops carry a placeholder note as an example of what this field is for:
 Bill Stewart Rd & Ruth Ln has "Wheelchair user requires assistance",
@@ -184,10 +195,13 @@ Road-suffix abbreviations are spelled out for speech only
 common USPS suffixes) so the TTS engine doesn't read "Rd" as a word or
 garble it; on-screen text keeps the abbreviated form.
 
-The route itself also gets a "Starting route." announcement, spoken
-right before the first step's own announcement the moment the driver
-taps "Start Route", and a "Route completed." announcement, spoken right
-after the final step's own announcement. Both are queued in the same
+The route itself also gets an announcement naming the route and school
+right before the first step's own announcement, the moment the driver
+taps "Start Route" - e.g. "Starting route 125 from Lavergne Lake
+Elementary." - and a "Route completed." announcement right after the
+final step's own announcement. "From" vs "to" follows `tripType`: a
+dropoff route starts *from* the school (that's where the bus departs),
+a pickup route heads *to* it. Both are queued in the same
 `speechSynthesis.speak()` batch as the step's own parts (in
 `useRouteStepper.ts`) rather than in a separate effect, since a separate
 effect's own `speechSynthesis.cancel()` call would otherwise wipe out
@@ -227,21 +241,41 @@ landscape (1180×820) viewports.
   between the two rather than just assuming the CSS does what it's
   supposed to.
 
-  In portrait, the map only gives up its own height (`shrink-0` →
-  `shrink` plus a `min-h-[4.5rem]` floor) when `useFitLines` reports the
-  *current step's* street name genuinely can't fit its two-line baseline
-  - `StepScreen`'s `needsMoreRoom` state, fed by an `onOverflow` callback
-  threaded through `useFitLines`. It used to shrink reactively any time
-  the viewport was tight, which meant it was often smaller than it
-  needed to be - there was slack sitting unused elsewhere in the column
-  while the map (and the rider check-in card floating over it) got
-  squeezed for no reason. Gating the shrink on the actual two-line
-  overflow signal instead of generic flex pressure means the map only
-  gets smaller on the rare step where a street name truly needs it.
+  In portrait, the map is free to shrink (`shrink`, down to a
+  `min-h-[4.5rem]` floor) whenever the rest of the column - header,
+  progress bar, step content, footer - doesn't fit the viewport
+  otherwise. A brief detour: an earlier version gated that shrink in JS,
+  only letting the map give up space when `useFitLines` reported the
+  *current step's* street name genuinely couldn't fit its two-line
+  baseline, on the theory that generic viewport-driven shrinking was
+  making the map smaller than it needed to be. That theory was wrong in
+  a way that mattered - on an actual short phone, an *ordinary* step
+  (text fitting fine in two lines) could still add up to more than the
+  viewport's height once the header/progress bar/footer were included,
+  and with the map now rigid, the flex column had nowhere left to
+  absorb that deficit - it pushed the footer, Back/Pause/Next buttons
+  included, entirely off the bottom of the screen. CSS's own
+  `flex-shrink` only kicks in once there's an actual deficit to
+  resolve, so going back to plain unconditional `shrink` doesn't bring
+  back the original "shrinks more than it needs to" complaint - verified
+  on both a short phone viewport (footer now fully on-screen) and an
+  ample iPad one (map still renders at its full un-shrunk 30vh, no
+  regression).
 - **Map/content divider**: a thin glossy blue bar (`.btn-glossy`, the
   same bevel/shadow/highlight treatment as the buttons) between the
   map/rider region and everything else - a horizontal bar under the map
   in portrait, a vertical bar to the map's right in landscape.
+- **Start screen** (`StartScreen.tsx`): `justify-center`'d vertically by
+  default, which reads fine on a shorter viewport but left a visibly
+  dead gap above the logo *and* below the "Start Route" button on a
+  taller phone, since centering just splits whatever's left over evenly
+  on both sides. Portrait now top-aligns instead (`justify-start`, with
+  a `pt-10` in place of the centering to still give the logo some
+  breathing room from the very top edge), so the excess collects below
+  the button instead of splitting above/below it; landscape keeps the
+  original centering (`landscape:justify-center`), since that's the
+  primary orientation this app targets and centering there hasn't shown
+  the same problem.
 - **Header**: logo top-left, route number large and bold top-center
   (with a small "Route #" label above it), bus number top-right. Pinned
   at the top of the "everything else" region (below the map/rider region
@@ -249,7 +283,9 @@ landscape (1180×820) viewports.
   X of Y" caption and the "N onboard" rider-count badge below it were
   both bumped up a size and to full black/bold weight - they started at
   `text-xs font-semibold`, easy to lose track of at a glance while
-  driving.
+  driving. The onboard badge lost its pill background too (plain text
+  now, matching the stop caption beside it) - the box read as a chunkier
+  UI element than this small a piece of status text warranted.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
   bar, dark border, dashed white center line (precisely centered via
   `top-1/2 -translate-y-1/2`, not just `top-1/2` on a zero-height
@@ -375,8 +411,8 @@ landscape (1180×820) viewports.
   step index/pause state/"has announced start" flag, and hands control
   back to `RouteApp`, which renders `StartScreen` again once `started`
   goes false) - confirmed a subsequent "Start Route" tap begins clean
-  from step one, "Starting route." and all, rather than picking up where
-  the previous trip left off. Pausing shows a "Route Paused" message in
+  from step one, the "Starting route..." announcement and all, rather
+  than picking up where the previous trip left off. Pausing shows a "Route Paused" message in
   place of the step content, disables both buttons and
   screen-tap-to-advance, stops the spoken announcement, and - since the
   Bluetooth remote is the primary input - ignores

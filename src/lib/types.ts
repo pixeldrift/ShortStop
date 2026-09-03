@@ -32,6 +32,8 @@ export interface Route {
   driverName: string;
   busNumber: string;
   departureTime: string;
+  schoolName: string;
+  schoolAddress: string;
   /** A pickup route arrives somewhere (school); a dropoff route doesn't
    * have one single destination, so the trip-summary label reads
    * "Complete" instead of "Arrive". */

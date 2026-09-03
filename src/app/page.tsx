@@ -11,11 +11,13 @@ import type { Route } from "@/lib/types";
 // distance/durationMinutes are placeholders - no real mileage/timing
 // data exists for this route yet.
 const ROUTE_META = {
-  name: "Laverne Lake Elementary — Afternoon Drop Off",
+  name: "Lavergne Lake Elementary — Afternoon Drop Off",
   routeNumber: "125",
   driverName: "Otto Mann",
   busNumber: "125",
   departureTime: "3:30 PM",
+  schoolName: "Lavergne Lake Elementary",
+  schoolAddress: "1425 Lake Forest Dr, Smyrna, TN 37167",
   tripType: "dropoff" as const,
   distance: "8.4 mi",
   durationMinutes: 28,

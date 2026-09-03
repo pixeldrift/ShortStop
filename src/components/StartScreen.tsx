@@ -50,7 +50,7 @@ export function StartScreen({
   const tripSummaryLabel = route.tripType === "dropoff" ? "Complete" : "Arrive";
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
+    <div className="flex flex-1 flex-col items-center justify-start gap-6 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:justify-center landscape:pt-6">
       <Logo size="large" />
 
       <div>
@@ -83,10 +83,10 @@ export function StartScreen({
           <dd className="text-left font-medium">{route.departureTime}</dd>
           <dt className="text-zinc-500">School</dt>
           <dd className="text-left font-medium">
-            <p>Laverne Lake Elementary</p>
+            <p>{route.schoolName}</p>
             <p className="flex items-center gap-1 text-xs font-normal text-zinc-500">
               <MapPinIcon className="h-3 w-3 shrink-0" />
-              1425 Lake Forest Dr, Smyrna, TN 37167
+              {route.schoolAddress}
             </p>
           </dd>
           <dt className="text-zinc-500">Stops</dt>

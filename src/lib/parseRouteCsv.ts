@@ -7,6 +7,8 @@ export interface RouteMeta {
   driverName: string;
   busNumber: string;
   departureTime: string;
+  schoolName: string;
+  schoolAddress: string;
   tripType: TripType;
   distance: string;
   durationMinutes: number;

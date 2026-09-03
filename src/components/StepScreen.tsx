@@ -1,5 +1,4 @@
 import Image from "next/image";
-import { useState } from "react";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
@@ -47,27 +46,20 @@ export function StepScreen({
   const isStop = step.kind === "stop";
   const showRoster = !paused && isStop && roster.length > 0;
 
-  // The map only gives up its own space when the current step's street
-  // name genuinely can't fit its two-line baseline (useFitLines's own
-  // shrink-fallback engaging) - not just because the viewport is short.
-  // Otherwise the map stayed needlessly small on ordinary steps, with
-  // room to spare below it that was never actually being used, and it
-  // was cramping the rider check-in card for no reason.
-  const [textOverflowed, setNeedsMoreRoom] = useState(false);
-  const needsMoreRoom = !paused && textOverflowed;
-
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none landscape:flex-row">
       {/* Top third of the screen in portrait / left column in landscape -
           always reserved at the same size so nothing else ever shifts.
           Normally the map; on a stop with expected riders, the check-in
-          box takes this spot instead. */}
-      <div
-        className={
-          "relative h-[30vh] w-full overflow-hidden landscape:h-full landscape:min-h-0 landscape:shrink-0 landscape:w-[42%] " +
-          (needsMoreRoom ? "min-h-[4.5rem] shrink" : "shrink-0")
-        }
-      >
+          box takes this spot instead. Free to shrink (down to a
+          min-h floor) in portrait, since CSS only actually shrinks a
+          flex item once its siblings genuinely don't fit otherwise -
+          gating that in JS on "does the current step's text need a
+          third line" sounded tighter, but it meant the map stayed rigid
+          even when the *rest* of the column (header, progress bar,
+          footer) didn't fit a short viewport either, pushing the footer
+          off the bottom of the screen entirely. */}
+      <div className="relative h-[30vh] w-full min-h-[4.5rem] shrink overflow-hidden landscape:h-full landscape:min-h-0 landscape:shrink-0 landscape:w-[42%]">
         <Image src="/assets/map-placeholder.jpg" alt="" fill className="object-cover" priority />
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-3 text-center">
           <p className="text-sm font-semibold text-white">
@@ -110,7 +102,7 @@ export function StepScreen({
             <p className="font-heading text-sm font-black tracking-wide text-zinc-600">
               Stop {stopProgressNumber} of {totalStops}
             </p>
-            <div className="flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-sm font-bold text-zinc-700">
+            <div className="flex items-center gap-1 text-sm font-bold text-zinc-700">
               <PersonSolidIcon className="h-4 w-4" />
               {totalOnboard} onboard
             </div>
@@ -135,9 +127,9 @@ export function StepScreen({
             {paused ? (
               <PausedContent />
             ) : isStop ? (
-              <StopContent step={step} stopNumber={stopNumber} onNeedsMoreRoom={setNeedsMoreRoom} />
+              <StopContent step={step} stopNumber={stopNumber} />
             ) : (
-              <TurnContent step={step} onNeedsMoreRoom={setNeedsMoreRoom} />
+              <TurnContent step={step} />
             )}
           </StepTransition>
         </div>
@@ -186,14 +178,8 @@ export function StepScreen({
   );
 }
 
-function TurnContent({
-  step,
-  onNeedsMoreRoom,
-}: {
-  step: NavigationStep;
-  onNeedsMoreRoom: (needsMore: boolean) => void;
-}) {
-  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2, 0.55, onNeedsMoreRoom);
+function TurnContent({ step }: { step: NavigationStep }) {
+  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
 
   return (
     <>
@@ -232,13 +218,11 @@ function TurnContent({
 function StopContent({
   step,
   stopNumber,
-  onNeedsMoreRoom,
 }: {
   step: NavigationStep;
   stopNumber: number | null;
-  onNeedsMoreRoom: (needsMore: boolean) => void;
 }) {
-  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2, 0.55, onNeedsMoreRoom);
+  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
 
   return (
     <>
