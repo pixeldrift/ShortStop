@@ -105,7 +105,12 @@ export function useRouteStepper(route: Route) {
     }
   }, [paused]);
 
-  // Bluetooth media-remote handling via the Media Session API.
+  // Bluetooth media-remote handling via the Media Session API. Most of
+  // these remotes have a single play/pause button, not separate play and
+  // pause buttons - the OS decides which action to send based on the
+  // *reported* playbackState, so keeping that in sync (below) is what
+  // makes the same physical button correctly resume a paused route
+  // instead of silently doing nothing.
   useEffect(() => {
     if (!started || typeof navigator === "undefined" || !("mediaSession" in navigator)) {
       return;
@@ -119,16 +124,35 @@ export function useRouteStepper(route: Route) {
       if (!pausedRef.current) goBack();
     });
     session.setActionHandler("play", () => {
-      if (!pausedRef.current) advance();
+      // Sent when the OS believes playback is currently paused - since
+      // that's our own paused state (synced below), this is "resume",
+      // not "advance". Otherwise it's the same forward gesture as
+      // nexttrack/fast-forward.
+      if (pausedRef.current) {
+        setPaused(false);
+      } else {
+        advance();
+      }
     });
-    session.playbackState = "playing";
+    session.setActionHandler("pause", () => {
+      setPaused(true);
+    });
 
     return () => {
       session.setActionHandler("nexttrack", null);
       session.setActionHandler("previoustrack", null);
       session.setActionHandler("play", null);
+      session.setActionHandler("pause", null);
     };
   }, [started, advance, goBack, route.name]);
+
+  // Keep playbackState in sync with our own paused state - see above.
+  useEffect(() => {
+    if (!started || typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    navigator.mediaSession.playbackState = paused ? "paused" : "playing";
+  }, [started, paused]);
 
   // Keyboard fallback, in case a specific remote pairs as a keyboard.
   useEffect(() => {

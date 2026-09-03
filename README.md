@@ -134,9 +134,22 @@ not as keyboard events.
 
 `src/lib/useRouteStepper.ts` handles this:
 
-- **Next / fast-forward / play-pause** → advance to next step
-  (`nexttrack`, `play` action handlers)
+- **Next / fast-forward** → advance to next step (`nexttrack`)
 - **Previous / rewind** → back to previous step (`previoustrack`)
+- **Play/pause** → most of these remotes have one button for this, not
+  separate play and pause buttons; the OS decides which action to send
+  based on the page's own *reported* `playbackState`, not the physical
+  button itself. So while driving (`playbackState: "playing"`), a press
+  sends `play`, treated the same as `nexttrack` - advance to the next
+  step, matching the doc's "play-pause is the primary go gesture."
+  While paused (`playbackState: "paused"`, kept in sync with the app's
+  own paused state), the same button instead sends `pause` or `play`
+  depending on what the OS/remote believes it's toggling from - both are
+  handled (`pause` pauses, `play` resumes) so either one un-pauses the
+  route rather than silently doing nothing, which is what happened
+  before `playbackState` was kept in sync: it stayed permanently
+  `"playing"`, so a remote could get stuck only ever sending one action
+  and never the other.
 
 As a fallback, it also listens for arrow/space/enter key presses, in case
 a specific device pairs as a keyboard instead.
