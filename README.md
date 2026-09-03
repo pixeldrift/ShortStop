@@ -246,6 +246,35 @@ street name or a special instruction from silently overflowing the
 fixed space in landscape, which is the failure mode that matters most
 here given no scrolling is allowed.
 
+**Map shrinks before content does (portrait)**: on a short-viewport
+phone in portrait (e.g. an iPhone, as opposed to the iPad this is
+primarily built for), the map/rider region and the content column below
+it used to compete for vertical space with the map fixed (`shrink-0`)
+and the content column allowed to shrink past its own content size
+(`min-h-0`) - so a two-line street name could get compressed until the
+footer's buttons overlapped/clipped it. That priority is now inverted in
+portrait: the map/rider region can shrink (down to a `min-h-[4.5rem]`
+floor) while the header/progress-bar/content/footer column is left at
+its default `min-height: auto`, so flexbox shrinks the map first and
+only touches the content column once the map has hit its floor.
+Landscape is unchanged (`landscape:shrink-0` on the map region,
+`landscape:min-h-0`/`landscape:overflow-hidden` restored on the content
+column) since the tablet-landscape case this was already tuned for has
+plenty of vertical room and isn't the failure mode here.
+
+Separately, the street-name text (`useFitLines.ts`) now guarantees room
+for at least two lines at its full baseline `clamp()` size - a `min-h`
+on the `<p>` reserves that space in `em` units (so it scales with
+whatever the current font size is), and a small hook measures the
+rendered text after each render/resize and only shrinks the font size
+below baseline, in small steps down to a floor, if a specific
+combination of street names is long enough that it wouldn't otherwise
+fit in two lines. An ordinary route never triggers the shrink; it's a
+last resort, not the default sizing mechanism. Verified against the
+exact bug report (an iPhone-width viewport on the "Bill Stewart Rd &
+Hidden Forest" stop) and an intentionally pathological street-name combo
+to confirm the fallback engages without ever overlapping or clipping.
+
 ### Rider check-in
 
 At each stop, the rider slot at the top of the screen (`RiderCheckInBox`

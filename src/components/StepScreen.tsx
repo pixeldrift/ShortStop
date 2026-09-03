@@ -2,6 +2,7 @@ import Image from "next/image";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { TopBar } from "./TopBar";
 import { PauseIcon, PersonIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
+import { useFitLines } from "@/lib/useFitLines";
 import type { NavigationStep, Route } from "@/lib/types";
 
 export function StepScreen({
@@ -48,7 +49,7 @@ export function StepScreen({
           always reserved at the same size so nothing else ever shifts.
           Normally the map; on a stop with expected riders, the check-in
           box takes this spot instead. */}
-      <div className="relative h-[30vh] w-full shrink-0 overflow-hidden landscape:h-full landscape:w-[42%]">
+      <div className="relative h-[30vh] w-full min-h-[4.5rem] shrink overflow-hidden landscape:h-full landscape:min-h-0 landscape:shrink-0 landscape:w-[42%]">
         <Image src="/assets/map-placeholder.jpg" alt="" fill className="object-cover" priority />
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-3 text-center">
           <p className="text-sm font-semibold text-white">
@@ -65,7 +66,7 @@ export function StepScreen({
 
       {/* Everything else - stacked below the top third in portrait, to its
           right (its own column) in landscape. */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col landscape:min-h-0 landscape:overflow-hidden">
         {/* Pinned header: always visible, doesn't scroll away */}
         <div className="shrink-0 px-4 pt-2">
           <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
@@ -87,12 +88,12 @@ export function StepScreen({
             which matters most on the tablet-landscape viewports this is
             built for. */}
         <div
-          className="flex min-h-0 flex-1 touch-manipulation flex-col gap-2 overflow-hidden p-3"
+          className="flex flex-1 touch-manipulation flex-col gap-2 p-3 landscape:min-h-0 landscape:overflow-hidden"
           onClick={() => !paused && onAdvance()}
         >
           <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
 
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center landscape:min-h-0">
             {paused ? (
               <PausedContent />
             ) : isStop ? (
@@ -147,6 +148,8 @@ export function StepScreen({
 }
 
 function TurnContent({ step }: { step: NavigationStep }) {
+  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
+
   return (
     <>
       {step.direction ? (
@@ -161,7 +164,10 @@ function TurnContent({ step }: { step: NavigationStep }) {
       )}
 
       {step.subheading && (
-        <p className="font-heading text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight">
+        <p
+          ref={subheadingRef}
+          className="font-heading min-h-[2.5em] text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight"
+        >
           {step.subheading}
         </p>
       )}
@@ -178,6 +184,8 @@ function TurnContent({ step }: { step: NavigationStep }) {
 }
 
 function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: number | null }) {
+  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
+
   return (
     <>
       <div className="relative shrink-0">
@@ -196,7 +204,10 @@ function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: n
       </div>
 
       {step.subheading && (
-        <p className="font-heading text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight">
+        <p
+          ref={subheadingRef}
+          className="font-heading min-h-[2.5em] text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight"
+        >
           {step.subheading}
         </p>
       )}
