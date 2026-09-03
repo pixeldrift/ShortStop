@@ -5,18 +5,21 @@ A Schoolbus Routing Solution
 
 A minimal PWA that steps a driver through a route's navigation
 instructions one at a time — the "first working demonstration" described
-in the project doc: a fictional Route 104, tap Start Route, turn-by-turn
-with spoken audio, stop announcements with student counts and special
-instructions, advanced via a Bluetooth media remote.
+in the project doc: tap Start Route, turn-by-turn with spoken audio, stop
+announcements, advanced via a Bluetooth media remote.
 
 Built as a Next.js / React / Tailwind web app per the doc's stated tech
 platform, rather than a native app, so it can be validated and deployed
 quickly (Vercel) before any native investment.
 
-No maps, GPS-triggered advancing, or backend yet — the route is hardcoded
-sample data (`src/lib/sampleRoute.ts`) using the doc's own Route 104
-example, so the step-through UX, spoken announcements, and Bluetooth-remote
-input path can be validated first.
+No maps or GPS-triggered advancing yet. Route data is real: Bus 125's
+actual route sheet, transcribed to CSV (`public/data/route-125.csv`)
+following the exact schema the doc proposes
+(`sequence,time,action,from_at,onto_at,rider_count,notes`), fetched and
+parsed client-side at load (`src/lib/parseRouteCsv.ts`). It only has
+turn-by-turn directions and stop locations so far — no times, rider
+counts, or special instructions in this transcription — so those fields
+render empty for now rather than being invented.
 
 ### Stack
 
@@ -38,11 +41,12 @@ src/
     StepScreen.tsx       The step-through screen
   lib/
     types.ts             Route / NavigationStep types
-    sampleRoute.ts       Route 104 sample data
+    parseRouteCsv.ts     CSV → Route parsing (see below)
     useRouteStepper.ts   State + all input wiring (see below)
     silence.ts           A tiny silent audio loop (see below)
 public/
   manifest.json          PWA manifest
+  data/route-125.csv     Bus 125's route data
 ```
 
 ### Running locally
@@ -61,6 +65,25 @@ Push to GitHub, then in Vercel: **Add New Project** → import this repo.
 It's a separate Vercel project from anything else in your account (e.g.
 Tabi) — same platform/login, its own deployment and domain, zero shared
 config. No build settings to change; Vercel auto-detects Next.js.
+
+All work so far lives on the `claude/ipad-iphone-nav-app-ss8dsk` branch —
+`main` only has the original README. If Vercel's **Production Branch**
+(Project Settings → Git) is set to `main`, that's why a deploy shows
+"file not found": there's no app there yet. Either point Production
+Branch at `claude/ipad-iphone-nav-app-ss8dsk`, or merge that branch into
+`main`.
+
+### Route data
+
+`public/data/route-125.csv` follows the doc's proposed CSV schema:
+`sequence,time,action,from_at,onto_at,rider_count,notes`. Transcribed
+from Bus 125's handwritten route sheet (turns as `Left`/`Right` with the
+road being left and the road being turned onto; `Stop` rows as the road
+plus cross street, or a bare address). A few rows only give one road name
+for a turn (e.g. row 12: `Left, Riverwood Ln`, `onto_at` blank) — the
+parser treats a lone value as the turn's destination, matching the source
+sheet's shorthand, but that's an interpretation worth double-checking
+against the original sheet.
 
 ### Bluetooth hardware input
 
@@ -94,14 +117,19 @@ on it.
 
 Turn and stop announcements are spoken aloud via the Web Speech API
 (`SpeechSynthesisUtterance`), matching the doc's audio-first UX — the
-driver isn't expected to read the screen while moving. Text is currently
-hand-authored per sample step; a real route would need this generated
-from structured stop/turn data.
+driver isn't expected to read the screen while moving. Announcement text
+is generated from each CSV row's action/road names (see
+`parseRouteCsv.ts`), not hand-authored, so it's serviceable but blunt
+("Turn left onto Riverwood Ln.") rather than polished driving directions.
 
 ### Next steps
 
-- Replace `sampleRoute.ts` with real routing/stop data pulled from the
-  data model in the project doc (District/School/Route/RouteStop/etc.)
+- Fill in the CSV's missing `time`, `rider_count`, and `notes` columns
+  (departure/stop times, student counts, special instructions) once
+  that data exists
+- Move route data into the doc's actual data model
+  (District/School/Route/RouteStop/etc.) instead of a flat CSV, once
+  there's more than one route
 - Map view (the doc's MVP calls for displaying the route on a map, not
   just text instructions)
 - GPS-based auto-advance as students are picked up / stops are passed —
@@ -110,7 +138,6 @@ from structured stop/turn data.
 - Real PWA icons (`public/manifest.json` currently has none) and an
   install prompt, so it can live on the dashboard tablet's home screen
 - Persist route progress / handle the tab backgrounding mid-route
-- Real routing data source instead of a bundled sample file
 - A native driver app remains the doc's long-term plan for the
   GPS/background/offline-heavy driver experience; this web prototype is
   step one, not a replacement for that
