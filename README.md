@@ -103,10 +103,20 @@ interpretation worth double-checking against the original sheet.
 the road the stop is on, so the driver knows which way to expect riders
 without guessing from the map. The real route sheet doesn't record this
 yet, so every stop's value here is randomly assigned as a placeholder
-(see `StopContent` in `StepScreen.tsx` for the on-screen "Stop on the
-right/left side" line, and `parseRouteCsv.ts` for the spoken "On the
+(see the red arrow next to the pin icon in `StopContent`, described
+under Visual design above, and `parseRouteCsv.ts` for the spoken "On the
 right"/"On the left" announcement) — replace with the real values once
 they exist.
+
+`notes` is spoken and shown on screen the same way as a turn's - two
+stops carry a placeholder note as an example of what this field is for:
+Bill Stewart Rd & Ruth Ln has "Wheelchair user requires assistance",
+Judge Mason & Carmen Way has "Rider waits inside for safety until bus
+arrives". A stop's note is spoken last, after the rider-count part of
+its announcement (`parseRouteCsv.ts`), and shown on screen right below
+the street name, in the same highlighted box a turn's note uses - the
+slot previously held a "Stop on the right/left side" line, freed up once
+that became the red arrow described above.
 
 ### Bluetooth hardware input
 
@@ -186,15 +196,18 @@ landscape (1180×820) viewports.
 - **Map/rider region**: a fixed-size block - the top third in portrait,
   the left 42% in landscape - holding the placeholder map image at all
   times. On a stop with expected riders, the rider check-in box (see
-  Rider check-in below) floats over that same spot as its own opaque,
-  shadowed card, rather than replacing the map outright - the map stays
-  visible underneath, dimmed by an extra `bg-black/35` layer, so it never
-  fully disappears. Reserving the same size either way - map or
-  map-plus-roster, never neither - means the header and main content in
-  the rest of the screen always sit at the identical position, whether
-  the current step is a turn or a stop - confirmed by comparing the
-  header's on-screen position between the two rather than just assuming
-  the CSS does what it's supposed to.
+  Rider check-in below) floats over that same spot as its own smaller,
+  opaque, shadowed card (sized to 86%×78% of the region, centered),
+  rather than replacing the map outright - the map stays visible all
+  around it, dimmed by an extra `bg-black/35` layer, so it never fully
+  disappears and there's always enough of the dimmed map showing at the
+  edges to read as "still there, just covered for now." Reserving the
+  same overall region size either way - map or map-plus-roster, never
+  neither - means the header and main content in the rest of the screen
+  always sit at the identical position, whether the current step is a
+  turn or a stop - confirmed by comparing the header's on-screen position
+  between the two rather than just assuming the CSS does what it's
+  supposed to.
 - **Map/content divider**: a thin glossy blue bar (`.btn-glossy`, the
   same bevel/shadow/highlight treatment as the buttons) between the
   map/rider region and everything else - a horizontal bar under the map
@@ -218,16 +231,26 @@ landscape (1180×820) viewports.
   slice of the track, auto-scrolled (via a CSS `transform:
   translateX()`, not native scrolling - nothing on this app scrolls, see
   above) to keep the current position roughly centered, clamped so it
-  never scrolls past either end of the track. A CSS `mask-image` fades
-  whichever edge(s) actually have hidden content - neither edge fades if
-  the whole route fits without scrolling, only the trailing edge fades
-  near the very start, only the leading edge fades near the very end. A
-  bus icon sits directly overlaid on the road at the current position
-  (`bottom-2 -translate-y-1/2`, a `z-10` above the road/markers so it
-  visually rides on top of the bar rather than hovering above it with a
-  caret pointing down, which is what it did before); its position is
-  clamped a bit short of the track's own start/end so the icon (wider
-  than a marker) doesn't get clipped there.
+  never scrolls past either end of the track - concretely, that clamp is
+  what makes the bus track toward the screen's center as the route
+  starts, hold dead center for as long as there's track on both sides to
+  show, then stop being re-centered once the trailing/leading edge of
+  the whole route comes into view (the offset pins to its min/max) and
+  instead keep sliding the rest of the way to the true edge, exactly
+  like a side-scroller camera that stops panning once it hits the level
+  boundary. A CSS `mask-image` fades whichever edge(s) actually have
+  hidden content - neither edge fades if the whole route fits without
+  scrolling, only the trailing edge fades near the very start, only the
+  leading edge fades near the very end. A bus icon sits directly
+  overlaid on the road at the current position (`bottom-2
+  -translate-y-1/2`, a `z-10` above the road/markers so it visually
+  rides on top of the bar rather than hovering above it with a caret
+  pointing down, which is what it did before); its position is clamped a
+  bit short of the track's own start/end so the icon (wider than a
+  marker) doesn't get clipped there. The container's `px-5` padding
+  leaves enough room that the cul-de-sac circles capping each end of the
+  track (see above) are never clipped either, even though they hang half
+  outside the track's own bounds.
 - **Progress caption**: "Stop X of Y" rather than a raw instruction
   count - the number of turn steps between stops isn't meaningful to a
   driver, so it always shows the stop just reached or the one being
@@ -243,7 +266,18 @@ landscape (1180×820) viewports.
   against a screenshot, not derived from the art's actual geometry, so
   it'll need re-tuning if `pin.png` ever changes) instead of a separate
   "STOP n of m" line, which the header's "Stop X of Y" caption already
-  covers. Same large-street-name treatment as turn steps.
+  covers. Same large-street-name treatment as turn steps. Which side of
+  the road the stop is on (`step.sideOfRoad`, from the CSV's `side`
+  column) is shown as a small glossy red circular button right next to
+  the pin - on the pin's left for a left-side stop, its right for a
+  right-side stop - holding a filled triangle (`TriangleIcon`, the same
+  shape used on the Back/Next buttons) pointing the same direction. It's
+  positioned at `top-[31%]` with `-translate-y-1/2`, the exact same
+  anchor the stop-number span uses, so its center lines up with the
+  center of the pin's white circle/number regardless of how big the pin
+  itself is rendering at a given viewport height. This replaced an
+  on-screen "Stop on the right/left side" text line - now conveyed
+  visually instead - which freed up that line for notes (see below).
 - **Controls**: filled-triangle Back/advance buttons with a round, blue
   Pause button between them. The advance button always reads "Next" now,
   on both turn and stop steps - it used to switch to "Continue Route" on
@@ -312,9 +346,12 @@ to confirm the fallback engages without ever overlapping or clipping.
 At each stop, the rider slot at the top of the screen (`RiderCheckInBox`
 in `StepScreen.tsx` - see Visual design above) renders one button per
 expected rider (`step.studentCount`, from the CSV's `rider_count`),
-numbered underneath
-- an outline person icon means not yet checked in, a solid one means
-checked in. No caption explains this above the buttons; the pattern
+numbered underneath - every circle uses the same solid person icon
+(color/fill is what changes on check-in, not the icon style), ringed
+with a `border-blue-600` outline so the circles read clearly against the
+cream background instead of blending into it, gray/outlined when not yet
+checked in, green when checked in. No caption explains this above the
+buttons; the pattern
 (tap a number, it and everything before it goes green) is meant to read
 as self-evident, like a star rating. Tapping rider N checks in everyone
 from 1 through N and un-checks anyone after N, rather than toggling one

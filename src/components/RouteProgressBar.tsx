@@ -77,7 +77,7 @@ export function RouteProgressBar({
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-hidden px-4 pt-1"
+      className="w-full overflow-hidden px-5 pt-1"
       style={{ WebkitMaskImage: maskImage, maskImage }}
     >
       <div
@@ -116,9 +116,11 @@ export function RouteProgressBar({
           <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/90" />
 
           {/* Cul-de-sacs: a circle a little larger than the road's own
-              height, straddling each true end of the route. */}
-          <div className="absolute top-1/2 left-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600" />
-          <div className="absolute top-1/2 left-full h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600" />
+              height, straddling each true end of the route. The
+              container's px-5 leaves enough room that the half of each
+              circle hanging past the track's edge is never clipped. */}
+          <div className="absolute top-1/2 left-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600" />
+          <div className="absolute top-1/2 left-full h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600" />
         </div>
 
         {/* Bus - overlaid directly on top of the road at the current

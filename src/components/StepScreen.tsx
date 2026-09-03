@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { TopBar } from "./TopBar";
-import { PauseIcon, PersonIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
+import { PauseIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
 import { useFitLines } from "@/lib/useFitLines";
 import type { NavigationStep, Route } from "@/lib/types";
 
@@ -60,15 +60,18 @@ export function StepScreen({
         {showRoster && (
           <>
             {/* Dim the map rather than hiding it - the check-in card
-                floats above it as its own opaque, shadowed panel. */}
+                floats above it as its own smaller, opaque, shadowed
+                panel, leaving the dimmed map visible all around it. */}
             <div className="absolute inset-0 bg-black/35" />
-            <div className="absolute inset-0 p-3">
-              <RiderCheckInBox
-                roster={roster}
-                onRiderTap={onRiderTap}
-                onAddRider={onAddRider}
-                onAdvance={onAdvance}
-              />
+            <div className="absolute inset-0 flex items-center justify-center p-3">
+              <div className="h-[78%] w-[86%]">
+                <RiderCheckInBox
+                  roster={roster}
+                  onRiderTap={onRiderTap}
+                  onAddRider={onAddRider}
+                  onAdvance={onAdvance}
+                />
+              </div>
             </div>
           </>
         )}
@@ -215,6 +218,20 @@ function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: n
             {stopNumber}
           </span>
         )}
+        {step.sideOfRoad && (
+          <div
+            className={
+              "btn-glossy absolute top-[31%] flex h-[clamp(1.75rem,6vh,3rem)] w-[clamp(1.75rem,6vh,3rem)] -translate-y-1/2 items-center justify-center rounded-full bg-red-700 " +
+              (step.sideOfRoad.toLowerCase() === "left" ? "right-full mr-2" : "left-full ml-2")
+            }
+            aria-hidden="true"
+          >
+            <TriangleIcon
+              direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
+              className="h-[55%] w-[55%] text-white"
+            />
+          </div>
+        )}
       </div>
 
       {step.subheading && (
@@ -223,12 +240,6 @@ function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: n
           className="font-heading min-h-[2.5em] text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight"
         >
           {step.subheading}
-        </p>
-      )}
-
-      {step.sideOfRoad && (
-        <p className="text-[clamp(0.75rem,2vh,1rem)] text-zinc-500">
-          Stop on the {step.sideOfRoad.toLowerCase()} side
         </p>
       )}
 
@@ -267,13 +278,13 @@ function RiderCheckInBox({
           >
             <span
               className={
-                "flex h-11 w-11 items-center justify-center rounded-full transition-colors " +
+                "flex h-11 w-11 items-center justify-center rounded-full border-2 transition-colors " +
                 (checked
-                  ? "bg-green-600 text-white"
-                  : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500")
+                  ? "border-blue-600 bg-green-600 text-white"
+                  : "border-blue-600 bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500")
               }
             >
-              {checked ? <PersonSolidIcon className="h-6 w-6" /> : <PersonIcon className="h-6 w-6" />}
+              <PersonSolidIcon className="h-6 w-6" />
             </span>
             <span className="text-xs font-semibold text-zinc-500">{i + 1}</span>
           </button>
@@ -285,7 +296,7 @@ function RiderCheckInBox({
           aria-label="Add additional rider"
           className="flex flex-col items-center gap-0.5"
         >
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-2xl leading-none font-bold text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-blue-600 bg-zinc-100 text-2xl leading-none font-bold text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
             +
           </span>
           <span className="w-14 text-xs font-semibold text-zinc-500">Additional Rider</span>

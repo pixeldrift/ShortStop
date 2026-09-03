@@ -42,14 +42,17 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
         const subheading = ontoAt ? `${fromAt} & ${ontoAt}` : fromAt;
 
         // Spoken as separate parts - stop number, then location, then
-        // side of the road, then rider count - so there's a clear pause
-        // between each rather than one long sentence.
+        // side of the road, then rider count, then any note - so there's
+        // a clear pause between each rather than one long sentence.
         const announcement = [`Stop ${stopCounter}.`, `${speakRoadNames(subheading)}.`];
         if (sideOfRoad) {
           announcement.push(`On the ${sideOfRoad.toLowerCase()}.`);
         }
         if (studentCount != null) {
           announcement.push(`${studentCount} rider${studentCount === 1 ? "" : "s"} expected.`);
+        }
+        if (specialInstruction) {
+          announcement.push(`${specialInstruction}.`);
         }
 
         return {
