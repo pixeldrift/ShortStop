@@ -1,5 +1,20 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
+import { TriangleIcon } from "./icons";
 import type { Route } from "@/lib/types";
+
+function useCurrentTime() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return now;
+}
 
 export function StartScreen({
   route,
@@ -8,6 +23,8 @@ export function StartScreen({
   route: Route;
   onStart: () => void;
 }) {
+  const now = useCurrentTime();
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-10 p-6 text-center">
       <Logo size="large" />
@@ -22,21 +39,29 @@ export function StartScreen({
         <p className="mt-1 text-xl text-zinc-500">{route.name}</p>
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-lg">
-        <dt className="text-zinc-500">Driver</dt>
-        <dd className="text-left font-medium">{route.driverName}</dd>
-        <dt className="text-zinc-500">Bus</dt>
-        <dd className="text-left font-medium">#{route.busNumber}</dd>
-        <dt className="text-zinc-500">Departure</dt>
-        <dd className="text-left font-medium">{route.departureTime}</dd>
-      </dl>
+      <div>
+        <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-lg">
+          <dt className="text-zinc-500">Driver</dt>
+          <dd className="text-left font-medium">{route.driverName}</dd>
+          <dt className="text-zinc-500">Bus</dt>
+          <dd className="text-left font-medium">#{route.busNumber}</dd>
+          <dt className="text-zinc-500">Departure</dt>
+          <dd className="text-left font-medium">{route.departureTime}</dd>
+          <dt className="text-zinc-500">School</dt>
+          <dd className="text-left font-medium">Laverne Lake Elementary</dd>
+        </dl>
+
+        <p className="mt-3 text-sm text-zinc-500" suppressHydrationWarning>
+          {now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+        </p>
+      </div>
 
       <button
         type="button"
         onClick={onStart}
-        className="font-heading w-full max-w-xs rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white shadow-lg active:scale-[0.98]"
+        className="btn-glossy font-heading flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
       >
-        Start Route
+        Start Route <TriangleIcon direction="right" className="h-6 w-6" />
       </button>
     </div>
   );

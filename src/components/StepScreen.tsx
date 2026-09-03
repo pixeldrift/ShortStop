@@ -63,7 +63,7 @@ export function StepScreen({
           onClick={onBack}
           disabled={isFirstStep || paused}
           aria-label="Back"
-          className="font-heading flex flex-1 items-center justify-center gap-1 rounded-xl border border-zinc-300 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700"
+          className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1 rounded-xl border border-zinc-300 bg-zinc-100 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800"
         >
           <TriangleIcon direction="left" className="h-4 w-4" /> Back
         </button>
@@ -72,7 +72,7 @@ export function StepScreen({
           type="button"
           onClick={onTogglePause}
           aria-label={paused ? "Resume route" : "Pause route"}
-          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
+          className="btn-glossy flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
         >
           {paused ? <TriangleIcon direction="right" className="h-6 w-6" /> : <PauseIcon className="h-6 w-6" />}
         </button>
@@ -82,7 +82,7 @@ export function StepScreen({
           onClick={onAdvance}
           disabled={isLastStep || paused}
           aria-label="Next"
-          className="font-heading flex flex-1 items-center justify-center gap-1 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
+          className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
         >
           Next <TriangleIcon direction="right" className="h-4 w-4" />
         </button>
