@@ -63,7 +63,7 @@ export function StepScreen({
           onClick={onBack}
           disabled={isFirstStep || paused}
           aria-label="Back"
-          className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-zinc-300 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700"
+          className="font-heading flex flex-1 items-center justify-center gap-1 rounded-xl border border-zinc-300 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700"
         >
           <TriangleIcon direction="left" className="h-4 w-4" /> Back
         </button>
@@ -82,7 +82,7 @@ export function StepScreen({
           onClick={onAdvance}
           disabled={isLastStep || paused}
           aria-label="Next"
-          className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
+          className="font-heading flex flex-1 items-center justify-center gap-1 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
         >
           Next <TriangleIcon direction="right" className="h-4 w-4" />
         </button>
@@ -97,11 +97,11 @@ function TurnContent({ step }: { step: NavigationStep }) {
       {step.direction ? (
         <TurnArrow direction={step.direction} className="h-32 w-32 sm:h-40 sm:w-40" />
       ) : (
-        <h1 className="text-4xl font-black tracking-tight">{step.heading}</h1>
+        <h1 className="font-heading text-4xl font-black tracking-tight">{step.heading}</h1>
       )}
 
       {step.subheading && (
-        <p className="text-5xl leading-tight font-black tracking-tight sm:text-6xl">
+        <p className="font-heading text-5xl leading-tight font-black tracking-tight sm:text-6xl">
           {step.subheading}
         </p>
       )}
@@ -137,7 +137,7 @@ function StopContent({
       <Image src="/assets/pin.png" alt="" width={350} height={548} className="h-28 w-auto sm:h-36" />
 
       {step.subheading && (
-        <p className="text-5xl leading-tight font-black tracking-tight sm:text-6xl">
+        <p className="font-heading text-5xl leading-tight font-black tracking-tight sm:text-6xl">
           {step.subheading}
         </p>
       )}
@@ -161,5 +161,9 @@ function StopContent({
 }
 
 function PausedContent() {
-  return <h1 className="text-5xl font-black tracking-tight text-zinc-500">Route Paused</h1>;
+  return (
+    <h1 className="font-heading text-5xl font-black tracking-tight text-zinc-500">
+      Route Paused
+    </h1>
+  );
 }

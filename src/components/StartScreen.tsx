@@ -16,7 +16,7 @@ export function StartScreen({
         <p className="text-sm font-semibold tracking-widest text-zinc-500 uppercase">
           Today
         </p>
-        <h1 className="mt-2 text-4xl font-black tracking-tight">
+        <h1 className="font-heading mt-2 text-4xl font-black tracking-tight">
           Route {route.routeNumber}
         </h1>
         <p className="mt-1 text-xl text-zinc-500">{route.name}</p>
@@ -34,7 +34,7 @@ export function StartScreen({
       <button
         type="button"
         onClick={onStart}
-        className="w-full max-w-xs rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white shadow-lg active:scale-[0.98]"
+        className="font-heading w-full max-w-xs rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white shadow-lg active:scale-[0.98]"
       >
         Start Route
       </button>
