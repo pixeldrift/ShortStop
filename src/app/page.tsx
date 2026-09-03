@@ -4,15 +4,20 @@ import { useEffect, useState } from "react";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
 import { parseRouteCsv } from "@/lib/parseRouteCsv";
+import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
 import type { Route } from "@/lib/types";
 
+// distance/durationMinutes are placeholders - no real mileage/timing
+// data exists for this route yet.
 const ROUTE_META = {
   name: "Bus 125 Route",
   routeNumber: "125",
   driverName: "Otto Mann",
   busNumber: "125",
   departureTime: "3:30 PM",
+  distance: "8.4 mi",
+  durationMinutes: 28,
 };
 
 export default function Home() {
@@ -65,9 +70,14 @@ function RouteApp({ route }: { route: Route }) {
     togglePause,
   } = useRouteStepper(route);
 
+  const { getRoster, toggleRider, checkAll, addUnexpectedRider, totalOnboard } =
+    useRiderRoster();
+
   if (!started) {
     return <StartScreen route={route} onStart={start} />;
   }
+
+  const expectedCount = currentStep.studentCount ?? 0;
 
   return (
     <StepScreen
@@ -83,6 +93,11 @@ function RouteApp({ route }: { route: Route }) {
       onAdvance={advance}
       onBack={goBack}
       onTogglePause={togglePause}
+      roster={getRoster(currentStep.id, expectedCount)}
+      totalOnboard={totalOnboard}
+      onToggleRider={(index) => toggleRider(currentStep.id, index, expectedCount)}
+      onCheckAll={() => checkAll(currentStep.id, expectedCount)}
+      onAddRider={() => addUnexpectedRider(currentStep.id, expectedCount)}
     />
   );
 }

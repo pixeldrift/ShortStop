@@ -12,14 +12,15 @@ Built as a Next.js / React / Tailwind web app per the doc's stated tech
 platform, rather than a native app, so it can be validated and deployed
 quickly (Vercel) before any native investment.
 
-No maps or GPS-triggered advancing yet. Route data is real: Bus 125's
-actual route sheet, transcribed to CSV (`public/data/route-125.csv`)
-following the exact schema the doc proposes
-(`sequence,time,action,from_at,onto_at,rider_count,notes`), fetched and
-parsed client-side at load (`src/lib/parseRouteCsv.ts`). It only has
-turn-by-turn directions and stop locations so far — no times, rider
-counts, or special instructions in this transcription — so those fields
-render empty for now rather than being invented.
+No real map or GPS-triggered advancing yet (a placeholder map image now
+sits in the upper third of the step screen — see Visual design below).
+Route data is real: Bus 125's actual route sheet, transcribed to CSV
+(`public/data/route-125.csv`) following the exact schema the doc
+proposes (`sequence,time,action,from_at,onto_at,rider_count,notes`),
+fetched and parsed client-side at load (`src/lib/parseRouteCsv.ts`).
+`rider_count` is filled in with randomized placeholder values (1–10) for
+each stop; `time` and `notes` are still blank since no real data exists
+for them yet.
 
 ### Stack
 
@@ -37,16 +38,19 @@ src/
     layout.tsx          Root layout, metadata
     globals.css         Tailwind
   components/
-    StartScreen.tsx     Route summary + "Start Route" button
-    StepScreen.tsx       The step-through screen
+    StartScreen.tsx     Route summary + trip stats + "Start Route" button
+    StepScreen.tsx       The step-through screen, incl. rider check-in
     TopBar.tsx            Logo / route number / bus number header
     RouteProgressBar.tsx  The road-styled progress bar (see below)
     Logo.tsx               Wraps the logo asset at two sizes
-    icons.tsx              Icons: turn-arrow image, pause/triangle/chevron SVGs
+    icons.tsx              Icons: turn-arrow image, pause/triangle/chevron/
+                            person (outline + solid) SVGs
   lib/
     types.ts             Route / NavigationStep types
     parseRouteCsv.ts     CSV → Route parsing (see below)
     useRouteStepper.ts   State + all input wiring, incl. pause (see below)
+    useRiderRoster.ts    Per-stop rider check-in state (see below)
+    time.ts               addMinutesToTimeString - trip ETA math
     silence.ts           A tiny silent audio loop (see below)
 public/
   manifest.json          PWA manifest
@@ -56,6 +60,7 @@ public/
     pin.png                Stop marker (background removed)
     bus.png                Position indicator (background removed)
     turn-arrow.png          Turn-sign icon (supplied with transparent bg)
+    map-placeholder.jpg     Placeholder art for the step screen's map area
 ```
 
 ### Running locally
@@ -133,10 +138,18 @@ is generated from each CSV row's action/road names (see
 
 ### Visual design
 
-The step screen (`StepScreen.tsx`):
+The step screen (`StepScreen.tsx`) is split into three regions: a fixed
+map strip on top, a scrollable middle (progress bar + step content, for
+routes/rosters too tall to fit), and a footer that's always pinned so
+Back/Pause/Next never require scrolling to reach.
 
+- **Map**: the upper third of the screen (`h-[33vh]`) is a placeholder
+  image (`map-placeholder.jpg`) with a "Demo only placeholder, not
+  actual map" overlay - there's no real routing/map integration yet, see
+  Next steps.
 - **Header**: logo top-left, route number large and bold top-center
-  (with a small "Route #" label above it), bus number top-right.
+  (with a small "Route #" label above it), bus number top-right. Pinned
+  below the map, doesn't scroll away.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
   bar, dark border, dashed white center line. Turn steps get a small
   circular marker with a mini direction arrow; stop steps get a small
@@ -159,15 +172,20 @@ The step screen (`StepScreen.tsx`):
   markers - mirrored horizontally for a left turn, since the source art
   is a right turn. Street name renders below it in much larger type than
   anything else on screen.
-- **Stop steps**: the pin icon instead of/alongside "STOP n of m", same
-  large-street-name treatment.
-- **Controls**: filled-triangle Back/Next buttons with a round, blue
-  Pause button between them. Pausing shows a "Route Paused" message in
-  place of the step content, disables Back/Next and screen-tap-to-advance,
-  stops the spoken announcement, and - since the Bluetooth remote is the
-  primary input - ignores `nexttrack`/`previoustrack`/`play` events from
-  it too, so a stray remote press doesn't sneak the route forward while
-  paused. Tapping Pause again (now showing a play triangle) resumes.
+- **Stop steps**: the pin icon, with the stop number set inside its
+  white circle (absolutely positioned over the image - tuned by eye
+  against a screenshot, not derived from the art's actual geometry, so
+  it'll need re-tuning if `pin.png` ever changes) instead of a separate
+  "STOP n of m" line, which the header's "Stop X of Y" caption already
+  covers. Same large-street-name treatment as turn steps.
+- **Controls**: filled-triangle Back/Next buttons (larger icons than
+  before) with a round, blue Pause button between them. Pausing shows a
+  "Route Paused" message in place of the step content, disables
+  Back/Next and screen-tap-to-advance, stops the spoken announcement,
+  and - since the Bluetooth remote is the primary input - ignores
+  `nexttrack`/`previoustrack`/`play` events from it too, so a stray
+  remote press doesn't sneak the route forward while paused. Tapping
+  Pause again (now showing a play triangle) resumes.
 
 `public/assets/pin.png` and `bus.png` started as stock/generated images
 with solid (checkerboard and white, respectively) backgrounds; both were
@@ -176,24 +194,48 @@ regions → transparent) before being added here, so they composite
 cleanly over the road bar and the rest of the UI. `turn-arrow.png`
 already had a transparent background as supplied.
 
+### Rider check-in
+
+At each stop, `StopContent` renders one button per expected rider
+(`step.studentCount`, from the CSV's `rider_count`) - an outline person
+icon means not yet checked in, a solid one means checked in. Tapping a
+rider toggles it; **Check All** marks every expected rider present at
+once; **+** appends one more rider, already checked in (it's recording
+someone who's visibly boarding right now, not someone expected).
+
+State lives in `useRiderRoster.ts`, instantiated once in `RouteApp`
+(`page.tsx`) rather than inside the stop screen itself, so it survives
+navigating back and forth between stops - checking in riders at stop 3,
+then tapping Back to stop 2, still shows stop 2's own roster exactly as
+left. The running **N onboard** badge next to the header's "Stop X of Y"
+caption sums checked-in riders across every stop on the route so far,
+and stays visible on turn steps too (not just at stops) - the idea being
+a driver can get a headcount at any point during an incident, not only
+while parked at a stop. It only ever adds (pickup-only route, no
+drop-offs modeled yet - see Next steps).
+
 ### Next steps
 
-- Fill in the CSV's missing `time`, `rider_count`, and `notes` columns
-  (departure/stop times, student counts, special instructions) once
-  that data exists
-- `driverName: "Otto Mann"` in `page.tsx` is a placeholder, not real
-  driver data - swap it in once there's an actual driver to assign
+- Fill in the CSV's missing `time` and `notes` columns (departure/stop
+  times, special instructions) once that data exists
+- `driverName: "Otto Mann"`, `distance: "8.4 mi"`, and
+  `durationMinutes: 28` in `page.tsx` are all placeholders, not real
+  data - swap them in once there's an actual driver/routing source
 - The progress bar's marker-thinning is a stopgap for density, not a
   real fix - a scrollable/zoomable bar, or clustering nearby stops into
   one marker with a count, would scale better on longer routes
 - Move route data into the doc's actual data model
   (District/School/Route/RouteStop/etc.) instead of a flat CSV, once
   there's more than one route
-- Map view (the doc's MVP calls for displaying the route on a map, not
-  just text instructions)
+- Real map integration in place of the placeholder image, tied to
+  wherever the bus actually is
 - GPS-based auto-advance as students are picked up / stops are passed —
   the doc treats manual button-advance as the first-prototype mechanism
   and GPS auto-advance as a later step
+- Rider check-in state resets on page reload (it's in-memory React
+  state, not persisted) - fine for a demo, not for a real trip
+- Drop-off stops/routes aren't modeled, so onboard count can only ever
+  go up; a real deployment needs riders leaving the bus too
 - Real PWA icons (`public/manifest.json` currently has none) and an
   install prompt, so it can live on the dashboard tablet's home screen
 - Persist route progress / handle the tab backgrounding mid-route

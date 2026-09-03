@@ -64,17 +64,28 @@ export function PlayIcon({ className }: { className?: string }) {
   return <TriangleIcon direction="right" className={className} />;
 }
 
+/** Outline person - used for a rider not yet checked in. */
 export function PersonIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <circle cx="12" cy="7.5" r="4" fill="currentColor" />
+      <circle cx="12" cy="7.5" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
       <path
         d="M4 20c0-4.42 3.58-8 8-8s8 3.58 8 8"
         fill="none"
         stroke="currentColor"
-        strokeWidth="2.5"
+        strokeWidth="2"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+/** Solid/filled person - used for a rider checked in as onboard. */
+export function PersonSolidIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <circle cx="12" cy="7.5" r="4" />
+      <path d="M4 21c0-4.42 3.58-8 8-8s8 3.58 8 8v1H4z" />
     </svg>
   );
 }

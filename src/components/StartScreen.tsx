@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
 import { TriangleIcon } from "./icons";
+import { addMinutesToTimeString } from "@/lib/time";
 import type { Route } from "@/lib/types";
 
 function useCurrentTime() {
@@ -24,9 +25,12 @@ export function StartScreen({
   onStart: () => void;
 }) {
   const now = useCurrentTime();
+  const totalStops = route.steps.filter((s) => s.kind === "stop").length;
+  const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
+  const estimatedEnd = addMinutesToTimeString(route.departureTime, route.durationMinutes);
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-10 p-6 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center gap-8 p-6 text-center">
       <Logo size="large" />
 
       <div>
@@ -39,6 +43,14 @@ export function StartScreen({
         <p className="mt-1 text-xl text-zinc-500">{route.name}</p>
       </div>
 
+      <div className="font-heading flex items-center gap-2 text-lg font-bold">
+        <span>{route.distance}</span>
+        <span className="text-zinc-400">·</span>
+        <span>{route.durationMinutes} min</span>
+        <span className="text-zinc-400">·</span>
+        <span>Arrive {estimatedEnd}</span>
+      </div>
+
       <div>
         <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-lg">
           <dt className="text-zinc-500">Driver</dt>
@@ -49,6 +61,10 @@ export function StartScreen({
           <dd className="text-left font-medium">{route.departureTime}</dd>
           <dt className="text-zinc-500">School</dt>
           <dd className="text-left font-medium">Laverne Lake Elementary</dd>
+          <dt className="text-zinc-500">Stops</dt>
+          <dd className="text-left font-medium">{totalStops}</dd>
+          <dt className="text-zinc-500">~Riders</dt>
+          <dd className="text-left font-medium">{totalRiders}</dd>
         </dl>
 
         <p className="mt-3 text-sm text-zinc-500" suppressHydrationWarning>

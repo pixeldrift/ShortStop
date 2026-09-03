@@ -6,6 +6,8 @@ export interface RouteMeta {
   driverName: string;
   busNumber: string;
   departureTime: string;
+  distance: string;
+  durationMinutes: number;
 }
 
 function parseCsvLine(line: string): string[] {

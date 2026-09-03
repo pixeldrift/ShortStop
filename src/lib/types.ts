@@ -28,5 +28,10 @@ export interface Route {
   driverName: string;
   busNumber: string;
   departureTime: string;
+  /** Placeholder trip estimates - not derived from real map/routing data
+   * yet, since none exists for this route. See RouteMeta in
+   * parseRouteCsv.ts. */
+  distance: string;
+  durationMinutes: number;
   steps: NavigationStep[];
 }
