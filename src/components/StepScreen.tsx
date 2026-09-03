@@ -40,11 +40,22 @@ export function StepScreen({
   onAddRider: () => void;
 }) {
   const isStop = step.kind === "stop";
+  const showRoster = !paused && isStop && roster.length > 0;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none">
+      {/* Rider check-in - occupies the same fixed slot on every step (the
+          map used to live here), empty when there's nothing to check in,
+          so the header/content below never shift position between a
+          turn step and a stop step. */}
+      <div className="h-56 shrink-0 overflow-hidden px-4 pt-4">
+        {showRoster && (
+          <RiderCheckInBox roster={roster} onRiderTap={onRiderTap} onAddRider={onAddRider} />
+        )}
+      </div>
+
       {/* Pinned header: always visible, doesn't scroll away */}
-      <div className="shrink-0 px-4 pt-5">
+      <div className="shrink-0 px-4">
         <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
 
         <div className="mt-2 flex items-center justify-between">
@@ -68,14 +79,8 @@ export function StepScreen({
         <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
           {paused ? (
             <PausedContent />
-          ) : step.kind === "stop" ? (
-            <StopContent
-              step={step}
-              stopNumber={stopNumber}
-              roster={roster}
-              onRiderTap={onRiderTap}
-              onAddRider={onAddRider}
-            />
+          ) : isStop ? (
+            <StopContent step={step} stopNumber={stopNumber} />
           ) : (
             <TurnContent step={step} />
           )}
@@ -146,19 +151,7 @@ function TurnContent({ step }: { step: NavigationStep }) {
   );
 }
 
-function StopContent({
-  step,
-  stopNumber,
-  roster,
-  onRiderTap,
-  onAddRider,
-}: {
-  step: NavigationStep;
-  stopNumber: number | null;
-  roster: boolean[];
-  onRiderTap: (index: number) => void;
-  onAddRider: () => void;
-}) {
+function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: number | null }) {
   return (
     <>
       <div className="relative">
@@ -183,55 +176,61 @@ function StopContent({
           {step.specialInstruction}
         </p>
       )}
-
-      {roster.length > 0 && (
-        <div
-          className="flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex flex-wrap items-start justify-center gap-2">
-            {roster.map((checked, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => onRiderTap(i)}
-                aria-pressed={checked}
-                aria-label={`Check in through rider ${i + 1}${checked ? " (checked in)" : ""}`}
-                className="flex flex-col items-center gap-0.5"
-              >
-                <span
-                  className={
-                    "flex h-11 w-11 items-center justify-center rounded-full transition-colors " +
-                    (checked
-                      ? "bg-green-600 text-white"
-                      : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500")
-                  }
-                >
-                  {checked ? (
-                    <PersonSolidIcon className="h-6 w-6" />
-                  ) : (
-                    <PersonIcon className="h-6 w-6" />
-                  )}
-                </span>
-                <span className="text-xs font-semibold text-zinc-500">{i + 1}</span>
-              </button>
-            ))}
-
-            <button
-              type="button"
-              onClick={onAddRider}
-              aria-label="Add additional rider"
-              className="flex flex-col items-center gap-0.5"
-            >
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-2xl leading-none font-bold text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
-                +
-              </span>
-              <span className="w-14 text-xs font-semibold text-zinc-500">Additional Rider</span>
-            </button>
-          </div>
-        </div>
-      )}
     </>
+  );
+}
+
+function RiderCheckInBox({
+  roster,
+  onRiderTap,
+  onAddRider,
+}: {
+  roster: boolean[];
+  onRiderTap: (index: number) => void;
+  onAddRider: () => void;
+}) {
+  return (
+    <div
+      className="flex h-full w-full flex-col items-center justify-center overflow-y-auto rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex flex-wrap items-start justify-center gap-2">
+        {roster.map((checked, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onRiderTap(i)}
+            aria-pressed={checked}
+            aria-label={`Check in through rider ${i + 1}${checked ? " (checked in)" : ""}`}
+            className="flex flex-col items-center gap-0.5"
+          >
+            <span
+              className={
+                "flex h-11 w-11 items-center justify-center rounded-full transition-colors " +
+                (checked
+                  ? "bg-green-600 text-white"
+                  : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500")
+              }
+            >
+              {checked ? <PersonSolidIcon className="h-6 w-6" /> : <PersonIcon className="h-6 w-6" />}
+            </span>
+            <span className="text-xs font-semibold text-zinc-500">{i + 1}</span>
+          </button>
+        ))}
+
+        <button
+          type="button"
+          onClick={onAddRider}
+          aria-label="Add additional rider"
+          className="flex flex-col items-center gap-0.5"
+        >
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-2xl leading-none font-bold text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+            +
+          </span>
+          <span className="w-14 text-xs font-semibold text-zinc-500">Additional Rider</span>
+        </button>
+      </div>
+    </div>
   );
 }
 

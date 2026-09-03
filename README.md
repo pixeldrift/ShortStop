@@ -148,23 +148,25 @@ text keeps the abbreviated form.
 
 ### Visual design
 
-The step screen (`StepScreen.tsx`) is split into three regions: a pinned
-header, a scrollable middle (progress bar + step content, for
-routes/rosters too tall to fit), and a footer that's always pinned so
+The step screen (`StepScreen.tsx`) is split into four regions, top to
+bottom: a fixed-height rider slot, a pinned header, a scrollable middle
+(progress bar + step content), and a footer that's always pinned so
 Back/Pause/Continue never require scrolling to reach.
 
-There was a placeholder map image (upper third of the screen) here at
-one point; it's been removed rather than kept as inert art, since it
-was adding a fixed block of screen space without adding real
-information, and made the step content shift position between turn
-steps (short) and stop steps (taller, once the rider roster is showing)
-more than necessary. A real map, tied to the bus's actual position, is
-still a real goal - see Next steps - it just isn't a placeholder image
-anymore.
-
+- **Rider slot**: a fixed-height (`h-56`) block at the very top of the
+  screen - where a placeholder map image lived at one point, since
+  removed. On a stop with expected riders it holds the rider check-in
+  box (see Rider check-in below, with its own internal scroll if there
+  are enough riders to overflow); on every other step it's simply empty.
+  Reserving the same height either way (rather than only rendering the
+  box when there's one, and collapsing the space otherwise) means the
+  header and main content below always sit at the identical vertical
+  position, whether the current step is a turn or a stop - confirmed by
+  comparing the header's on-screen position between the two rather than
+  just assuming the CSS does what it's supposed to.
 - **Header**: logo top-left, route number large and bold top-center
   (with a small "Route #" label above it), bus number top-right. Pinned
-  at the very top, doesn't scroll away.
+  right below the rider slot, doesn't scroll away.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
   bar, dark border, dashed white center line. Turn steps get a small
   circular marker with a mini direction arrow; stop steps get a small
@@ -213,8 +215,10 @@ already had a transparent background as supplied.
 
 ### Rider check-in
 
-At each stop, `StopContent` renders one button per expected rider
-(`step.studentCount`, from the CSV's `rider_count`), numbered underneath
+At each stop, the rider slot at the top of the screen (`RiderCheckInBox`
+in `StepScreen.tsx` - see Visual design above) renders one button per
+expected rider (`step.studentCount`, from the CSV's `rider_count`),
+numbered underneath
 - an outline person icon means not yet checked in, a solid one means
 checked in. No caption explains this above the buttons; the pattern
 (tap a number, it and everything before it goes green) is meant to read
