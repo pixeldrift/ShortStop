@@ -82,7 +82,7 @@ export function RouteProgressBar({
       style={{ WebkitMaskImage: maskImage, maskImage }}
     >
       <div
-        className="relative h-24 transition-transform duration-300 ease-out"
+        className="relative h-12 transition-transform duration-300 ease-out"
         style={{ width: trackWidth, transform: `translateX(${offset}px)` }}
       >
         {/* Turn/stop markers - close above the road without touching it */}

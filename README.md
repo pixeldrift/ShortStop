@@ -354,17 +354,26 @@ landscape (1180×820) viewports.
   cul-de-sac circles capping each end of the track (see above) are ever
   clipped horizontally, even at the exact edges. Vertically, both the bus
   and the circles are centered on the road, which is itself anchored to
-  the *bottom* of a taller box (`h-24`) rather than centered within it -
-  so both extend a few px below that box's own bottom edge everywhere
-  along the route, not just at the ends. The outer container only had
-  top padding (`pt-1`) to begin with, so with nothing absorbing that
-  overflow at the bottom, its own `overflow-hidden` was quietly clipping
-  a few px off the bottom of the bus and every circle - a bug that
-  measuring against the container's left/right edges never would have
-  caught, since it was purely vertical. `pb-4` fixes it. Verified by
-  measuring rendered edges against the container's on all four sides,
-  not just the two that were checked before, at the first, a middle, and
-  the last step.
+  the *bottom* of a taller box (originally `h-24`, 96px) rather than
+  centered within it - so both extend a few px below that box's own
+  bottom edge everywhere along the route, not just at the ends. The
+  outer container only had top padding (`pt-1`) to begin with, so with
+  nothing absorbing that overflow at the bottom, its own
+  `overflow-hidden` was quietly clipping a few px off the bottom of the
+  bus and every circle - a bug that measuring against the container's
+  left/right edges never would have caught, since it was purely
+  vertical. `pb-4` fixes it. Verified by measuring rendered edges
+  against the container's on all four sides, not just the two that were
+  checked before, at the first, a middle, and the last step.
+
+  That `h-24` box was also just taller than the road/markers/bus
+  clustered near its bottom actually need - since everything is
+  bottom-anchored, the top ~56px of it (out of 96px total) was pure dead
+  space, showing up as a visible gap above the progress bar with nothing
+  reclaiming it for the rest of the screen. Reduced to `h-12` (48px, an
+  8px buffer above the tallest marker) - measured against the container
+  on all four sides again to confirm nothing clips at that height,
+  across the first/middle/last step and both orientations.
 - **Progress caption**: "Stop X of Y" rather than a raw instruction
   count - the number of turn steps between stops isn't meaningful to a
   driver, so it always shows the stop just reached or the one being
