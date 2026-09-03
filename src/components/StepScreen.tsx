@@ -1,3 +1,4 @@
+import { Logo } from "./Logo";
 import type { NavigationStep } from "@/lib/types";
 
 export function StepScreen({
@@ -31,9 +32,14 @@ export function StepScreen({
       className="flex flex-1 touch-manipulation flex-col items-center justify-between gap-6 p-6 select-none"
       onClick={onAdvance}
     >
-      <p className="text-sm font-semibold tracking-wide text-zinc-500">
-        {stepNumber} of {totalSteps}
-      </p>
+      <div className="grid w-full grid-cols-3 items-center">
+        <div className="justify-self-start">
+          <Logo size="small" />
+        </div>
+        <p className="col-start-2 justify-self-center text-sm font-semibold tracking-wide text-zinc-500">
+          {stepNumber} of {totalSteps}
+        </p>
+      </div>
 
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
         <h1 className="text-4xl font-black tracking-tight sm:text-5xl">{heading}</h1>

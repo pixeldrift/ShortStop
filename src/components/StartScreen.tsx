@@ -1,3 +1,4 @@
+import { Logo } from "./Logo";
 import type { Route } from "@/lib/types";
 
 export function StartScreen({
@@ -9,6 +10,8 @@ export function StartScreen({
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-10 p-6 text-center">
+      <Logo size="large" />
+
       <div>
         <p className="text-sm font-semibold tracking-widest text-zinc-500 uppercase">
           Today
