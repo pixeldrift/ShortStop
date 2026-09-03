@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { TopBar } from "./TopBar";
-import { PauseIcon, TriangleIcon, TurnArrow } from "./icons";
+import { PauseIcon, PersonIcon, TriangleIcon, TurnArrow } from "./icons";
 import type { NavigationStep, Route } from "@/lib/types";
 
 export function StepScreen({
@@ -143,10 +143,11 @@ function StopContent({
       )}
 
       {step.studentCount != null && (
-        <p className="text-xl">
-          {step.studentCount} Student{step.studentCount === 1 ? "" : "s"}
+        <div className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-lg font-semibold text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">
+          <PersonIcon className="h-5 w-5" />
+          {step.studentCount} Rider{step.studentCount === 1 ? "" : "s"} Expected
           {step.pickupOrDropoff && ` · ${step.pickupOrDropoff}`}
-        </p>
+        </div>
       )}
 
       {step.sideOfRoad && <p className="text-zinc-500">Stop on {step.sideOfRoad} side</p>}

@@ -33,13 +33,17 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
 
       if (action.toLowerCase() === "stop") {
         const subheading = ontoAt ? `${fromAt} & ${ontoAt}` : fromAt;
+        const announcement =
+          studentCount != null
+            ? `Stop at ${subheading}. ${studentCount} rider${studentCount === 1 ? "" : "s"} expected.`
+            : `Stop at ${subheading}.`;
         return {
           id: index,
           kind: "stop",
           subheading,
           studentCount,
           specialInstruction,
-          announcement: `Stop at ${subheading}.`,
+          announcement,
         };
       }
 
