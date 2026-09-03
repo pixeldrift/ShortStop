@@ -19,8 +19,11 @@ export interface NavigationStep {
   pickupOrDropoff?: string;
   sideOfRoad?: string;
   specialInstruction?: string;
-  /** What the app speaks aloud when this step becomes current. */
-  announcement: string;
+  /** What the app speaks aloud when this step becomes current, as
+   * separate parts spoken as separate utterances (e.g. stop number,
+   * then location, then rider count) so there's an audible pause
+   * between each rather than one run-on sentence. */
+  announcement: string[];
 }
 
 export interface Route {

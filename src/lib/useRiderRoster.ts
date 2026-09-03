@@ -19,18 +19,13 @@ export function useRiderRoster() {
     [rosters],
   );
 
-  const toggleRider = useCallback((stepId: number, index: number, expectedCount: number) => {
+  // Star-rating style: tapping rider N checks in everyone from 1 through
+  // N and un-checks anyone after N, rather than toggling one at a time.
+  const fillTo = useCallback((stepId: number, index: number, expectedCount: number) => {
     setRosters((prev) => {
       const current = prev[stepId] ?? Array(expectedCount).fill(false);
-      const next = current.map((checked, i) => (i === index ? !checked : checked));
+      const next = current.map((_, i) => i <= index);
       return { ...prev, [stepId]: next };
-    });
-  }, []);
-
-  const checkAll = useCallback((stepId: number, expectedCount: number) => {
-    setRosters((prev) => {
-      const current = prev[stepId] ?? Array(expectedCount).fill(false);
-      return { ...prev, [stepId]: current.map(() => true) };
     });
   }, []);
 
@@ -47,5 +42,5 @@ export function useRiderRoster() {
     [rosters],
   );
 
-  return { getRoster, toggleRider, checkAll, addUnexpectedRider, totalOnboard };
+  return { getRoster, fillTo, addUnexpectedRider, totalOnboard };
 }

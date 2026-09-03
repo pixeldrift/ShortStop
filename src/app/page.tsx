@@ -71,8 +71,7 @@ function RouteApp({ route }: { route: Route }) {
     togglePause,
   } = useRouteStepper(route);
 
-  const { getRoster, toggleRider, checkAll, addUnexpectedRider, totalOnboard } =
-    useRiderRoster();
+  const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
 
   if (!started) {
     return <StartScreen route={route} onStart={start} />;
@@ -96,8 +95,7 @@ function RouteApp({ route }: { route: Route }) {
       onTogglePause={togglePause}
       roster={getRoster(currentStep.id, expectedCount)}
       totalOnboard={totalOnboard}
-      onToggleRider={(index) => toggleRider(currentStep.id, index, expectedCount)}
-      onCheckAll={() => checkAll(currentStep.id, expectedCount)}
+      onRiderTap={(index) => fillTo(currentStep.id, index, expectedCount)}
       onAddRider={() => addUnexpectedRider(currentStep.id, expectedCount)}
     />
   );

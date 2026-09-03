@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { TopBar } from "./TopBar";
-import { PauseIcon, PersonIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
+import { PauseIcon, PersonAddIcon, PersonIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
 import type { NavigationStep, Route } from "@/lib/types";
 
 export function StepScreen({
@@ -19,8 +19,7 @@ export function StepScreen({
   onTogglePause,
   roster,
   totalOnboard,
-  onToggleRider,
-  onCheckAll,
+  onRiderTap,
   onAddRider,
 }: {
   route: Route;
@@ -37,8 +36,7 @@ export function StepScreen({
   onTogglePause: () => void;
   roster: boolean[];
   totalOnboard: number;
-  onToggleRider: (index: number) => void;
-  onCheckAll: () => void;
+  onRiderTap: (index: number) => void;
   onAddRider: () => void;
 }) {
   return (
@@ -90,8 +88,7 @@ export function StepScreen({
               step={step}
               stopNumber={stopNumber}
               roster={roster}
-              onToggleRider={onToggleRider}
-              onCheckAll={onCheckAll}
+              onRiderTap={onRiderTap}
               onAddRider={onAddRider}
             />
           ) : (
@@ -168,15 +165,13 @@ function StopContent({
   step,
   stopNumber,
   roster,
-  onToggleRider,
-  onCheckAll,
+  onRiderTap,
   onAddRider,
 }: {
   step: NavigationStep;
   stopNumber: number | null;
   roster: boolean[];
-  onToggleRider: (index: number) => void;
-  onCheckAll: () => void;
+  onRiderTap: (index: number) => void;
   onAddRider: () => void;
 }) {
   return (
@@ -210,48 +205,45 @@ function StopContent({
           onClick={(e) => e.stopPropagation()}
         >
           <p className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-            {roster.filter(Boolean).length} of {roster.length} checked in - tap a rider to check them in
+            {roster.filter(Boolean).length} of {roster.length} checked in - tap a rider to
+            check in through that number
           </p>
 
-          <div className="flex flex-wrap justify-center gap-2">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             {roster.map((checked, i) => (
               <button
                 key={i}
                 type="button"
-                onClick={() => onToggleRider(i)}
+                onClick={() => onRiderTap(i)}
                 aria-pressed={checked}
-                aria-label={`Rider ${i + 1}${checked ? ", checked in" : ", not checked in"}`}
-                className={
-                  "flex h-11 w-11 items-center justify-center rounded-full transition-colors " +
-                  (checked
-                    ? "bg-green-600 text-white"
-                    : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500")
-                }
+                aria-label={`Check in through rider ${i + 1}${checked ? " (checked in)" : ""}`}
+                className="flex flex-col items-center gap-0.5"
               >
-                {checked ? (
-                  <PersonSolidIcon className="h-6 w-6" />
-                ) : (
-                  <PersonIcon className="h-6 w-6" />
-                )}
+                <span
+                  className={
+                    "flex h-11 w-11 items-center justify-center rounded-full transition-colors " +
+                    (checked
+                      ? "bg-green-600 text-white"
+                      : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500")
+                  }
+                >
+                  {checked ? (
+                    <PersonSolidIcon className="h-6 w-6" />
+                  ) : (
+                    <PersonIcon className="h-6 w-6" />
+                  )}
+                </span>
+                <span className="text-xs font-semibold text-zinc-500">{i + 1}</span>
               </button>
             ))}
-          </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onCheckAll}
-              className="btn-glossy rounded-lg bg-zinc-700 px-3 py-2 text-sm font-semibold text-white"
-            >
-              Check All
-            </button>
             <button
               type="button"
               onClick={onAddRider}
               aria-label="Add unexpected rider"
-              className="btn-glossy flex h-9 w-9 items-center justify-center rounded-full bg-zinc-700 text-xl leading-none font-bold text-white"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500"
             >
-              +
+              <PersonAddIcon className="h-6 w-6" />
             </button>
           </div>
         </div>

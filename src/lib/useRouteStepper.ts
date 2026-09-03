@@ -66,7 +66,10 @@ export function useRouteStepper(route: Route) {
     setCurrentIndex((i) => (i > 0 ? i - 1 : i));
   }, []);
 
-  // Speak the announcement for whatever step is current - but not while paused.
+  // Speak the announcement for whatever step is current - but not while
+  // paused. Each part (stop number / location / rider count) is queued
+  // as its own utterance rather than joined into one string, so there's
+  // an audible pause between them instead of one run-on sentence.
   useEffect(() => {
     if (
       !started ||
@@ -77,7 +80,9 @@ export function useRouteStepper(route: Route) {
       return;
     }
     window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(currentStep.announcement));
+    for (const part of currentStep.announcement) {
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(part));
+    }
   }, [currentStep, started, paused]);
 
   // Cancel any in-progress announcement the moment the route is paused.

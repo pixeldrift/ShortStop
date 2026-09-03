@@ -134,7 +134,18 @@ Turn and stop announcements are spoken aloud via the Web Speech API
 driver isn't expected to read the screen while moving. Announcement text
 is generated from each CSV row's action/road names (see
 `parseRouteCsv.ts`), not hand-authored, so it's serviceable but blunt
-("Turn left onto Riverwood Ln.") rather than polished driving directions.
+rather than polished driving directions.
+
+Each step's `announcement` is an array of parts, not one string - a stop
+speaks as three separate utterances ("Stop 3." / "Bill Stewart Road and
+Hidden Forest." / "5 riders expected."), queued individually via
+`speechSynthesis.speak()` in `useRouteStepper.ts` so there's an audible
+pause between each rather than one run-on sentence. Road-suffix
+abbreviations are spelled out for speech only (`speakRoadNames` in
+`src/lib/speech.ts`: "Rd" → "Road", "Ln" → "Lane", "Pkwy" → "Parkway",
+etc. - covers what's in `route-125.csv` plus the common USPS suffixes)
+so the TTS engine doesn't read "Rd" as a word or garble it; on-screen
+text keeps the abbreviated form.
 
 ### Visual design
 
@@ -197,11 +208,20 @@ already had a transparent background as supplied.
 ### Rider check-in
 
 At each stop, `StopContent` renders one button per expected rider
-(`step.studentCount`, from the CSV's `rider_count`) - an outline person
-icon means not yet checked in, a solid one means checked in. Tapping a
-rider toggles it; **Check All** marks every expected rider present at
-once; **+** appends one more rider, already checked in (it's recording
-someone who's visibly boarding right now, not someone expected).
+(`step.studentCount`, from the CSV's `rider_count`), numbered underneath
+- an outline person icon means not yet checked in, a solid one means
+checked in. Tapping rider N works like a star rating: it checks in
+everyone from 1 through N and un-checks anyone after N, rather than
+toggling one at a time (`fillTo` in `useRiderRoster.ts`) - there's no
+separate "check all" control, since tapping the last rider does that.
+**+** (styled the same as the numbered buttons, an outline person with a
+small "+" inside it) appends one more rider, already checked in (it's
+recording someone who's visibly boarding right now, not someone
+expected) - it doesn't participate in the star-rating fill, so it can
+leave a "gap" (e.g. riders 1-2 checked, 3-5 not, plus one added rider
+checked) if the driver hasn't finished checking in the expected riders
+yet. That's intentional: the added rider is a real, separate event, not
+a retroactive claim that 3-5 also boarded.
 
 State lives in `useRiderRoster.ts`, instantiated once in `RouteApp`
 (`page.tsx`) rather than inside the stop screen itself, so it survives
