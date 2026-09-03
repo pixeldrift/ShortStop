@@ -42,7 +42,7 @@ src/
     TopBar.tsx            Logo / route number / bus number header
     RouteProgressBar.tsx  The road-styled progress bar (see below)
     Logo.tsx               Wraps the logo asset at two sizes
-    icons.tsx              Inline SVG icons (arrow, pause, play, chevron)
+    icons.tsx              Icons: turn-arrow image, pause/triangle/chevron SVGs
   lib/
     types.ts             Route / NavigationStep types
     parseRouteCsv.ts     CSV → Route parsing (see below)
@@ -55,6 +55,7 @@ public/
     logo.png              ShortStop wordmark
     pin.png                Stop marker (background removed)
     bus.png                Position indicator (background removed)
+    turn-arrow.png          Turn-sign icon (supplied with transparent bg)
 ```
 
 ### Running locally
@@ -143,28 +144,37 @@ The step screen (`StepScreen.tsx`):
   unreadable clump at full density, so markers are thinned (greedy,
   left to right, minimum gap between shown markers) - the current step
   and both route endpoints always show, everything else only shows if
-  it's far enough from the last shown marker. A bus icon rides above the
-  bar at the current position, with a small caret pointing down at it;
+  it's far enough from the last shown marker. Markers sit in their own
+  row above the road (not on top of it). A bus icon rides above that, at
+  the current position, with a yellow/black caret pointing down at it;
   its position is clamped a bit short of 0%/100% so the icon (wider than
   a marker) doesn't get clipped by the screen edge at the very start/end.
-- **Turn steps**: a very large direction arrow (left/right) instead of
-  "TURN LEFT" text, with the street name below it in much larger type
-  than anything else on screen.
+- **Progress caption**: "Stop X of Y" rather than a raw instruction
+  count - the number of turn steps between stops isn't meaningful to a
+  driver, so it always shows the stop just reached or the one being
+  driven toward (`stopNumberByIndex` in `useRouteStepper.ts`).
+- **Turn steps**: the actual turn-arrow road sign (`turn-arrow.png`,
+  user-supplied, already had a transparent background) instead of "TURN
+  LEFT" text - large on the step screen, small on the progress bar's
+  markers - mirrored horizontally for a left turn, since the source art
+  is a right turn. Street name renders below it in much larger type than
+  anything else on screen.
 - **Stop steps**: the pin icon instead of/alongside "STOP n of m", same
   large-street-name treatment.
-- **Controls**: Back (`<`) / Next (`>`) buttons with a round Pause button
-  between them. Pausing shows a "Route Paused" message in place of the
-  step content, disables Back/Next and screen-tap-to-advance, stops the
-  spoken announcement, and - since the Bluetooth remote is the primary
-  input - ignores `nexttrack`/`previoustrack`/`play` events from it too,
-  so a stray remote press doesn't sneak the route forward while paused.
-  Tapping Pause again (now showing a play icon) resumes.
+- **Controls**: filled-triangle Back/Next buttons with a round, blue
+  Pause button between them. Pausing shows a "Route Paused" message in
+  place of the step content, disables Back/Next and screen-tap-to-advance,
+  stops the spoken announcement, and - since the Bluetooth remote is the
+  primary input - ignores `nexttrack`/`previoustrack`/`play` events from
+  it too, so a stray remote press doesn't sneak the route forward while
+  paused. Tapping Pause again (now showing a play triangle) resumes.
 
 `public/assets/pin.png` and `bus.png` started as stock/generated images
 with solid (checkerboard and white, respectively) backgrounds; both were
 background-removed with a flood-fill script (border-connected near-white
 regions → transparent) before being added here, so they composite
-cleanly over the road bar and the rest of the UI.
+cleanly over the road bar and the rest of the UI. `turn-arrow.png`
+already had a transparent background as supplied.
 
 ### Next steps
 

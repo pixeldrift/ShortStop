@@ -40,10 +40,23 @@ export function useRouteStepper(route: Route) {
     [route.steps],
   );
   const totalStops = stopSteps.length;
-  const currentStopNumber =
-    currentStep.kind === "stop"
-      ? stopSteps.findIndex((s) => s.id === currentStep.id) + 1
-      : null;
+
+  // Which stop number to show at each step: the stop itself while on it,
+  // otherwise the next stop still ahead (capped at the last one) - so a
+  // turn between stop 1 and stop 2 reads as "Stop 2 of N", not a raw
+  // instruction count.
+  const stopNumberByIndex = useMemo(() => {
+    const result: number[] = [];
+    route.steps.reduce((passed, s) => {
+      const nowPassed = s.kind === "stop" ? passed + 1 : passed;
+      result.push(s.kind === "stop" ? nowPassed : Math.min(nowPassed + 1, totalStops || 1));
+      return nowPassed;
+    }, 0);
+    return result;
+  }, [route.steps, totalStops]);
+
+  const stopProgressNumber = stopNumberByIndex[currentIndex];
+  const currentStopNumber = currentStep.kind === "stop" ? stopProgressNumber : null;
 
   const advance = useCallback(() => {
     setCurrentIndex((i) => (i < totalSteps - 1 ? i + 1 : i));
@@ -144,6 +157,7 @@ export function useRouteStepper(route: Route) {
     isLastStep,
     totalStops,
     currentStopNumber,
+    stopProgressNumber,
     started,
     start,
     advance,

@@ -1,7 +1,9 @@
+import Image from "next/image";
 import type { TurnDirection } from "@/lib/types";
 
-/** A large, bold arrow. Points right by default; mirrored for "left". */
-export function DirectionArrow({
+/** The turn-sign image, mirrored for a left turn (the source art is a
+ * right turn). */
+export function TurnArrow({
   direction,
   className,
 }: {
@@ -9,28 +11,21 @@ export function DirectionArrow({
   className?: string;
 }) {
   return (
-    <svg
-      viewBox="0 0 100 100"
+    <Image
+      src="/assets/turn-arrow.png"
+      alt=""
+      width={797}
+      height={797}
       className={className}
       style={direction === "left" ? { transform: "scaleX(-1)" } : undefined}
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M15 50 H75 M75 50 L52 27 M75 50 L52 73"
-        stroke="currentColor"
-        strokeWidth="13"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    />
   );
 }
 
 export function ChevronDownIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 16" className={className} fill="currentColor" aria-hidden="true">
-      <path d="M12 16 L0 0 H24 Z" />
+    <svg viewBox="0 0 24 16" className={className} aria-hidden="true">
+      <path d="M12 15 L1 1 H23 Z" fill="#facc15" stroke="#000000" strokeWidth="1.5" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -44,10 +39,27 @@ export function PauseIcon({ className }: { className?: string }) {
   );
 }
 
-export function PlayIcon({ className }: { className?: string }) {
+/** A filled triangle, pointing right by default and mirrored for "left". */
+export function TriangleIcon({
+  direction = "right",
+  className,
+}: {
+  direction?: "left" | "right";
+  className?: string;
+}) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="currentColor"
+      aria-hidden="true"
+      style={direction === "left" ? { transform: "scaleX(-1)" } : undefined}
+    >
       <path d="M6 4 L20 12 L6 20 Z" />
     </svg>
   );
+}
+
+export function PlayIcon({ className }: { className?: string }) {
+  return <TriangleIcon direction="right" className={className} />;
 }

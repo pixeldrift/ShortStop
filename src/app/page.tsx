@@ -12,7 +12,7 @@ const ROUTE_META = {
   routeNumber: "125",
   driverName: "Otto Mann",
   busNumber: "125",
-  departureTime: "—",
+  departureTime: "3:30 PM",
 };
 
 export default function Home() {
@@ -52,11 +52,11 @@ function RouteApp({ route }: { route: Route }) {
   const {
     currentStep,
     currentIndex,
-    totalSteps,
     isFirstStep,
     isLastStep,
     totalStops,
     currentStopNumber,
+    stopProgressNumber,
     started,
     start,
     advance,
@@ -74,8 +74,8 @@ function RouteApp({ route }: { route: Route }) {
       route={route}
       step={currentStep}
       stepNumber={currentIndex + 1}
-      totalSteps={totalSteps}
       stopNumber={currentStopNumber}
+      stopProgressNumber={stopProgressNumber}
       totalStops={totalStops}
       isFirstStep={isFirstStep}
       isLastStep={isLastStep}

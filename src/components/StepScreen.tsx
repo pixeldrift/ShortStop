@@ -1,15 +1,15 @@
 import Image from "next/image";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { TopBar } from "./TopBar";
-import { DirectionArrow, PauseIcon, PlayIcon } from "./icons";
+import { PauseIcon, TriangleIcon, TurnArrow } from "./icons";
 import type { NavigationStep, Route } from "@/lib/types";
 
 export function StepScreen({
   route,
   step,
   stepNumber,
-  totalSteps,
   stopNumber,
+  stopProgressNumber,
   totalStops,
   isFirstStep,
   isLastStep,
@@ -21,8 +21,8 @@ export function StepScreen({
   route: Route;
   step: NavigationStep;
   stepNumber: number;
-  totalSteps: number;
   stopNumber: number | null;
+  stopProgressNumber: number;
   totalStops: number;
   isFirstStep: boolean;
   isLastStep: boolean;
@@ -39,7 +39,7 @@ export function StepScreen({
       <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
 
       <p className="text-center text-xs font-semibold tracking-wide text-zinc-500">
-        {stepNumber} of {totalSteps}
+        Stop {stopProgressNumber} of {totalStops}
       </p>
 
       <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
@@ -65,16 +65,16 @@ export function StepScreen({
           aria-label="Back"
           className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-zinc-300 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700"
         >
-          <span aria-hidden="true">&lt;</span> Back
+          <TriangleIcon direction="left" className="h-4 w-4" /> Back
         </button>
 
         <button
           type="button"
           onClick={onTogglePause}
           aria-label={paused ? "Resume route" : "Pause route"}
-          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-300 dark:border-zinc-700"
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
         >
-          {paused ? <PlayIcon className="h-6 w-6" /> : <PauseIcon className="h-6 w-6" />}
+          {paused ? <TriangleIcon direction="right" className="h-6 w-6" /> : <PauseIcon className="h-6 w-6" />}
         </button>
 
         <button
@@ -84,7 +84,7 @@ export function StepScreen({
           aria-label="Next"
           className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
         >
-          Next <span aria-hidden="true">&gt;</span>
+          Next <TriangleIcon direction="right" className="h-4 w-4" />
         </button>
       </div>
     </div>
@@ -95,7 +95,7 @@ function TurnContent({ step }: { step: NavigationStep }) {
   return (
     <>
       {step.direction ? (
-        <DirectionArrow direction={step.direction} className="h-32 w-32 text-blue-600 sm:h-40 sm:w-40" />
+        <TurnArrow direction={step.direction} className="h-32 w-32 sm:h-40 sm:w-40" />
       ) : (
         <h1 className="text-4xl font-black tracking-tight">{step.heading}</h1>
       )}
