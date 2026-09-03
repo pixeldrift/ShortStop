@@ -52,3 +52,20 @@ body {
   background-image: none;
   box-shadow: none;
 }
+
+/* A hard on/off blink (not a fade) for the live clock's colon, so it
+   reads clearly as "this clock is ticking" rather than just decorative. */
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}

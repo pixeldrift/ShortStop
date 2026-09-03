@@ -1,5 +1,6 @@
 export type StepKind = "depart" | "turn" | "stop" | "arrive";
 export type TurnDirection = "left" | "right";
+export type TripType = "pickup" | "dropoff";
 
 export interface NavigationStep {
   id: number;
@@ -28,6 +29,10 @@ export interface Route {
   driverName: string;
   busNumber: string;
   departureTime: string;
+  /** A pickup route arrives somewhere (school); a dropoff route doesn't
+   * have one single destination, so the trip-summary label reads
+   * "Complete" instead of "Arrive". */
+  tripType: TripType;
   /** Placeholder trip estimates - not derived from real map/routing data
    * yet, since none exists for this route. See RouteMeta in
    * parseRouteCsv.ts. */

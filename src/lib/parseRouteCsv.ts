@@ -1,4 +1,4 @@
-import type { NavigationStep, Route, TurnDirection } from "./types";
+import type { NavigationStep, Route, TripType, TurnDirection } from "./types";
 
 export interface RouteMeta {
   name: string;
@@ -6,6 +6,7 @@ export interface RouteMeta {
   driverName: string;
   busNumber: string;
   departureTime: string;
+  tripType: TripType;
   distance: string;
   durationMinutes: number;
 }

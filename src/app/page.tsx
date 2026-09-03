@@ -11,11 +11,12 @@ import type { Route } from "@/lib/types";
 // distance/durationMinutes are placeholders - no real mileage/timing
 // data exists for this route yet.
 const ROUTE_META = {
-  name: "Bus 125 Route",
+  name: "Laverne Lake Elementary — Afternoon Drop Off",
   routeNumber: "125",
   driverName: "Otto Mann",
   busNumber: "125",
   departureTime: "3:30 PM",
+  tripType: "dropoff" as const,
   distance: "8.4 mi",
   durationMinutes: 28,
 };
