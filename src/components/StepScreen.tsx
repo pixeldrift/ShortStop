@@ -44,21 +44,29 @@ export function StepScreen({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none">
-      {/* Rider check-in - occupies the same fixed slot on every step (the
-          map used to live here), empty when there's nothing to check in,
-          so the header/content below never shift position between a
-          turn step and a stop step. */}
-      <div className="h-56 shrink-0 overflow-hidden px-4 pt-4">
+      {/* Top third of the screen, always reserved at the same height so
+          nothing below ever shifts. Normally the map; on a stop with
+          expected riders, the check-in box takes this spot instead. */}
+      <div className="relative h-[30vh] shrink-0 overflow-hidden">
+        <Image src="/assets/map-placeholder.jpg" alt="" fill className="object-cover" priority />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-3 text-center">
+          <p className="text-sm font-semibold text-white">
+            Demo only placeholder, not actual map
+          </p>
+        </div>
+
         {showRoster && (
-          <RiderCheckInBox roster={roster} onRiderTap={onRiderTap} onAddRider={onAddRider} />
+          <div className="absolute inset-0 bg-[var(--background)] p-3">
+            <RiderCheckInBox roster={roster} onRiderTap={onRiderTap} onAddRider={onAddRider} />
+          </div>
         )}
       </div>
 
       {/* Pinned header: always visible, doesn't scroll away */}
-      <div className="shrink-0 px-4">
+      <div className="shrink-0 px-4 pt-2">
         <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
 
-        <div className="mt-2 flex items-center justify-between">
+        <div className="mt-1 flex items-center justify-between">
           <p className="text-xs font-semibold tracking-wide text-zinc-500">
             Stop {stopProgressNumber} of {totalStops}
           </p>
@@ -69,14 +77,17 @@ export function StepScreen({
         </div>
       </div>
 
-      {/* Scrollable: progress bar + step content */}
+      {/* Remaining space: progress bar + step content. No scrolling - this
+          area's own content is sized (via clamp()) to fit whatever space
+          is left after the regions above/below it, which matters most on
+          the tablet-landscape viewports this is built for. */}
       <div
-        className="flex flex-1 touch-manipulation flex-col gap-3 overflow-y-auto p-4"
+        className="flex min-h-0 flex-1 touch-manipulation flex-col gap-2 overflow-hidden p-3"
         onClick={() => !paused && onAdvance()}
       >
         <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
 
-        <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
           {paused ? (
             <PausedContent />
           ) : isStop ? (
@@ -129,23 +140,28 @@ function TurnContent({ step }: { step: NavigationStep }) {
   return (
     <>
       {step.direction ? (
-        <TurnArrow direction={step.direction} className="h-32 w-32 sm:h-40 sm:w-40" />
+        <TurnArrow
+          direction={step.direction}
+          className="h-[clamp(4rem,16vh,9rem)] w-[clamp(4rem,16vh,9rem)]"
+        />
       ) : (
-        <h1 className="font-heading text-4xl font-black tracking-tight">{step.heading}</h1>
+        <h1 className="font-heading text-[clamp(1.25rem,4vh,2.25rem)] font-black tracking-tight">
+          {step.heading}
+        </h1>
       )}
 
       {step.subheading && (
-        <p className="font-heading text-5xl leading-tight font-black tracking-tight sm:text-6xl">
+        <p className="font-heading text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight">
           {step.subheading}
         </p>
       )}
 
-      {step.distance && <p className="text-xl text-zinc-500">{step.distance}</p>}
+      {step.distance && (
+        <p className="text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">{step.distance}</p>
+      )}
 
       {step.specialInstruction && (
-        <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-base">
-          {step.specialInstruction}
-        </p>
+        <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-sm">{step.specialInstruction}</p>
       )}
     </>
   );
@@ -154,27 +170,33 @@ function TurnContent({ step }: { step: NavigationStep }) {
 function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: number | null }) {
   return (
     <>
-      <div className="relative">
-        <Image src="/assets/pin.png" alt="" width={350} height={548} className="h-28 w-auto sm:h-36" />
+      <div className="relative shrink-0">
+        <Image
+          src="/assets/pin.png"
+          alt=""
+          width={350}
+          height={548}
+          className="h-[clamp(4rem,16vh,9rem)] w-auto"
+        />
         {stopNumber && (
-          <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-3xl font-black text-red-700 sm:text-4xl">
+          <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[clamp(1.25rem,4.5vh,2.5rem)] font-black text-red-700">
             {stopNumber}
           </span>
         )}
       </div>
 
       {step.subheading && (
-        <p className="font-heading text-5xl leading-tight font-black tracking-tight sm:text-6xl">
+        <p className="font-heading text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight">
           {step.subheading}
         </p>
       )}
 
-      {step.sideOfRoad && <p className="text-zinc-500">Stop on {step.sideOfRoad} side</p>}
+      {step.sideOfRoad && (
+        <p className="text-[clamp(0.75rem,2vh,1rem)] text-zinc-500">Stop on {step.sideOfRoad} side</p>
+      )}
 
       {step.specialInstruction && (
-        <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-base">
-          {step.specialInstruction}
-        </p>
+        <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-sm">{step.specialInstruction}</p>
       )}
     </>
   );
@@ -191,7 +213,7 @@ function RiderCheckInBox({
 }) {
   return (
     <div
-      className="flex h-full w-full flex-col items-center justify-center overflow-y-auto rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
+      className="flex h-full w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex flex-wrap items-start justify-center gap-2">
@@ -236,7 +258,7 @@ function RiderCheckInBox({
 
 function PausedContent() {
   return (
-    <h1 className="font-heading text-5xl font-black tracking-tight text-zinc-500">
+    <h1 className="font-heading text-[clamp(1.75rem,7vh,3rem)] font-black tracking-tight text-zinc-500">
       Route Paused
     </h1>
   );

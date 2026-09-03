@@ -25,7 +25,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${openSans.variable} ${ubuntu.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col overscroll-none">{children}</body>
+      <body className="h-dvh flex flex-col overflow-hidden overscroll-none">{children}</body>
     </html>
   );
 }

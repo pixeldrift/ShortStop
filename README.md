@@ -148,25 +148,30 @@ text keeps the abbreviated form.
 
 ### Visual design
 
-The step screen (`StepScreen.tsx`) is split into four regions, top to
-bottom: a fixed-height rider slot, a pinned header, a scrollable middle
-(progress bar + step content), and a footer that's always pinned so
-Back/Pause/Continue never require scrolling to reach.
+Built for a tablet mounted on the dashboard, not a phone someone scrolls
+- so the whole app is locked to the viewport (`h-dvh overflow-hidden` on
+`body` in `layout.tsx`) and nothing on it scrolls, ever. The step screen
+(`StepScreen.tsx`) is split into four regions, top to bottom: a
+fixed-height top third, a pinned header, a flexible middle (progress bar
++ step content), and a pinned footer. Content that would otherwise
+overflow is scaled down to fit via CSS `clamp()` on font/icon sizes
+(more on that below) rather than being allowed to scroll or getting
+clipped - verified across both iPad portrait (820×1180) and iPad
+landscape (1180×820) viewports, landscape being the tighter fit and the
+more likely real orientation for a dash-mounted tablet.
 
-- **Rider slot**: a fixed-height (`h-56`) block at the very top of the
-  screen - where a placeholder map image lived at one point, since
-  removed. On a stop with expected riders it holds the rider check-in
-  box (see Rider check-in below, with its own internal scroll if there
-  are enough riders to overflow); on every other step it's simply empty.
-  Reserving the same height either way (rather than only rendering the
-  box when there's one, and collapsing the space otherwise) means the
-  header and main content below always sit at the identical vertical
-  position, whether the current step is a turn or a stop - confirmed by
-  comparing the header's on-screen position between the two rather than
-  just assuming the CSS does what it's supposed to.
+- **Top third**: a fixed-height (`h-[30vh]`) block at the very top of the
+  screen holding the placeholder map image at all times, *except* on a
+  stop with expected riders, where the rider check-in box (see Rider
+  check-in below) takes that same spot instead, overlaying the map.
+  Reserving the same height either way - map or roster, never neither -
+  means the header and main content below always sit at the identical
+  vertical position, whether the current step is a turn or a stop -
+  confirmed by comparing the header's on-screen position between the two
+  rather than just assuming the CSS does what it's supposed to.
 - **Header**: logo top-left, route number large and bold top-center
   (with a small "Route #" label above it), bus number top-right. Pinned
-  right below the rider slot, doesn't scroll away.
+  right below the top third, doesn't scroll away.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
   bar, dark border, dashed white center line. Turn steps get a small
   circular marker with a mini direction arrow; stop steps get a small
@@ -212,6 +217,19 @@ background-removed with a flood-fill script (border-connected near-white
 regions → transparent) before being added here, so they composite
 cleanly over the road bar and the rest of the UI. `turn-arrow.png`
 already had a transparent background as supplied.
+
+**Scaling to fit, not scrolling**: the turn/stop icon, the street name,
+and a few smaller labels use Tailwind arbitrary values like
+`text-[clamp(1.5rem,6vh,3.25rem)]` instead of fixed/breakpoint sizes -
+the middle value is a viewport-height percentage, so on a shorter
+viewport (landscape, where there's less vertical room) they shrink
+smoothly instead of overflowing; the min/max bounds keep them from ever
+getting illegibly small or absurdly large. This is a blunt instrument -
+it scales with viewport height only, not with how much content a
+specific step actually has - but it's what keeps a route with a longer
+street name or a special instruction from silently overflowing the
+fixed space in landscape, which is the failure mode that matters most
+here given no scrolling is allowed.
 
 ### Rider check-in
 
@@ -264,9 +282,11 @@ drop-offs modeled yet - see Next steps).
 - Move route data into the doc's actual data model
   (District/School/Route/RouteStop/etc.) instead of a flat CSV, once
   there's more than one route
-- Real map integration - there's no map at all right now (the earlier
-  placeholder image was removed, see Visual design), so this is starting
-  from scratch, not swapping out a placeholder
+- Real map integration in place of the placeholder image, tied to
+  wherever the bus actually is - and once that's real, decide how it
+  should coexist with the rider check-in box that currently overlays the
+  same spot on a stop (side by side? a toggle? the box just wins, like
+  now?)
 - GPS-based auto-advance as students are picked up / stops are passed —
   the doc treats manual button-advance as the first-prototype mechanism
   and GPS auto-advance as a later step
@@ -280,6 +300,12 @@ drop-offs modeled yet - see Next steps).
 - A native driver app remains the doc's long-term plan for the
   GPS/background/offline-heavy driver experience; this web prototype is
   step one, not a replacement for that
+- The no-scroll/clamp() approach was tested on two specific iPad-sized
+  viewports (see Visual design), not the full range of real tablets -
+  a smaller/older tablet in landscape, or a rider count much higher than
+  this route's max of 10, could still overflow the fixed regions and get
+  silently clipped rather than scrolling, since scrolling is deliberately
+  disabled everywhere
 - Named-rider attendance, as an opt-in for smaller schools/districts
   that want that level of tracking instead of just a headcount by
   number - would need real student rosters per stop (privacy/FERPA
