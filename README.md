@@ -226,6 +226,18 @@ landscape (1180×820) viewports.
   turn or a stop - confirmed by comparing the header's on-screen position
   between the two rather than just assuming the CSS does what it's
   supposed to.
+
+  In portrait, the map only gives up its own height (`shrink-0` →
+  `shrink` plus a `min-h-[4.5rem]` floor) when `useFitLines` reports the
+  *current step's* street name genuinely can't fit its two-line baseline
+  - `StepScreen`'s `needsMoreRoom` state, fed by an `onOverflow` callback
+  threaded through `useFitLines`. It used to shrink reactively any time
+  the viewport was tight, which meant it was often smaller than it
+  needed to be - there was slack sitting unused elsewhere in the column
+  while the map (and the rider check-in card floating over it) got
+  squeezed for no reason. Gating the shrink on the actual two-line
+  overflow signal instead of generic flex pressure means the map only
+  gets smaller on the rare step where a street name truly needs it.
 - **Map/content divider**: a thin glossy blue bar (`.btn-glossy`, the
   same bevel/shadow/highlight treatment as the buttons) between the
   map/rider region and everything else - a horizontal bar under the map
@@ -233,7 +245,11 @@ landscape (1180×820) viewports.
 - **Header**: logo top-left, route number large and bold top-center
   (with a small "Route #" label above it), bus number top-right. Pinned
   at the top of the "everything else" region (below the map/rider region
-  in portrait, to its right in landscape), doesn't scroll away.
+  in portrait, to its right in landscape), doesn't scroll away. The "Stop
+  X of Y" caption and the "N onboard" rider-count badge below it were
+  both bumped up a size and to full black/bold weight - they started at
+  `text-xs font-semibold`, easy to lose track of at a glance while
+  driving.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
   bar, dark border, dashed white center line (precisely centered via
   `top-1/2 -translate-y-1/2`, not just `top-1/2` on a zero-height
@@ -273,13 +289,29 @@ landscape (1180×820) viewports.
   `-translate-y-1/2` there quietly floated the bus a full icon-height
   above the road instead of centering it, caught by measuring both
   elements' actual bounding boxes in a headless browser rather than
-  trusting the CSS by eye). Its horizontal position is clamped a bit
-  short of the track's own start/end so the icon (wider than a marker)
-  doesn't get clipped there. The container's `px-6` padding leaves enough
-  room that the cul-de-sac circles capping each end of the track (see
-  above) are never clipped either, even though they hang half outside
-  the track's own bounds - verified the same way, by measuring the
-  circles' rendered edges against the container's, at both true ends of
+  trusting the CSS by eye).
+
+  Horizontally, the bus now sits exactly at the true start (`left: 0`)
+  on the first step and exactly at the true end (`left: trackWidth`) on
+  the last, landing right on the cul-de-sac circle at either end instead
+  of stopping a little short of it - every step in between is already 48px
+  clear of both edges (`PX_PER_STEP`), so no separate inset/clamp is
+  needed there. Getting the icon to actually *reach* those exact edges
+  surfaced a real CSS bug along the way: the bus (and, at the very last
+  stop, the last pin marker too) would collapse to zero width right at
+  the route's true end - not a rendering glitch, but the standard CSS
+  behavior for an absolutely positioned box with `left` set and no
+  explicit width: its shrink-to-fit size is bounded by "containing block
+  width minus `left`", which hits exactly zero once `left` reaches the
+  track's own width. `w-max` (`width: max-content`) on both the bus and
+  marker wrappers fixes it by sizing to the image's own content instead
+  of that (nonexistent) available space - confirmed by measuring the
+  bus's rendered width at every single step of a full route, which held
+  constant instead of tapering off to 0 right at the end. The container's
+  generous `px-8` padding leaves enough room that neither the bus nor the
+  cul-de-sac circles capping each end of the track (see above) are ever
+  clipped there, even at the exact edges - verified the same way, by
+  measuring rendered edges against the container's at both true ends of
   the route.
 - **Progress caption**: "Stop X of Y" rather than a raw instruction
   count - the number of turn steps between stops isn't meaningful to a
@@ -301,18 +333,21 @@ landscape (1180×820) viewports.
   m" line, which the header's "Stop X of Y" caption already covers. Same
   street-name treatment as turn steps. Which side of the road the stop
   is on (`step.sideOfRoad`, from the CSV's `side` column) is shown as a
-  filled triangle (`TriangleIcon`, the same shape used on the Back/Next
-  buttons) right next to the pin - on the pin's left for a left-side
-  stop, its right for a right-side stop - colored to match the pin
-  art's own red (`#d54e48`, sampled from the pixels in `pin.png` itself
-  rather than guessed, since Tailwind's `red-700` turned out noticeably
-  more brick-red than the art). It's a bare triangle now, not a button -
-  an earlier version wrapped it in a glossy circular badge, which read
-  as another tappable control next to a pin that isn't one; it's also
-  scaled to two-thirds width relative to its height (unlike the
-  perfectly-triangular `TriangleIcon` on the actual buttons) so the
-  point reads as a softer, more "which-way" directional hint than a
-  sharp arrowhead. It's positioned at `top-[31%]` with `-translate-y-1/2`,
+  filled triangle (`RoundedTriangleIcon`, a softer-cornered cousin of the
+  `TriangleIcon` on the Back/Next buttons - same fill/stroke color, but
+  `strokeLinejoin="round"` on a stroke matching the fill rounds off the
+  corners instead of a crisp point, matching a reference play-style icon)
+  right next to the pin - on the pin's left for a left-side stop, its
+  right for a right-side stop - colored to match the pin art's own red
+  (`#d54e48`, sampled from the pixels in `pin.png` itself rather than
+  guessed, since Tailwind's `red-700` turned out noticeably more
+  brick-red than the art). It's a bare triangle, not a button - an
+  earlier version wrapped it in a glossy circular badge, which read as
+  another tappable control next to a pin that isn't one; it's also
+  narrow - half its height in width (trimmed down again from an initial
+  two-thirds) - so the point reads as a soft, low-key "which-way"
+  directional hint rather than competing with the pin for attention.
+  It's positioned at `top-[31%]` with `-translate-y-1/2`,
   the exact same anchor the stop-number span uses, so its center lines
   up with the center of the pin's white circle/number regardless of how
   big the pin itself is rendering at a given viewport height. This
@@ -320,13 +355,19 @@ landscape (1180×820) viewports.
   conveyed visually instead - which freed up that line for notes (see
   below).
 - **Controls**: filled-triangle Back/advance buttons with a round, blue
-  Pause button between them. The advance button always reads "Next" now,
-  on both turn and stop steps - it used to switch to "Continue Route" on
-  stops, but that made the same button read differently depending on
-  step type for no real benefit, and the rider check-in box now has its
-  own dedicated advance control (see Rider check-in below) for the "I've
-  checked riders in, keep driving" case. Pausing shows a "Route Paused"
-  message in place of the step content, disables both buttons and
+  Pause button between them. The advance button reads "Next" on an
+  ordinary step, but "Start" on the very first step and "End" on the
+  very last - it used to just say "Next" throughout, with the button
+  disabled entirely once the driver reached the last step, which left no
+  way to explicitly wrap up the trip. Tapping "End" announces "Route
+  ended.", then resets and returns to the start screen (`endRoute` in
+  `useRouteStepper.ts` - it stops the silent keep-alive audio, clears the
+  step index/pause state/"has announced start" flag, and hands control
+  back to `RouteApp`, which renders `StartScreen` again once `started`
+  goes false) - confirmed a subsequent "Start Route" tap begins clean
+  from step one, "Starting route." and all, rather than picking up where
+  the previous trip left off. Pausing shows a "Route Paused" message in
+  place of the step content, disables both buttons and
   screen-tap-to-advance, stops the spoken announcement, and - since the
   Bluetooth remote is the primary input - ignores
   `nexttrack`/`previoustrack`/`play` events from it too, so a stray
@@ -424,11 +465,12 @@ expected rider (`step.studentCount`, from the CSV's `rider_count`),
 numbered underneath - every circle uses the same solid person icon
 (color/fill is what changes on check-in, not the icon style), ringed
 with a `border-blue-600` outline so the circles read clearly against the
-cream background instead of blending into it, gray/outlined when not yet
-checked in, green when checked in. No caption explains this above the
-buttons; the pattern
-(tap a number, it and everything before it goes green) is meant to read
-as self-evident, like a star rating. Tapping rider N checks in everyone
+cream background instead of blending into it, gray when not yet checked
+in, filled solid blue (matching that same outline, not a separate green -
+one consistent color for "checked in" rather than two blues-and-greens
+competing) when checked in. No caption explains this above the buttons;
+the pattern (tap a number, it and everything before it fills in) is
+meant to read as self-evident, like a star rating. Tapping rider N checks in everyone
 from 1 through N and un-checks anyone after N, rather than toggling one
 at a time (`fillTo` in `useRiderRoster.ts`) - there's no separate "check
 all" control, since tapping the last rider does that. **Additional

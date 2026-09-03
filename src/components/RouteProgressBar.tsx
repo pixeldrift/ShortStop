@@ -69,15 +69,16 @@ export function RouteProgressBar({
 
   const maskImage = buildFadeMask(showLeftFade, showRightFade);
 
-  // The bus icon is wide enough that letting it sit exactly at the
-  // track's own start/end would push part of it past the track edge -
-  // keep it a little inside.
-  const busPx = Math.min(trackWidth - 12, Math.max(12, currentPx));
+  // Every step in between is spaced 48px apart (PX_PER_STEP), well clear
+  // of the track's own edges, so the bus only ever needs the true start
+  // (0) or true end (trackWidth) positions - it's meant to visibly pull
+  // onto the cul-de-sac circle at either end, not stop just short of it.
+  const busPx = currentPx;
 
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-hidden px-6 pt-1"
+      className="w-full overflow-hidden px-8 pt-1"
       style={{ WebkitMaskImage: maskImage, maskImage }}
     >
       <div
@@ -90,7 +91,7 @@ export function RouteProgressBar({
           return (
             <div
               key={step.id}
-              className="absolute bottom-5 -translate-x-1/2"
+              className="absolute bottom-5 w-max -translate-x-1/2"
               style={{ left: pixelFor(index) }}
             >
               {step.kind === "stop" ? (
@@ -116,9 +117,10 @@ export function RouteProgressBar({
           <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/90" />
 
           {/* Cul-de-sacs: a circle a little larger than the road's own
-              height, straddling each true end of the route. The
-              container's px-6 leaves enough room that the half of each
-              circle hanging past the track's edge is never clipped. */}
+              height, straddling each true end of the route. The bus icon
+              (wider than the circle) also sits right on top of one at
+              the true start/end - the container's generous px-8 leaves
+              enough room that neither is ever clipped there. */}
           <div className="absolute top-1/2 left-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400" />
           <div className="absolute top-1/2 left-full h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400" />
         </div>
@@ -130,9 +132,17 @@ export function RouteProgressBar({
             down by half its own height) is what actually lands the
             bus's center there - translate-y here with a *negative* sign
             would push the anchor an extra half-icon-height too high,
-            floating the bus above the road instead of on it. */}
+            floating the bus above the road instead of on it. w-max is
+            load-bearing, not decorative: an absolutely positioned box
+            with `left` set and `width: auto` (Tailwind's unset default)
+            shrink-to-fits within "containing-block width minus left" -
+            which hits zero once `left` reaches the track's own width
+            (i.e. right at the final stop), squeezing the bus to nothing
+            right as it should be pulling into the end cul-de-sac.
+            width: max-content sizes to the image's own content instead,
+            ignoring that (nonexistent) available space. */}
         <div
-          className="absolute bottom-2 z-10 -translate-x-1/2 translate-y-1/2 transition-[left] duration-300 ease-out"
+          className="absolute bottom-2 z-10 w-max -translate-x-1/2 translate-y-1/2 transition-[left] duration-300 ease-out"
           style={{ left: busPx }}
         >
           <Image

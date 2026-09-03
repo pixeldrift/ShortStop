@@ -1,8 +1,9 @@
 import Image from "next/image";
+import { useState } from "react";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
-import { PauseIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
+import { PauseIcon, PersonSolidIcon, RoundedTriangleIcon, TriangleIcon, TurnArrow } from "./icons";
 import { useFitLines } from "@/lib/useFitLines";
 import type { NavigationStep, Route } from "@/lib/types";
 
@@ -19,6 +20,7 @@ export function StepScreen({
   onAdvance,
   onBack,
   onTogglePause,
+  onEndRoute,
   roster,
   totalOnboard,
   onRiderTap,
@@ -36,6 +38,7 @@ export function StepScreen({
   onAdvance: () => void;
   onBack: () => void;
   onTogglePause: () => void;
+  onEndRoute: () => void;
   roster: boolean[];
   totalOnboard: number;
   onRiderTap: (index: number) => void;
@@ -44,13 +47,27 @@ export function StepScreen({
   const isStop = step.kind === "stop";
   const showRoster = !paused && isStop && roster.length > 0;
 
+  // The map only gives up its own space when the current step's street
+  // name genuinely can't fit its two-line baseline (useFitLines's own
+  // shrink-fallback engaging) - not just because the viewport is short.
+  // Otherwise the map stayed needlessly small on ordinary steps, with
+  // room to spare below it that was never actually being used, and it
+  // was cramping the rider check-in card for no reason.
+  const [textOverflowed, setNeedsMoreRoom] = useState(false);
+  const needsMoreRoom = !paused && textOverflowed;
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none landscape:flex-row">
       {/* Top third of the screen in portrait / left column in landscape -
           always reserved at the same size so nothing else ever shifts.
           Normally the map; on a stop with expected riders, the check-in
           box takes this spot instead. */}
-      <div className="relative h-[30vh] w-full min-h-[4.5rem] shrink overflow-hidden landscape:h-full landscape:min-h-0 landscape:shrink-0 landscape:w-[42%]">
+      <div
+        className={
+          "relative h-[30vh] w-full overflow-hidden landscape:h-full landscape:min-h-0 landscape:shrink-0 landscape:w-[42%] " +
+          (needsMoreRoom ? "min-h-[4.5rem] shrink" : "shrink-0")
+        }
+      >
         <Image src="/assets/map-placeholder.jpg" alt="" fill className="object-cover" priority />
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-3 text-center">
           <p className="text-sm font-semibold text-white">
@@ -90,11 +107,11 @@ export function StepScreen({
           <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
 
           <div className="mt-1 flex items-center justify-between">
-            <p className="text-xs font-semibold tracking-wide text-zinc-500">
+            <p className="font-heading text-sm font-black tracking-wide text-zinc-600">
               Stop {stopProgressNumber} of {totalStops}
             </p>
-            <div className="flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600">
-              <PersonSolidIcon className="h-3 w-3" />
+            <div className="flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-1 text-sm font-bold text-zinc-700">
+              <PersonSolidIcon className="h-4 w-4" />
               {totalOnboard} onboard
             </div>
           </div>
@@ -118,9 +135,9 @@ export function StepScreen({
             {paused ? (
               <PausedContent />
             ) : isStop ? (
-              <StopContent step={step} stopNumber={stopNumber} />
+              <StopContent step={step} stopNumber={stopNumber} onNeedsMoreRoom={setNeedsMoreRoom} />
             ) : (
-              <TurnContent step={step} />
+              <TurnContent step={step} onNeedsMoreRoom={setNeedsMoreRoom} />
             )}
           </StepTransition>
         </div>
@@ -155,12 +172,13 @@ export function StepScreen({
 
           <button
             type="button"
-            onClick={onAdvance}
-            disabled={isLastStep || paused}
-            aria-label="Next"
+            onClick={isLastStep ? onEndRoute : onAdvance}
+            disabled={paused}
+            aria-label={isFirstStep ? "Start" : isLastStep ? "End" : "Next"}
             className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
           >
-            Next <TriangleIcon direction="right" className="h-6 w-6" />
+            {isFirstStep ? "Start" : isLastStep ? "End" : "Next"}{" "}
+            <TriangleIcon direction="right" className="h-6 w-6" />
           </button>
         </div>
       </div>
@@ -168,8 +186,14 @@ export function StepScreen({
   );
 }
 
-function TurnContent({ step }: { step: NavigationStep }) {
-  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
+function TurnContent({
+  step,
+  onNeedsMoreRoom,
+}: {
+  step: NavigationStep;
+  onNeedsMoreRoom: (needsMore: boolean) => void;
+}) {
+  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2, 0.55, onNeedsMoreRoom);
 
   return (
     <>
@@ -205,8 +229,16 @@ function TurnContent({ step }: { step: NavigationStep }) {
   );
 }
 
-function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: number | null }) {
-  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
+function StopContent({
+  step,
+  stopNumber,
+  onNeedsMoreRoom,
+}: {
+  step: NavigationStep;
+  stopNumber: number | null;
+  onNeedsMoreRoom: (needsMore: boolean) => void;
+}) {
+  const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2, 0.55, onNeedsMoreRoom);
 
   return (
     <>
@@ -224,10 +256,10 @@ function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: n
           </span>
         )}
         {step.sideOfRoad && (
-          <TriangleIcon
+          <RoundedTriangleIcon
             direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
             className={
-              "absolute top-[31%] h-[clamp(1.75rem,6vh,3rem)] w-[clamp(1.15rem,4vh,2rem)] -translate-y-1/2 text-[#d54e48] " +
+              "absolute top-[31%] h-[clamp(1.75rem,6vh,3rem)] w-[clamp(0.875rem,3vh,1.5rem)] -translate-y-1/2 text-[#d54e48] " +
               (step.sideOfRoad.toLowerCase() === "left" ? "right-full mr-1.5" : "left-full ml-1.5")
             }
           />
@@ -279,10 +311,8 @@ function RiderCheckInBox({
           >
             <span
               className={
-                "flex h-11 w-11 items-center justify-center rounded-full border-2 transition-colors " +
-                (checked
-                  ? "border-blue-600 bg-green-600 text-white"
-                  : "border-blue-600 bg-zinc-100 text-zinc-400")
+                "flex h-11 w-11 items-center justify-center rounded-full border-2 border-blue-600 transition-colors " +
+                (checked ? "bg-blue-600 text-white" : "bg-zinc-100 text-zinc-400")
               }
             >
               <PersonSolidIcon className="h-6 w-6" />

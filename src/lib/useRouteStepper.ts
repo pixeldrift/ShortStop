@@ -191,6 +191,25 @@ export function useRouteStepper(route: Route) {
     };
   }, []);
 
+  // Tapping "End" on the last step: announce completion, then return to
+  // the start screen. Resets everything (index/pause/announcement-start
+  // flag, silent audio) so a subsequent "Start Route" begins clean -
+  // this doesn't unmount the hook (RouteApp keeps calling it regardless
+  // of `started`), so that reset has to happen explicitly here rather
+  // than relying on the unmount cleanup above.
+  const endRoute = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance("Route ended."));
+    }
+    audioRef.current?.pause();
+    audioRef.current = null;
+    announcedStartRef.current = false;
+    setPaused(false);
+    setCurrentIndex(0);
+    setStarted(false);
+  }, []);
+
   return {
     currentStep,
     currentIndex,
@@ -206,5 +225,6 @@ export function useRouteStepper(route: Route) {
     goBack,
     paused,
     togglePause,
+    endRoute,
   };
 }
