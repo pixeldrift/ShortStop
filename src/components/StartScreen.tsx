@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
-import { TriangleIcon } from "./icons";
+import { MapPinIcon, TriangleIcon } from "./icons";
 import { addMinutesToTimeString } from "@/lib/time";
 import type { Route } from "@/lib/types";
 
@@ -60,7 +60,13 @@ export function StartScreen({
           <dt className="text-zinc-500">Departure</dt>
           <dd className="text-left font-medium">{route.departureTime}</dd>
           <dt className="text-zinc-500">School</dt>
-          <dd className="text-left font-medium">Laverne Lake Elementary</dd>
+          <dd className="text-left font-medium">
+            <p>Laverne Lake Elementary</p>
+            <p className="mt-0.5 flex items-center gap-1 text-xs font-normal text-zinc-500">
+              <MapPinIcon className="h-3 w-3 shrink-0" />
+              1425 Lake Forest Dr, Smyrna, TN 37167
+            </p>
+          </dd>
           <dt className="text-zinc-500">Stops</dt>
           <dd className="text-left font-medium">{totalStops}</dd>
           <dt className="text-zinc-500">~Riders</dt>
