@@ -151,27 +151,33 @@ text keeps the abbreviated form.
 Built for a tablet mounted on the dashboard, not a phone someone scrolls
 - so the whole app is locked to the viewport (`h-dvh overflow-hidden` on
 `body` in `layout.tsx`) and nothing on it scrolls, ever. The step screen
-(`StepScreen.tsx`) is split into four regions, top to bottom: a
-fixed-height top third, a pinned header, a flexible middle (progress bar
-+ step content), and a pinned footer. Content that would otherwise
-overflow is scaled down to fit via CSS `clamp()` on font/icon sizes
-(more on that below) rather than being allowed to scroll or getting
-clipped - verified across both iPad portrait (820×1180) and iPad
-landscape (1180×820) viewports, landscape being the tighter fit and the
-more likely real orientation for a dash-mounted tablet.
+(`StepScreen.tsx`) is split into a map/rider region and everything else
+(header, progress bar, step content, footer) - stacked map-on-top in
+portrait, side by side map-on-the-left in landscape, via Tailwind's
+`landscape:` variant (`flex-col landscape:flex-row` on the root, with
+the map/rider region switching from `h-[30vh] w-full` to
+`landscape:h-full landscape:w-[42%]`). Landscape is the more likely real
+orientation for a dash-mounted tablet, and the one where stacking would
+have wasted the most width on an unused map. Content that would
+otherwise overflow is scaled down to fit via CSS `clamp()` on font/icon
+sizes (more on that below) rather than being allowed to scroll or
+getting clipped - verified across both iPad portrait (820×1180) and iPad
+landscape (1180×820) viewports.
 
-- **Top third**: a fixed-height (`h-[30vh]`) block at the very top of the
-  screen holding the placeholder map image at all times, *except* on a
-  stop with expected riders, where the rider check-in box (see Rider
-  check-in below) takes that same spot instead, overlaying the map.
-  Reserving the same height either way - map or roster, never neither -
-  means the header and main content below always sit at the identical
-  vertical position, whether the current step is a turn or a stop -
-  confirmed by comparing the header's on-screen position between the two
-  rather than just assuming the CSS does what it's supposed to.
+- **Map/rider region**: a fixed-size block - the top third in portrait,
+  the left 42% in landscape - holding the placeholder map image at all
+  times, *except* on a stop with expected riders, where the rider
+  check-in box (see Rider check-in below) takes that same spot instead,
+  overlaying the map. Reserving the same size either way - map or
+  roster, never neither - means the header and main content in the rest
+  of the screen always sit at the identical position, whether the
+  current step is a turn or a stop - confirmed by comparing the header's
+  on-screen position between the two rather than just assuming the CSS
+  does what it's supposed to.
 - **Header**: logo top-left, route number large and bold top-center
   (with a small "Route #" label above it), bus number top-right. Pinned
-  right below the top third, doesn't scroll away.
+  at the top of the "everything else" region (below the map/rider region
+  in portrait, to its right in landscape), doesn't scroll away.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
   bar, dark border, dashed white center line. Turn steps get a small
   circular marker with a mini direction arrow; stop steps get a small

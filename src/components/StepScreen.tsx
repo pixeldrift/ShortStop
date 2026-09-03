@@ -43,11 +43,12 @@ export function StepScreen({
   const showRoster = !paused && isStop && roster.length > 0;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden select-none">
-      {/* Top third of the screen, always reserved at the same height so
-          nothing below ever shifts. Normally the map; on a stop with
-          expected riders, the check-in box takes this spot instead. */}
-      <div className="relative h-[30vh] shrink-0 overflow-hidden">
+    <div className="flex flex-1 flex-col overflow-hidden select-none landscape:flex-row">
+      {/* Top third of the screen in portrait / left column in landscape -
+          always reserved at the same size so nothing else ever shifts.
+          Normally the map; on a stop with expected riders, the check-in
+          box takes this spot instead. */}
+      <div className="relative h-[30vh] w-full shrink-0 overflow-hidden landscape:h-full landscape:w-[42%]">
         <Image src="/assets/map-placeholder.jpg" alt="" fill className="object-cover" priority />
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-3 text-center">
           <p className="text-sm font-semibold text-white">
@@ -62,75 +63,84 @@ export function StepScreen({
         )}
       </div>
 
-      {/* Pinned header: always visible, doesn't scroll away */}
-      <div className="shrink-0 px-4 pt-2">
-        <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
+      {/* Everything else - stacked below the top third in portrait, to its
+          right (its own column) in landscape. */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Pinned header: always visible, doesn't scroll away */}
+        <div className="shrink-0 px-4 pt-2">
+          <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
 
-        <div className="mt-1 flex items-center justify-between">
-          <p className="text-xs font-semibold tracking-wide text-zinc-500">
-            Stop {stopProgressNumber} of {totalStops}
-          </p>
-          <div className="flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-            <PersonSolidIcon className="h-3 w-3" />
-            {totalOnboard} onboard
+          <div className="mt-1 flex items-center justify-between">
+            <p className="text-xs font-semibold tracking-wide text-zinc-500">
+              Stop {stopProgressNumber} of {totalStops}
+            </p>
+            <div className="flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+              <PersonSolidIcon className="h-3 w-3" />
+              {totalOnboard} onboard
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Remaining space: progress bar + step content. No scrolling - this
-          area's own content is sized (via clamp()) to fit whatever space
-          is left after the regions above/below it, which matters most on
-          the tablet-landscape viewports this is built for. */}
-      <div
-        className="flex min-h-0 flex-1 touch-manipulation flex-col gap-2 overflow-hidden p-3"
-        onClick={() => !paused && onAdvance()}
-      >
-        <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
+        {/* Remaining space: progress bar + step content. No scrolling -
+            this area's own content is sized (via clamp()) to fit
+            whatever space is left after the regions above/below it,
+            which matters most on the tablet-landscape viewports this is
+            built for. */}
+        <div
+          className="flex min-h-0 flex-1 touch-manipulation flex-col gap-2 overflow-hidden p-3"
+          onClick={() => !paused && onAdvance()}
+        >
+          <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
 
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
-          {paused ? (
-            <PausedContent />
-          ) : isStop ? (
-            <StopContent step={step} stopNumber={stopNumber} />
-          ) : (
-            <TurnContent step={step} />
-          )}
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-center">
+            {paused ? (
+              <PausedContent />
+            ) : isStop ? (
+              <StopContent step={step} stopNumber={stopNumber} />
+            ) : (
+              <TurnContent step={step} />
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Footer - pinned */}
-      <div
-        className="flex w-full max-w-md shrink-0 items-center gap-3 self-center p-4 pt-0"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          onClick={onBack}
-          disabled={isFirstStep || paused}
-          aria-label="Back"
-          className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-zinc-100 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800"
+        {/* Footer - pinned */}
+        <div
+          className="flex w-full max-w-md shrink-0 items-center gap-3 self-center p-4 pt-0"
+          onClick={(e) => e.stopPropagation()}
         >
-          <TriangleIcon direction="left" className="h-6 w-6" /> Back
-        </button>
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={isFirstStep || paused}
+            aria-label="Back"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-zinc-100 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800"
+          >
+            <TriangleIcon direction="left" className="h-6 w-6" /> Back
+          </button>
 
-        <button
-          type="button"
-          onClick={onTogglePause}
-          aria-label={paused ? "Resume route" : "Pause route"}
-          className="btn-glossy flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
-        >
-          {paused ? <TriangleIcon direction="right" className="h-6 w-6" /> : <PauseIcon className="h-6 w-6" />}
-        </button>
+          <button
+            type="button"
+            onClick={onTogglePause}
+            aria-label={paused ? "Resume route" : "Pause route"}
+            className="btn-glossy flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
+          >
+            {paused ? (
+              <TriangleIcon direction="right" className="h-6 w-6" />
+            ) : (
+              <PauseIcon className="h-6 w-6" />
+            )}
+          </button>
 
-        <button
-          type="button"
-          onClick={onAdvance}
-          disabled={isLastStep || paused}
-          aria-label={isStop ? "Continue route" : "Next"}
-          className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
-        >
-          {isStop ? "Continue Route" : "Next"} <TriangleIcon direction="right" className="h-6 w-6" />
-        </button>
+          <button
+            type="button"
+            onClick={onAdvance}
+            disabled={isLastStep || paused}
+            aria-label={isStop ? "Continue route" : "Next"}
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
+          >
+            {isStop ? "Continue Route" : "Next"} <TriangleIcon direction="right" className="h-6 w-6" />
+          </button>
+        </div>
       </div>
     </div>
   );
