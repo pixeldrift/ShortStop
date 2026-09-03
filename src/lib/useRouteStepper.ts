@@ -69,7 +69,12 @@ export function useRouteStepper(route: Route) {
   // Speak the announcement for whatever step is current - but not while
   // paused. Each part (stop number / location / rider count) is queued
   // as its own utterance rather than joined into one string, so there's
-  // an audible pause between them instead of one run-on sentence.
+  // an audible pause between them instead of one run-on sentence. The
+  // very first announcement after the route starts is prefaced with
+  // "Starting route.", and the last step's is followed by "Route
+  // completed." - both queued alongside the step's own parts so a
+  // pause-triggered cancel() (below) can't wipe one out before it plays.
+  const announcedStartRef = useRef(false);
   useEffect(() => {
     if (
       !started ||
@@ -80,10 +85,18 @@ export function useRouteStepper(route: Route) {
       return;
     }
     window.speechSynthesis.cancel();
-    for (const part of currentStep.announcement) {
+    const parts = [...currentStep.announcement];
+    if (!announcedStartRef.current) {
+      parts.unshift("Starting route.");
+      announcedStartRef.current = true;
+    }
+    if (isLastStep) {
+      parts.push("Route completed.");
+    }
+    for (const part of parts) {
       window.speechSynthesis.speak(new SpeechSynthesisUtterance(part));
     }
-  }, [currentStep, started, paused]);
+  }, [currentStep, started, paused, isLastStep]);
 
   // Cancel any in-progress announcement the moment the route is paused.
   useEffect(() => {

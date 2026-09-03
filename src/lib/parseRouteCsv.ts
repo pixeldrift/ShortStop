@@ -20,7 +20,7 @@ function parseCsvLine(line: string): string[] {
 
 /**
  * Turns the doc's proposed CSV schema
- * (sequence,time,action,from_at,onto_at,rider_count,notes) into route
+ * (sequence,time,action,from_at,onto_at,rider_count,side,notes) into route
  * steps. Built for the real Bus 125 route sheet, which only records
  * turn-by-turn directions and stop locations - no times or special
  * instructions yet, so those fields come through empty.
@@ -32,8 +32,9 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
   const steps: NavigationStep[] = rows
     .filter((line) => line.trim().length > 0)
     .map((line, index) => {
-      const [, , action, fromAt, ontoAt, riderCount, notes] = parseCsvLine(line);
+      const [, , action, fromAt, ontoAt, riderCount, side, notes] = parseCsvLine(line);
       const studentCount = riderCount ? Number(riderCount) : undefined;
+      const sideOfRoad = side || undefined;
       const specialInstruction = notes || undefined;
 
       if (action.toLowerCase() === "stop") {
@@ -41,9 +42,12 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
         const subheading = ontoAt ? `${fromAt} & ${ontoAt}` : fromAt;
 
         // Spoken as separate parts - stop number, then location, then
-        // rider count - so there's a clear pause between each rather
-        // than one long sentence.
+        // side of the road, then rider count - so there's a clear pause
+        // between each rather than one long sentence.
         const announcement = [`Stop ${stopCounter}.`, `${speakRoadNames(subheading)}.`];
+        if (sideOfRoad) {
+          announcement.push(`On the ${sideOfRoad.toLowerCase()}.`);
+        }
         if (studentCount != null) {
           announcement.push(`${studentCount} rider${studentCount === 1 ? "" : "s"} expected.`);
         }
@@ -53,6 +57,7 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
           kind: "stop",
           subheading,
           studentCount,
+          sideOfRoad,
           specialInstruction,
           announcement,
         };

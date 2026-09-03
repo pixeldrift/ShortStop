@@ -88,15 +88,25 @@ Branch at `claude/ipad-iphone-nav-app-ss8dsk`, or merge that branch into
 
 ### Route data
 
-`public/data/route-125.csv` follows the doc's proposed CSV schema:
-`sequence,time,action,from_at,onto_at,rider_count,notes`. Transcribed
-from Bus 125's handwritten route sheet (turns as `Left`/`Right` with the
-road being left and the road being turned onto; `Stop` rows as the road
-plus cross street, or a bare address). A few rows only give one road name
-for a turn (e.g. row 12: `Left, Riverwood Ln`, `onto_at` blank) — the
-parser treats a lone value as the turn's destination, matching the source
-sheet's shorthand, but that's an interpretation worth double-checking
-against the original sheet.
+`public/data/route-125.csv` follows the doc's proposed CSV schema, plus
+one addition:
+`sequence,time,action,from_at,onto_at,rider_count,side,notes`.
+Transcribed from Bus 125's handwritten route sheet (turns as
+`Left`/`Right` with the road being left and the road being turned onto;
+`Stop` rows as the road plus cross street, or a bare address). A few rows
+only give one road name for a turn (e.g. row 12: `Left, Riverwood Ln`,
+`onto_at` blank) — the parser treats a lone value as the turn's
+destination, matching the source sheet's shorthand, but that's an
+interpretation worth double-checking against the original sheet.
+
+`side` (`Left`/`Right`) is only meaningful on `Stop` rows — which side of
+the road the stop is on, so the driver knows which way to expect riders
+without guessing from the map. The real route sheet doesn't record this
+yet, so every stop's value here is randomly assigned as a placeholder
+(see `StopContent` in `StepScreen.tsx` for the on-screen "Stop on the
+right/left side" line, and `parseRouteCsv.ts` for the spoken "On the
+right"/"On the left" announcement) — replace with the real values once
+they exist.
 
 ### Bluetooth hardware input
 
@@ -136,15 +146,24 @@ is generated from each CSV row's action/road names (see
 rather than polished driving directions.
 
 Each step's `announcement` is an array of parts, not one string - a stop
-speaks as three separate utterances ("Stop 3." / "Bill Stewart Road and
-Hidden Forest." / "5 riders expected."), queued individually via
-`speechSynthesis.speak()` in `useRouteStepper.ts` so there's an audible
-pause between each rather than one run-on sentence. Road-suffix
-abbreviations are spelled out for speech only (`speakRoadNames` in
-`src/lib/speech.ts`: "Rd" → "Road", "Ln" → "Lane", "Pkwy" → "Parkway",
-etc. - covers what's in `route-125.csv` plus the common USPS suffixes)
-so the TTS engine doesn't read "Rd" as a word or garble it; on-screen
-text keeps the abbreviated form.
+speaks as four separate utterances ("Stop 3." / "Bill Stewart Road and
+Hidden Forest." / "On the right." / "5 riders expected."), queued
+individually via `speechSynthesis.speak()` in `useRouteStepper.ts` so
+there's an audible pause between each rather than one run-on sentence.
+Road-suffix abbreviations are spelled out for speech only
+(`speakRoadNames` in `src/lib/speech.ts`: "Rd" → "Road", "Ln" → "Lane",
+"Pkwy" → "Parkway", etc. - covers what's in `route-125.csv` plus the
+common USPS suffixes) so the TTS engine doesn't read "Rd" as a word or
+garble it; on-screen text keeps the abbreviated form.
+
+The route itself also gets a "Starting route." announcement, spoken
+right before the first step's own announcement the moment the driver
+taps "Start Route", and a "Route completed." announcement, spoken right
+after the final step's own announcement. Both are queued in the same
+`speechSynthesis.speak()` batch as the step's own parts (in
+`useRouteStepper.ts`) rather than in a separate effect, since a separate
+effect's own `speechSynthesis.cancel()` call would otherwise wipe out
+whichever one queued first before it had a chance to play.
 
 ### Visual design
 
@@ -166,14 +185,20 @@ landscape (1180×820) viewports.
 
 - **Map/rider region**: a fixed-size block - the top third in portrait,
   the left 42% in landscape - holding the placeholder map image at all
-  times, *except* on a stop with expected riders, where the rider
-  check-in box (see Rider check-in below) takes that same spot instead,
-  overlaying the map. Reserving the same size either way - map or
-  roster, never neither - means the header and main content in the rest
-  of the screen always sit at the identical position, whether the
-  current step is a turn or a stop - confirmed by comparing the header's
-  on-screen position between the two rather than just assuming the CSS
-  does what it's supposed to.
+  times. On a stop with expected riders, the rider check-in box (see
+  Rider check-in below) floats over that same spot as its own opaque,
+  shadowed card, rather than replacing the map outright - the map stays
+  visible underneath, dimmed by an extra `bg-black/35` layer, so it never
+  fully disappears. Reserving the same size either way - map or
+  map-plus-roster, never neither - means the header and main content in
+  the rest of the screen always sit at the identical position, whether
+  the current step is a turn or a stop - confirmed by comparing the
+  header's on-screen position between the two rather than just assuming
+  the CSS does what it's supposed to.
+- **Map/content divider**: a thin glossy blue bar (`.btn-glossy`, the
+  same bevel/shadow/highlight treatment as the buttons) between the
+  map/rider region and everything else - a horizontal bar under the map
+  in portrait, a vertical bar to the map's right in landscape.
 - **Header**: logo top-left, route number large and bold top-center
   (with a small "Route #" label above it), bus number top-right. Pinned
   at the top of the "everything else" region (below the map/rider region
@@ -181,24 +206,28 @@ landscape (1180×820) viewports.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
   bar, dark border, dashed white center line (precisely centered via
   `top-1/2 -translate-y-1/2`, not just `top-1/2` on a zero-height
-  element, which left it a hair off). Turn steps get a small circular
-  marker with a mini direction arrow, sitting close above the road; stop
-  steps get a small map-pin marker. Every step gets its own marker at a
-  fixed 48px spacing (`PX_PER_STEP`) - no thinning/hiding - so a longer
-  route just makes the underlying track wider than the visible window
-  instead of crowding markers together. That window (`overflow-hidden`
-  outer container) shows a `ResizeObserver`-measured slice of the track,
-  auto-scrolled (via a CSS `transform: translateX()`, not native
-  scrolling - nothing on this app scrolls, see above) to keep the
-  current position roughly centered, clamped so it never scrolls past
-  either end of the track. A CSS `mask-image` fades whichever edge(s)
-  actually have hidden content - neither edge fades if the whole route
-  fits without scrolling, only the trailing edge fades near the very
-  start, only the leading edge fades near the very end. A bus icon rides
-  above the markers at the current position, with a yellow/black caret
-  pointing down at it close beneath it; its position is clamped a bit
-  short of the track's own start/end so the icon (wider than a marker)
-  doesn't get clipped there.
+  element, which left it a hair off), with a small circle - a little
+  larger than the bar's own height - capping each true end of the track
+  like a cul-de-sac. Turn steps get a small circular marker with a mini
+  direction arrow, raised a bit above the road (`bottom-7`); stop steps
+  get a small map-pin marker at the same height. Every step gets its own
+  marker at a fixed 48px spacing (`PX_PER_STEP`) - no thinning/hiding -
+  so a longer route just makes the underlying track wider than the
+  visible window instead of crowding markers together. That window
+  (`overflow-hidden` outer container) shows a `ResizeObserver`-measured
+  slice of the track, auto-scrolled (via a CSS `transform:
+  translateX()`, not native scrolling - nothing on this app scrolls, see
+  above) to keep the current position roughly centered, clamped so it
+  never scrolls past either end of the track. A CSS `mask-image` fades
+  whichever edge(s) actually have hidden content - neither edge fades if
+  the whole route fits without scrolling, only the trailing edge fades
+  near the very start, only the leading edge fades near the very end. A
+  bus icon sits directly overlaid on the road at the current position
+  (`bottom-2 -translate-y-1/2`, a `z-10` above the road/markers so it
+  visually rides on top of the bar rather than hovering above it with a
+  caret pointing down, which is what it did before); its position is
+  clamped a bit short of the track's own start/end so the icon (wider
+  than a marker) doesn't get clipped there.
 - **Progress caption**: "Stop X of Y" rather than a raw instruction
   count - the number of turn steps between stops isn't meaningful to a
   driver, so it always shows the stop just reached or the one being
@@ -216,9 +245,12 @@ landscape (1180×820) viewports.
   "STOP n of m" line, which the header's "Stop X of Y" caption already
   covers. Same large-street-name treatment as turn steps.
 - **Controls**: filled-triangle Back/advance buttons with a round, blue
-  Pause button between them. The advance button reads "Continue Route"
-  on stop steps (continuing the route is the point, once riders are
-  checked in) and "Next" on turn steps. Pausing shows a "Route Paused"
+  Pause button between them. The advance button always reads "Next" now,
+  on both turn and stop steps - it used to switch to "Continue Route" on
+  stops, but that made the same button read differently depending on
+  step type for no real benefit, and the rider check-in box now has its
+  own dedicated advance control (see Rider check-in below) for the "I've
+  checked riders in, keep driving" case. Pausing shows a "Route Paused"
   message in place of the step content, disables both buttons and
   screen-tap-to-advance, stops the spoken announcement, and - since the
   Bluetooth remote is the primary input - ignores
@@ -297,6 +329,12 @@ not, plus one additional rider checked) if the driver hasn't finished
 checking in the expected riders yet. That's intentional: the added rider
 is a real, separate event, not a retroactive claim that 3-5 also
 boarded.
+
+Below the roster, a **Resume Route** button (`aria-label="Continue
+route"`, same glossy blue styling as the footer's advance button, just
+smaller) calls the same `onAdvance` handler as the footer's "Next"
+button - added so a driver checking riders in doesn't have to look away
+from the roster down to the footer to keep driving once they're done.
 
 State lives in `useRiderRoster.ts`, instantiated once in `RouteApp`
 (`page.tsx`) rather than inside the stop screen itself, so it survives

@@ -58,11 +58,25 @@ export function StepScreen({
         </div>
 
         {showRoster && (
-          <div className="absolute inset-0 bg-[var(--background)] p-3">
-            <RiderCheckInBox roster={roster} onRiderTap={onRiderTap} onAddRider={onAddRider} />
-          </div>
+          <>
+            {/* Dim the map rather than hiding it - the check-in card
+                floats above it as its own opaque, shadowed panel. */}
+            <div className="absolute inset-0 bg-black/35" />
+            <div className="absolute inset-0 p-3">
+              <RiderCheckInBox
+                roster={roster}
+                onRiderTap={onRiderTap}
+                onAddRider={onAddRider}
+                onAdvance={onAdvance}
+              />
+            </div>
+          </>
         )}
       </div>
+
+      {/* Glossy blue divider between the map/rider region and the rest of
+          the pane - a horizontal bar in portrait, vertical in landscape. */}
+      <div className="btn-glossy h-1.5 w-full shrink-0 bg-blue-600 landscape:h-full landscape:w-1.5" />
 
       {/* Everything else - stacked below the top third in portrait, to its
           right (its own column) in landscape. */}
@@ -136,10 +150,10 @@ export function StepScreen({
             type="button"
             onClick={onAdvance}
             disabled={isLastStep || paused}
-            aria-label={isStop ? "Continue route" : "Next"}
+            aria-label="Next"
             className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
           >
-            {isStop ? "Continue Route" : "Next"} <TriangleIcon direction="right" className="h-6 w-6" />
+            Next <TriangleIcon direction="right" className="h-6 w-6" />
           </button>
         </div>
       </div>
@@ -213,7 +227,9 @@ function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: n
       )}
 
       {step.sideOfRoad && (
-        <p className="text-[clamp(0.75rem,2vh,1rem)] text-zinc-500">Stop on {step.sideOfRoad} side</p>
+        <p className="text-[clamp(0.75rem,2vh,1rem)] text-zinc-500">
+          Stop on the {step.sideOfRoad.toLowerCase()} side
+        </p>
       )}
 
       {step.specialInstruction && (
@@ -227,14 +243,16 @@ function RiderCheckInBox({
   roster,
   onRiderTap,
   onAddRider,
+  onAdvance,
 }: {
   roster: boolean[];
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
+  onAdvance: () => void;
 }) {
   return (
     <div
-      className="flex h-full w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
+      className="flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg dark:border-zinc-700"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex flex-wrap items-start justify-center gap-2">
@@ -273,6 +291,15 @@ function RiderCheckInBox({
           <span className="w-14 text-xs font-semibold text-zinc-500">Additional Rider</span>
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={onAdvance}
+        aria-label="Continue route"
+        className="btn-glossy font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+      >
+        Resume Route <TriangleIcon direction="right" className="h-4 w-4" />
+      </button>
     </div>
   );
 }

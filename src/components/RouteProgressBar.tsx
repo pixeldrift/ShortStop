@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDownIcon, TurnArrow } from "./icons";
+import { TurnArrow } from "./icons";
 import type { NavigationStep } from "@/lib/types";
 
 /** Fixed spacing between adjacent markers, so a long route just makes the
@@ -84,28 +84,13 @@ export function RouteProgressBar({
         className="relative h-24 transition-transform duration-300 ease-out"
         style={{ width: trackWidth, transform: `translateX(${offset}px)` }}
       >
-        {/* Bus + caret */}
-        <div
-          className="absolute bottom-11 flex -translate-x-1/2 flex-col items-center transition-[left] duration-300 ease-out"
-          style={{ left: busPx }}
-        >
-          <Image
-            src="/assets/bus.png"
-            alt=""
-            width={780}
-            height={465}
-            className="h-[1.5rem] w-auto drop-shadow-md sm:h-[1.875rem]"
-          />
-          <ChevronDownIcon className="mt-0.5 h-3 w-4" />
-        </div>
-
-        {/* Turn/stop markers - sitting close above the road */}
+        {/* Turn/stop markers - raised a bit higher above the road */}
         {steps.map((step, index) => {
           if (step.kind !== "turn" && step.kind !== "stop") return null;
           return (
             <div
               key={step.id}
-              className="absolute bottom-5 -translate-x-1/2"
+              className="absolute bottom-7 -translate-x-1/2"
               style={{ left: pixelFor(index) }}
             >
               {step.kind === "stop" ? (
@@ -129,6 +114,26 @@ export function RouteProgressBar({
           style={{ width: trackWidth }}
         >
           <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/90" />
+
+          {/* Cul-de-sacs: a circle a little larger than the road's own
+              height, straddling each true end of the route. */}
+          <div className="absolute top-1/2 left-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600" />
+          <div className="absolute top-1/2 left-full h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600" />
+        </div>
+
+        {/* Bus - overlaid directly on top of the road at the current
+            position, rather than hovering above it with a caret. */}
+        <div
+          className="absolute bottom-2 z-10 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-300 ease-out"
+          style={{ left: busPx }}
+        >
+          <Image
+            src="/assets/bus.png"
+            alt=""
+            width={780}
+            height={465}
+            className="h-[1.5rem] w-auto drop-shadow-md sm:h-[1.875rem]"
+          />
         </div>
       </div>
     </div>
