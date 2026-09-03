@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { RouteProgressBar } from "./RouteProgressBar";
+import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
 import { PauseIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
 import { useFitLines } from "@/lib/useFitLines";
@@ -92,7 +93,7 @@ export function StepScreen({
             <p className="text-xs font-semibold tracking-wide text-zinc-500">
               Stop {stopProgressNumber} of {totalStops}
             </p>
-            <div className="flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            <div className="flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold text-zinc-600">
               <PersonSolidIcon className="h-3 w-3" />
               {totalOnboard} onboard
             </div>
@@ -110,7 +111,10 @@ export function StepScreen({
         >
           <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
 
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center landscape:min-h-0">
+          <StepTransition
+            transitionKey={paused ? "paused" : `${step.id}`}
+            className="flex flex-1 flex-col items-center justify-center text-center landscape:min-h-0"
+          >
             {paused ? (
               <PausedContent />
             ) : isStop ? (
@@ -118,7 +122,7 @@ export function StepScreen({
             ) : (
               <TurnContent step={step} />
             )}
-          </div>
+          </StepTransition>
         </div>
 
         {/* Footer - pinned */}
@@ -131,7 +135,7 @@ export function StepScreen({
             onClick={onBack}
             disabled={isFirstStep || paused}
             aria-label="Back"
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-zinc-100 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-zinc-100 py-4 text-lg font-semibold disabled:opacity-40"
           >
             <TriangleIcon direction="left" className="h-6 w-6" /> Back
           </button>
@@ -172,7 +176,7 @@ function TurnContent({ step }: { step: NavigationStep }) {
       {step.direction ? (
         <TurnArrow
           direction={step.direction}
-          className="h-[clamp(4rem,16vh,9rem)] w-[clamp(4rem,16vh,9rem)]"
+          className="h-[clamp(3.5rem,14vh,8rem)] w-[clamp(3.5rem,14vh,8rem)]"
         />
       ) : (
         <h1 className="font-heading text-[clamp(1.25rem,4vh,2.25rem)] font-black tracking-tight">
@@ -183,7 +187,7 @@ function TurnContent({ step }: { step: NavigationStep }) {
       {step.subheading && (
         <p
           ref={subheadingRef}
-          className="font-heading min-h-[2.5em] text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight"
+          className="font-heading min-h-[2.5em] text-[clamp(1.35rem,5.25vh,2.75rem)] leading-tight font-black tracking-tight"
         >
           {step.subheading}
         </p>
@@ -193,9 +197,10 @@ function TurnContent({ step }: { step: NavigationStep }) {
         <p className="text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">{step.distance}</p>
       )}
 
-      {step.specialInstruction && (
-        <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-sm">{step.specialInstruction}</p>
-      )}
+      {/* Always rendered, even with no note, so the space is reserved
+          and nothing else shifts depending on whether this step has
+          one. */}
+      <p className="min-h-[1.4em] px-3 text-sm text-zinc-500">{step.specialInstruction}</p>
     </>
   );
 }
@@ -211,7 +216,7 @@ function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: n
           alt=""
           width={350}
           height={548}
-          className="h-[clamp(4rem,16vh,9rem)] w-auto"
+          className="h-[clamp(3.5rem,14vh,8rem)] w-auto"
         />
         {stopNumber && (
           <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[clamp(1.25rem,4.5vh,2.5rem)] font-black text-red-700">
@@ -219,33 +224,29 @@ function StopContent({ step, stopNumber }: { step: NavigationStep; stopNumber: n
           </span>
         )}
         {step.sideOfRoad && (
-          <div
+          <TriangleIcon
+            direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
             className={
-              "btn-glossy absolute top-[31%] flex h-[clamp(1.75rem,6vh,3rem)] w-[clamp(1.75rem,6vh,3rem)] -translate-y-1/2 items-center justify-center rounded-full bg-red-700 " +
-              (step.sideOfRoad.toLowerCase() === "left" ? "right-full mr-2" : "left-full ml-2")
+              "absolute top-[31%] h-[clamp(1.75rem,6vh,3rem)] w-[clamp(1.15rem,4vh,2rem)] -translate-y-1/2 text-[#d54e48] " +
+              (step.sideOfRoad.toLowerCase() === "left" ? "right-full mr-1.5" : "left-full ml-1.5")
             }
-            aria-hidden="true"
-          >
-            <TriangleIcon
-              direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
-              className="h-[55%] w-[55%] text-white"
-            />
-          </div>
+          />
         )}
       </div>
 
       {step.subheading && (
         <p
           ref={subheadingRef}
-          className="font-heading min-h-[2.5em] text-[clamp(1.5rem,6vh,3.25rem)] leading-tight font-black tracking-tight"
+          className="font-heading min-h-[2.5em] text-[clamp(1.35rem,5.25vh,2.75rem)] leading-tight font-black tracking-tight"
         >
           {step.subheading}
         </p>
       )}
 
-      {step.specialInstruction && (
-        <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-sm">{step.specialInstruction}</p>
-      )}
+      {/* Always rendered, even with no note, so the space is reserved
+          and nothing else shifts depending on whether this stop has
+          one. */}
+      <p className="min-h-[1.4em] px-3 text-sm text-zinc-500">{step.specialInstruction}</p>
     </>
   );
 }
@@ -263,7 +264,7 @@ function RiderCheckInBox({
 }) {
   return (
     <div
-      className="flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg dark:border-zinc-700"
+      className="flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex flex-wrap items-start justify-center gap-2">
@@ -281,7 +282,7 @@ function RiderCheckInBox({
                 "flex h-11 w-11 items-center justify-center rounded-full border-2 transition-colors " +
                 (checked
                   ? "border-blue-600 bg-green-600 text-white"
-                  : "border-blue-600 bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500")
+                  : "border-blue-600 bg-zinc-100 text-zinc-400")
               }
             >
               <PersonSolidIcon className="h-6 w-6" />
@@ -296,7 +297,7 @@ function RiderCheckInBox({
           aria-label="Add additional rider"
           className="flex flex-col items-center gap-0.5"
         >
-          <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-blue-600 bg-zinc-100 text-2xl leading-none font-bold text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-blue-600 bg-zinc-100 text-2xl leading-none font-bold text-zinc-400">
             +
           </span>
           <span className="w-14 text-xs font-semibold text-zinc-500">Additional Rider</span>

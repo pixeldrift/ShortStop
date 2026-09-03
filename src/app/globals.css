@@ -1,6 +1,13 @@
 @import "tailwindcss";
 
+/* This app has one fixed light theme - a tablet mounted on a bus
+   dashboard, not something a driver toggles dark mode on. Explicitly
+   pinning color-scheme (rather than leaving it to inherit "light dark"
+   from the UA default) stops the phone/tablet's own dark-mode
+   preference from swapping in a black background and unreadable text,
+   which is what happened before this was set. */
 :root {
+  color-scheme: light;
   --background: #f7f3ea;
   --foreground: #171717;
 }
@@ -10,13 +17,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-open-sans);
   --font-heading: var(--font-ubuntu);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
@@ -68,4 +68,40 @@ body {
 
 .animate-blink {
   animation: blink 1s step-end infinite;
+}
+
+/* Step content (icon + street name/signage) sliding in from below with a
+   small overshoot bounce as a new step becomes current, and the previous
+   step's content sliding up and out at the same time - see
+   StepTransition.tsx. The bounce comes entirely from the easing curve
+   (a "back-out" cubic-bezier that overshoots past its end value before
+   settling), not from extra keyframe steps. */
+@keyframes step-enter {
+  from {
+    transform: translateY(26px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-step-enter {
+  animation: step-enter 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes step-exit {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-26px);
+    opacity: 0;
+  }
+}
+
+.animate-step-exit {
+  animation: step-exit 0.28s ease-in both;
 }

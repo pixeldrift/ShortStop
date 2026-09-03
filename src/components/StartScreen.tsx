@@ -25,7 +25,7 @@ function LiveClock({ now }: { now: Date }) {
 
   return (
     <div
-      className="font-heading mt-2 inline-flex items-center gap-0.5 rounded-lg border border-zinc-300 px-3 py-1 dark:border-zinc-700"
+      className="font-heading mt-2 inline-flex items-center gap-0.5 rounded-lg border border-zinc-300 px-3 py-1"
       suppressHydrationWarning
     >
       <span className="text-xl font-extrabold tabular-nums">{hour12}</span>

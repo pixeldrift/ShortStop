@@ -77,20 +77,20 @@ export function RouteProgressBar({
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-hidden px-5 pt-1"
+      className="w-full overflow-hidden px-6 pt-1"
       style={{ WebkitMaskImage: maskImage, maskImage }}
     >
       <div
         className="relative h-24 transition-transform duration-300 ease-out"
         style={{ width: trackWidth, transform: `translateX(${offset}px)` }}
       >
-        {/* Turn/stop markers - raised a bit higher above the road */}
+        {/* Turn/stop markers - close above the road without touching it */}
         {steps.map((step, index) => {
           if (step.kind !== "turn" && step.kind !== "stop") return null;
           return (
             <div
               key={step.id}
-              className="absolute bottom-7 -translate-x-1/2"
+              className="absolute bottom-5 -translate-x-1/2"
               style={{ left: pixelFor(index) }}
             >
               {step.kind === "stop" ? (
@@ -110,23 +110,29 @@ export function RouteProgressBar({
 
         {/* The road */}
         <div
-          className="absolute bottom-0 h-4 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600"
+          className="absolute bottom-0 h-4 rounded-full border-2 border-zinc-600 bg-zinc-400"
           style={{ width: trackWidth }}
         >
           <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/90" />
 
           {/* Cul-de-sacs: a circle a little larger than the road's own
               height, straddling each true end of the route. The
-              container's px-5 leaves enough room that the half of each
+              container's px-6 leaves enough room that the half of each
               circle hanging past the track's edge is never clipped. */}
-          <div className="absolute top-1/2 left-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600" />
-          <div className="absolute top-1/2 left-full h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400 dark:border-zinc-500 dark:bg-zinc-600" />
+          <div className="absolute top-1/2 left-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400" />
+          <div className="absolute top-1/2 left-full h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400" />
         </div>
 
         {/* Bus - overlaid directly on top of the road at the current
-            position, rather than hovering above it with a caret. */}
+            position, rather than hovering above it with a caret. bottom-2
+            matches the road's own vertical center (h-4 at bottom-0, so
+            its center sits 0.5rem up); translate-y-1/2 (positive, i.e.
+            down by half its own height) is what actually lands the
+            bus's center there - translate-y here with a *negative* sign
+            would push the anchor an extra half-icon-height too high,
+            floating the bus above the road instead of on it. */}
         <div
-          className="absolute bottom-2 z-10 -translate-x-1/2 -translate-y-1/2 transition-[left] duration-300 ease-out"
+          className="absolute bottom-2 z-10 -translate-x-1/2 translate-y-1/2 transition-[left] duration-300 ease-out"
           style={{ left: busPx }}
         >
           <Image
@@ -134,7 +140,7 @@ export function RouteProgressBar({
             alt=""
             width={780}
             height={465}
-            className="h-[1.5rem] w-auto drop-shadow-md sm:h-[1.875rem]"
+            className="h-[1.5rem] w-auto drop-shadow-sm sm:h-[1.875rem]"
           />
         </div>
       </div>

@@ -114,9 +114,14 @@ Bill Stewart Rd & Ruth Ln has "Wheelchair user requires assistance",
 Judge Mason & Carmen Way has "Rider waits inside for safety until bus
 arrives". A stop's note is spoken last, after the rider-count part of
 its announcement (`parseRouteCsv.ts`), and shown on screen right below
-the street name, in the same highlighted box a turn's note uses - the
-slot previously held a "Stop on the right/left side" line, freed up once
-that became the red arrow described above.
+the street name as plain text (no highlighted box - an earlier version
+put one around it, matching the yellow box a turn's special instruction
+uses, but a lone note reads as informational rather than a warning, so
+the box was dropped for stops and turns alike). That line is always
+rendered, with a `min-h-[1.4em]` floor, whether or not the current step
+actually has a note - otherwise the street name and everything below it
+would shift up a line on a step without one, which reads as
+distracting/jumpy when it happens on every other stop.
 
 ### Bluetooth hardware input
 
@@ -222,8 +227,9 @@ landscape (1180×820) viewports.
   element, which left it a hair off), with a small circle - a little
   larger than the bar's own height - capping each true end of the track
   like a cul-de-sac. Turn steps get a small circular marker with a mini
-  direction arrow, raised a bit above the road (`bottom-7`); stop steps
-  get a small map-pin marker at the same height. Every step gets its own
+  direction arrow, sitting close above the road without touching it
+  (`bottom-5`); stop steps get a small map-pin marker at the same height.
+  Every step gets its own
   marker at a fixed 48px spacing (`PX_PER_STEP`) - no thinning/hiding -
   so a longer route just makes the underlying track wider than the
   visible window instead of crowding markers together. That window
@@ -242,42 +248,64 @@ landscape (1180×820) viewports.
   hidden content - neither edge fades if the whole route fits without
   scrolling, only the trailing edge fades near the very start, only the
   leading edge fades near the very end. A bus icon sits directly
-  overlaid on the road at the current position (`bottom-2
-  -translate-y-1/2`, a `z-10` above the road/markers so it visually
+  overlaid on the road at the current position, given a slight
+  `drop-shadow-sm` and a `z-10` above the road/markers so it visually
   rides on top of the bar rather than hovering above it with a caret
-  pointing down, which is what it did before); its position is clamped a
-  bit short of the track's own start/end so the icon (wider than a
-  marker) doesn't get clipped there. The container's `px-5` padding
-  leaves enough room that the cul-de-sac circles capping each end of the
-  track (see above) are never clipped either, even though they hang half
-  outside the track's own bounds.
+  pointing down, which is what it did before. It's vertically centered
+  on the road's own center (`bottom-2 translate-y-1/2` - the *positive*
+  half-height nudge is what actually lands it there: `bottom` alone
+  anchors the icon's bottom edge, not its middle, so centering on that
+  anchor point needs a translate in the same direction the box already
+  extends, not the opposite one. This was backwards for a while - a
+  `-translate-y-1/2` there quietly floated the bus a full icon-height
+  above the road instead of centering it, caught by measuring both
+  elements' actual bounding boxes in a headless browser rather than
+  trusting the CSS by eye). Its horizontal position is clamped a bit
+  short of the track's own start/end so the icon (wider than a marker)
+  doesn't get clipped there. The container's `px-6` padding leaves enough
+  room that the cul-de-sac circles capping each end of the track (see
+  above) are never clipped either, even though they hang half outside
+  the track's own bounds - verified the same way, by measuring the
+  circles' rendered edges against the container's, at both true ends of
+  the route.
 - **Progress caption**: "Stop X of Y" rather than a raw instruction
   count - the number of turn steps between stops isn't meaningful to a
   driver, so it always shows the stop just reached or the one being
   driven toward (`stopNumberByIndex` in `useRouteStepper.ts`).
 - **Turn steps**: the actual turn-arrow road sign (`turn-arrow.png`,
   user-supplied, already had a transparent background) instead of "TURN
-  LEFT" text - large on the step screen, small on the progress bar's
-  markers - mirrored horizontally for a left turn, since the source art
-  is a right turn. Street name renders below it in much larger type than
-  anything else on screen.
-- **Stop steps**: the pin icon, with the stop number set inside its
-  white circle (absolutely positioned over the image - tuned by eye
-  against a screenshot, not derived from the art's actual geometry, so
-  it'll need re-tuning if `pin.png` ever changes) instead of a separate
-  "STOP n of m" line, which the header's "Stop X of Y" caption already
-  covers. Same large-street-name treatment as turn steps. Which side of
-  the road the stop is on (`step.sideOfRoad`, from the CSV's `side`
-  column) is shown as a small glossy red circular button right next to
-  the pin - on the pin's left for a left-side stop, its right for a
-  right-side stop - holding a filled triangle (`TriangleIcon`, the same
-  shape used on the Back/Next buttons) pointing the same direction. It's
-  positioned at `top-[31%]` with `-translate-y-1/2`, the exact same
-  anchor the stop-number span uses, so its center lines up with the
-  center of the pin's white circle/number regardless of how big the pin
-  itself is rendering at a given viewport height. This replaced an
-  on-screen "Stop on the right/left side" text line - now conveyed
-  visually instead - which freed up that line for notes (see below).
+  LEFT" text - large on the step screen (`clamp(3.5rem,14vh,8rem)`,
+  trimmed down a size from where it started), small on the progress
+  bar's markers - mirrored horizontally for a left turn, since the
+  source art is a right turn. Street name renders below it in larger
+  type than anything else on screen (`clamp(1.35rem,5.25vh,2.75rem)`,
+  also trimmed down from its original, larger clamp range).
+- **Stop steps**: the pin icon (same trimmed-down `clamp(3.5rem,14vh,8rem)`
+  as the turn arrow), with the stop number set inside its white circle
+  (absolutely positioned over the image - tuned by eye against a
+  screenshot, not derived from the art's actual geometry, so it'll need
+  re-tuning if `pin.png` ever changes) instead of a separate "STOP n of
+  m" line, which the header's "Stop X of Y" caption already covers. Same
+  street-name treatment as turn steps. Which side of the road the stop
+  is on (`step.sideOfRoad`, from the CSV's `side` column) is shown as a
+  filled triangle (`TriangleIcon`, the same shape used on the Back/Next
+  buttons) right next to the pin - on the pin's left for a left-side
+  stop, its right for a right-side stop - colored to match the pin
+  art's own red (`#d54e48`, sampled from the pixels in `pin.png` itself
+  rather than guessed, since Tailwind's `red-700` turned out noticeably
+  more brick-red than the art). It's a bare triangle now, not a button -
+  an earlier version wrapped it in a glossy circular badge, which read
+  as another tappable control next to a pin that isn't one; it's also
+  scaled to two-thirds width relative to its height (unlike the
+  perfectly-triangular `TriangleIcon` on the actual buttons) so the
+  point reads as a softer, more "which-way" directional hint than a
+  sharp arrowhead. It's positioned at `top-[31%]` with `-translate-y-1/2`,
+  the exact same anchor the stop-number span uses, so its center lines
+  up with the center of the pin's white circle/number regardless of how
+  big the pin itself is rendering at a given viewport height. This
+  replaced an on-screen "Stop on the right/left side" text line - now
+  conveyed visually instead - which freed up that line for notes (see
+  below).
 - **Controls**: filled-triangle Back/advance buttons with a round, blue
   Pause button between them. The advance button always reads "Next" now,
   on both turn and stop steps - it used to switch to "Continue Route" on
@@ -291,6 +319,40 @@ landscape (1180×820) viewports.
   `nexttrack`/`previoustrack`/`play` events from it too, so a stray
   remote press doesn't sneak the route forward while paused. Tapping
   Pause again (now showing a play triangle) resumes.
+- **Step transitions**: switching steps no longer instantly swaps the
+  icon and street name/signage - the incoming content slides up from
+  below with a small overshoot bounce, while the outgoing content slides
+  up and fades out on top of it, via a small `StepTransition.tsx`
+  wrapper. The bounce comes entirely from the enter animation's easing
+  curve (a "back-out" `cubic-bezier(0.34, 1.56, 0.64, 1)`, which
+  overshoots past its end value before settling), not extra keyframe
+  steps. The new content stays in normal document flow the whole time -
+  it's still what determines the rendered height of this area, so the
+  two-line street-name guarantee that makes the map shrink to
+  accommodate it (see below) keeps working unchanged; only the *outgoing*
+  content is briefly pulled out of flow (absolutely positioned on top)
+  for the ~300ms it takes to animate away, keyed by step id (or
+  `"paused"`) so a genuine step change is what triggers it, not every
+  re-render.
+
+### Forcing a single light theme
+
+The app is meant to always look the same - a fixed light theme for a
+tablet mounted on a bus dashboard, not something a driver would want to
+follow their phone's dark mode. `globals.css` used to flip
+`--background`/`--foreground` to near-black/near-white under
+`@media (prefers-color-scheme: dark)`, left over from `create-next-app`'s
+default template; a handful of components also had `dark:` Tailwind
+variants on borders/badges from the same source. Neither was ever
+exercised during development (which happens in browsers/environments
+that don't default to dark mode), so it went unnoticed until it showed
+up as a black background on an actual phone with system dark mode on.
+Fixed by removing the dark-mode media query and every `dark:` variant in
+the codebase, and setting `color-scheme: light` on `:root` so browser-native
+UI (form controls, scrollbar chrome, etc.) doesn't try to go dark either
+- confirmed by loading the app with Playwright's color-scheme emulation
+forced to `"dark"` and checking the background stays the cream
+`#f7f3ea`, not black.
 
 `public/assets/pin.png` and `bus.png` started as stock/generated images
 with solid (checkerboard and white, respectively) backgrounds; both were
@@ -301,7 +363,7 @@ already had a transparent background as supplied.
 
 **Scaling to fit, not scrolling**: the turn/stop icon, the street name,
 and a few smaller labels use Tailwind arbitrary values like
-`text-[clamp(1.5rem,6vh,3.25rem)]` instead of fixed/breakpoint sizes -
+`text-[clamp(1.35rem,5.25vh,2.75rem)]` instead of fixed/breakpoint sizes -
 the middle value is a viewport-height percentage, so on a shorter
 viewport (landscape, where there's less vertical room) they shrink
 smoothly instead of overflowing; the min/max bounds keep them from ever
