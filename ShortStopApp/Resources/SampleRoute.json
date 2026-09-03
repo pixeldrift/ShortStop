@@ -1,0 +1,13 @@
+{
+  "name": "Sample Morning Route",
+  "steps": [
+    { "id": 0, "instruction": "Depart bus yard", "detail": "Head north on Main St" },
+    { "id": 1, "instruction": "Turn right onto Oak Ave", "detail": "0.3 mi" },
+    { "id": 2, "instruction": "Stop 1: 142 Oak Ave", "detail": "Pick up 3 students" },
+    { "id": 3, "instruction": "Continue on Oak Ave", "detail": "0.5 mi" },
+    { "id": 4, "instruction": "Turn left onto Elm St", "detail": "0.2 mi" },
+    { "id": 5, "instruction": "Stop 2: 87 Elm St", "detail": "Pick up 2 students" },
+    { "id": 6, "instruction": "Turn right onto School Rd", "detail": "0.8 mi" },
+    { "id": 7, "instruction": "Arrive at Lincoln Elementary", "detail": "Drop off all students" }
+  ]
+}
