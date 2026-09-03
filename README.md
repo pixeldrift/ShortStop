@@ -34,10 +34,12 @@ for them yet.
 ```
 src/
   app/
-    page.tsx           Renders the Start screen or the step screen
+    page.tsx           Renders the route list, the Start screen, or the
+                            step screen
     layout.tsx          Root layout, metadata
     globals.css         Tailwind
   components/
+    RouteListScreen.tsx Home screen: scrollable Number/Name/Start Time list
     StartScreen.tsx     Route summary + trip stats + "Start Route" button
     StepScreen.tsx       The step-through screen, incl. rider check-in
     StepTransition.tsx    Odometer-style roll between steps (see below)
@@ -626,6 +628,123 @@ and stays visible on turn steps too (not just at stops) - the idea being
 a driver can get a headcount at any point during an incident, not only
 while parked at a stop. It only ever adds (pickup-only route, no
 drop-offs modeled yet - see Next steps).
+
+### Route flow and screens
+
+**Depot and arrived are their own virtual phases, not step 0 and the
+last step.** `useRouteStepper.ts` used to treat `currentIndex === 0` as
+"the start" (button labeled Start) and `currentIndex === totalSteps - 1`
+as "the end" (button labeled End), which meant tapping Start jumped
+straight into step 0's real turn-by-turn content, and pressing Next on
+the last stop immediately ended the route with no chance to double-check
+anything. Neither matched how the depot/end cul-de-sac positions on the
+progress bar were already being drawn - the bus visually parking at
+either end before or after the actual directions play. The hook now has
+a `phase: "depot" | "step" | "arrived"` on top of `currentIndex`:
+
+- **depot** - before step 0. The bus sits on the start cul-de-sac
+  (`currentIndex` stays `0`, and `pixelFor(0)` is already the track's
+  true left edge, so `RouteProgressBar` needed no changes at all).
+  `StepScreen` shows generic `DepotContent` ("Ready to Depart") instead
+  of step 0's real turn; the footer reads **Start**. Tapping it moves to
+  `phase: "step"` at `currentIndex: 0` - step 0's own content then
+  behaves like an ordinary step, labeled **Next**.
+- **step** - `currentIndex` 0 through `totalSteps - 1`, always labeled
+  **Next**, even on the very last stop. Advancing past the last step
+  moves to `phase: "arrived"` without touching `currentIndex` (it's
+  already `totalSteps - 1`, which is also already `pixelFor(totalSteps -
+  1)` - the track's true right edge), so the bus visually stays parked on
+  the end cul-de-sac.
+- **arrived** - generic `ArrivedContent` ("All Stops Complete"), footer
+  reads **End**. Tapping **Next**/the remote's fast-forward here is
+  deliberately a no-op (`advance()` just returns) - only the dedicated
+  End button can leave this phase, so the same gesture used to step
+  through the whole route can't also accidentally end it.
+
+`goBack` mirrors this: from `arrived` it returns to the last real step
+(still labeled Next); from step 0 it returns to `depot`; from `depot` it
+does nothing (the Back button is disabled there, via
+`phase === "depot"` rather than the old `isFirstStep`).
+
+`isFirstStep`/`isLastStep` are gone from the hook's return value
+entirely, replaced by `phase` - `StepScreen` derives everything (button
+label/handler, Back's disabled state, which content component to render,
+whether a stop can show its rider check-in card) off that one value
+instead of two booleans whose meaning was about to change out from under
+them. `isStop` is now explicitly `phase === "step" && step.kind ===
+"stop"`, guarding against `route.steps[0]` or the last step happening to
+*be* a stop and having its roster card pop up during depot/arrived, where
+no roster should show at all.
+
+**"Route completed" only speaks when End is actually tapped.** The old
+code appended `"Route completed."` onto the last step's own spoken
+announcement automatically, purely because `isLastStep` was true - so it
+fired the moment the driver reached the final stop, well before they'd
+actually finished checking riders in or pressing anything. That line is
+gone; the `arrived` phase speaks nothing on its own (its announcement
+`parts` array is empty, which short-circuits straight to marking the
+attempt done via the same zero-delay `setTimeout` path used when
+`speechSynthesis` isn't available at all - `announcementDone` still
+resolves correctly even though no utterance was queued). The existing
+`endRoute()` announcement, `"Route ended."`, already only fired when the
+End button was tapped, so it's unchanged and is now the sole
+route-completion utterance. The route-number/school preamble ("Starting
+route 125 from Lavergne Lake Elementary.") that used to be prepended to
+step 0's first announcement is now the entire spoken content of the
+`depot` phase instead - it gets its own turn to speak rather than being
+stacked onto step 0, which also meant `announcedStartRef` (a ref tracking
+whether that preamble had already played once) could be deleted; depot's
+`attemptKey` is keyed off `resumeCount` alone (`depot-${resumeCount}`)
+and it only shows up once per route, once, without needing to track "have
+I said this yet."
+
+**StartScreen is now the second screen, not the first**, per a
+pink-annotated screenshot marking up the old layout: no more "TODAY"
+label, no dead space above the logo, no "Complete 3:58 PM" completion
+time (dropped from the app entirely, not just hidden), tighter line
+height on the school-name subtitle where it wraps to two lines. Distance,
+duration, stop count, and rider count are now four stacked stat tiles
+(big number, small unit/label underneath) occupying the space the
+completion time used to sit in, rather than a single "8.4 mi · 28 min ·
+Complete 3:58 PM" line plus separate Stops/~Riders rows further down. The
+tile's unit label is parsed out of `route.distance` itself
+(`splitValueUnit`, a `/^([\d.,]+)\s*(.*)$/` match) rather than a
+hardcoded "mi", so it stays correct if that field's format ever changes.
+The remaining detail rows are reordered to Departure/Bus/Driver, and
+School is dropped from that list entirely - the school is already named
+in the subtitle above, and `schoolAddress` isn't rendered on this screen
+now (though it stays on the `Route` type/CSV meta, unused here rather
+than deleted, in case a later screen wants it). The big "Route 125"
+heading and a round back-arrow button share a row above a
+rounded-border box that now contains everything else (subtitle, stat
+tiles, detail rows); the Start Route button sits below/outside that box
+as the screen's one clear call to action.
+
+`LiveClock`/`useCurrentTime` are still in `StartScreen.tsx`, just no
+longer called from the component - "we don't need the clock after all
+for now, keep that code ready to implement again later" meant deleting
+the call site, not the code, so both are now `export`ed (rather than
+module-private) specifically so they don't trip an unused-declaration
+lint error while sitting dormant.
+
+**A new route-list screen is the actual first screen now.**
+`RouteListScreen.tsx` is a scrollable Number/Name/Start Time table;
+tapping a row calls `onSelect(route)` and moves to that route's
+StartScreen, whose new back arrow returns to the list. `page.tsx` tracks
+this with one `routeSelected` boolean rather than a bigger screen-enum,
+since there are still only two screens ahead of the step flow. The one
+open question this raised - there's only one real route
+(`route-125.csv` + the hardcoded `ROUTE_META`), so what does a
+"scrollable list" actually scroll through? - is deliberately answered
+with a single-row list rather than fabricating a handful of placeholder
+routes: this app already has a firm rule about not showing fake data
+that could pass for real ("Demo only placeholder, not actual map" on the
+map image), and a route list is exactly the kind of thing a driver could
+mistake for real if invented rows looked plausible. `RouteListScreen`
+takes `routes: Route[]`, so it already renders and scrolls correctly for
+however many rows exist - no `page.tsx` changes will be needed the day a
+second real route sheet shows up, only a second entry in the array it's
+passed.
 
 ### Next steps
 

@@ -2,9 +2,17 @@ import Image from "next/image";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
-import { PauseIcon, PersonSolidIcon, RoundedTriangleIcon, TriangleIcon, TurnArrow } from "./icons";
+import {
+  CheckCircleIcon,
+  PauseIcon,
+  PersonSolidIcon,
+  RoundedTriangleIcon,
+  TriangleIcon,
+  TurnArrow,
+} from "./icons";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
+import type { StepPhase } from "@/lib/useRouteStepper";
 import type { NavigationStep, Route } from "@/lib/types";
 
 export function StepScreen({
@@ -14,8 +22,7 @@ export function StepScreen({
   stopNumber,
   stopProgressNumber,
   totalStops,
-  isFirstStep,
-  isLastStep,
+  phase,
   paused,
   onAdvance,
   onBack,
@@ -33,8 +40,7 @@ export function StepScreen({
   stopNumber: number | null;
   stopProgressNumber: number;
   totalStops: number;
-  isFirstStep: boolean;
-  isLastStep: boolean;
+  phase: StepPhase;
   paused: boolean;
   onAdvance: () => void;
   onBack: () => void;
@@ -46,7 +52,10 @@ export function StepScreen({
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
 }) {
-  const isStop = step.kind === "stop";
+  // Only a real "step" phase step can be a stop with riders to check in -
+  // the depot/arrived virtual states never show the roster card, even if
+  // route.steps[0] or the last step happens to be a stop.
+  const isStop = phase === "step" && step.kind === "stop";
   // Held off until the stop's own announcement has finished speaking, so
   // the check-in card doesn't pop up over top of still-playing audio.
   const showRoster = !paused && isStop && roster.length > 0 && announcementDone;
@@ -126,11 +135,17 @@ export function StepScreen({
           <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
 
           <StepTransition
-            transitionKey={paused ? "paused" : `${step.id}`}
+            transitionKey={
+              paused ? "paused" : phase === "step" ? `${step.id}` : phase
+            }
             className="flex flex-1 flex-col items-center justify-center text-center landscape:min-h-0"
           >
             {paused ? (
               <PausedContent />
+            ) : phase === "depot" ? (
+              <DepotContent route={route} />
+            ) : phase === "arrived" ? (
+              <ArrivedContent />
             ) : isStop ? (
               <StopContent step={step} stopNumber={stopNumber} />
             ) : (
@@ -147,7 +162,7 @@ export function StepScreen({
           <button
             type="button"
             onClick={onBack}
-            disabled={isFirstStep || paused}
+            disabled={phase === "depot" || paused}
             aria-label="Back"
             className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-zinc-100 py-3 text-lg font-semibold disabled:opacity-40"
           >
@@ -169,12 +184,12 @@ export function StepScreen({
 
           <button
             type="button"
-            onClick={isLastStep ? onEndRoute : onAdvance}
+            onClick={phase === "arrived" ? onEndRoute : onAdvance}
             disabled={paused}
-            aria-label={isFirstStep ? "Start" : isLastStep ? "End" : "Next"}
+            aria-label={phase === "depot" ? "Start" : phase === "arrived" ? "End" : "Next"}
             className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
           >
-            {isFirstStep ? "Start" : isLastStep ? "End" : "Next"}{" "}
+            {phase === "depot" ? "Start" : phase === "arrived" ? "End" : "Next"}{" "}
             <TriangleIcon direction="right" className="h-6 w-6" />
           </button>
         </div>
@@ -342,6 +357,49 @@ function RiderCheckInBox({
         OK
       </button>
     </div>
+  );
+}
+
+/** The "depot" virtual state - before the first real step. The bus sits
+ * on the start cul-de-sac (RouteProgressBar) while this generic content
+ * shows in place of any actual turn/stop, so step 0's own directions
+ * only appear once "Start" is tapped. */
+function DepotContent({ route }: { route: Route }) {
+  const preposition = route.tripType === "dropoff" ? "from" : "to";
+
+  return (
+    <>
+      <Image
+        src="/assets/bus.png"
+        alt=""
+        width={780}
+        height={465}
+        className="h-[clamp(3.25rem,12vh,8rem)] w-auto drop-shadow-sm"
+      />
+      <h1 className="font-heading text-[clamp(1.5rem,5vh,2.75rem)] font-black tracking-tight">
+        Ready to Depart
+      </h1>
+      <p className="text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">
+        Route {route.routeNumber} {preposition} {route.schoolName}
+      </p>
+    </>
+  );
+}
+
+/** The "arrived" virtual state - after the last real step. The bus stays
+ * on the end cul-de-sac; "Route completed"/"Route ended" is deliberately
+ * *not* spoken here - only tapping "End" (onEndRoute) announces it. */
+function ArrivedContent() {
+  return (
+    <>
+      <CheckCircleIcon className="h-[clamp(3.25rem,12vh,8rem)] w-[clamp(3.25rem,12vh,8rem)] text-blue-600" />
+      <h1 className="font-heading text-[clamp(1.5rem,5vh,2.75rem)] font-black tracking-tight">
+        All Stops Complete
+      </h1>
+      <p className="text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">
+        Press End to finish the route.
+      </p>
+    </>
   );
 }
 

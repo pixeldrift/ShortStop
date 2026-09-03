@@ -5,6 +5,23 @@ import type { Route } from "./types";
 import { SILENT_LOOP_DATA_URI } from "./silence";
 
 /**
+ * The bus's position in the route is one of three phases:
+ *  - "depot": before the first real step - the bus sits on the start
+ *    cul-de-sac, generic "ready to depart" content shows, and the footer
+ *    button reads "Start".
+ *  - "step": on one of route.steps[0..totalSteps-1] - ordinary
+ *    turn-by-turn content, footer button always reads "Next" (even on
+ *    the very last step - see "arrived" below).
+ *  - "arrived": after the last real step - the bus stays visually on the
+ *    end cul-de-sac (pixelFor(totalSteps-1) already equals the track's
+ *    own width, so no special-casing is needed in RouteProgressBar),
+ *    generic "all stops complete" content shows, and the footer button
+ *    reads "End". Only tapping that button (not "Next" again) actually
+ *    ends the route - see endRoute below.
+ */
+export type StepPhase = "depot" | "step" | "arrived";
+
+/**
  * Drives the step-through UI: current step, advance/back, and every input
  * path that should move it forward or back.
  *
@@ -17,6 +34,7 @@ import { SILENT_LOOP_DATA_URI } from "./silence";
  */
 export function useRouteStepper(route: Route) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [phase, setPhase] = useState<StepPhase>("depot");
   const [started, setStarted] = useState(false);
   const [paused, setPaused] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -38,8 +56,6 @@ export function useRouteStepper(route: Route) {
 
   const currentStep = route.steps[currentIndex];
   const totalSteps = route.steps.length;
-  const isFirstStep = currentIndex === 0;
-  const isLastStep = currentIndex === totalSteps - 1;
 
   const stopSteps = useMemo(
     () => route.steps.filter((s) => s.kind === "stop"),
@@ -64,25 +80,59 @@ export function useRouteStepper(route: Route) {
   const stopProgressNumber = stopNumberByIndex[currentIndex];
   const currentStopNumber = currentStep.kind === "stop" ? stopProgressNumber : null;
 
+  // currentIndex already sits at 0 while in "depot" and at totalSteps-1
+  // while "arrived" (see below), so neither transition needs to touch it
+  // beyond what's written here - RouteProgressBar's bus position is
+  // driven straight off currentIndex in every phase.
   const advance = useCallback(() => {
-    setCurrentIndex((i) => (i < totalSteps - 1 ? i + 1 : i));
-  }, [totalSteps]);
+    if (phase === "depot") {
+      setPhase("step");
+      setCurrentIndex(0);
+      return;
+    }
+    if (phase === "step") {
+      if (currentIndex < totalSteps - 1) {
+        setCurrentIndex((i) => i + 1);
+      } else {
+        setPhase("arrived");
+      }
+      return;
+    }
+    // "arrived": advancing again does nothing - only the dedicated "End"
+    // button (onEndRoute) is allowed to leave this phase, so a driver
+    // can't accidentally end the route with the same button/remote
+    // gesture used to step through it.
+  }, [phase, currentIndex, totalSteps]);
 
   const goBack = useCallback(() => {
-    setCurrentIndex((i) => (i > 0 ? i - 1 : i));
-  }, []);
+    if (phase === "arrived") {
+      setPhase("step");
+      setCurrentIndex(totalSteps - 1);
+      return;
+    }
+    if (phase === "step") {
+      if (currentIndex === 0) {
+        setPhase("depot");
+      } else {
+        setCurrentIndex((i) => i - 1);
+      }
+      return;
+    }
+    // "depot": nothing before it.
+  }, [phase, currentIndex, totalSteps]);
 
-  // Speak the announcement for whatever step is current - but not while
-  // paused. Each part (stop number / location / rider count) is queued
-  // as its own utterance rather than joined into one string, so there's
-  // an audible pause between them instead of one run-on sentence. The
-  // very first announcement after the route starts is prefaced with the
-  // route number and school ("Starting route 125 from Lavergne Lake
-  // Elementary." - "from" for a dropoff route, since the bus departs the
-  // school; "to" for a pickup route, since the school is the
-  // destination), and the last step's is followed by "Route completed."
-  // - both queued alongside the step's own parts so a pause-triggered
-  // cancel() (below) can't wipe one out before it plays.
+  // Speak the announcement for whatever's current - but not while paused.
+  // Each part (stop number / location / rider count) is queued as its
+  // own utterance rather than joined into one string, so there's an
+  // audible pause between them instead of one run-on sentence.
+  //
+  // The route-number/school preamble ("Starting route 125 from Lavergne
+  // Lake Elementary.") is now the *entire* depot-phase announcement,
+  // rather than being prepended to step 0's own announcement - since
+  // depot is its own phase, it gets its own turn to speak instead of
+  // stacking onto the first real step. The "arrived" phase speaks
+  // nothing automatically at all: "Route ended." only fires from
+  // endRoute() below, when "End" is actually tapped.
   //
   // announcementDone tracks whether the *last* queued utterance for the
   // current announcement attempt has finished (or errored/timed out) -
@@ -92,62 +142,62 @@ export function useRouteStepper(route: Route) {
   //
   // Derived as a key comparison (attemptKey === completedKey) rather
   // than an effect calling setState(false) up front and setState(true)
-  // once speech ends: since resumeCount/currentStep already change
+  // once speech ends: since resumeCount/phase/currentStep already change
   // reactively on their own, attemptKey naturally goes stale - and so
   // announcementDone naturally reads false - the moment a new attempt
   // starts, with no explicit "reset" call needed. Every setState call
   // below happens inside a callback that responds to an external event
   // (the utterance ending, or a timeout), never synchronously in the
   // effect body itself.
-  const announcedStartRef = useRef(false);
-  const attemptKey = `${currentStep.id}-${resumeCount}`;
+  const attemptKey =
+    phase === "depot"
+      ? `depot-${resumeCount}`
+      : phase === "arrived"
+        ? `arrived-${resumeCount}`
+        : `${currentStep.id}-${resumeCount}`;
   const [completedKey, setCompletedKey] = useState<string | null>(null);
   const announcementDone = completedKey === attemptKey;
 
   useEffect(() => {
     if (!started || paused) return;
 
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    const parts =
+      phase === "depot"
+        ? [
+            `Starting route ${route.routeNumber} ${
+              route.tripType === "dropoff" ? "from" : "to"
+            } ${route.schoolName}.`,
+          ]
+        : phase === "arrived"
+          ? []
+          : [...currentStep.announcement];
+
+    if (parts.length === 0 || typeof window === "undefined" || !("speechSynthesis" in window)) {
       const id = setTimeout(() => setCompletedKey(attemptKey), 0);
       return () => clearTimeout(id);
     }
 
     window.speechSynthesis.cancel();
-    const parts = [...currentStep.announcement];
-    if (!announcedStartRef.current) {
-      const preposition = route.tripType === "dropoff" ? "from" : "to";
-      parts.unshift(`Starting route ${route.routeNumber} ${preposition} ${route.schoolName}.`);
-      announcedStartRef.current = true;
-    }
-    if (isLastStep) {
-      parts.push("Route completed.");
-    }
-
     const utterances = parts.map((part) => new SpeechSynthesisUtterance(part));
     const last = utterances[utterances.length - 1];
     const markDone = () => setCompletedKey(attemptKey);
-    let fallback: number;
-    if (last) {
-      last.addEventListener("end", markDone);
-      last.addEventListener("error", markDone);
-      fallback = window.setTimeout(markDone, 8000);
-    } else {
-      fallback = window.setTimeout(markDone, 0);
-    }
+    last.addEventListener("end", markDone);
+    last.addEventListener("error", markDone);
+    const fallback = window.setTimeout(markDone, 8000);
     for (const utterance of utterances) {
       window.speechSynthesis.speak(utterance);
     }
 
     return () => {
-      last?.removeEventListener("end", markDone);
-      last?.removeEventListener("error", markDone);
+      last.removeEventListener("end", markDone);
+      last.removeEventListener("error", markDone);
       window.clearTimeout(fallback);
     };
   }, [
+    phase,
     currentStep,
     started,
     paused,
-    isLastStep,
     attemptKey,
     route.routeNumber,
     route.schoolName,
@@ -247,12 +297,12 @@ export function useRouteStepper(route: Route) {
     };
   }, []);
 
-  // Tapping "End" on the last step: announce completion, then return to
-  // the start screen. Resets everything (index/pause/announcement-start
-  // flag, silent audio) so a subsequent "Start Route" begins clean -
-  // this doesn't unmount the hook (RouteApp keeps calling it regardless
-  // of `started`), so that reset has to happen explicitly here rather
-  // than relying on the unmount cleanup above.
+  // Tapping "End" from the "arrived" phase: announce that the route
+  // ended, then return to the start screen. Resets everything
+  // (index/phase/pause/silent audio) so a subsequent "Start Route"
+  // begins clean - this doesn't unmount the hook (RouteApp keeps calling
+  // it regardless of `started`), so that reset has to happen explicitly
+  // here rather than relying on the unmount cleanup above.
   const endRoute = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -260,8 +310,8 @@ export function useRouteStepper(route: Route) {
     }
     audioRef.current?.pause();
     audioRef.current = null;
-    announcedStartRef.current = false;
     setPaused(false);
+    setPhase("depot");
     setCurrentIndex(0);
     setStarted(false);
   }, []);
@@ -270,8 +320,7 @@ export function useRouteStepper(route: Route) {
     currentStep,
     currentIndex,
     totalSteps,
-    isFirstStep,
-    isLastStep,
+    phase,
     totalStops,
     currentStopNumber,
     stopProgressNumber,

@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
-import { MapPinIcon, TriangleIcon } from "./icons";
-import { addMinutesToTimeString } from "@/lib/time";
+import { BackArrowIcon, TriangleIcon } from "./icons";
 import type { Route } from "@/lib/types";
 
-function useCurrentTime() {
+// Not currently rendered (see StartScreen below) - kept ready to
+// re-enable later, so it's exported rather than deleted.
+export function useCurrentTime() {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -17,7 +18,7 @@ function useCurrentTime() {
   return now;
 }
 
-function LiveClock({ now }: { now: Date }) {
+export function LiveClock({ now }: { now: Date }) {
   const hours24 = now.getHours();
   const hour12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
   const minute = String(now.getMinutes()).padStart(2, "0");
@@ -36,66 +37,72 @@ function LiveClock({ now }: { now: Date }) {
   );
 }
 
+/** Splits a value string like "8.4 mi" into ["8.4", "mi"] for the stat
+ * tiles below - the big number on top, the unit as its small label,
+ * rather than hardcoding a unit that might not match the data. */
+function splitValueUnit(text: string): [string, string] {
+  const match = text.match(/^([\d.,]+)\s*(.*)$/);
+  return match ? [match[1], match[2]] : [text, ""];
+}
+
+function StatTile({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex flex-col items-center">
+      <span className="font-heading text-2xl font-black tracking-tight">{value}</span>
+      <span className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">{label}</span>
+    </div>
+  );
+}
+
 export function StartScreen({
   route,
   onStart,
+  onBack,
 }: {
   route: Route;
   onStart: () => void;
+  onBack: () => void;
 }) {
-  const now = useCurrentTime();
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
   const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
-  const estimatedEnd = addMinutesToTimeString(route.departureTime, route.durationMinutes);
-  const tripSummaryLabel = route.tripType === "dropoff" ? "Complete" : "Arrive";
+  const [distanceValue, distanceUnit] = splitValueUnit(route.distance);
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-start gap-6 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:justify-center landscape:pt-6">
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-6 pb-6 text-center landscape:pt-4">
       <Logo size="large" />
 
-      <div>
-        <p className="text-sm font-semibold tracking-widest text-zinc-500 uppercase">
-          Today
-        </p>
-        <h1 className="font-heading mt-2 text-4xl font-black tracking-tight">
+      <div className="flex w-full max-w-md items-center justify-between">
+        <h1 className="font-heading text-4xl font-black tracking-tight">
           Route {route.routeNumber}
         </h1>
-        <p className="mt-1 text-xl text-zinc-500">{route.name}</p>
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to routes"
+          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-zinc-100"
+        >
+          <BackArrowIcon className="h-5 w-5" />
+        </button>
       </div>
 
-      <div className="font-heading flex items-center gap-2 text-lg font-bold">
-        <span>{route.distance}</span>
-        <span className="text-zinc-400">·</span>
-        <span>{route.durationMinutes} min</span>
-        <span className="text-zinc-400">·</span>
-        <span>
-          {tripSummaryLabel} {estimatedEnd}
-        </span>
-      </div>
+      <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">
+        <p className="text-lg leading-tight text-zinc-500">{route.name}</p>
 
-      <div>
-        <dl className="grid grid-cols-2 gap-x-8 gap-y-1 text-lg">
-          <dt className="text-zinc-500">Driver</dt>
-          <dd className="text-left font-medium">{route.driverName}</dd>
-          <dt className="text-zinc-500">Bus</dt>
-          <dd className="text-left font-medium">#{route.busNumber}</dd>
+        <div className="mt-4 grid grid-cols-4 gap-2">
+          <StatTile value={distanceValue} label={distanceUnit || "mi"} />
+          <StatTile value={String(route.durationMinutes)} label="min" />
+          <StatTile value={String(totalStops)} label="stops" />
+          <StatTile value={String(totalRiders)} label="riders" />
+        </div>
+
+        <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1 text-lg">
           <dt className="text-zinc-500">Departure</dt>
           <dd className="text-left font-medium">{route.departureTime}</dd>
-          <dt className="text-zinc-500">School</dt>
-          <dd className="text-left font-medium">
-            <p>{route.schoolName}</p>
-            <p className="flex items-center gap-1 text-xs font-normal text-zinc-500">
-              <MapPinIcon className="h-3 w-3 shrink-0" />
-              {route.schoolAddress}
-            </p>
-          </dd>
-          <dt className="text-zinc-500">Stops</dt>
-          <dd className="text-left font-medium">{totalStops}</dd>
-          <dt className="text-zinc-500">~Riders</dt>
-          <dd className="text-left font-medium">{totalRiders}</dd>
+          <dt className="text-zinc-500">Bus</dt>
+          <dd className="text-left font-medium">#{route.busNumber}</dd>
+          <dt className="text-zinc-500">Driver</dt>
+          <dd className="text-left font-medium">{route.driverName}</dd>
         </dl>
-
-        <LiveClock now={now} />
       </div>
 
       <button

@@ -127,3 +127,41 @@ export function MapPinIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+
+/** Plain left-pointing arrow - used for "back to the previous screen"
+ * navigation, as opposed to TriangleIcon's filled arrowheads used for
+ * step-by-step Back/Next. */
+export function BackArrowIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M19 12H5M11 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+/** Checkmark in a filled circle - used for the "arrived, all stops
+ * complete" state. */
+export function CheckCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15" />
+      <path
+        d="M7 12.5 L10.5 16 L17 8.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

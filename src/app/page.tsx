@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { RouteListScreen } from "@/components/RouteListScreen";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
 import { parseRouteCsv } from "@/lib/parseRouteCsv";
@@ -26,6 +27,10 @@ const ROUTE_META = {
 export default function Home() {
   const [route, setRoute] = useState<Route | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which screen we're on: the route list (home) or a selected route's
+  // trip-summary/step flow. Reset to the list whenever the user taps the
+  // back arrow on the trip-summary screen.
+  const [routeSelected, setRouteSelected] = useState(false);
 
   useEffect(() => {
     fetch("/data/route-125.csv")
@@ -53,15 +58,21 @@ export default function Home() {
     );
   }
 
-  return <RouteApp route={route} />;
+  // Only one real route exists right now (see ROUTE_META above) - the
+  // list still renders as a genuinely scrollable table, ready for more
+  // rows, rather than padding it out with fabricated placeholder routes.
+  if (!routeSelected) {
+    return <RouteListScreen routes={[route]} onSelect={() => setRouteSelected(true)} />;
+  }
+
+  return <RouteApp route={route} onBack={() => setRouteSelected(false)} />;
 }
 
-function RouteApp({ route }: { route: Route }) {
+function RouteApp({ route, onBack }: { route: Route; onBack: () => void }) {
   const {
     currentStep,
     currentIndex,
-    isFirstStep,
-    isLastStep,
+    phase,
     totalStops,
     currentStopNumber,
     stopProgressNumber,
@@ -78,10 +89,10 @@ function RouteApp({ route }: { route: Route }) {
   const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
 
   if (!started) {
-    return <StartScreen route={route} onStart={start} />;
+    return <StartScreen route={route} onStart={start} onBack={onBack} />;
   }
 
-  const expectedCount = currentStep.studentCount ?? 0;
+  const expectedCount = phase === "step" ? (currentStep.studentCount ?? 0) : 0;
 
   return (
     <StepScreen
@@ -91,8 +102,7 @@ function RouteApp({ route }: { route: Route }) {
       stopNumber={currentStopNumber}
       stopProgressNumber={stopProgressNumber}
       totalStops={totalStops}
-      isFirstStep={isFirstStep}
-      isLastStep={isLastStep}
+      phase={phase}
       paused={paused}
       onAdvance={advance}
       onBack={goBack}
