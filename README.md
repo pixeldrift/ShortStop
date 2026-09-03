@@ -374,20 +374,42 @@ landscape (1180×820) viewports.
   remote press doesn't sneak the route forward while paused. Tapping
   Pause again (now showing a play triangle) resumes.
 - **Step transitions**: switching steps no longer instantly swaps the
-  icon and street name/signage - the incoming content slides up from
-  below with a small overshoot bounce, while the outgoing content slides
-  up and fades out on top of it, via a small `StepTransition.tsx`
-  wrapper. The bounce comes entirely from the enter animation's easing
-  curve (a "back-out" `cubic-bezier(0.34, 1.56, 0.64, 1)`, which
-  overshoots past its end value before settling), not extra keyframe
-  steps. The new content stays in normal document flow the whole time -
-  it's still what determines the rendered height of this area, so the
-  two-line street-name guarantee that makes the map shrink to
-  accommodate it (see below) keeps working unchanged; only the *outgoing*
-  content is briefly pulled out of flow (absolutely positioned on top)
-  for the ~300ms it takes to animate away, keyed by step id (or
-  `"paused"`) so a genuine step change is what triggers it, not every
-  re-render.
+  icon and street name/signage - it rolls over like an odometer, via a
+  small `StepTransition.tsx` wrapper. The outgoing content slides
+  straight up and out while the incoming content slides straight up and
+  in from below, both clipped to the wrapper instead of spilling past
+  its edges, and both on one shared timing (`0.32s`, one symmetric ease)
+  so they read as a single continuous belt rather than two independently
+  animated pieces. Pure vertical motion, no fade and no overshoot bounce
+  - an odometer digit doesn't fade or bounce, it just rolls to a stop.
+  (An earlier version faded and bounced instead - closer to a typical UI
+  transition, but that's not what was asked for here.) Both layers are
+  also centered the same way (`items-center justify-center`, matching
+  the wrapper's own centering) so they swap in the same visual "lane"
+  instead of drifting to different vertical positions mid-transition,
+  which is what it looked like before that was added.
+
+  The new content stays in normal document flow the whole time - it's
+  still what determines the rendered height of this area, so the
+  two-line street-name guarantee that makes the map shrink to accommodate
+  it (see below) keeps working; only the *outgoing* content is pulled
+  out of flow (absolutely positioned on top) for the 320ms it takes to
+  animate away. Clipping this element on its own would normally break
+  that guarantee - per the flex spec, a flex item's *automatic* minimum
+  size is zero once its own overflow isn't visible, which would let this
+  area collapse instead of forcing the map to shrink first. Worked
+  around by measuring the incoming content's own height
+  (`ResizeObserver`, the same technique `RouteProgressBar.tsx` already
+  uses) and reapplying it as an *explicit* min-height via a CSS custom
+  property - unlike `auto`, an explicit length isn't zeroed by that rule.
+  It's set through a custom property rather than inline `min-height`
+  directly so `landscape:min-h-0` from the caller can still win in
+  landscape (an inline style always beats a class, `landscape:` variant
+  or not - going through a custom property that a class then reads
+  keeps the override winnable). Confirmed with the same fallback-shrink
+  regression test as the two-line guarantee itself: an ordinary step
+  still renders the map at full height, and a pathological long street
+  name still shrinks it, with the clipping now turned on.
 
 ### Forcing a single light theme
 

@@ -70,38 +70,37 @@ body {
   animation: blink 1s step-end infinite;
 }
 
-/* Step content (icon + street name/signage) sliding in from below with a
-   small overshoot bounce as a new step becomes current, and the previous
-   step's content sliding up and out at the same time - see
-   StepTransition.tsx. The bounce comes entirely from the easing curve
-   (a "back-out" cubic-bezier that overshoots past its end value before
-   settling), not from extra keyframe steps. */
+/* Step content (icon + street name/signage) rolling over like an
+   odometer as a new step becomes current - see StepTransition.tsx. The
+   previous step's content slides straight up and out while the new
+   step's slides straight up and in from below, both clipped to the
+   wrapper rather than spilling past its edges. Pure vertical motion, no
+   fade and no overshoot - an odometer digit doesn't fade or bounce, it
+   just rolls to a stop - so enter/exit share one duration and a
+   symmetric ease so they read as one continuous belt rather than two
+   independently-timed animations. */
 @keyframes step-enter {
   from {
-    transform: translateY(26px);
-    opacity: 0;
+    transform: translateY(100%);
   }
   to {
     transform: translateY(0);
-    opacity: 1;
   }
 }
 
 .animate-step-enter {
-  animation: step-enter 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: step-enter 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 
 @keyframes step-exit {
   from {
     transform: translateY(0);
-    opacity: 1;
   }
   to {
-    transform: translateY(-26px);
-    opacity: 0;
+    transform: translateY(-100%);
   }
 }
 
 .animate-step-exit {
-  animation: step-exit 0.28s ease-in both;
+  animation: step-exit 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
 }

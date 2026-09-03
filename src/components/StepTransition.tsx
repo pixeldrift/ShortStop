@@ -1,20 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-const EXIT_DURATION_MS = 300;
+const TRANSITION_DURATION_MS = 320;
 
 /**
- * Swaps its children with a slide+bounce transition instead of an instant
- * switch, whenever `transitionKey` changes - the new content (icon + street
- * name/signage together, as one block) scrolls up from below with a small
- * overshoot, while the previous content scrolls up and out on top of it.
+ * Swaps its children with an odometer-style roll instead of an instant
+ * switch, whenever `transitionKey` changes: the outgoing content slides
+ * straight up and out while the incoming content slides straight up and
+ * in from below, both clipped to this element's own bounds instead of
+ * spilling past them.
  *
  * The incoming content stays in normal document flow (so it's still what
  * determines this element's rendered height - the min-height guarantee
  * that keeps the map from letting the footer clip a two-line street name
- * still depends on that). Only the outgoing content is pulled out of flow
- * (absolutely positioned over it) for the moment it takes to animate away.
+ * still depends on that). Only the outgoing content is pulled out of
+ * flow (absolutely positioned on top) for the moment it takes to animate
+ * away.
+ *
+ * Clipping this element (`overflow-hidden`) would normally break that
+ * height guarantee on its own: per the flex spec, a flex item's
+ * *automatic* minimum size (`min-height: auto`) is zero once its own
+ * overflow isn't visible, which would let this collapse instead of
+ * forcing the map to shrink first. So the incoming content's own
+ * measured height is re-applied here as an *explicit* min-height (via a
+ * CSS custom property, not inline `min-height` directly, so
+ * `landscape:min-h-0` from the caller can still win in landscape) -
+ * unlike `auto`, an explicit length isn't zeroed by that rule.
  */
 export function StepTransition({
   transitionKey,
@@ -36,22 +48,38 @@ export function StepTransition({
     if (prevRef.current.key !== transitionKey) {
       setExiting(prevRef.current);
       window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = window.setTimeout(() => setExiting(null), EXIT_DURATION_MS);
+      timeoutRef.current = window.setTimeout(() => setExiting(null), TRANSITION_DURATION_MS);
     }
     prevRef.current = { key: transitionKey, node: children };
   }, [transitionKey, children]);
 
   useEffect(() => () => window.clearTimeout(timeoutRef.current), []);
 
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [minHeight, setMinHeight] = useState<number>();
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const measure = () => setMinHeight(el.scrollHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [transitionKey]);
+
   return (
-    <div className={`relative ${className ?? ""}`}>
-      <div key={transitionKey} className="animate-step-enter flex flex-col items-center gap-2">
+    <div
+      className={`relative overflow-hidden min-h-[var(--step-min-h)] landscape:min-h-0 ${className ?? ""}`}
+      style={{ "--step-min-h": minHeight != null ? `${minHeight}px` : "0px" } as CSSProperties}
+    >
+      <div key={transitionKey} ref={contentRef} className="animate-step-enter flex flex-col items-center gap-2">
         {children}
       </div>
       {exiting && (
         <div
           aria-hidden="true"
-          className="animate-step-exit pointer-events-none absolute inset-0 flex flex-col items-center gap-2"
+          className="animate-step-exit pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2"
         >
           {exiting.node}
         </div>
