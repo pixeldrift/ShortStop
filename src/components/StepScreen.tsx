@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { TopBar } from "./TopBar";
-import { PauseIcon, PersonAddIcon, PersonIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
+import { PauseIcon, PersonIcon, PersonSolidIcon, TriangleIcon, TurnArrow } from "./icons";
 import type { NavigationStep, Route } from "@/lib/types";
 
 export function StepScreen({
@@ -39,27 +39,12 @@ export function StepScreen({
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
 }) {
+  const isStop = step.kind === "stop";
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none">
-      {/* Map - upper third of the screen. Placeholder art only; not a
-          real map yet. */}
-      <div className="relative h-[33vh] shrink-0 overflow-hidden">
-        <Image
-          src="/assets/map-placeholder.jpg"
-          alt=""
-          fill
-          className="object-cover"
-          priority
-        />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-3 text-center">
-          <p className="text-sm font-semibold text-white">
-            Demo only placeholder, not actual map
-          </p>
-        </div>
-      </div>
-
       {/* Pinned header: always visible, doesn't scroll away */}
-      <div className="shrink-0 px-4 pt-3">
+      <div className="shrink-0 px-4 pt-5">
         <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
 
         <div className="mt-2 flex items-center justify-between">
@@ -125,10 +110,10 @@ export function StepScreen({
           type="button"
           onClick={onAdvance}
           disabled={isLastStep || paused}
-          aria-label="Next"
+          aria-label={isStop ? "Continue route" : "Next"}
           className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
         >
-          Next <TriangleIcon direction="right" className="h-6 w-6" />
+          {isStop ? "Continue Route" : "Next"} <TriangleIcon direction="right" className="h-6 w-6" />
         </button>
       </div>
     </div>
@@ -204,12 +189,7 @@ function StopContent({
           className="flex w-full max-w-sm flex-col items-center gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-            {roster.filter(Boolean).length} of {roster.length} checked in - tap a rider to
-            check in through that number
-          </p>
-
-          <div className="flex flex-wrap items-center justify-center gap-2">
+          <div className="flex flex-wrap items-start justify-center gap-2">
             {roster.map((checked, i) => (
               <button
                 key={i}
@@ -240,10 +220,13 @@ function StopContent({
             <button
               type="button"
               onClick={onAddRider}
-              aria-label="Add unexpected rider"
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500"
+              aria-label="Add additional rider"
+              className="flex flex-col items-center gap-0.5"
             >
-              <PersonAddIcon className="h-6 w-6" />
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-2xl leading-none font-bold text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500">
+                +
+              </span>
+              <span className="w-14 text-xs font-semibold text-zinc-500">Additional Rider</span>
             </button>
           </div>
         </div>

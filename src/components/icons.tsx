@@ -90,23 +90,6 @@ export function PersonSolidIcon({ className }: { className?: string }) {
   );
 }
 
-/** Outline person with a "+" inside it - used for the add-rider button. */
-export function PersonAddIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <circle cx="12" cy="7.5" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path
-        d="M4 20c0-4.42 3.58-8 8-8s8 3.58 8 8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <path d="M12 14.5v4M10 16.5h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 /** Small solid map pin - used inline next to an address. */
 export function MapPinIcon({ className }: { className?: string }) {
   return (

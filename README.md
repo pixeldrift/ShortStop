@@ -60,7 +60,6 @@ public/
     pin.png                Stop marker (background removed)
     bus.png                Position indicator (background removed)
     turn-arrow.png          Turn-sign icon (supplied with transparent bg)
-    map-placeholder.jpg     Placeholder art for the step screen's map area
 ```
 
 ### Running locally
@@ -149,18 +148,23 @@ text keeps the abbreviated form.
 
 ### Visual design
 
-The step screen (`StepScreen.tsx`) is split into three regions: a fixed
-map strip on top, a scrollable middle (progress bar + step content, for
+The step screen (`StepScreen.tsx`) is split into three regions: a pinned
+header, a scrollable middle (progress bar + step content, for
 routes/rosters too tall to fit), and a footer that's always pinned so
-Back/Pause/Next never require scrolling to reach.
+Back/Pause/Continue never require scrolling to reach.
 
-- **Map**: the upper third of the screen (`h-[33vh]`) is a placeholder
-  image (`map-placeholder.jpg`) with a "Demo only placeholder, not
-  actual map" overlay - there's no real routing/map integration yet, see
-  Next steps.
+There was a placeholder map image (upper third of the screen) here at
+one point; it's been removed rather than kept as inert art, since it
+was adding a fixed block of screen space without adding real
+information, and made the step content shift position between turn
+steps (short) and stop steps (taller, once the rider roster is showing)
+more than necessary. A real map, tied to the bus's actual position, is
+still a real goal - see Next steps - it just isn't a placeholder image
+anymore.
+
 - **Header**: logo top-left, route number large and bold top-center
   (with a small "Route #" label above it), bus number top-right. Pinned
-  below the map, doesn't scroll away.
+  at the very top, doesn't scroll away.
 - **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
   bar, dark border, dashed white center line. Turn steps get a small
   circular marker with a mini direction arrow; stop steps get a small
@@ -189,11 +193,13 @@ Back/Pause/Next never require scrolling to reach.
   it'll need re-tuning if `pin.png` ever changes) instead of a separate
   "STOP n of m" line, which the header's "Stop X of Y" caption already
   covers. Same large-street-name treatment as turn steps.
-- **Controls**: filled-triangle Back/Next buttons (larger icons than
-  before) with a round, blue Pause button between them. Pausing shows a
-  "Route Paused" message in place of the step content, disables
-  Back/Next and screen-tap-to-advance, stops the spoken announcement,
-  and - since the Bluetooth remote is the primary input - ignores
+- **Controls**: filled-triangle Back/advance buttons with a round, blue
+  Pause button between them. The advance button reads "Continue Route"
+  on stop steps (continuing the route is the point, once riders are
+  checked in) and "Next" on turn steps. Pausing shows a "Route Paused"
+  message in place of the step content, disables both buttons and
+  screen-tap-to-advance, stops the spoken announcement, and - since the
+  Bluetooth remote is the primary input - ignores
   `nexttrack`/`previoustrack`/`play` events from it too, so a stray
   remote press doesn't sneak the route forward while paused. Tapping
   Pause again (now showing a play triangle) resumes.
@@ -210,18 +216,21 @@ already had a transparent background as supplied.
 At each stop, `StopContent` renders one button per expected rider
 (`step.studentCount`, from the CSV's `rider_count`), numbered underneath
 - an outline person icon means not yet checked in, a solid one means
-checked in. Tapping rider N works like a star rating: it checks in
-everyone from 1 through N and un-checks anyone after N, rather than
-toggling one at a time (`fillTo` in `useRiderRoster.ts`) - there's no
-separate "check all" control, since tapping the last rider does that.
-**+** (styled the same as the numbered buttons, an outline person with a
-small "+" inside it) appends one more rider, already checked in (it's
-recording someone who's visibly boarding right now, not someone
-expected) - it doesn't participate in the star-rating fill, so it can
-leave a "gap" (e.g. riders 1-2 checked, 3-5 not, plus one added rider
-checked) if the driver hasn't finished checking in the expected riders
-yet. That's intentional: the added rider is a real, separate event, not
-a retroactive claim that 3-5 also boarded.
+checked in. No caption explains this above the buttons; the pattern
+(tap a number, it and everything before it goes green) is meant to read
+as self-evident, like a star rating. Tapping rider N checks in everyone
+from 1 through N and un-checks anyone after N, rather than toggling one
+at a time (`fillTo` in `useRiderRoster.ts`) - there's no separate "check
+all" control, since tapping the last rider does that. **Additional
+Rider** (styled and sized the same as the numbered buttons - a plain "+"
+instead of a person icon, labeled instead of numbered) appends one more
+rider, already checked in (it's recording someone who's visibly boarding
+right now, not someone expected) - it doesn't participate in the
+star-rating fill, so it can leave a "gap" (e.g. riders 1-2 checked, 3-5
+not, plus one additional rider checked) if the driver hasn't finished
+checking in the expected riders yet. That's intentional: the added rider
+is a real, separate event, not a retroactive claim that 3-5 also
+boarded.
 
 State lives in `useRiderRoster.ts`, instantiated once in `RouteApp`
 (`page.tsx`) rather than inside the stop screen itself, so it survives
@@ -251,8 +260,9 @@ drop-offs modeled yet - see Next steps).
 - Move route data into the doc's actual data model
   (District/School/Route/RouteStop/etc.) instead of a flat CSV, once
   there's more than one route
-- Real map integration in place of the placeholder image, tied to
-  wherever the bus actually is
+- Real map integration - there's no map at all right now (the earlier
+  placeholder image was removed, see Visual design), so this is starting
+  from scratch, not swapping out a placeholder
 - GPS-based auto-advance as students are picked up / stops are passed —
   the doc treats manual button-advance as the first-prototype mechanism
   and GPS auto-advance as a later step
@@ -266,3 +276,10 @@ drop-offs modeled yet - see Next steps).
 - A native driver app remains the doc's long-term plan for the
   GPS/background/offline-heavy driver experience; this web prototype is
   step one, not a replacement for that
+- Named-rider attendance, as an opt-in for smaller schools/districts
+  that want that level of tracking instead of just a headcount by
+  number - would need real student rosters per stop (privacy/FERPA
+  implications the project doc already flags), not just a rider count.
+  Longer term, RFID transport badges could let students check
+  themselves in as they board, rather than the driver tapping for each
+  one.
