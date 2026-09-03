@@ -78,7 +78,7 @@ export function RouteProgressBar({
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-hidden px-8 pt-1"
+      className="w-full overflow-hidden px-8 pt-1 pb-4"
       style={{ WebkitMaskImage: maskImage, maskImage }}
     >
       <div
@@ -118,9 +118,16 @@ export function RouteProgressBar({
 
           {/* Cul-de-sacs: a circle a little larger than the road's own
               height, straddling each true end of the route. The bus icon
-              (wider than the circle) also sits right on top of one at
-              the true start/end - the container's generous px-8 leaves
-              enough room that neither is ever clipped there. */}
+              (wider *and taller* than the circle) also sits right on top
+              of one at the true start/end - the container's generous
+              px-8 leaves enough room horizontally that neither is ever
+              clipped there, and pb-4 does the same vertically: both are
+              centered on the road, which is anchored to the *bottom* of
+              a taller box (h-24), so both extend a few px below that
+              box's own bottom edge - with no bottom padding to absorb
+              that, the container's own overflow-hidden was cutting off
+              the bottom of the bus and circles even in the middle of the
+              route, not just at either end. */}
           <div className="absolute top-1/2 left-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400" />
           <div className="absolute top-1/2 left-full h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400" />
         </div>
