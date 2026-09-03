@@ -1,32 +1,66 @@
 import SwiftUI
 
-/// Steps through a route's navigation instructions one at a time.
+/// Steps a driver through a route's navigation instructions one at a time.
 /// Advances on: a tap anywhere on screen, the on-screen Next/Back buttons,
-/// or a keypress from a paired Bluetooth clicker/remote (most such remotes
-/// pair as an external keyboard and send space/enter/arrow keys — remap
-/// the key sets below if your specific hardware sends something else).
+/// or a paired Bluetooth media remote (prev/play-pause/next), which is the
+/// primary input this app targets — see RemoteControlManager. A hardware
+/// keyboard's arrow keys also work, as a fallback for devices that turn out
+/// to pair as a keyboard instead of a media remote.
 struct ContentView: View {
     @State private var viewModel = RouteViewModel(route: .loadSample())
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 16) {
             Text("\(viewModel.stepNumber) of \(viewModel.totalSteps)")
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
             Spacer()
 
-            Text(viewModel.currentStep.instruction)
-                .font(.system(size: 48, weight: .bold))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
+            VStack(spacing: 12) {
+                Text(headingText)
+                    .font(.system(size: 40, weight: .heavy))
+                    .multilineTextAlignment(.center)
 
-            if let detail = viewModel.currentStep.detail {
-                Text(detail)
+                if let subheading = viewModel.currentStep.subheading {
+                    Text(subheading)
+                        .font(.title2)
+                        .multilineTextAlignment(.center)
+                }
+
+                if let distance = viewModel.currentStep.distance {
+                    Text(distance)
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let count = viewModel.currentStep.studentCount {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.2.fill")
+                        Text("\(count) Student\(count == 1 ? "" : "s")")
+                        if let pickupOrDropoff = viewModel.currentStep.pickupOrDropoff {
+                            Text("· \(pickupOrDropoff)")
+                        }
+                    }
                     .font(.title3)
-                    .foregroundStyle(.secondary)
+                }
+
+                if let side = viewModel.currentStep.sideOfRoad {
+                    Text("Stop on \(side) side")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let special = viewModel.currentStep.specialInstruction {
+                    Text(special)
+                        .font(.subheadline)
+                        .padding(10)
+                        .background(.yellow.opacity(0.2))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
             }
+            .padding(.horizontal)
 
             Spacer()
 
@@ -67,6 +101,13 @@ struct ContentView: View {
             viewModel.goBack()
             return .handled
         }
+    }
+
+    private var headingText: String {
+        if viewModel.currentStep.kind == .stop, let stopNumber = viewModel.currentStopNumber {
+            return "STOP \(stopNumber) OF \(viewModel.totalStops)"
+        }
+        return viewModel.currentStep.heading ?? ""
     }
 }
 

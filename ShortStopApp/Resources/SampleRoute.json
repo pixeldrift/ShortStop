@@ -1,13 +1,125 @@
 {
-  "name": "Sample Morning Route",
+  "name": "Route 104 - Oak Elementary Morning Pickup",
   "steps": [
-    { "id": 0, "instruction": "Depart bus yard", "detail": "Head north on Main St" },
-    { "id": 1, "instruction": "Turn right onto Oak Ave", "detail": "0.3 mi" },
-    { "id": 2, "instruction": "Stop 1: 142 Oak Ave", "detail": "Pick up 3 students" },
-    { "id": 3, "instruction": "Continue on Oak Ave", "detail": "0.5 mi" },
-    { "id": 4, "instruction": "Turn left onto Elm St", "detail": "0.2 mi" },
-    { "id": 5, "instruction": "Stop 2: 87 Elm St", "detail": "Pick up 2 students" },
-    { "id": 6, "instruction": "Turn right onto School Rd", "detail": "0.8 mi" },
-    { "id": 7, "instruction": "Arrive at Lincoln Elementary", "detail": "Drop off all students" }
+    {
+      "id": 0,
+      "kind": "depart",
+      "heading": "START ROUTE 104",
+      "subheading": "Oak Elementary — Morning Pickup",
+      "distance": "Bus 37 · Driver John Smith · 7:12 AM departure",
+      "studentCount": null,
+      "pickupOrDropoff": null,
+      "sideOfRoad": null,
+      "specialInstruction": null,
+      "announcement": "Starting Route 104. Oak Elementary, morning pickup. Bus 37, driver John Smith."
+    },
+    {
+      "id": 1,
+      "kind": "turn",
+      "heading": "TURN RIGHT",
+      "subheading": "Oak Street",
+      "distance": "500 ft ahead",
+      "studentCount": null,
+      "pickupOrDropoff": null,
+      "sideOfRoad": null,
+      "specialInstruction": null,
+      "announcement": "Turn right onto Oak Street. Your next stop is 142 Oak Street, approximately one minute ahead."
+    },
+    {
+      "id": 2,
+      "kind": "stop",
+      "heading": null,
+      "subheading": "142 Oak Street",
+      "distance": null,
+      "studentCount": 2,
+      "pickupOrDropoff": "Pickup",
+      "sideOfRoad": "right",
+      "specialInstruction": "Parent requests curbside pickup.",
+      "announcement": "Stop ahead. Two students. Pickup on right side."
+    },
+    {
+      "id": 3,
+      "kind": "turn",
+      "heading": "CONTINUE STRAIGHT",
+      "subheading": "Oak Avenue",
+      "distance": "0.4 mi",
+      "studentCount": null,
+      "pickupOrDropoff": null,
+      "sideOfRoad": null,
+      "specialInstruction": null,
+      "announcement": "Continue straight on Oak Avenue for four tenths of a mile."
+    },
+    {
+      "id": 4,
+      "kind": "stop",
+      "heading": null,
+      "subheading": "217 Oak Avenue",
+      "distance": null,
+      "studentCount": 1,
+      "pickupOrDropoff": "Pickup",
+      "sideOfRoad": "left",
+      "specialInstruction": null,
+      "announcement": "Stop ahead. One student. Pickup on left side."
+    },
+    {
+      "id": 5,
+      "kind": "turn",
+      "heading": "TURN LEFT",
+      "subheading": "Franklin Road",
+      "distance": "800 ft ahead",
+      "studentCount": null,
+      "pickupOrDropoff": null,
+      "sideOfRoad": null,
+      "specialInstruction": null,
+      "announcement": "In 800 feet, turn left onto Franklin Road."
+    },
+    {
+      "id": 6,
+      "kind": "stop",
+      "heading": null,
+      "subheading": "118 Franklin Road",
+      "distance": null,
+      "studentCount": 3,
+      "pickupOrDropoff": "Pickup",
+      "sideOfRoad": "right",
+      "specialInstruction": "Wheelchair lift required.",
+      "announcement": "Stop 14. Three students. Pickup. Wheelchair lift required."
+    },
+    {
+      "id": 7,
+      "kind": "turn",
+      "heading": "CONTINUE",
+      "subheading": "Franklin Road",
+      "distance": "0.6 mi",
+      "studentCount": null,
+      "pickupOrDropoff": null,
+      "sideOfRoad": null,
+      "specialInstruction": null,
+      "announcement": "Next stop, 225 Franklin Road, two students."
+    },
+    {
+      "id": 8,
+      "kind": "stop",
+      "heading": null,
+      "subheading": "225 Franklin Road",
+      "distance": null,
+      "studentCount": 2,
+      "pickupOrDropoff": "Pickup",
+      "sideOfRoad": "right",
+      "specialInstruction": null,
+      "announcement": "Stop ahead. Two students. Pickup on right side."
+    },
+    {
+      "id": 9,
+      "kind": "arrive",
+      "heading": "ARRIVE AT SCHOOL",
+      "subheading": "Oak Elementary",
+      "distance": null,
+      "studentCount": null,
+      "pickupOrDropoff": null,
+      "sideOfRoad": null,
+      "specialInstruction": null,
+      "announcement": "Arriving at Oak Elementary. Drop off all students."
+    }
   ]
 }
