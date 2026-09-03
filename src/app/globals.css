@@ -104,3 +104,23 @@ body {
 .animate-step-exit {
   animation: step-exit 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
 }
+
+/* A small pop-in for the rider check-in card - it's held off (see
+   announcementDone in useRouteStepper.ts) until the stop's spoken
+   announcement finishes, so it shouldn't then just snap into place;
+   a quick scale+fade reads as "arriving," not as another instant
+   swap. */
+@keyframes roster-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-roster-pop {
+  animation: roster-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}

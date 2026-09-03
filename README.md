@@ -40,6 +40,7 @@ src/
   components/
     StartScreen.tsx     Route summary + trip stats + "Start Route" button
     StepScreen.tsx       The step-through screen, incl. rider check-in
+    StepTransition.tsx    Odometer-style roll between steps (see below)
     TopBar.tsx            Logo / route number / bus number header
     RouteProgressBar.tsx  The road-styled progress bar (see below)
     Logo.tsx               Wraps the logo asset at two sizes
@@ -50,6 +51,8 @@ src/
     parseRouteCsv.ts     CSV → Route parsing (see below)
     useRouteStepper.ts   State + all input wiring, incl. pause (see below)
     useRiderRoster.ts    Per-stop rider check-in state (see below)
+    useFitLines.ts        Shrink text to fit N lines (see below)
+    useFitGrid.ts          Shrink a bubble grid to fit (see below)
     time.ts               addMinutesToTimeString - trip ETA math
     silence.ts           A tiny silent audio loop (see below)
 public/
@@ -241,26 +244,29 @@ landscape (1180×820) viewports.
   between the two rather than just assuming the CSS does what it's
   supposed to.
 
-  In portrait, the map is free to shrink (`shrink`, down to a
-  `min-h-[4.5rem]` floor) whenever the rest of the column - header,
-  progress bar, step content, footer - doesn't fit the viewport
-  otherwise. A brief detour: an earlier version gated that shrink in JS,
-  only letting the map give up space when `useFitLines` reported the
-  *current step's* street name genuinely couldn't fit its two-line
-  baseline, on the theory that generic viewport-driven shrinking was
-  making the map smaller than it needed to be. That theory was wrong in
-  a way that mattered - on an actual short phone, an *ordinary* step
-  (text fitting fine in two lines) could still add up to more than the
-  viewport's height once the header/progress bar/footer were included,
-  and with the map now rigid, the flex column had nowhere left to
-  absorb that deficit - it pushed the footer, Back/Pause/Next buttons
-  included, entirely off the bottom of the screen. CSS's own
-  `flex-shrink` only kicks in once there's an actual deficit to
-  resolve, so going back to plain unconditional `shrink` doesn't bring
-  back the original "shrinks more than it needs to" complaint - verified
-  on both a short phone viewport (footer now fully on-screen) and an
-  ample iPad one (map still renders at its full un-shrunk 30vh, no
-  regression).
+  The map's height (`h-[30vh]`, "about a third of the screen") is fixed
+  - `shrink-0` in portrait now, not `shrink` - rather than condensing to
+  make room for anything. This went back and forth a couple of times: an
+  earlier version let the map shrink generically whenever the column
+  ran short on space, then gated that behind "does the current step's
+  text need a third line" to stop it shrinking more than it needed to,
+  then dropped that gating again after it turned out to cause a worse
+  problem (an *ordinary* step could still add up to more than a short
+  phone's viewport once header/progress bar/footer were included, and
+  with the map rigid there was nothing left to absorb the deficit - it
+  pushed the footer off the bottom of the screen entirely). The map
+  itself is fixed now on principle, not as a side effect of that
+  back-and-forth: the rider check-in card and the step content are what
+  compress instead (their own bubble-shrink and two-line-then-shrink
+  mechanisms, described where each is built below) - so the footer-off-
+  screen risk that came from a rigid map had to be solved a different
+  way, by tightening chrome padding and moderating the icon/street-name
+  `clamp()` ranges (both described below) enough that even a short
+  phone's ordinary content comfortably fits under a full-height map.
+  Verified at 375×667 (iPhone SE class, the shortest viewport this app
+  is expected to run on) with both an ordinary step and an
+  intentionally pathological long street name - footer fully on-screen
+  either way - and confirmed the ample-iPad case is unaffected.
 - **Map/content divider**: a thin glossy blue bar (`.btn-glossy`, the
   same bevel/shadow/highlight treatment as the buttons) between the
   map/rider region and everything else - a horizontal bar under the map
@@ -365,13 +371,18 @@ landscape (1180×820) viewports.
   driven toward (`stopNumberByIndex` in `useRouteStepper.ts`).
 - **Turn steps**: the actual turn-arrow road sign (`turn-arrow.png`,
   user-supplied, already had a transparent background) instead of "TURN
-  LEFT" text - large on the step screen (`clamp(3.5rem,14vh,8rem)`,
-  trimmed down a size from where it started), small on the progress
-  bar's markers - mirrored horizontally for a left turn, since the
-  source art is a right turn. Street name renders below it in larger
-  type than anything else on screen (`clamp(1.35rem,5.25vh,2.75rem)`,
-  also trimmed down from its original, larger clamp range).
-- **Stop steps**: the pin icon (same trimmed-down `clamp(3.5rem,14vh,8rem)`
+  LEFT" text - large on the step screen (`clamp(3.25rem,12vh,8rem)`,
+  trimmed down more than once from where it started), small on the
+  progress bar's markers - mirrored horizontally for a left turn, since
+  the source art is a right turn. Street name renders below it in larger
+  type than anything else on screen (`clamp(1.25rem,4.5vh,2.75rem)`,
+  likewise trimmed a couple of times from its original, larger clamp
+  range) - the `vh` middle value in both is what got trimmed most
+  recently, so the map could stay a fixed, un-condensing size (see Map/
+  rider region above) without an ordinary short-phone step overflowing
+  the screen; the floor/ceiling stayed close to where they were, so
+  neither looks meaningfully smaller on a tablet.
+- **Stop steps**: the pin icon (same trimmed-down `clamp(3.25rem,12vh,8rem)`
   as the turn arrow), with the stop number set inside its white circle
   (absolutely positioned over the image - tuned by eye against a
   screenshot, not derived from the art's actual geometry, so it'll need
@@ -436,26 +447,23 @@ landscape (1180×820) viewports.
   which is what it looked like before that was added.
 
   The new content stays in normal document flow the whole time - it's
-  still what determines the rendered height of this area, so the
-  two-line street-name guarantee that makes the map shrink to accommodate
-  it (see below) keeps working; only the *outgoing* content is pulled
-  out of flow (absolutely positioned on top) for the 320ms it takes to
-  animate away. Clipping this element on its own would normally break
-  that guarantee - per the flex spec, a flex item's *automatic* minimum
-  size is zero once its own overflow isn't visible, which would let this
-  area collapse instead of forcing the map to shrink first. Worked
-  around by measuring the incoming content's own height
-  (`ResizeObserver`, the same technique `RouteProgressBar.tsx` already
-  uses) and reapplying it as an *explicit* min-height via a CSS custom
-  property - unlike `auto`, an explicit length isn't zeroed by that rule.
-  It's set through a custom property rather than inline `min-height`
-  directly so `landscape:min-h-0` from the caller can still win in
-  landscape (an inline style always beats a class, `landscape:` variant
-  or not - going through a custom property that a class then reads
-  keeps the override winnable). Confirmed with the same fallback-shrink
-  regression test as the two-line guarantee itself: an ordinary step
-  still renders the map at full height, and a pathological long street
-  name still shrinks it, with the clipping now turned on.
+  still what determines the rendered height of this area, which is what
+  the two-line street-name guarantee (see below) needs to actually get
+  its floor honored; only the *outgoing* content is pulled out of flow
+  (absolutely positioned on top) for the 320ms it takes to animate away.
+  Clipping this element on its own would normally break that guarantee -
+  per the flex spec, a flex item's *automatic* minimum size is zero once
+  its own overflow isn't visible, which would let this area collapse
+  below its two-line floor instead of honoring it. Worked around by
+  measuring the incoming content's own height (`ResizeObserver`, the
+  same technique `RouteProgressBar.tsx` already uses) and reapplying it
+  as an *explicit* min-height via a CSS custom property - unlike `auto`,
+  an explicit length isn't zeroed by that rule. It's set through a
+  custom property rather than inline `min-height` directly so
+  `landscape:min-h-0` from the caller can still win in landscape (an
+  inline style always beats a class, `landscape:` variant or not - going
+  through a custom property that a class then reads keeps the override
+  winnable).
 
 ### Forcing a single light theme
 
@@ -485,7 +493,7 @@ already had a transparent background as supplied.
 
 **Scaling to fit, not scrolling**: the turn/stop icon, the street name,
 and a few smaller labels use Tailwind arbitrary values like
-`text-[clamp(1.35rem,5.25vh,2.75rem)]` instead of fixed/breakpoint sizes -
+`text-[clamp(1.25rem,4.5vh,2.75rem)]` instead of fixed/breakpoint sizes -
 the middle value is a viewport-height percentage, so on a shorter
 viewport (landscape, where there's less vertical room) they shrink
 smoothly instead of overflowing; the min/max bounds keep them from ever
@@ -541,22 +549,63 @@ the pattern (tap a number, it and everything before it fills in) is
 meant to read as self-evident, like a star rating. Tapping rider N checks in everyone
 from 1 through N and un-checks anyone after N, rather than toggling one
 at a time (`fillTo` in `useRiderRoster.ts`) - there's no separate "check
-all" control, since tapping the last rider does that. **Additional
-Rider** (styled and sized the same as the numbered buttons - a plain "+"
-instead of a person icon, labeled instead of numbered) appends one more
-rider, already checked in (it's recording someone who's visibly boarding
-right now, not someone expected) - it doesn't participate in the
-star-rating fill, so it can leave a "gap" (e.g. riders 1-2 checked, 3-5
-not, plus one additional rider checked) if the driver hasn't finished
-checking in the expected riders yet. That's intentional: the added rider
-is a real, separate event, not a retroactive claim that 3-5 also
-boarded.
+all" control, since tapping the last rider does that; it's a count at
+this stage (how many riders have boarded so far), not individually
+identified riders. **Additional Rider** (styled and sized the same as
+the numbered buttons - a plain "+" instead of a person icon, unlabeled -
+it used to carry an "Additional Rider" caption underneath, which read as
+redundant once the icon itself was already distinct from the numbered
+circles) appends one more rider, already checked in (it's recording
+someone who's visibly boarding right now, not someone expected) - it
+doesn't participate in the star-rating fill, so it can leave a "gap"
+(e.g. riders 1-2 checked, 3-5 not, plus one additional rider checked) if
+the driver hasn't finished checking in the expected riders yet. That's
+intentional: the added rider is a real, separate event, not a
+retroactive claim that 3-5 also boarded.
 
-Below the roster, a **Resume Route** button (`aria-label="Continue
-route"`, same glossy blue styling as the footer's advance button, just
-smaller) calls the same `onAdvance` handler as the footer's "Next"
-button - added so a driver checking riders in doesn't have to look away
-from the roster down to the footer to keep driving once they're done.
+Below the roster, an **OK** button (`aria-label="Continue route"`, same
+glossy blue styling as the footer's advance button, just smaller) calls
+the same `onAdvance` handler as the footer's "Next" button - added so a
+driver checking riders in doesn't have to look away from the roster down
+to the footer to keep driving once they're done. It used to read "Resume
+Route," which is accurate but a lot of words for a button whose whole
+job is "I'm done, let's go" - the aria-label stays more descriptive for
+screen readers even though the visible label is now just "OK."
+
+**Bubbles shrink to fit, the map doesn't**: since the map is a fixed
+size now (see Map/rider region above), a stop with a lot of expected
+riders (this route has one with 10, plus the Additional Rider button -
+11 bubbles) can need more rows than the check-in card has height for at
+the bubbles' baseline (`h-11`) size. `useFitGrid.ts` - the same
+measure-and-shrink idea as `useFitLines.ts`, but for a 2D grid instead of
+wrapped text - shrinks a `--fit-scale` CSS custom property from 1 down
+to a floor (0.6, chosen so a bubble never gets too small to tap
+reliably) until the roster's `scrollHeight` fits within its actual
+rendered height. Every size that matters (bubble diameter, the person
+icon inside it, the number label, the gaps between bubbles) reads
+`--fit-scale` through a `calc()` expression rather than a fixed size, so
+they all shrink together proportionally. Verified against the
+11-bubble stop specifically - no clipping, `--fit-scale` lands right at
+its floor for that one.
+
+**Held off until the announcement finishes**: the check-in card used to
+appear the instant a stop became current, popping up over top of the
+driver still hearing the stop's own spoken announcement. `useRouteStepper.ts`
+now exposes `announcementDone`, tracking whether the *last* queued
+utterance for the current announcement attempt has actually finished (or
+errored, or hit an 8-second fallback timeout, in case a browser/voice
+never reliably fires `end`) - `StepScreen` only shows the card once that's
+true. It's derived by comparing an `attemptKey` (the current step id plus
+a count that only bumps on *resuming* from pause, so a re-announcement
+after pausing mid-stop is tracked as a fresh attempt) against whichever
+key last completed, rather than an effect explicitly resetting a boolean
+to false and back to true - the key naturally goes stale the moment a new
+attempt starts, so nothing needs to be reset by hand, and every actual
+`setState` call happens inside a callback responding to an external event
+(the utterance ending, or the timeout), never synchronously in the effect
+body. When the card does appear, it's a quick scale-and-fade pop-in
+(`animate-roster-pop` in `globals.css`) rather than an instant snap into
+place, since it's now arriving deliberately rather than immediately.
 
 State lives in `useRiderRoster.ts`, instantiated once in `RouteApp`
 (`page.tsx`) rather than inside the stop screen itself, so it survives

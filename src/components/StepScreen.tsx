@@ -3,6 +3,7 @@ import { RouteProgressBar } from "./RouteProgressBar";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
 import { PauseIcon, PersonSolidIcon, RoundedTriangleIcon, TriangleIcon, TurnArrow } from "./icons";
+import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import type { NavigationStep, Route } from "@/lib/types";
 
@@ -20,6 +21,7 @@ export function StepScreen({
   onBack,
   onTogglePause,
   onEndRoute,
+  announcementDone,
   roster,
   totalOnboard,
   onRiderTap,
@@ -38,28 +40,31 @@ export function StepScreen({
   onBack: () => void;
   onTogglePause: () => void;
   onEndRoute: () => void;
+  announcementDone: boolean;
   roster: boolean[];
   totalOnboard: number;
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
 }) {
   const isStop = step.kind === "stop";
-  const showRoster = !paused && isStop && roster.length > 0;
+  // Held off until the stop's own announcement has finished speaking, so
+  // the check-in card doesn't pop up over top of still-playing audio.
+  const showRoster = !paused && isStop && roster.length > 0 && announcementDone;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none landscape:flex-row">
       {/* Top third of the screen in portrait / left column in landscape -
-          always reserved at the same size so nothing else ever shifts.
-          Normally the map; on a stop with expected riders, the check-in
-          box takes this spot instead. Free to shrink (down to a
-          min-h floor) in portrait, since CSS only actually shrinks a
-          flex item once its siblings genuinely don't fit otherwise -
-          gating that in JS on "does the current step's text need a
-          third line" sounded tighter, but it meant the map stayed rigid
-          even when the *rest* of the column (header, progress bar,
-          footer) didn't fit a short viewport either, pushing the footer
-          off the bottom of the screen entirely. */}
-      <div className="relative h-[30vh] w-full min-h-[4.5rem] shrink overflow-hidden landscape:h-full landscape:min-h-0 landscape:shrink-0 landscape:w-[42%]">
+          always reserved at the same, fixed size (~30% of the viewport
+          height) so nothing else ever shifts and the map never gets
+          condensed. Normally the map; on a stop with expected riders,
+          the check-in box takes this spot instead - if it has more
+          riders than fit at their baseline size, the bubbles shrink to
+          fit (see RiderCheckInBox) rather than the map giving up space
+          for them. The rest of the column (street name, footer) makes
+          room for itself independently, via its own two-line text
+          guarantee and shrink-if-crazy-long fallback - see StopContent/
+          TurnContent below - rather than by the map yielding space. */}
+      <div className="relative h-[30vh] w-full shrink-0 overflow-hidden landscape:h-full landscape:w-[42%]">
         <Image src="/assets/map-placeholder.jpg" alt="" fill className="object-cover" priority />
         <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-3 text-center">
           <p className="text-sm font-semibold text-white">
@@ -74,7 +79,7 @@ export function StepScreen({
                 panel, leaving the dimmed map visible all around it. */}
             <div className="absolute inset-0 bg-black/35" />
             <div className="absolute inset-0 flex items-center justify-center p-3">
-              <div className="h-[78%] w-[86%]">
+              <div className="animate-roster-pop h-[78%] w-[86%]">
                 <RiderCheckInBox
                   roster={roster}
                   onRiderTap={onRiderTap}
@@ -95,10 +100,10 @@ export function StepScreen({
           right (its own column) in landscape. */}
       <div className="flex min-w-0 flex-1 flex-col landscape:min-h-0 landscape:overflow-hidden">
         {/* Pinned header: always visible, doesn't scroll away */}
-        <div className="shrink-0 px-4 pt-2">
+        <div className="shrink-0 px-4 pt-1.5">
           <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
 
-          <div className="mt-1 flex items-center justify-between">
+          <div className="mt-0.5 flex items-center justify-between">
             <p className="font-heading text-sm font-black tracking-wide text-zinc-600">
               Stop {stopProgressNumber} of {totalStops}
             </p>
@@ -115,7 +120,7 @@ export function StepScreen({
             which matters most on the tablet-landscape viewports this is
             built for. */}
         <div
-          className="flex flex-1 touch-manipulation flex-col gap-2 p-3 landscape:min-h-0 landscape:overflow-hidden"
+          className="flex flex-1 touch-manipulation flex-col gap-1.5 px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
           onClick={() => !paused && onAdvance()}
         >
           <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
@@ -136,7 +141,7 @@ export function StepScreen({
 
         {/* Footer - pinned */}
         <div
-          className="flex w-full max-w-md shrink-0 items-center gap-3 self-center p-4 pt-0"
+          className="flex w-full max-w-md shrink-0 items-center gap-3 self-center px-4 pt-0 pb-3"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -144,7 +149,7 @@ export function StepScreen({
             onClick={onBack}
             disabled={isFirstStep || paused}
             aria-label="Back"
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-zinc-100 py-4 text-lg font-semibold disabled:opacity-40"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-zinc-100 py-3 text-lg font-semibold disabled:opacity-40"
           >
             <TriangleIcon direction="left" className="h-6 w-6" /> Back
           </button>
@@ -153,7 +158,7 @@ export function StepScreen({
             type="button"
             onClick={onTogglePause}
             aria-label={paused ? "Resume route" : "Pause route"}
-            className="btn-glossy flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
+            className="btn-glossy flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white"
           >
             {paused ? (
               <TriangleIcon direction="right" className="h-6 w-6" />
@@ -167,7 +172,7 @@ export function StepScreen({
             onClick={isLastStep ? onEndRoute : onAdvance}
             disabled={paused}
             aria-label={isFirstStep ? "Start" : isLastStep ? "End" : "Next"}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
           >
             {isFirstStep ? "Start" : isLastStep ? "End" : "Next"}{" "}
             <TriangleIcon direction="right" className="h-6 w-6" />
@@ -186,7 +191,7 @@ function TurnContent({ step }: { step: NavigationStep }) {
       {step.direction ? (
         <TurnArrow
           direction={step.direction}
-          className="h-[clamp(3.5rem,14vh,8rem)] w-[clamp(3.5rem,14vh,8rem)]"
+          className="h-[clamp(3.25rem,12vh,8rem)] w-[clamp(3.25rem,12vh,8rem)]"
         />
       ) : (
         <h1 className="font-heading text-[clamp(1.25rem,4vh,2.25rem)] font-black tracking-tight">
@@ -197,7 +202,7 @@ function TurnContent({ step }: { step: NavigationStep }) {
       {step.subheading && (
         <p
           ref={subheadingRef}
-          className="font-heading min-h-[2.5em] text-[clamp(1.35rem,5.25vh,2.75rem)] leading-tight font-black tracking-tight"
+          className="font-heading min-h-[2.5em] text-[clamp(1.25rem,4.5vh,2.75rem)] leading-tight font-black tracking-tight"
         >
           {step.subheading}
         </p>
@@ -232,10 +237,10 @@ function StopContent({
           alt=""
           width={350}
           height={548}
-          className="h-[clamp(3.5rem,14vh,8rem)] w-auto"
+          className="h-[clamp(3.25rem,12vh,8rem)] w-auto"
         />
         {stopNumber && (
-          <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[clamp(1.25rem,4.5vh,2.5rem)] font-black text-red-700">
+          <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[clamp(1.15rem,3.75vh,2.5rem)] font-black text-red-700">
             {stopNumber}
           </span>
         )}
@@ -243,7 +248,7 @@ function StopContent({
           <RoundedTriangleIcon
             direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
             className={
-              "absolute top-[31%] h-[clamp(1.75rem,6vh,3rem)] w-[clamp(0.875rem,3vh,1.5rem)] -translate-y-1/2 text-[#d54e48] " +
+              "absolute top-[31%] h-[clamp(1.6rem,5vh,3rem)] w-[clamp(0.8rem,2.5vh,1.5rem)] -translate-y-1/2 text-[#d54e48] " +
               (step.sideOfRoad.toLowerCase() === "left" ? "right-full mr-1.5" : "left-full ml-1.5")
             }
           />
@@ -253,7 +258,7 @@ function StopContent({
       {step.subheading && (
         <p
           ref={subheadingRef}
-          className="font-heading min-h-[2.5em] text-[clamp(1.35rem,5.25vh,2.75rem)] leading-tight font-black tracking-tight"
+          className="font-heading min-h-[2.5em] text-[clamp(1.25rem,4.5vh,2.75rem)] leading-tight font-black tracking-tight"
         >
           {step.subheading}
         </p>
@@ -278,12 +283,21 @@ function RiderCheckInBox({
   onAddRider: () => void;
   onAdvance: () => void;
 }) {
+  // The map is a fixed size (doesn't condense to make room - see
+  // StepScreen above), so a route with a lot of expected riders can
+  // easily need more rows than this card has height for at the bubbles'
+  // baseline size. Rather than let the bottom row clip, useFitGrid
+  // shrinks --fit-scale until everything fits, down to a floor past
+  // which a bubble would be too small to tap reliably.
+  const fitRef = useFitGrid<HTMLDivElement>(roster.length, 0.6);
+
   return (
     <div
-      className="flex h-full w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
+      ref={fitRef}
+      className="flex h-full w-full flex-col items-center justify-center gap-[calc(0.75rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex flex-wrap items-start justify-center gap-2">
+      <div className="flex flex-wrap items-start justify-center gap-[calc(0.5rem*var(--fit-scale,1))]">
         {roster.map((checked, i) => (
           <button
             key={i}
@@ -291,17 +305,19 @@ function RiderCheckInBox({
             onClick={() => onRiderTap(i)}
             aria-pressed={checked}
             aria-label={`Check in through rider ${i + 1}${checked ? " (checked in)" : ""}`}
-            className="flex flex-col items-center gap-0.5"
+            className="flex flex-col items-center gap-[calc(0.125rem*var(--fit-scale,1))]"
           >
             <span
               className={
-                "flex h-11 w-11 items-center justify-center rounded-full border-2 border-blue-600 transition-colors " +
+                "flex h-[calc(2.75rem*var(--fit-scale,1))] w-[calc(2.75rem*var(--fit-scale,1))] items-center justify-center rounded-full border-2 border-blue-600 transition-colors " +
                 (checked ? "bg-blue-600 text-white" : "bg-zinc-100 text-zinc-400")
               }
             >
-              <PersonSolidIcon className="h-6 w-6" />
+              <PersonSolidIcon className="h-[calc(1.5rem*var(--fit-scale,1))] w-[calc(1.5rem*var(--fit-scale,1))]" />
             </span>
-            <span className="text-xs font-semibold text-zinc-500">{i + 1}</span>
+            <span className="text-[calc(0.75rem*var(--fit-scale,1))] font-semibold text-zinc-500">
+              {i + 1}
+            </span>
           </button>
         ))}
 
@@ -309,12 +325,11 @@ function RiderCheckInBox({
           type="button"
           onClick={onAddRider}
           aria-label="Add additional rider"
-          className="flex flex-col items-center gap-0.5"
+          className="flex flex-col items-center"
         >
-          <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-blue-600 bg-zinc-100 text-2xl leading-none font-bold text-zinc-400">
+          <span className="flex h-[calc(2.75rem*var(--fit-scale,1))] w-[calc(2.75rem*var(--fit-scale,1))] items-center justify-center rounded-full border-2 border-blue-600 bg-zinc-100 text-[calc(1.5rem*var(--fit-scale,1))] leading-none font-bold text-zinc-400">
             +
           </span>
-          <span className="w-14 text-xs font-semibold text-zinc-500">Additional Rider</span>
         </button>
       </div>
 
@@ -322,9 +337,9 @@ function RiderCheckInBox({
         type="button"
         onClick={onAdvance}
         aria-label="Continue route"
-        className="btn-glossy font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+        className="btn-glossy font-heading flex items-center justify-center rounded-xl bg-blue-600 px-6 py-2 text-sm font-semibold text-white"
       >
-        Resume Route <TriangleIcon direction="right" className="h-4 w-4" />
+        OK
       </button>
     </div>
   );

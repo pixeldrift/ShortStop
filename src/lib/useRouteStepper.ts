@@ -26,7 +26,13 @@ export function useRouteStepper(route: Route) {
     pausedRef.current = paused;
   }, [paused]);
 
+  // Bumped on every resume (not on pausing itself) - part of the
+  // announcement-completion key below, so a re-announcement after
+  // resuming is tracked as a fresh attempt rather than reusing whatever
+  // the *previous* attempt on this same step had already completed.
+  const [resumeCount, setResumeCount] = useState(0);
   const togglePause = useCallback(() => {
+    if (pausedRef.current) setResumeCount((c) => c + 1);
     setPaused((p) => !p);
   }, []);
 
@@ -77,16 +83,35 @@ export function useRouteStepper(route: Route) {
   // destination), and the last step's is followed by "Route completed."
   // - both queued alongside the step's own parts so a pause-triggered
   // cancel() (below) can't wipe one out before it plays.
+  //
+  // announcementDone tracks whether the *last* queued utterance for the
+  // current announcement attempt has finished (or errored/timed out) -
+  // StepScreen uses it to hold off popping up the rider check-in card
+  // until the driver has actually heard the stop announcement, rather
+  // than it appearing over top of still-playing speech.
+  //
+  // Derived as a key comparison (attemptKey === completedKey) rather
+  // than an effect calling setState(false) up front and setState(true)
+  // once speech ends: since resumeCount/currentStep already change
+  // reactively on their own, attemptKey naturally goes stale - and so
+  // announcementDone naturally reads false - the moment a new attempt
+  // starts, with no explicit "reset" call needed. Every setState call
+  // below happens inside a callback that responds to an external event
+  // (the utterance ending, or a timeout), never synchronously in the
+  // effect body itself.
   const announcedStartRef = useRef(false);
+  const attemptKey = `${currentStep.id}-${resumeCount}`;
+  const [completedKey, setCompletedKey] = useState<string | null>(null);
+  const announcementDone = completedKey === attemptKey;
+
   useEffect(() => {
-    if (
-      !started ||
-      paused ||
-      typeof window === "undefined" ||
-      !("speechSynthesis" in window)
-    ) {
-      return;
+    if (!started || paused) return;
+
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      const id = setTimeout(() => setCompletedKey(attemptKey), 0);
+      return () => clearTimeout(id);
     }
+
     window.speechSynthesis.cancel();
     const parts = [...currentStep.announcement];
     if (!announcedStartRef.current) {
@@ -97,14 +122,33 @@ export function useRouteStepper(route: Route) {
     if (isLastStep) {
       parts.push("Route completed.");
     }
-    for (const part of parts) {
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(part));
+
+    const utterances = parts.map((part) => new SpeechSynthesisUtterance(part));
+    const last = utterances[utterances.length - 1];
+    const markDone = () => setCompletedKey(attemptKey);
+    let fallback: number;
+    if (last) {
+      last.addEventListener("end", markDone);
+      last.addEventListener("error", markDone);
+      fallback = window.setTimeout(markDone, 8000);
+    } else {
+      fallback = window.setTimeout(markDone, 0);
     }
+    for (const utterance of utterances) {
+      window.speechSynthesis.speak(utterance);
+    }
+
+    return () => {
+      last?.removeEventListener("end", markDone);
+      last?.removeEventListener("error", markDone);
+      window.clearTimeout(fallback);
+    };
   }, [
     currentStep,
     started,
     paused,
     isLastStep,
+    attemptKey,
     route.routeNumber,
     route.schoolName,
     route.tripType,
@@ -238,5 +282,6 @@ export function useRouteStepper(route: Route) {
     paused,
     togglePause,
     endRoute,
+    announcementDone,
   };
 }

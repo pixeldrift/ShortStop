@@ -72,6 +72,7 @@ function RouteApp({ route }: { route: Route }) {
     paused,
     togglePause,
     endRoute,
+    announcementDone,
   } = useRouteStepper(route);
 
   const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
@@ -97,6 +98,7 @@ function RouteApp({ route }: { route: Route }) {
       onBack={goBack}
       onTogglePause={togglePause}
       onEndRoute={endRoute}
+      announcementDone={announcementDone}
       roster={getRoster(currentStep.id, expectedCount)}
       totalOnboard={totalOnboard}
       onRiderTap={(index) => fillTo(currentStep.id, index, expectedCount)}
