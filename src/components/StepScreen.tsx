@@ -1,7 +1,11 @@
-import { Logo } from "./Logo";
-import type { NavigationStep } from "@/lib/types";
+import Image from "next/image";
+import { RouteProgressBar } from "./RouteProgressBar";
+import { TopBar } from "./TopBar";
+import { DirectionArrow, PauseIcon, PlayIcon } from "./icons";
+import type { NavigationStep, Route } from "@/lib/types";
 
 export function StepScreen({
+  route,
   step,
   stepNumber,
   totalSteps,
@@ -9,9 +13,12 @@ export function StepScreen({
   totalStops,
   isFirstStep,
   isLastStep,
+  paused,
   onAdvance,
   onBack,
+  onTogglePause,
 }: {
+  route: Route;
   step: NavigationStep;
   stepNumber: number;
   totalSteps: number;
@@ -19,71 +26,140 @@ export function StepScreen({
   totalStops: number;
   isFirstStep: boolean;
   isLastStep: boolean;
+  paused: boolean;
   onAdvance: () => void;
   onBack: () => void;
+  onTogglePause: () => void;
 }) {
-  const heading =
-    step.kind === "stop" && stopNumber
-      ? `STOP ${stopNumber} OF ${totalStops}`
-      : (step.heading ?? "");
-
   return (
     <div
-      className="flex flex-1 touch-manipulation flex-col items-center justify-between gap-6 p-6 select-none"
-      onClick={onAdvance}
+      className="flex flex-1 touch-manipulation flex-col gap-3 p-4 select-none"
+      onClick={() => !paused && onAdvance()}
     >
-      <div className="grid w-full grid-cols-3 items-center">
-        <div className="justify-self-start">
-          <Logo size="small" />
-        </div>
-        <p className="col-start-2 justify-self-center text-sm font-semibold tracking-wide text-zinc-500">
-          {stepNumber} of {totalSteps}
-        </p>
-      </div>
+      <TopBar routeNumber={route.routeNumber} busNumber={route.busNumber} />
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-        <h1 className="text-4xl font-black tracking-tight sm:text-5xl">{heading}</h1>
+      <p className="text-center text-xs font-semibold tracking-wide text-zinc-500">
+        {stepNumber} of {totalSteps}
+      </p>
 
-        {step.subheading && <p className="text-2xl">{step.subheading}</p>}
+      <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} />
 
-        {step.distance && <p className="text-xl text-zinc-500">{step.distance}</p>}
-
-        {step.studentCount != null && (
-          <p className="text-xl">
-            {step.studentCount} Student{step.studentCount === 1 ? "" : "s"}
-            {step.pickupOrDropoff && ` · ${step.pickupOrDropoff}`}
-          </p>
-        )}
-
-        {step.sideOfRoad && (
-          <p className="text-zinc-500">Stop on {step.sideOfRoad} side</p>
-        )}
-
-        {step.specialInstruction && (
-          <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-base">
-            {step.specialInstruction}
-          </p>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+        {paused ? (
+          <PausedContent />
+        ) : step.kind === "stop" ? (
+          <StopContent step={step} stopNumber={stopNumber} totalStops={totalStops} />
+        ) : (
+          <TurnContent step={step} />
         )}
       </div>
 
-      <div className="flex w-full max-w-md gap-4" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="flex w-full max-w-md items-center gap-3 self-center"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={onBack}
-          disabled={isFirstStep}
-          className="flex-1 rounded-xl border border-zinc-300 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700"
+          disabled={isFirstStep || paused}
+          aria-label="Back"
+          className="flex flex-1 items-center justify-center gap-1 rounded-xl border border-zinc-300 py-4 text-lg font-semibold disabled:opacity-40 dark:border-zinc-700"
         >
-          ← Back
+          <span aria-hidden="true">&lt;</span> Back
         </button>
+
+        <button
+          type="button"
+          onClick={onTogglePause}
+          aria-label={paused ? "Resume route" : "Pause route"}
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-zinc-300 dark:border-zinc-700"
+        >
+          {paused ? <PlayIcon className="h-6 w-6" /> : <PauseIcon className="h-6 w-6" />}
+        </button>
+
         <button
           type="button"
           onClick={onAdvance}
-          disabled={isLastStep}
-          className="flex-1 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
+          disabled={isLastStep || paused}
+          aria-label="Next"
+          className="flex flex-1 items-center justify-center gap-1 rounded-xl bg-blue-600 py-4 text-lg font-semibold text-white disabled:opacity-40"
         >
-          Next →
+          Next <span aria-hidden="true">&gt;</span>
         </button>
       </div>
     </div>
   );
+}
+
+function TurnContent({ step }: { step: NavigationStep }) {
+  return (
+    <>
+      {step.direction ? (
+        <DirectionArrow direction={step.direction} className="h-32 w-32 text-blue-600 sm:h-40 sm:w-40" />
+      ) : (
+        <h1 className="text-4xl font-black tracking-tight">{step.heading}</h1>
+      )}
+
+      {step.subheading && (
+        <p className="text-5xl leading-tight font-black tracking-tight sm:text-6xl">
+          {step.subheading}
+        </p>
+      )}
+
+      {step.distance && <p className="text-xl text-zinc-500">{step.distance}</p>}
+
+      {step.specialInstruction && (
+        <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-base">
+          {step.specialInstruction}
+        </p>
+      )}
+    </>
+  );
+}
+
+function StopContent({
+  step,
+  stopNumber,
+  totalStops,
+}: {
+  step: NavigationStep;
+  stopNumber: number | null;
+  totalStops: number;
+}) {
+  return (
+    <>
+      {stopNumber && (
+        <p className="text-sm font-semibold tracking-wide text-zinc-500">
+          STOP {stopNumber} OF {totalStops}
+        </p>
+      )}
+
+      <Image src="/assets/pin.png" alt="" width={350} height={548} className="h-28 w-auto sm:h-36" />
+
+      {step.subheading && (
+        <p className="text-5xl leading-tight font-black tracking-tight sm:text-6xl">
+          {step.subheading}
+        </p>
+      )}
+
+      {step.studentCount != null && (
+        <p className="text-xl">
+          {step.studentCount} Student{step.studentCount === 1 ? "" : "s"}
+          {step.pickupOrDropoff && ` · ${step.pickupOrDropoff}`}
+        </p>
+      )}
+
+      {step.sideOfRoad && <p className="text-zinc-500">Stop on {step.sideOfRoad} side</p>}
+
+      {step.specialInstruction && (
+        <p className="rounded-lg bg-yellow-400/20 px-3 py-2 text-base">
+          {step.specialInstruction}
+        </p>
+      )}
+    </>
+  );
+}
+
+function PausedContent() {
+  return <h1 className="text-5xl font-black tracking-tight text-zinc-500">Route Paused</h1>;
 }

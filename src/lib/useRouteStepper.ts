@@ -18,7 +18,17 @@ import { SILENT_LOOP_DATA_URI } from "./silence";
 export function useRouteStepper(route: Route) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [started, setStarted] = useState(false);
+  const [paused, setPaused] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const pausedRef = useRef(false);
+
+  useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+
+  const togglePause = useCallback(() => {
+    setPaused((p) => !p);
+  }, []);
 
   const currentStep = route.steps[currentIndex];
   const totalSteps = route.steps.length;
@@ -43,14 +53,26 @@ export function useRouteStepper(route: Route) {
     setCurrentIndex((i) => (i > 0 ? i - 1 : i));
   }, []);
 
-  // Speak the announcement for whatever step is current.
+  // Speak the announcement for whatever step is current - but not while paused.
   useEffect(() => {
-    if (!started || typeof window === "undefined" || !("speechSynthesis" in window)) {
+    if (
+      !started ||
+      paused ||
+      typeof window === "undefined" ||
+      !("speechSynthesis" in window)
+    ) {
       return;
     }
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(new SpeechSynthesisUtterance(currentStep.announcement));
-  }, [currentStep, started]);
+  }, [currentStep, started, paused]);
+
+  // Cancel any in-progress announcement the moment the route is paused.
+  useEffect(() => {
+    if (paused && typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, [paused]);
 
   // Bluetooth media-remote handling via the Media Session API.
   useEffect(() => {
@@ -59,9 +81,15 @@ export function useRouteStepper(route: Route) {
     }
     const session = navigator.mediaSession;
     session.metadata = new MediaMetadata({ title: route.name });
-    session.setActionHandler("nexttrack", () => advance());
-    session.setActionHandler("previoustrack", () => goBack());
-    session.setActionHandler("play", () => advance());
+    session.setActionHandler("nexttrack", () => {
+      if (!pausedRef.current) advance();
+    });
+    session.setActionHandler("previoustrack", () => {
+      if (!pausedRef.current) goBack();
+    });
+    session.setActionHandler("play", () => {
+      if (!pausedRef.current) advance();
+    });
     session.playbackState = "playing";
 
     return () => {
@@ -75,6 +103,7 @@ export function useRouteStepper(route: Route) {
   useEffect(() => {
     if (!started) return;
     const handleKey = (e: KeyboardEvent) => {
+      if (pausedRef.current) return;
       if (["ArrowRight", "ArrowDown", " ", "Enter"].includes(e.key)) {
         e.preventDefault();
         advance();
@@ -119,5 +148,7 @@ export function useRouteStepper(route: Route) {
     start,
     advance,
     goBack,
+    paused,
+    togglePause,
   };
 }

@@ -10,7 +10,7 @@ import type { Route } from "@/lib/types";
 const ROUTE_META = {
   name: "Bus 125 Route",
   routeNumber: "125",
-  driverName: "—",
+  driverName: "Otto Mann",
   busNumber: "125",
   departureTime: "—",
 };
@@ -61,6 +61,8 @@ function RouteApp({ route }: { route: Route }) {
     start,
     advance,
     goBack,
+    paused,
+    togglePause,
   } = useRouteStepper(route);
 
   if (!started) {
@@ -69,6 +71,7 @@ function RouteApp({ route }: { route: Route }) {
 
   return (
     <StepScreen
+      route={route}
       step={currentStep}
       stepNumber={currentIndex + 1}
       totalSteps={totalSteps}
@@ -76,8 +79,10 @@ function RouteApp({ route }: { route: Route }) {
       totalStops={totalStops}
       isFirstStep={isFirstStep}
       isLastStep={isLastStep}
+      paused={paused}
       onAdvance={advance}
       onBack={goBack}
+      onTogglePause={togglePause}
     />
   );
 }

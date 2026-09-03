@@ -1,8 +1,11 @@
 export type StepKind = "depart" | "turn" | "stop" | "arrive";
+export type TurnDirection = "left" | "right";
 
 export interface NavigationStep {
   id: number;
   kind: StepKind;
+  /** Which way to turn, for "turn" steps - drives the big arrow icon. */
+  direction?: TurnDirection;
   /** Big on-screen line for depart/turn/arrive steps, e.g. "TURN RIGHT".
    * Ignored for "stop" steps, whose heading ("STOP 7 OF 23") is computed
    * from the route so it stays correct as steps are added or removed. */

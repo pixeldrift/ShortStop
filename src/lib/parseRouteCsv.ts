@@ -1,4 +1,4 @@
-import type { NavigationStep, Route } from "./types";
+import type { NavigationStep, Route, TurnDirection } from "./types";
 
 export interface RouteMeta {
   name: string;
@@ -52,10 +52,17 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
         ontoAt && fromAt
           ? `Turn ${action.toLowerCase()} from ${fromAt} onto ${ontoAt}.`
           : `Turn ${action.toLowerCase()} onto ${destination}.`;
+      const direction: TurnDirection | undefined =
+        action.toLowerCase() === "left"
+          ? "left"
+          : action.toLowerCase() === "right"
+            ? "right"
+            : undefined;
 
       return {
         id: index,
         kind: "turn",
+        direction,
         heading: `TURN ${action.toUpperCase()}`,
         subheading: destination,
         specialInstruction,

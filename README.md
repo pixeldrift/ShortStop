@@ -39,14 +39,22 @@ src/
   components/
     StartScreen.tsx     Route summary + "Start Route" button
     StepScreen.tsx       The step-through screen
+    TopBar.tsx            Logo / route number / bus number header
+    RouteProgressBar.tsx  The road-styled progress bar (see below)
+    Logo.tsx               Wraps the logo asset at two sizes
+    icons.tsx              Inline SVG icons (arrow, pause, play, chevron)
   lib/
     types.ts             Route / NavigationStep types
     parseRouteCsv.ts     CSV → Route parsing (see below)
-    useRouteStepper.ts   State + all input wiring (see below)
+    useRouteStepper.ts   State + all input wiring, incl. pause (see below)
     silence.ts           A tiny silent audio loop (see below)
 public/
   manifest.json          PWA manifest
   data/route-125.csv     Bus 125's route data
+  assets/
+    logo.png              ShortStop wordmark
+    pin.png                Stop marker (background removed)
+    bus.png                Position indicator (background removed)
 ```
 
 ### Running locally
@@ -122,11 +130,52 @@ is generated from each CSV row's action/road names (see
 `parseRouteCsv.ts`), not hand-authored, so it's serviceable but blunt
 ("Turn left onto Riverwood Ln.") rather than polished driving directions.
 
+### Visual design
+
+The step screen (`StepScreen.tsx`):
+
+- **Header**: logo top-left, route number large and bold top-center
+  (with a small "Route #" label above it), bus number top-right.
+- **Progress bar** (`RouteProgressBar.tsx`): styled like a road - gray
+  bar, dark border, dashed white center line. Turn steps get a small
+  circular marker with a mini direction arrow; stop steps get a small
+  map-pin marker. With a 22-step route these would overlap into an
+  unreadable clump at full density, so markers are thinned (greedy,
+  left to right, minimum gap between shown markers) - the current step
+  and both route endpoints always show, everything else only shows if
+  it's far enough from the last shown marker. A bus icon rides above the
+  bar at the current position, with a small caret pointing down at it;
+  its position is clamped a bit short of 0%/100% so the icon (wider than
+  a marker) doesn't get clipped by the screen edge at the very start/end.
+- **Turn steps**: a very large direction arrow (left/right) instead of
+  "TURN LEFT" text, with the street name below it in much larger type
+  than anything else on screen.
+- **Stop steps**: the pin icon instead of/alongside "STOP n of m", same
+  large-street-name treatment.
+- **Controls**: Back (`<`) / Next (`>`) buttons with a round Pause button
+  between them. Pausing shows a "Route Paused" message in place of the
+  step content, disables Back/Next and screen-tap-to-advance, stops the
+  spoken announcement, and - since the Bluetooth remote is the primary
+  input - ignores `nexttrack`/`previoustrack`/`play` events from it too,
+  so a stray remote press doesn't sneak the route forward while paused.
+  Tapping Pause again (now showing a play icon) resumes.
+
+`public/assets/pin.png` and `bus.png` started as stock/generated images
+with solid (checkerboard and white, respectively) backgrounds; both were
+background-removed with a flood-fill script (border-connected near-white
+regions → transparent) before being added here, so they composite
+cleanly over the road bar and the rest of the UI.
+
 ### Next steps
 
 - Fill in the CSV's missing `time`, `rider_count`, and `notes` columns
   (departure/stop times, student counts, special instructions) once
   that data exists
+- `driverName: "Otto Mann"` in `page.tsx` is a placeholder, not real
+  driver data - swap it in once there's an actual driver to assign
+- The progress bar's marker-thinning is a stopgap for density, not a
+  real fix - a scrollable/zoomable bar, or clustering nearby stops into
+  one marker with a count, would scale better on longer routes
 - Move route data into the doc's actual data model
   (District/School/Route/RouteStop/etc.) instead of a flat CSV, once
   there's more than one route
