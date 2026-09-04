@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "geocode": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeRoute.js"
   },
   "dependencies": {
     "next": "16.3.4",

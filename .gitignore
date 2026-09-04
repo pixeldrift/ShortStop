@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# compiled output of scripts/ (npm run geocode) - see scripts/tsconfig.json
+/scripts/.dist

@@ -7,6 +7,7 @@ import { StepScreen } from "@/components/StepScreen";
 import { buildDemoRoutes } from "@/lib/demoRoutes";
 import { parseRouteCsv } from "@/lib/parseRouteCsv";
 import { parseRouteMetaCsv } from "@/lib/parseRouteMetaCsv";
+import { PLACEHOLDER_META } from "@/lib/placeholderMeta";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
@@ -16,16 +17,6 @@ import type { Route } from "@/lib/types";
 // route-list screen has enough rows to actually demonstrate scrolling
 // and search filtering - see demoRoutes.ts.
 const DEMO_ROUTE_COUNT = 24;
-
-// The only RouteMeta fields the route-125-meta.csv schema doesn't cover
-// (driverName, schoolAddress, distance) - real mileage/driver-roster
-// data doesn't exist yet, so these stay hardcoded placeholders merged
-// in alongside whatever parseRouteMetaCsv parses out of the sheet.
-const PLACEHOLDER_META = {
-  driverName: "Otto Mann",
-  schoolAddress: "1425 Lake Forest Dr, Smyrna, TN 37167",
-  distance: "8.4 mi",
-};
 
 export default function Home() {
   const [route, setRoute] = useState<Route | null>(null);

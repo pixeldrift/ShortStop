@@ -58,11 +58,19 @@ src/
     useFitGrid.ts          Shrink a bubble grid to fit (see below)
     time.ts               addMinutesToTimeString/parseTimeToMinutes - trip ETA math
     demoRoutes.ts          Fabricates filler rows for the route list (see below)
+    deriveWaypoints.ts     CSV row -> geocodable address/intersection (see below)
+    geocode.ts              Nominatim lookup for one derived waypoint (see below)
+    waypointCache.ts         Cache key + entry types shared with scripts/geocodeRoute.ts
+    placeholderMeta.ts     Shared driverName/schoolAddress/distance placeholders
     silence.ts           A tiny silent audio loop (see below)
+scripts/
+  geocodeRoute.ts        `npm run geocode` - refreshes route-125-waypoints.json (see below)
+  tsconfig.json            Standalone tsc config so the script needs no bundler
 public/
   manifest.json          PWA manifest
-  data/route-125.csv       Bus 125's turn-by-turn steps
-  data/route-125-meta.csv  Bus 125's route-level metadata (see below)
+  data/route-125.csv           Bus 125's turn-by-turn steps
+  data/route-125-meta.csv      Bus 125's route-level metadata (see below)
+  data/route-125-waypoints.json  Geocoding cache, generated - see "Maps, part two" below
   assets/
     logo.png              ShortStop wordmark
     pin.png                Stop marker (background removed)
@@ -79,6 +87,12 @@ npm run dev
 
 Open http://localhost:3000. Works in any modern browser; test the
 Bluetooth remote on an actual iPad/iPhone in Safari.
+
+To refresh the route's geocoded waypoint cache after editing
+`route-125.csv` (see "Maps, part two" below): `npm run geocode`. Needs
+real outbound network access to `nominatim.openstreetmap.org` - not
+available in every environment (this one included), so run it
+somewhere that has it.
 
 ### Deploying
 
@@ -1082,6 +1096,85 @@ behind an opaque bar, a soft fade at the bottom so it reads as
 materializing rather than popping in - matching what's actually
 adjacent to each: the progress bar at the top, empty space (no
 adjacent element to "duck under") at the bottom.
+
+### Maps, part two: geocoding, cached in a separate file
+
+The next piece after deriving a `WaypointQuery` for every row (part
+one, above): actually resolve each one to real coordinates, without
+re-querying the geocoder every time the app loads or (worse) every
+time someone glances at `route-125.csv`. `npm run geocode`
+(`scripts/geocodeRoute.ts`) does this as a standalone step, writing
+`public/data/route-125-waypoints.json` - `route-125.csv` stays the one
+source of truth for the route; the waypoints file is a derived,
+disposable cache that can be regenerated from it at any time, not a
+second place route data has to be kept in sync by hand.
+
+**Cache keys are content-addressed, not row-indexed** - the whole
+mechanism behind "editing the CSV triggers a refresh" without any
+separate staleness tracking. `waypointCacheKey` (`waypointCache.ts`)
+turns a `WaypointQuery` straight into its key: `address:<text>` for a
+literal address, `intersection:<roadA> & <roadB>` (roads sorted first,
+so "A & B" and "B & A" - the same real intersection, however a given
+row happens to state it - always land on one shared entry) for a
+crossroads. Edit a row's road name and its derived query changes,
+which changes its key, which is simply a cache miss next run - geocoded
+fresh, no explicit invalidation step needed anywhere. Leave a row
+untouched and it derives the identical query it always did, so it
+keeps hitting the same cache entry indefinitely. The script also prunes
+any cache entry no longer referenced by the current CSV before writing,
+so the file never accumulates entries from since-edited-away rows -
+genuinely one source of truth, not two files that can silently drift
+apart.
+
+**Failures aren't cached, only successes are** (`geocode.ts` returns a
+`status: "error"` entry for "no result," but `geocodeRoute.ts`
+deliberately never writes those to the file) - a failed lookup almost
+always means the query wording needs a fix in the CSV, and leaving it
+out of the cache means it's retried automatically on the very next run
+rather than staying silently stuck failed forever with no cache-clearing
+step to remember. The real route surfaced two of these on a mocked test
+run: "Ramp toward Murfreesboro" (an unnamed highway ramp, unlikely to
+resolve as a named road in OSM) appears in two derived intersections and
+failed both, exactly as expected - a real, expected gap to either
+accept or word around later, not a bug in the derivation.
+
+**Geocoding itself is Nominatim** (OSM's own geocoder, free, no API
+key - matches the "don't run our own server for a prototype" reasoning
+behind picking ORS over Valhalla for routing) via its free-text search
+endpoint, one query per unique key, rate-limited to Nominatim's usage
+policy (max 1 request/second - only actual network calls wait; a cache
+hit costs nothing) and sent with a real, identifying `User-Agent`
+(policy-required, not optional). Every query other than the school's
+own full address needs a geographic hint to disambiguate a road name
+that could exist in more than one town, so every other query gets the
+school address's own "City, ST" appended (`extractCityState`, a regex
+pull off the end of `PLACEHOLDER_META.schoolAddress`) - the same address
+`page.tsx` already displays, now pulled out to its own module,
+`placeholderMeta.ts`, specifically so the script and the app share one
+copy instead of a second hardcoded one that could quietly drift out of
+sync with it.
+
+**Verified without hitting the network**: this sandboxed session's
+egress policy blocks `nominatim.openstreetmap.org` outright (a 403 on
+the CONNECT, confirmed via the agent-proxy's own status endpoint - a
+deliberate organization policy denial, not a bug to route around, so
+the actual `npm run geocode` run against the real API hasn't happened
+yet and needs to run somewhere with real network access to it - a
+normal dev machine or CI, not this session). Every other piece was
+still verified for real: `scripts/tsconfig.json` compiles the whole
+chain (the script plus every `src/lib` module it touches) standalone to
+CommonJS with plain `tsc`, no bundler or extra devDependency (`tsx`/
+`ts-node`) needed, and a scratch harness ran that compiled output
+against the real 22-row CSV with `geocodeQuery`'s `fetchImpl` parameter
+swapped for a mock (built for exactly this - real code, fake network)
+- confirming the dedup (22 rows, 19 unique keys), the two expected
+Murfreesboro-ramp failures, that a fully-cached second pass makes zero
+network calls, that an edited query produces a different key, and that
+an orphaned cache entry gets flagged for pruning correctly.
+
+Not yet wired up: actually running the real `npm run geocode` (blocked
+here, needs a network-unrestricted environment), rendering any of this
+on a map, and the ORS routing call itself.
 
 ### Next steps
 

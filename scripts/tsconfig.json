@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "outDir": "./.dist",
+    "rootDir": ".."
+  },
+  "include": [
+    "./geocodeRoute.ts",
+    "../src/lib/parseRouteCsv.ts",
+    "../src/lib/deriveWaypoints.ts",
+    "../src/lib/speech.ts",
+    "../src/lib/types.ts",
+    "../src/lib/placeholderMeta.ts",
+    "../src/lib/geocode.ts",
+    "../src/lib/waypointCache.ts"
+  ]
+}
