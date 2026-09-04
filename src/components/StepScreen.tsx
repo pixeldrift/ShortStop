@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { RouteMap } from "./RouteMap";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
@@ -74,12 +75,7 @@ export function StepScreen({
           guarantee and shrink-if-crazy-long fallback - see StopContent/
           TurnContent below - rather than by the map yielding space. */}
       <div className="relative h-[30vh] w-full shrink-0 overflow-hidden landscape:h-full landscape:w-[42%]">
-        <Image src="/assets/map-placeholder.jpg" alt="" fill className="object-cover" priority />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/45 p-3 text-center">
-          <p className="text-sm font-semibold text-white">
-            Demo only placeholder, not actual map
-          </p>
-        </div>
+        <RouteMap className="absolute inset-0" />
 
         {showRoster && (
           <>

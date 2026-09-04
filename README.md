@@ -45,6 +45,7 @@ src/
     RouteListScreen.tsx Home screen: searchable, scrollable #/Name/Start list
     StartScreen.tsx     Route summary + trip stats + "Start Route" button
     StepScreen.tsx       The step-through screen, incl. rider check-in
+    RouteMap.tsx           Real OSM tile map, no route drawn yet (see below)
     StepTransition.tsx    Odometer-style roll between steps (see below)
     TopBar.tsx            Logo / route number / bus number header
     RouteProgressBar.tsx  The road-styled progress bar (see below)
@@ -818,7 +819,8 @@ the *real* route's actual turn-by-turn `steps` array - so tapping a fake
 row still leads to a working trip-summary screen and step-through flow
 instead of a dead end, in the same "clearly not real, but not broken
 either" spirit as the "Demo only placeholder, not actual map" label
-already on the map image. The randomization uses a tiny seeded PRNG
+that used to sit on the map image (see "Maps, part four" further below
+- it's a real map now). The randomization uses a tiny seeded PRNG
 (`mulberry32`, seed `42`) rather than `Math.random()`, computed once via
 `useMemo(() => …, [route])` in `page.tsx` - otherwise the list would
 reshuffle itself every time the user backs out to it, which would both
@@ -1215,6 +1217,64 @@ later if that starts to matter more than it does at this route's small
 scale. The workflow's own commit only ever touches
 `route-125-waypoints.json`, never `route-125.csv` itself, so it can't
 re-trigger its own path-filtered listener - no infinite loop risk.
+
+### Maps, part four: a real OSM tile map, no route drawn yet
+
+The first genuinely visible piece of the maps work: `RouteMap.tsx`
+replaces the static `map-placeholder.jpg` (deleted - nothing references
+it anymore) and its "Demo only placeholder, not actual map" overlay
+with an actual pannable/zoomable OpenStreetMap tile map, in the same
+spot in `StepScreen.tsx`. Deliberately minimal for now, on request -
+just centered on La Vergne, TN (`[36.0134, -86.5581]`, zoom 13, both
+approximate - a general "somewhere in town" anchor, not tied to any
+specific address in the route data) with no route line, stop markers,
+or bus position drawn. Those come once the geocoded waypoint cache
+(`route-125-waypoints.json`, "Maps, part two"/"three" above) is
+actually populated and wired in - still blocked on the same
+GitHub-Actions-runner-vs-Nominatim issue described there.
+
+Library choice: plain `leaflet` (+ `@types/leaflet`), not
+`react-leaflet` - for a map this simple (one tile layer, nothing
+declarative to bind to React state yet), an imperative `L.map()`/
+`L.tileLayer()` setup in a single `useEffect` is less code and one
+fewer dependency than wiring up a React binding layer, and sidesteps
+any question of whether that binding's peer-dependency range has
+caught up to React 19 yet. Worth reconsidering once markers/a route
+line need to stay in sync with React state on every render, which is
+exactly the shape `react-leaflet` is built for.
+
+**The SSR trap, and how this avoids it**: `leaflet` touches `window` as
+soon as its JS module is evaluated - completely normal for a
+browser-only mapping library, but fatal if that import happens at
+module top level in a "use client" component, because Next still
+server-renders that component's first HTML (client components hydrate,
+they don't skip SSR entirely) and `window` doesn't exist there. Two
+imports needed splitting apart because of this: `import
+"leaflet/dist/leaflet.css"` is fine at the top of the file (CSS has no
+`window` dependency), but the JS side (`import("leaflet")`) is deferred
+to *inside* the mount effect - which only ever runs in the browser -
+via a dynamic `import()` rather than a static one. A `cancelled` flag
+closed over by the effect's cleanup guards against the narrow race
+where React unmounts before that dynamic import resolves (React
+StrictMode's dev-only mount/unmount/remount is the realistic case) -
+without it, a map could get initialized on a container that's already
+being torn down, with nothing left to call `.remove()` on it.
+
+**Verified without the real tiles ever loading** - this sandboxed
+session can't reach `tile.openstreetmap.org` either (same organization
+network policy that blocks Nominatim), confirmed the same way. Playwright
+intercepted the tile requests with a stand-in 1×1 image so the browser
+wouldn't just hang or fail-loop on the sandbox's own network block, and
+that isolated exactly the questions that mattered: `.leaflet-container`
+mounted, the OSM attribution control rendered ("Leaflet | © OpenStreetMap
+contributors"), the map fired the expected 15 tile requests for a
+1180×820 viewport at zoom 13 to a well-formed, correctly-parameterized
+URL (subdomain rotation and all - `https://c.tile.openstreetmap.org/13/
+2126/3216.png`), and there were zero console/page errors. What that
+run can't confirm - and won't be knowable from inside this session -
+is what the actual OSM tile imagery looks like; that needs checking
+somewhere with real network access to `tile.openstreetmap.org`, same
+caveat as the waypoint cache.
 
 ### Next steps
 
