@@ -3,7 +3,7 @@ time,action,from_at,onto_at,rider_count,side,notes
 ,Left,Rock Springs Rd,Old Nashville Hwy,,,
 ,Right,Old Nashville Hwy,Sam Ridley Pkwy,,,
 ,Right,Sam Ridley Pkwy,Ramp toward Murfreesboro,,,
-,Right,Ramp toward Murfreesboro,Fergus Rd,,,
+,Right,Ramp toward Murfreesboro,Fergus Rd,,,Fergus Rd becomes Bill Stewart Rd
 ,Stop,Bill Stewart Rd,Hidden Forest Ln,5,Right,
 ,Stop,Bill Stewart Rd,Red Bud Ln,3,Right,
 ,Stop,Bill Stewart Rd,Ruth Ln,3,Right,Wheelchair user requires assistance

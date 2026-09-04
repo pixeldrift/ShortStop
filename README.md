@@ -955,11 +955,17 @@ literal-address stop with no cross street at all (`"216 Lake Forest
 Dr"`), where the road name is pulled out of the address text itself.
 Any row that states its own road(s) explicitly always wins over the
 tracked value and resets it - which matters because the source sheet
-has at least one real gap (`route-125.csv` rows 4→5: an undocumented
-turn from "Ramp toward Murfreesboro" onto "Fergus Rd," then, three rows
-later, an explicit stop on "Bill Stewart Rd" that was never actually
-turned onto in what got transcribed) - so a stale tracked value never
-propagates past the next row that actually states where it is.
+has at least one real gap: `route-125.csv` turns right onto "Fergus Rd"
+(row 4), then, three rows later, has an explicit stop on "Bill Stewart
+Rd" with no turn in between. Not a missing turn after all, it turns out
+- Fergus Rd just becomes Bill Stewart Rd along its own length with no
+turn required, confirmed and now noted directly on that turn row's
+`notes` column ("Fergus Rd becomes Bill Stewart Rd," spoken as its own
+utterance right after the turn instruction - see below). Either way -
+a genuinely missing turn, or a road renaming without one - the tracked
+"current road" goes stale for those few rows in between, but that's
+harmless, since a stale tracked value never propagates past the next
+row that states its own road explicitly.
 
 Every row ends up as one `WaypointQuery`: either `{ kind: "address",
 text }` (a literal street address, or the school's own address for the
@@ -982,6 +988,26 @@ refactor alongside it: the CSV-row-splitting half of its work is now
 in `parseRouteCsv` itself - confirmed byte-for-byte identical `Route`
 output before/after (22 steps, 11 stops, same first step) so this was
 purely a "share the parsing" extraction, not a behavior change.
+
+Adding that note surfaced two small real bugs in how notes get spoken,
+fixed alongside it in `parseRouteCsv.ts`: a turn row's `notes` was
+already shown on screen (`TurnContent` already rendered
+`step.specialInstruction`) but was never actually included in that
+step's `announcement` array, unlike a stop's - so a note on a turn
+would silently never be spoken at all. And neither a turn's nor a
+stop's note was run through `speakRoadNames()` before being spoken, so
+a note that happens to mention an abbreviated road name (exactly this
+one - "Fergus Rd becomes Bill Stewart Rd") would have had the TTS
+engine reading "Rd" as a raw abbreviation instead of "Road." Both now
+match how every other spoken road name in the app is handled - notes
+still display in their raw, abbreviated CSV form on screen, same as
+`from_at`/`onto_at` always have; only the *spoken* version runs through
+`speakRoadNames()`. Confirmed by intercepting the actual
+`SpeechSynthesisUtterance` text in a headless browser while stepping
+through to that turn: "Turn right from Ramp toward Murfreesboro onto
+Fergus Road." immediately followed by "Fergus Road becomes Bill
+Stewart Road." as its own utterance, with "Fergus Rd becomes Bill
+Stewart Rd" (abbreviated) shown on screen underneath.
 
 Not yet wired up: actually geocoding these queries (Nominatim, free,
 matches the "don't run our own server" preference for a prototype),

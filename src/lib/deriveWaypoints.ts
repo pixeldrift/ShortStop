@@ -61,13 +61,15 @@ function locationFor(
  *      road name is pulled out of the address itself.
  *
  * Any row that states its own road(s) explicitly always wins over the
- * tracked value (used directly, and also resets it), which lets this
- * self-correct after a gap in the source sheet - route-125.csv's own
- * rows 4->5 are an undocumented turn from "Ramp toward Murfreesboro"
- * onto "Fergus Rd" and then, three rows later, an explicit stop on
- * "Bill Stewart Rd" that was never actually turned onto in the
- * transcribed sheet - rather than propagating a stale guess forward
- * from "Fergus Rd".
+ * tracked value (used directly, and also resets it), which also covers
+ * a road renaming along its own length with no turn of its own -
+ * route-125.csv's "Fergus Rd" turns into "Bill Stewart Rd" (noted on
+ * that turn row) a little further down the same physical road, with no
+ * turn in between. The tracked road goes stale for those few rows in
+ * between (still "Fergus Rd" through the gap), but that's harmless -
+ * nothing in that gap needs it - and the very next row that names its
+ * own road explicitly (the first Bill Stewart Rd stop) overwrites it
+ * immediately rather than ever propagating the stale name forward.
  */
 export function deriveWaypoints(rows: RawRouteRow[], schoolAddress: string): WaypointQuery[] {
   let currentRoad: string | null = null;

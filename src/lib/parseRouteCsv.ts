@@ -79,7 +79,7 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
         announcement.push(`${studentCount} rider${studentCount === 1 ? "" : "s"} expected.`);
       }
       if (specialInstruction) {
-        announcement.push(`${specialInstruction}.`);
+        announcement.push(`${speakRoadNames(specialInstruction)}.`);
       }
 
       return {
@@ -109,6 +109,15 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
           ? "right"
           : undefined;
 
+    // A turn's note is spoken too, same as a stop's - e.g. a road
+    // renaming partway along with no turn of its own ("Fergus Rd
+    // becomes Bill Stewart Rd") still matters to a driver even though
+    // nothing here calls it out as its own row.
+    const announcement = [spokenAnnouncement];
+    if (specialInstruction) {
+      announcement.push(`${speakRoadNames(specialInstruction)}.`);
+    }
+
     return {
       id: index,
       kind: "turn",
@@ -116,7 +125,7 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
       heading: `TURN ${action.toUpperCase()}`,
       subheading: destination,
       specialInstruction,
-      announcement: [spokenAnnouncement],
+      announcement,
     };
   });
 
