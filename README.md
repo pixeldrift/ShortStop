@@ -1453,6 +1453,42 @@ the route itself yet - no route line exists on the map at all yet (see
 "Maps, part four" above), so there's nothing yet to check the dot's
 position *against*.
 
+### Maps, part eight: stop markers, wired up ahead of having any real data to show
+
+The marker-rendering side is done and merged, but deliberately shows
+nothing yet - still blocked on the same `ORS_API_KEY` gap "Maps, part
+five" describes, and this sandbox has no more network access to a real
+geocoder than it does to the tile servers themselves (confirmed the
+same way - `photon.komoot.io` and `api.openrouteservice.org` both fail
+the same `CONNECT tunnel failed` the org's egress policy already gives
+tile.openstreetmap.org and Nominatim). Asked rather than guessing:
+given the choice between fabricating plausible-looking coordinates
+from general knowledge of the area (unverifiable from here) or shipping
+the wiring with an honestly-empty cache, the latter won.
+
+`parseRouteCsv.ts` now calls `deriveWaypoints`/`waypointCacheKey` itself
+(previously only `scripts/geocodeRoute.ts` did) and stamps the result
+onto every step as `NavigationStep.waypointKey` - the same key
+`route-125-waypoints.json` will eventually be keyed by, so a step can
+look itself up in that cache with no client-side re-derivation.
+`RouteMap`'s new `stops` prop (`{ waypointKey, number }[]`, built in
+`StepScreen` from `route.steps` once per trip) is what it fetches that
+cache against, `fetch(...).catch(() => ({}))`-style - a 404 (the
+current, real state) or any other failure resolves to an empty cache
+rather than an error, so a stop with nothing to look up is just quietly
+skipped, not a broken map. Each hit becomes a Leaflet `divIcon` reusing
+`/assets/pin.png` plus the stop's own number, same look as the pin
+already drawn on RouteProgressBar and StopContent, so a stop reads as
+the same thing everywhere it appears once it does have a real
+position. Verified end-to-end by dropping a temporary test cache file into
+`public/data/` (never committed - deleted again right after, confirmed
+via `git status` showing nothing untracked left behind): exactly the
+expected pins appeared, correctly numbered, at the fed-in coordinates,
+with zero console errors.
+
+Still no route line between stops - next step, on request, once
+markers themselves are confirmed working.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as

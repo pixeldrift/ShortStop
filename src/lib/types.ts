@@ -19,6 +19,14 @@ export interface NavigationStep {
   pickupOrDropoff?: string;
   sideOfRoad?: string;
   specialInstruction?: string;
+  /** waypointCacheKey(deriveWaypoints(...)) for this step's row - the
+   * same key `scripts/geocodeRoute.ts` writes route-125-waypoints.json
+   * entries under, so RouteMap can look up this step's real-world
+   * position (once that cache actually has one - see "Maps, part
+   * four"/"part five" in the README for why it's still empty) without
+   * re-deriving anything client-side. Computed for every step, not
+   * just stops, ahead of drawing the full route line later. */
+  waypointKey: string;
   /** What the app speaks aloud when this step becomes current, as
    * separate parts spoken as separate utterances (e.g. stop number,
    * then location, then rider count) so there's an audible pause

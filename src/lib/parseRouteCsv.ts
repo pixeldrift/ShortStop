@@ -1,5 +1,7 @@
+import { deriveWaypoints } from "./deriveWaypoints";
 import { speakRoadNames } from "./speech";
 import type { NavigationStep, Route, TripType, TurnDirection } from "./types";
+import { waypointCacheKey } from "./waypointCache";
 
 export interface RouteMeta {
   name: string;
@@ -59,11 +61,15 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
 export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
   let stopCounter = 0;
 
-  const steps: NavigationStep[] = parseRouteCsvRows(csvText).map((row, index) => {
+  const rows = parseRouteCsvRows(csvText);
+  const waypoints = deriveWaypoints(rows, meta.schoolAddress);
+
+  const steps: NavigationStep[] = rows.map((row, index) => {
     const { action, fromAt, ontoAt, riderCount, side, notes } = row;
     const studentCount = riderCount ? Number(riderCount) : undefined;
     const sideOfRoad = side || undefined;
     const specialInstruction = notes || undefined;
+    const waypointKey = waypointCacheKey(waypoints[index]);
 
     if (action.toLowerCase() === "stop") {
       stopCounter += 1;
@@ -90,6 +96,7 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
         studentCount,
         sideOfRoad,
         specialInstruction,
+        waypointKey,
         announcement,
       };
     }
@@ -126,6 +133,7 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
       heading: `TURN ${action.toUpperCase()}`,
       subheading: destination,
       specialInstruction,
+      waypointKey,
       announcement,
     };
   });

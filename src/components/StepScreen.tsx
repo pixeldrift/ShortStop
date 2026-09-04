@@ -1,6 +1,7 @@
 import Image from "next/image";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { RouteMap } from "./RouteMap";
+import type { StopMarker } from "./RouteMap";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
@@ -65,6 +66,16 @@ export function StepScreen({
   // Held off until the stop's own announcement has finished speaking, so
   // the check-in card doesn't pop up over top of still-playing audio.
   const showRoster = !paused && isStop && roster.length > 0 && announcementDone;
+  // Memoized against `route` (unchanged for the whole trip) rather
+  // than recomputed every render - RouteMap only reads this once per
+  // mount (see its own stopsRef note), but a fresh array reference
+  // every render would still be visible to it as a changed prop.
+  const stopMarkers = useMemo<StopMarker[]>(() => {
+    let stopCount = 0;
+    return route.steps
+      .filter((s) => s.kind === "stop")
+      .map((s) => ({ waypointKey: s.waypointKey, number: ++stopCount }));
+  }, [route]);
   // Guards the logo's exit-to-home tap, not the footer "End" button -
   // "End" only ever appears once the route is already finished
   // (arrived phase), so there's nothing left to lose by confirming it.
@@ -111,7 +122,10 @@ export function StepScreen({
             its original size but with its own bottom 20px clipped off
             by this container's overflow-hidden, instead of the whole
             map simply shrinking to match. */}
-        <RouteMap className="absolute inset-x-0 top-0 z-0 h-[calc(100%+20px)]" />
+        <RouteMap
+          className="absolute inset-x-0 top-0 z-0 h-[calc(100%+20px)]"
+          stops={stopMarkers}
+        />
 
         {showRoster && (
           <>
