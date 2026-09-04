@@ -3,16 +3,26 @@
 import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
 import { SearchIcon } from "./icons";
-import type { Route } from "@/lib/types";
+import type { Route, TripType } from "@/lib/types";
+
+/** Pill toggle styling shared by the AM/PM filter buttons - blue/filled
+ * when active, the same neutral gray as the Back/Pause buttons
+ * elsewhere when not (see "Button/road color" in the README). */
+function tripToggleClasses(active: boolean): string {
+  return `btn-glossy shrink-0 rounded-full border px-3.5 py-2.5 text-sm font-semibold ${
+    active ? "border-blue-600 bg-blue-600 text-white" : "border-zinc-400 bg-zinc-200 text-zinc-700"
+  }`;
+}
 
 /**
  * The app's home screen: a scrollable table of routes (# / Name /
- * Start), filterable by a search box above it. Tapping a row goes to
- * that route's trip-summary screen (StartScreen). Only one real route
- * exists (see ROUTE_META in page.tsx) - the rest are fabricated by
- * buildDemoRoutes purely so this screen has enough rows to actually
- * exercise scrolling and search, clearly flagged as fake in the
- * generator itself rather than pretending to be real district data.
+ * Start), filterable by a search box and a pair of AM/PM toggles above
+ * it. Tapping a row goes to that route's trip-summary screen
+ * (StartScreen). Only one real route exists (see ROUTE_META in
+ * page.tsx) - the rest are fabricated by buildDemoRoutes purely so this
+ * screen has enough rows to actually exercise scrolling and search,
+ * clearly flagged as fake in the generator itself rather than
+ * pretending to be real district data.
  */
 export function RouteListScreen({
   routes,
@@ -22,30 +32,70 @@ export function RouteListScreen({
   onSelect: (route: Route) => void;
 }) {
   const [query, setQuery] = useState("");
+  // Which trip types are toggled on - empty means no filter (show
+  // every trip type), same as if both were toggled on. Every route in
+  // this app is either a morning pickup or an afternoon dropoff (see
+  // demoRoutes.ts's TRIP_LABELS), so filtering on tripType is
+  // filtering on morning/afternoon.
+  const [activeTrips, setActiveTrips] = useState<Set<TripType>>(new Set());
+
+  const toggleTrip = (trip: TripType) => {
+    setActiveTrips((prev) => {
+      const next = new Set(prev);
+      if (next.has(trip)) {
+        next.delete(trip);
+      } else {
+        next.add(trip);
+      }
+      return next;
+    });
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return routes;
-    return routes.filter(
-      (route) => route.name.toLowerCase().includes(q) || route.routeNumber.includes(q),
-    );
-  }, [routes, query]);
+    return routes.filter((route) => {
+      const matchesQuery =
+        !q || route.name.toLowerCase().includes(q) || route.routeNumber.includes(q);
+      const matchesTrip = activeTrips.size === 0 || activeTrips.has(route.tripType);
+      return matchesQuery && matchesTrip;
+    });
+  }, [routes, query, activeTrips]);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
       <Logo size="large" />
       <h1 className="font-heading text-2xl font-black tracking-tight">Routes</h1>
 
-      <div className="relative w-full max-w-md shrink-0">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search routes"
-          aria-label="Search routes"
-          className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-3 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-        />
+      <div className="flex w-full max-w-md shrink-0 items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search routes"
+            aria-label="Search routes"
+            className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-3 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => toggleTrip("pickup")}
+          aria-pressed={activeTrips.has("pickup")}
+          aria-label="Filter to morning routes"
+          className={tripToggleClasses(activeTrips.has("pickup"))}
+        >
+          AM
+        </button>
+        <button
+          type="button"
+          onClick={() => toggleTrip("dropoff")}
+          aria-pressed={activeTrips.has("dropoff")}
+          aria-label="Filter to afternoon routes"
+          className={tripToggleClasses(activeTrips.has("dropoff"))}
+        >
+          PM
+        </button>
       </div>
 
       <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
@@ -72,7 +122,7 @@ export function RouteListScreen({
 
           {filtered.length === 0 && (
             <p className="px-4 py-6 text-center text-sm text-zinc-500">
-              No routes match &ldquo;{query}&rdquo;.
+              {query ? <>No routes match &ldquo;{query}&rdquo;.</> : "No routes match the selected filters."}
             </p>
           )}
         </div>

@@ -817,6 +817,28 @@ only one possible row to tap. `page.tsx` now keeps
 actually opens Route 943's own trip-summary screen instead of always
 reopening the real route regardless of which row was tapped.
 
+### Route list: AM/PM filter toggles
+
+The search box shrank from `w-full` to `flex-1` inside a new row
+(`flex ... gap-2`) to make room alongside it for two pill toggle
+buttons, "AM" and "PM" - filtering the list to morning-pickup or
+afternoon-dropoff routes. Every route in this app is one or the other
+(`demoRoutes.ts`'s `TRIP_LABELS` only ever fabricates "Morning Pickup"
+or "Afternoon Drop Off"), so the toggles filter on the existing
+`Route.tripType` field (`"pickup"` = AM, `"dropoff"` = PM) rather than
+needing a new one. Each button toggles independently in
+`activeTrips: Set<TripType>` - neither active (the default) or both
+active both mean "no filter, show every trip type," only one active
+narrows the list to just that type - combined with the existing text
+search (`matchesQuery && matchesTrip` in the same `filtered` `useMemo`).
+The empty-state message now branches on which kind of "nothing matched"
+it is: quoting the search query when there is one, or "No routes match
+the selected filters." when the toggles alone emptied the list. Visual
+treatment matches the Back/Pause buttons from the color-darkening round
+above - gray (`border-zinc-400 bg-zinc-200`) when off, filled blue
+(`bg-blue-600`) when on - so an active filter reads as "on" the same
+way the rest of the app already signals it.
+
 ### Progress bar: evenly distributed markers
 
 First pass at pulling the first/last marker off the cul-de-sac circles
