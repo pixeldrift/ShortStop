@@ -94,7 +94,7 @@ export function StepScreen({
           room for itself independently, via its own two-line text
           guarantee and shrink-if-crazy-long fallback - see StopContent/
           TurnContent below - rather than by the map yielding space. */}
-      <div className="relative h-[calc(30vh-10px)] w-full shrink-0 overflow-hidden landscape:h-[calc(100%-10px)] landscape:w-[42%]">
+      <div className="relative h-[calc(30vh-20px)] w-full shrink-0 overflow-hidden landscape:h-[calc(100%-20px)] landscape:w-[42%]">
         {/* z-0 gives Leaflet's own internal panes/controls (tile pane,
             zoom control, attribution - several of which carry their own
             explicit, fairly high z-index, e.g. the zoom control's 1000) a
@@ -104,14 +104,14 @@ export function StepScreen({
             paint above the roster popup below despite being earlier in
             the DOM.
 
-            The map itself is drawn 10px taller than this container
-            (h-[calc(100%+10px)], pinned to the top) rather than filling
-            it exactly (inset-0) - this container is itself already 10px
+            The map itself is drawn 20px taller than this container
+            (h-[calc(100%+20px)], pinned to the top) rather than filling
+            it exactly (inset-0) - this container is itself already 20px
             shorter than it used to be, so the map ends up rendered at
-            its original size but with its own bottom 10px clipped off
+            its original size but with its own bottom 20px clipped off
             by this container's overflow-hidden, instead of the whole
             map simply shrinking to match. */}
-        <RouteMap className="absolute inset-x-0 top-0 z-0 h-[calc(100%+10px)]" />
+        <RouteMap className="absolute inset-x-0 top-0 z-0 h-[calc(100%+20px)]" />
 
         {showRoster && (
           <>
@@ -148,17 +148,10 @@ export function StepScreen({
             routeNumber={route.routeNumber}
             busNumber={route.busNumber}
             onLogoClick={handleLogoClick}
+            stopProgressNumber={stopProgressNumber}
+            totalStops={totalStops}
+            totalOnboard={totalOnboard}
           />
-
-          <div className="mt-0.5 flex items-center justify-between">
-            <p className="font-heading text-sm font-black tracking-wide text-zinc-600">
-              Stop {stopProgressNumber} of {totalStops}
-            </p>
-            <div className="flex items-center gap-1 text-sm font-bold text-zinc-700">
-              <PersonSolidIcon className="h-4 w-4" />
-              {totalOnboard} onboard
-            </div>
-          </div>
         </div>
 
         {/* Remaining space: progress bar + step content. No scrolling -
