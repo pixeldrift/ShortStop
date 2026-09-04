@@ -930,6 +930,65 @@ removed there; re-deriving the same numbers from this file's own copy
 would just be a second source that could quietly drift out of sync with
 it.
 
+### Maps, part one: deriving a geocodable location for every step
+
+First step toward a real map: before anything can be geocoded or routed
+(planned: OSM tiles + OpenRouteService for the actual driving directions
+- ORS over self-hosting something like Valhalla, since a prototype's
+usage is well within its free tier and it doesn't need a server of its
+own to run), every turn/stop needs a real-world location to look up.
+`route-125.csv` doesn't carry coordinates, and most of its turn rows
+don't even carry two road names to treat as a crossroads - the source
+paper route sheet's own shorthand is a single road name (`onto_at`
+blank) meaning "turn onto this road," not an intersection.
+
+The insight that unlocks this: a plain turn like that isn't really
+locationless, it's just that its location depends on context - "turn
+left onto Riverwood Ln" only means something at the specific point the
+bus was already traveling on some other road and reached Riverwood Ln.
+That other road is recoverable by walking the CSV in order and tracking
+"the current road" - `deriveWaypoints.ts`'s whole job. The rule: a turn
+row's current road becomes whichever road it turns onto; a stop row's
+current road is the road it's stopped *on* (the cross street is just
+where along that road the stop is, not a new heading), except a
+literal-address stop with no cross street at all (`"216 Lake Forest
+Dr"`), where the road name is pulled out of the address text itself.
+Any row that states its own road(s) explicitly always wins over the
+tracked value and resets it - which matters because the source sheet
+has at least one real gap (`route-125.csv` rows 4→5: an undocumented
+turn from "Ramp toward Murfreesboro" onto "Fergus Rd," then, three rows
+later, an explicit stop on "Bill Stewart Rd" that was never actually
+turned onto in what got transcribed) - so a stale tracked value never
+propagates past the next row that actually states where it is.
+
+Every row ends up as one `WaypointQuery`: either `{ kind: "address",
+text }` (a literal street address, or the school's own address for the
+one generic, non-geocodable placeholder in the sheet, `"School
+Driveway"`, standing in for wherever the bus meets the road right at
+the school) or `{ kind: "intersection", roadA, roadB }` (a crossroads
+to resolve as one point). Verified against the real 22-row route: every
+derived intersection for a plain turn immediately following a stop
+lines up exactly with that stop's own two roads (e.g. row 11, "Left,
+Riverwood Ln," derives to "Bill Stewart Rd × Riverwood Ln" - the same
+intersection row 10's stop is already at), which is exactly what should
+happen when a bus turns right where it just finished a stop. Checked by
+compiling `parseRouteCsv.ts`/`deriveWaypoints.ts` standalone (`tsc`
+straight to CommonJS, no bundler) and running them against the real CSV
+in plain Node, since neither is wired into any UI yet - this is
+groundwork, not a visible change. `parseRouteCsv.ts` picked up a small
+refactor alongside it: the CSV-row-splitting half of its work is now
+`parseRouteCsvRows` (returns `RawRouteRow[]`, the shared input type both
+`parseRouteCsv` and `deriveWaypoints` build on) instead of being inlined
+in `parseRouteCsv` itself - confirmed byte-for-byte identical `Route`
+output before/after (22 steps, 11 stops, same first step) so this was
+purely a "share the parsing" extraction, not a behavior change.
+
+Not yet wired up: actually geocoding these queries (Nominatim, free,
+matches the "don't run our own server" preference for a prototype),
+caching the results (probably back into the CSV, or a sibling file, so
+a rebuild doesn't re-geocode everything), calling ORS with the ordered
+list of resolved coordinates, and rendering any of it. Next steps.
+
 ### Button/road color: darker gray, less glossy highlight, Pause is gray now too
 
 The Back button (`bg-zinc-100`/`border-zinc-300`) read noticeably
