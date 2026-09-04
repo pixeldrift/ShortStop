@@ -85,7 +85,7 @@ export function RouteListScreen({
             onClick={() => setViewMenuOpen((open) => !open)}
             aria-haspopup="listbox"
             aria-expanded={viewMenuOpen}
-            className="btn-glossy flex shrink-0 items-center gap-1 rounded-full border border-zinc-400 bg-zinc-200 px-3.5 py-2.5 text-sm font-semibold text-zinc-700"
+            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-base text-zinc-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           >
             View
             {/* TriangleIcon rather than a dedicated chevron - the
