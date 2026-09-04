@@ -289,7 +289,7 @@ function LeaveRouteConfirmModal({
             onClick={onCancel}
             className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
           >
-            Return to Route <TriangleIcon direction="right" className="h-6 w-6" />
+            Return <TriangleIcon direction="right" className="h-6 w-6" />
           </button>
         </div>
       </div>
