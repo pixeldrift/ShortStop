@@ -1336,6 +1336,52 @@ User-Agent test, kept afterward) is there specifically to run a real
 test the moment a key exists, without needing an unrelated CSV edit to
 trigger it.
 
+### Maps, part six: retina tiles, and why the check-in popup needed a z-index fix too
+
+Two map-adjacent bugs, reported together once someone actually loaded
+the app somewhere with real network access to see the tiles for the
+first time (this sandbox still can't - see "Maps, part four" above):
+
+**The tiles looked soft on a retina display.** `tile.openstreetmap.org`
+only serves standard-resolution 256px tiles - no `{r}`-style `@2x`
+variant - so Leaflet was stretching those same-resolution images to
+cover more physical pixels on any retina screen, same symptom as the
+janky, low-quality maps in other schools'-transportation tools
+screenshotted for comparison. Leaflet's own `detectRetina` option is a
+no-op unless the tile URL template actually has an `{r}` placeholder a
+server can fill, so the fix wasn't a flag - it was switching
+`TILE_URL` to CARTO's free Voyager basemap
+(`{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png`,
+`abcd` subdomains, no API key required), which does serve a real `@2x`
+tile, styled close to the standard OSM look so this doesn't read as a
+different map. Deliberately *not* the "request one zoom level higher
+and downscale" trick some retina workarounds use instead - that
+roughly quadruples tile requests per view against whatever server is
+serving them, and this project already learned the hard way (the
+Nominatim IP-block story in "Maps, part five" above) what happens when
+automated traffic leans on an OSM-adjacent service's usage policy.
+Verified structurally the same way "Maps, part four" verified the
+original tile requests - intercepted in a headless browser at
+`deviceScaleFactor: 2` - confirming every tile request actually
+resolves to the `@2x` URL across all four subdomains, with the
+attribution control correctly crediting both OpenStreetMap and CARTO
+and zero console/page errors; actual tile imagery still needs eyes
+somewhere with real network access, same caveat as before.
+
+**The rider check-in popup was getting hidden behind the map.**
+Unrelated to retina specifically, but found and fixed alongside it:
+neither the map's container nor its parent in `StepScreen.tsx` set an
+explicit `z-index`, so several of Leaflet's own internal panes/controls
+that *do* carry one (the zoom control's `1000`, the tile pane's `200`)
+escaped to the nearest ancestor stacking context and could paint above
+the dimmed-map-plus-popup overlay despite it being later in the DOM -
+on a real device, with tiles actually loading, the popup could end up
+fully buried instead of merely having its corner clipped by the zoom
+control (which is what a no-tile-network repro here showed). Fixed by
+giving the map its own stacking context (`z-0`) and lifting the
+overlay above it (`z-10`), so the two no longer compete for a shared,
+unbounded stacking order.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as

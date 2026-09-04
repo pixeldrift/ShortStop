@@ -12,9 +12,18 @@ import type { Map as LeafletMap } from "leaflet";
 const LA_VERGNE_CENTER: [number, number] = [36.0134, -86.5581];
 const DEFAULT_ZOOM = 13;
 
-const TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+// CARTO's free Voyager basemap rather than tile.openstreetmap.org
+// directly: same OSM data underneath (styled to look close to the
+// standard OSM look), but it actually serves a `{r}` (@2x) retina
+// tile variant - openstreetmap.org's own tile server doesn't, so
+// `detectRetina` below would be a no-op against it and every tile
+// would render soft/blurry on any retina display. No API key needed
+// for this volume of use.
+const TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+const TILE_SUBDOMAINS = "abcd";
 const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
+  '&copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 /**
  * A real, pannable/zoomable OpenStreetMap tile map - replaces the
@@ -49,7 +58,12 @@ export function RouteMap({ className }: { className?: string }) {
       // bail rather than initializing a map nothing will ever clean up.
       if (cancelled) return;
       map = L.map(container, { center: LA_VERGNE_CENTER, zoom: DEFAULT_ZOOM });
-      L.tileLayer(TILE_URL, { maxZoom: 19, attribution: TILE_ATTRIBUTION }).addTo(map);
+      L.tileLayer(TILE_URL, {
+        maxZoom: 20,
+        subdomains: TILE_SUBDOMAINS,
+        attribution: TILE_ATTRIBUTION,
+        detectRetina: true,
+      }).addTo(map);
     });
 
     return () => {
