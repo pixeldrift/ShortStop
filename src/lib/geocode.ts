@@ -5,7 +5,10 @@ const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 
 // Nominatim's usage policy requires a real, identifying User-Agent on
 // every request - not optional, and not the default one `fetch` sends.
-const USER_AGENT = "ShortStop-prototype (https://github.com/pixeldrift/ShortStop)";
+// Points at the repo's Issues page rather than just its root, so
+// there's an actual way to reach the project about its own traffic,
+// without putting a personal email in a public repo's history.
+const USER_AGENT = "ShortStop-prototype (https://github.com/pixeldrift/ShortStop/issues)";
 
 /** Pulls "City, ST" off the end of a full street address, e.g.
  * "1425 Lake Forest Dr, Smyrna, TN 37167" -> "Smyrna, TN" - used to
