@@ -7,9 +7,22 @@ import { PLACEHOLDER_META } from "../src/lib/placeholderMeta";
 import { waypointCacheKey } from "../src/lib/waypointCache";
 import type { WaypointCache } from "../src/lib/waypointCache";
 
-const ROUTE_CSV_PATH = join(__dirname, "..", "public", "data", "route-125.csv");
-const CACHE_PATH = join(__dirname, "..", "public", "data", "route-125-waypoints.json");
-const ENV_LOCAL_PATH = join(__dirname, "..", ".env.local");
+// process.cwd(), not __dirname - __dirname's compiled location is
+// scripts/.dist/scripts (scripts/tsconfig.json's rootDir spans the
+// whole repo, so it doesn't just recompile to scripts/.dist/ the way
+// its own source layout might suggest), one level deeper than a
+// single ".." accounted for - silently produced the wrong path
+// (scripts/.dist/public/... instead of public/...) rather than
+// erroring anywhere near its own source. cwd is reliable instead
+// because this script only ever runs one way, from the repo root: via
+// `npm run geocode`, whether invoked locally or from
+// geocode-route.yml's own `run: npm run geocode` step - npm always
+// runs package.json scripts with the directory containing that
+// package.json (here, the repo root - the only one in this project)
+// as cwd, regardless of the caller's own working directory.
+const ROUTE_CSV_PATH = join(process.cwd(), "public", "data", "route-125.csv");
+const CACHE_PATH = join(process.cwd(), "public", "data", "route-125-waypoints.json");
+const ENV_LOCAL_PATH = join(process.cwd(), ".env.local");
 
 // Conservative pacing between actual network calls - a cache hit costs
 // nothing, so it doesn't wait. Kept from the Nominatim-era 1 req/sec
