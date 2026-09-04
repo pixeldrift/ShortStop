@@ -16,3 +16,14 @@ export function addMinutesToTimeString(timeStr: string, minutes: number): string
 
   return `${outHour12}:${String(outMinute).padStart(2, "0")} ${outPeriod}`;
 }
+
+/** Parses a "H:MM AM/PM" string into minutes since midnight, for sorting
+ * a list of times chronologically. Unparseable input sorts last. */
+export function parseTimeToMinutes(timeStr: string): number {
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return Infinity;
+
+  const [, hourStr, minuteStr, period] = match;
+  const hour24 = (parseInt(hourStr, 10) % 12) + (period.toUpperCase() === "PM" ? 12 : 0);
+  return hour24 * 60 + parseInt(minuteStr, 10);
+}

@@ -11,8 +11,28 @@ import type { NavigationStep } from "@/lib/types";
 const PX_PER_STEP = 48;
 const EDGE_FADE_PX = 28;
 
+/** How far the first/last turn-or-stop marker is pulled in from the
+ * cul-de-sac circle it would otherwise sit directly on top of - see
+ * markerPixelFor below. Capped at half a step's spacing so it can never
+ * cross into the neighboring marker's position on a very short route. */
+const MARKER_EDGE_INSET_PX = Math.min(22, PX_PER_STEP / 2);
+
 function pixelFor(index: number): number {
   return index * PX_PER_STEP;
+}
+
+/** Where a turn/stop marker icon is drawn - almost always the same
+ * pixelFor(index) spot the bus itself travels through, except the very
+ * first and last markers, which are pulled in from the true track ends
+ * so they read as "the next step after Start" / "the step before End"
+ * rather than sitting right on top of the start/end cul-de-sac circle.
+ * The bus's own position (busPx below) deliberately does NOT use this -
+ * it still needs to reach the true 0/trackWidth ends to visibly park on
+ * each circle for the depot/arrived phases. */
+function markerPixelFor(index: number, total: number, trackWidth: number): number {
+  if (index === 0) return MARKER_EDGE_INSET_PX;
+  if (index === total - 1) return trackWidth - MARKER_EDGE_INSET_PX;
+  return pixelFor(index);
 }
 
 /** Builds the left/right fade as a CSS mask - only on whichever edge(s)
@@ -92,7 +112,7 @@ export function RouteProgressBar({
             <div
               key={step.id}
               className="absolute bottom-5 w-max -translate-x-1/2"
-              style={{ left: pixelFor(index) }}
+              style={{ left: markerPixelFor(index, total, trackWidth) }}
             >
               {step.kind === "stop" ? (
                 <Image

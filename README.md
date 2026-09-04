@@ -39,7 +39,7 @@ src/
     layout.tsx          Root layout, metadata
     globals.css         Tailwind
   components/
-    RouteListScreen.tsx Home screen: scrollable Number/Name/Start Time list
+    RouteListScreen.tsx Home screen: searchable, scrollable #/Name/Start list
     StartScreen.tsx     Route summary + trip stats + "Start Route" button
     StepScreen.tsx       The step-through screen, incl. rider check-in
     StepTransition.tsx    Odometer-style roll between steps (see below)
@@ -55,7 +55,8 @@ src/
     useRiderRoster.ts    Per-stop rider check-in state (see below)
     useFitLines.ts        Shrink text to fit N lines (see below)
     useFitGrid.ts          Shrink a bubble grid to fit (see below)
-    time.ts               addMinutesToTimeString - trip ETA math
+    time.ts               addMinutesToTimeString/parseTimeToMinutes - trip ETA math
+    demoRoutes.ts          Fabricates filler rows for the route list (see below)
     silence.ts           A tiny silent audio loop (see below)
 public/
   manifest.json          PWA manifest
@@ -728,23 +729,88 @@ module-private) specifically so they don't trip an unused-declaration
 lint error while sitting dormant.
 
 **A new route-list screen is the actual first screen now.**
-`RouteListScreen.tsx` is a scrollable Number/Name/Start Time table;
-tapping a row calls `onSelect(route)` and moves to that route's
-StartScreen, whose new back arrow returns to the list. `page.tsx` tracks
-this with one `routeSelected` boolean rather than a bigger screen-enum,
-since there are still only two screens ahead of the step flow. The one
-open question this raised - there's only one real route
-(`route-125.csv` + the hardcoded `ROUTE_META`), so what does a
-"scrollable list" actually scroll through? - is deliberately answered
-with a single-row list rather than fabricating a handful of placeholder
-routes: this app already has a firm rule about not showing fake data
-that could pass for real ("Demo only placeholder, not actual map" on the
-map image), and a route list is exactly the kind of thing a driver could
-mistake for real if invented rows looked plausible. `RouteListScreen`
-takes `routes: Route[]`, so it already renders and scrolls correctly for
-however many rows exist - no `page.tsx` changes will be needed the day a
-second real route sheet shows up, only a second entry in the array it's
-passed.
+`RouteListScreen.tsx` is a scrollable table; tapping a row calls
+`onSelect(route)` and moves to that route's StartScreen, whose back
+arrow returns to the list. `page.tsx` tracks this with one
+`selectedRoute: Route | null` (the tapped row itself, not just a
+boolean - see below) rather than a bigger screen-enum, since there are
+still only two screens ahead of the step flow. There's only one real
+route (`route-125.csv` + the hardcoded `ROUTE_META`); see below for how
+the list gets enough rows to actually be scrollable now.
+
+### Route list: layout, search, and fabricated rows
+
+Reworked per feedback on the first pass at this screen:
+
+- **Two-line names instead of a single truncated line** - `line-clamp-2
+  leading-snug` on the name cell (no `truncate`), so a long route name
+  wraps instead of being cut off with an ellipsis after a few words.
+- **Column headers/labels shortened**: "Number" → "#", "Start Time" →
+  "Start", right-aligned (`text-right` on both the header cell and the
+  value) so it reads as a right-edge-anchored time column rather than
+  competing with the name column for space; the name column keeps `1fr`
+  so it absorbs whatever width is left over from the now-narrower `#`
+  and `Start` columns (`grid-cols-[2.25rem_1fr_4.25rem]`, down from
+  `[3.5rem_1fr_5.5rem]`).
+- **Divider lines** between rows were already there (`divide-y
+  divide-zinc-200` on the row container) - they just weren't obviously
+  visible with only one real row and no scrolling to show them off. See
+  below for why they're visible now.
+- **A search box** above the table filters by name or route number
+  (case-insensitive substring match on both, `useMemo`'d off `[routes,
+  query]`), with a "No routes match "…"." empty state rather than a
+  silently blank list.
+
+**The single-row list is now a fabricated 25-row one, on explicit
+request** ("generate enough fake random ones so we can see the scroll
+capabilities") - a deliberate reversal of the previous round's decision
+to keep it a single real row rather than invent data. `demoRoutes.ts`
+fabricates 24 filler routes on top of the one real one: route numbers,
+school-style names (built from word lists, e.g. "Cedar Creek Middle
+School — Morning Pickup"), driver names, departure times, and
+distance/duration are all randomized, but every fabricated route reuses
+the *real* route's actual turn-by-turn `steps` array - so tapping a fake
+row still leads to a working trip-summary screen and step-through flow
+instead of a dead end, in the same "clearly not real, but not broken
+either" spirit as the "Demo only placeholder, not actual map" label
+already on the map image. The randomization uses a tiny seeded PRNG
+(`mulberry32`, seed `42`) rather than `Math.random()`, computed once via
+`useMemo(() => …, [route])` in `page.tsx` - otherwise the list would
+reshuffle itself every time the user backs out to it, which would both
+look broken and make search results inconsistent between visits. The
+combined list is sorted by departure time (`parseTimeToMinutes`, a new
+export alongside the existing `addMinutesToTimeString` in `time.ts`) so
+it reads like an actual schedule rather than real-route-first-then-
+random-order.
+
+Wiring a specific tapped route through actually mattered here for the
+first time: before this round, `RouteListScreen`'s `onSelect` callback
+received the tapped `Route` but `page.tsx` discarded it
+(`onSelect={() => setRouteSelected(true)}`), harmless while there was
+only one possible row to tap. `page.tsx` now keeps
+`selectedRoute: Route | null` and passes it straight through
+(`onSelect={setSelectedRoute}`), so tapping "Route 943" in the list
+actually opens Route 943's own trip-summary screen instead of always
+reopening the real route regardless of which row was tapped.
+
+### Progress bar: first/last markers no longer sit on the cul-de-sac circles
+
+The turn/stop marker for `route.steps[0]` was drawn at `pixelFor(0)` -
+exactly the same pixel position as the start cul-de-sac circle and the
+bus's own parked position during the `depot` phase, so the very first
+turn icon visually sat right on top of the circle instead of reading as
+a distinct upcoming step. Same problem at the other end: the last
+marker sat exactly on the end circle. A new `markerPixelFor(index,
+total, trackWidth)` in `RouteProgressBar.tsx` pulls just those two
+markers in from the true track ends by `MARKER_EDGE_INSET_PX` (22px,
+capped at `PX_PER_STEP / 2` so it can never cross into the next marker's
+own position on a very short route) while every other marker keeps
+using the plain `pixelFor(index)` spacing. Deliberately *not* touching
+`busPx` (still `pixelFor(currentIndex)`, uninset) - the bus still needs
+to reach the literal `0`/`trackWidth` ends to visibly park on each
+circle for the `depot`/`arrived` phases from the previous round; only
+the *icons* needed to visually back off, not the bus or the track/circle
+geometry itself.
 
 ### Next steps
 

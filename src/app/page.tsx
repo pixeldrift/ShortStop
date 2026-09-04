@@ -1,13 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RouteListScreen } from "@/components/RouteListScreen";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
+import { buildDemoRoutes } from "@/lib/demoRoutes";
 import { parseRouteCsv } from "@/lib/parseRouteCsv";
+import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
 import type { Route } from "@/lib/types";
+
+// How many fabricated routes to add to the real one, purely so the
+// route-list screen has enough rows to actually demonstrate scrolling
+// and search filtering - see demoRoutes.ts.
+const DEMO_ROUTE_COUNT = 24;
 
 // distance/durationMinutes are placeholders - no real mileage/timing
 // data exists for this route yet.
@@ -27,10 +34,11 @@ const ROUTE_META = {
 export default function Home() {
   const [route, setRoute] = useState<Route | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Which screen we're on: the route list (home) or a selected route's
-  // trip-summary/step flow. Reset to the list whenever the user taps the
-  // back arrow on the trip-summary screen.
-  const [routeSelected, setRouteSelected] = useState(false);
+  // Which route (if any) is selected for the trip-summary/step flow -
+  // null means we're on the route-list home screen. Cleared back to
+  // null whenever the user taps the back arrow on the trip-summary
+  // screen.
+  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
 
   useEffect(() => {
     fetch("/data/route-125.csv")
@@ -41,6 +49,18 @@ export default function Home() {
       .then((text) => setRoute(parseRouteCsv(text, ROUTE_META)))
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
+
+  // Only one real route exists right now (see ROUTE_META above) -
+  // buildDemoRoutes fabricates the rest purely so the list has enough
+  // rows to demonstrate scrolling/search. Computed once per fetched
+  // route (not on every render) via useMemo, so the list doesn't
+  // reshuffle each time the user navigates back to it.
+  const routes = useMemo(() => {
+    if (!route) return [];
+    return [route, ...buildDemoRoutes(route, DEMO_ROUTE_COUNT)].sort(
+      (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
+    );
+  }, [route]);
 
   if (error) {
     return (
@@ -58,14 +78,11 @@ export default function Home() {
     );
   }
 
-  // Only one real route exists right now (see ROUTE_META above) - the
-  // list still renders as a genuinely scrollable table, ready for more
-  // rows, rather than padding it out with fabricated placeholder routes.
-  if (!routeSelected) {
-    return <RouteListScreen routes={[route]} onSelect={() => setRouteSelected(true)} />;
+  if (!selectedRoute) {
+    return <RouteListScreen routes={routes} onSelect={setSelectedRoute} />;
   }
 
-  return <RouteApp route={route} onBack={() => setRouteSelected(false)} />;
+  return <RouteApp route={selectedRoute} onBack={() => setSelectedRoute(null)} />;
 }
 
 function RouteApp({ route, onBack }: { route: Route; onBack: () => void }) {
