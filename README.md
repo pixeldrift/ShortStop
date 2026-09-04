@@ -990,9 +990,9 @@ row that states its own road explicitly.
 
 Every row ends up as one `WaypointQuery`: either `{ kind: "address",
 text }` (a literal street address, or the school's own address for the
-one generic, non-geocodable placeholder in the sheet, `"School
-Driveway"`, standing in for wherever the bus meets the road right at
-the school) or `{ kind: "intersection", roadA, roadB }` (a crossroads
+one generic, non-geocodable placeholder in the sheet, `"School Parking
+Lot"`, standing in for wherever the bus meets the road right at the
+school) or `{ kind: "intersection", roadA, roadB }` (a crossroads
 to resolve as one point). Verified against the real 22-row route: every
 derived intersection for a plain turn immediately following a stop
 lines up exactly with that stop's own two roads (e.g. row 11, "Left,

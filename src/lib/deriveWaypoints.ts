@@ -11,12 +11,16 @@ export type WaypointQuery =
   | { stepId: number; kind: "intersection"; roadA: string; roadB: string };
 
 /** Generic placeholder road names from the paper route sheet that
- * aren't a real, geocodable public road - "School Driveway" is the
+ * aren't a real, geocodable public road - "School Parking Lot" is the
  * only one currently in use, standing in for wherever the bus meets
- * the road right at the school. Resolved to the school's own street
- * address instead of a bogus intersection. */
+ * the road right at the school ("School Driveway" until the school's
+ * bus loop turned out to be a parking lot, not a driveway - kept as a
+ * synonym here rather than swapped out, in case the sheet uses either
+ * wording again later). Resolved to the school's own street address
+ * instead of a bogus intersection or a "parking lot" that will never
+ * geocode as a named road either. */
 function isGenericPlaceholder(road: string): boolean {
-  return /\bdriveway\b/i.test(road);
+  return /\b(driveway|parking lot)\b/i.test(road);
 }
 
 /** Strips a leading house number off a literal street address, e.g.
