@@ -184,3 +184,30 @@ export function SearchIcon({ className }: { className?: string }) {
     </svg>
   );
 }
+
+/** Favorite marker on RouteListScreen's rows - solid+filled when
+ * `filled`, a faint outline otherwise (caller controls both fill and
+ * outline color via `className`'s text color, same as every other
+ * icon here). */
+export function HeartIcon({
+  filled,
+  className,
+}: {
+  filled?: boolean;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 20.5s-7-4.35-9.5-8.8C1 8.4 2.4 5 5.7 4.5c2-.3 3.7.7 4.8 2.3.3.4.9.4 1.2 0 1.1-1.6 2.8-2.6 4.8-2.3C19.6 5 21 8.4 19.5 11.7c-2.5 4.45-9.5 8.8-9.5 8.8z" />
+    </svg>
+  );
+}

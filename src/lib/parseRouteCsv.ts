@@ -12,6 +12,7 @@ export interface RouteMeta {
   tripType: TripType;
   distance: string;
   durationMinutes: number;
+  isFavorite: boolean;
 }
 
 function parseCsvLine(line: string): string[] {

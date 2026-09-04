@@ -57,6 +57,21 @@ function pick<T>(rng: () => number, arr: readonly T[]): T {
   return arr[Math.floor(rng() * arr.length)];
 }
 
+// Picks n distinct elements out of arr, without replacement.
+function pickRandomSubset<T>(rng: () => number, arr: readonly T[], n: number): T[] {
+  const pool = [...arr];
+  const result: T[] = [];
+  for (let i = 0; i < n && pool.length > 0; i++) {
+    const index = Math.floor(rng() * pool.length);
+    result.push(pool.splice(index, 1)[0]);
+  }
+  return result;
+}
+
+// The real route (see placeholderMeta.ts) is always a favorite; this
+// many *demo* routes join it, for six total.
+const FAVORITE_DEMO_COUNT = 5;
+
 // A tiny seeded PRNG (mulberry32) rather than Math.random() - keeps the
 // demo list stable across re-renders and navigating back to it within a
 // session, instead of reshuffling every time this screen remounts.
@@ -93,7 +108,7 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
   const rng = mulberry32(42);
   const usedNumbers = new Set([base.routeNumber]);
 
-  return Array.from({ length: count }, () => {
+  const routes: Route[] = Array.from({ length: count }, () => {
     let routeNumber: string;
     do {
       routeNumber = String(100 + Math.floor(rng() * 900));
@@ -125,6 +140,18 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
       tripType: tripLabel === "Morning Pickup" ? "pickup" : "dropoff",
       distance: `${(4 + rng() * 12).toFixed(1)} mi`,
       durationMinutes: 15 + Math.floor(rng() * 35),
+      isFavorite: false,
     };
   });
+
+  // Only routes numbered higher than the real one are eligible - so
+  // that one always sorts/reads first among favorites, "125" being the
+  // lowest of the bunch, purely for demo legibility (see
+  // RouteListScreen's Favorites view, which pins it first).
+  const eligible = routes.filter((r) => Number(r.routeNumber) > Number(base.routeNumber));
+  const favoriteNumbers = new Set(
+    pickRandomSubset(rng, eligible, FAVORITE_DEMO_COUNT).map((r) => r.routeNumber),
+  );
+
+  return routes.map((r) => (favoriteNumbers.has(r.routeNumber) ? { ...r, isFavorite: true } : r));
 }

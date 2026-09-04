@@ -2,22 +2,26 @@
 
 import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
-import { SearchIcon } from "./icons";
-import type { Route, TripType } from "@/lib/types";
+import { HeartIcon, SearchIcon, TriangleIcon } from "./icons";
+import type { Route } from "@/lib/types";
 
-/** Pill toggle styling shared by the AM/PM filter buttons - blue/filled
- * when active, the same neutral gray as the Back/Pause buttons
- * elsewhere when not (see "Button/road color" in the README). */
-function tripToggleClasses(active: boolean): string {
-  return `btn-glossy shrink-0 rounded-full border px-3.5 py-2.5 text-sm font-semibold ${
-    active ? "border-blue-600 bg-blue-600 text-white" : "border-zinc-400 bg-zinc-200 text-zinc-700"
-  }`;
-}
+/** What the View dropdown filters to - "all"/"favorites" aren't
+ * TripType values, so this is its own union rather than reusing that
+ * type the way the old AM/PM toggle pair did. */
+type ViewFilter = "all" | "pickup" | "dropoff" | "favorites";
+
+const VIEW_OPTIONS: { value: ViewFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "pickup", label: "Morning Pickup" },
+  { value: "dropoff", label: "Afternoon Drop Off" },
+  { value: "favorites", label: "Favorites" },
+];
 
 /**
  * The app's home screen: a scrollable table of routes (# / Name /
- * Start), filterable by a search box and a pair of AM/PM toggles above
- * it. Tapping a row goes to that route's trip-summary screen
+ * Start / favorite heart), filterable by a search box and a View
+ * dropdown above it (All / Morning Pickup / Afternoon Drop Off /
+ * Favorites). Tapping a row goes to that route's trip-summary screen
  * (StartScreen). Only one real route exists (see ROUTE_META in
  * page.tsx) - the rest are fabricated by buildDemoRoutes purely so this
  * screen has enough rows to actually exercise scrolling and search,
@@ -32,34 +36,31 @@ export function RouteListScreen({
   onSelect: (route: Route) => void;
 }) {
   const [query, setQuery] = useState("");
-  // Which trip types are toggled on - empty means no filter (show
-  // every trip type), same as if both were toggled on. Every route in
-  // this app is either a morning pickup or an afternoon dropoff (see
-  // demoRoutes.ts's TRIP_LABELS), so filtering on tripType is
-  // filtering on morning/afternoon.
-  const [activeTrips, setActiveTrips] = useState<Set<TripType>>(new Set());
-
-  const toggleTrip = (trip: TripType) => {
-    setActiveTrips((prev) => {
-      const next = new Set(prev);
-      if (next.has(trip)) {
-        next.delete(trip);
-      } else {
-        next.add(trip);
-      }
-      return next;
-    });
-  };
+  const [view, setView] = useState<ViewFilter>("all");
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return routes.filter((route) => {
+    const matching = routes.filter((route) => {
       const matchesQuery =
         !q || route.name.toLowerCase().includes(q) || route.routeNumber.includes(q);
-      const matchesTrip = activeTrips.size === 0 || activeTrips.has(route.tripType);
-      return matchesQuery && matchesTrip;
+      const matchesView =
+        view === "all" || (view === "favorites" ? route.isFavorite : route.tripType === view);
+      return matchesQuery && matchesView;
     });
-  }, [routes, query, activeTrips]);
+
+    if (view !== "favorites") return matching;
+
+    // Route 125 - the one real route (every other favorite is a
+    // fabricated demo route with a higher number - see
+    // demoRoutes.ts) - always reads first here, purely for demo
+    // legibility. A stable sort (Array.prototype.sort is stable in
+    // every modern engine) means everything else keeps its existing
+    // (departure-time) order.
+    return [...matching].sort((a, b) =>
+      a.routeNumber === "125" ? -1 : b.routeNumber === "125" ? 1 : 0,
+    );
+  }, [routes, query, view]);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
@@ -78,31 +79,63 @@ export function RouteListScreen({
             className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-3 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           />
         </div>
-        <button
-          type="button"
-          onClick={() => toggleTrip("pickup")}
-          aria-pressed={activeTrips.has("pickup")}
-          aria-label="Filter to morning routes"
-          className={tripToggleClasses(activeTrips.has("pickup"))}
-        >
-          AM
-        </button>
-        <button
-          type="button"
-          onClick={() => toggleTrip("dropoff")}
-          aria-pressed={activeTrips.has("dropoff")}
-          aria-label="Filter to afternoon routes"
-          className={tripToggleClasses(activeTrips.has("dropoff"))}
-        >
-          PM
-        </button>
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setViewMenuOpen((open) => !open)}
+            aria-haspopup="listbox"
+            aria-expanded={viewMenuOpen}
+            className="btn-glossy flex shrink-0 items-center gap-1 rounded-full border border-zinc-400 bg-zinc-200 px-3.5 py-2.5 text-sm font-semibold text-zinc-700"
+          >
+            View
+            {/* TriangleIcon rather than a dedicated chevron - the
+                existing ChevronDownIcon is a fixed yellow/black warning
+                caret (unused elsewhere, kept as leftover from an
+                earlier design), not a neutral currentColor-based one
+                that'd fit here. */}
+            <TriangleIcon direction="right" className="h-3 w-3 rotate-90" />
+          </button>
+
+          {viewMenuOpen && (
+            <>
+              {/* Full-screen, invisible - just here to close the menu on
+                  an otherwise-unhandled tap anywhere else on the screen. */}
+              <div className="fixed inset-0 z-10" onClick={() => setViewMenuOpen(false)} />
+              <div
+                role="listbox"
+                className="absolute top-full right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-zinc-300 bg-white py-1 shadow-lg"
+              >
+                {VIEW_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    aria-selected={view === option.value}
+                    onClick={() => {
+                      setView(option.value);
+                      setViewMenuOpen(false);
+                    }}
+                    className={`block w-full px-4 py-2.5 text-left text-sm font-semibold ${
+                      view === option.value
+                        ? "bg-blue-50 text-blue-600"
+                        : "text-zinc-700 active:bg-zinc-100"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
-        <div className="grid grid-cols-[2.25rem_1fr_4.25rem] gap-x-3 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+        <div className="grid grid-cols-[2.25rem_1fr_4.25rem_1.25rem] gap-x-3 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
           <span>#</span>
           <span>Name</span>
           <span className="text-right">Start</span>
+          <span />
         </div>
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map((route) => (
@@ -110,13 +143,19 @@ export function RouteListScreen({
               key={route.routeNumber}
               type="button"
               onClick={() => onSelect(route)}
-              className="grid w-full grid-cols-[2.25rem_1fr_4.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
+              className="grid w-full grid-cols-[2.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
             >
               <span className="font-heading text-lg font-black">{route.routeNumber}</span>
               <span className="line-clamp-2 leading-snug text-zinc-700">{route.name}</span>
               <span className="text-right text-sm font-semibold text-zinc-500">
                 {route.departureTime}
               </span>
+              <HeartIcon
+                filled={route.isFavorite}
+                className={`h-4 w-4 justify-self-end ${
+                  route.isFavorite ? "text-blue-600" : "text-zinc-300"
+                }`}
+              />
             </button>
           ))}
 

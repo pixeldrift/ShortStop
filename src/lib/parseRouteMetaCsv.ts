@@ -1,14 +1,18 @@
 import type { RouteMeta } from "./parseRouteCsv";
 
 /** Fields this file's schema actually covers - driverName, schoolAddress,
- * and distance aren't columns here, so callers merge those in separately
- * (see PLACEHOLDER_META in page.tsx). stop_count/rider_count are in the
- * schema too, but aren't parsed into anything: the app already derives
- * both, live, from the real steps CSV (parseRouteCsv), which stays
- * correct if a stop is ever added or removed there - re-deriving the
- * same numbers from this file's own copy would just be a second source
- * that could drift out of sync with it. */
-export type RouteMetaCsvFields = Omit<RouteMeta, "driverName" | "schoolAddress" | "distance">;
+ * distance, and isFavorite aren't columns here, so callers merge those
+ * in separately (see PLACEHOLDER_META in page.tsx). stop_count/
+ * rider_count are in the schema too, but aren't parsed into anything:
+ * the app already derives both, live, from the real steps CSV
+ * (parseRouteCsv), which stays correct if a stop is ever added or
+ * removed there - re-deriving the same numbers from this file's own
+ * copy would just be a second source that could drift out of sync
+ * with it. */
+export type RouteMetaCsvFields = Omit<
+  RouteMeta,
+  "driverName" | "schoolAddress" | "distance" | "isFavorite"
+>;
 
 function to12HourClock(hhmm: string): string {
   const [hourStr, minuteStr] = hhmm.split(":");

@@ -43,5 +43,10 @@ export interface Route {
    * parseRouteCsv.ts. */
   distance: string;
   durationMinutes: number;
+  /** Drives the heart icon on RouteListScreen's rows and the
+   * "Favorites" option in its View dropdown - see demoRoutes.ts (which
+   * randomly picks a handful of the fabricated routes) and
+   * placeholderMeta.ts (which always favorites the one real route). */
+  isFavorite: boolean;
   steps: NavigationStep[];
 }
