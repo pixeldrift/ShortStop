@@ -37,9 +37,9 @@ export function LiveClock({ now }: { now: Date }) {
   );
 }
 
-/** Splits a value string like "8.4 mi" into ["8.4", "mi"] for the stat
- * tiles below - the big number on top, the unit as its small label,
- * rather than hardcoding a unit that might not match the data. */
+/** Splits a value string like "8.4 mi" into ["8.4", "mi"] - only the
+ * number is used, so the distance stat tile can show a spelled-out
+ * "miles" label instead of whatever abbreviated unit the data uses. */
 function splitValueUnit(text: string): [string, string] {
   const match = text.match(/^([\d.,]+)\s*(.*)$/);
   return match ? [match[1], match[2]] : [text, ""];
@@ -65,16 +65,13 @@ export function StartScreen({
 }) {
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
   const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
-  const [distanceValue, distanceUnit] = splitValueUnit(route.distance);
+  const [distanceValue] = splitValueUnit(route.distance);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-6 pb-6 text-center landscape:pt-4">
       <Logo size="large" />
 
       <div className="flex w-full max-w-md items-center justify-between">
-        <h1 className="font-heading text-4xl font-black tracking-tight">
-          Route {route.routeNumber}
-        </h1>
         <button
           type="button"
           onClick={onBack}
@@ -83,14 +80,17 @@ export function StartScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
+        <h1 className="font-heading text-4xl font-black tracking-tight">
+          Route {route.routeNumber}
+        </h1>
       </div>
 
       <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">
         <p className="text-lg leading-tight text-zinc-500">{route.name}</p>
 
         <div className="mt-4 grid grid-cols-4 gap-2">
-          <StatTile value={distanceValue} label={distanceUnit || "mi"} />
-          <StatTile value={String(route.durationMinutes)} label="min" />
+          <StatTile value={distanceValue} label="miles" />
+          <StatTile value={String(route.durationMinutes)} label="minutes" />
           <StatTile value={String(totalStops)} label="stops" />
           <StatTile value={String(totalRiders)} label="riders" />
         </div>
