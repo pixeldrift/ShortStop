@@ -84,15 +84,19 @@ function speakTwoDigits(n: number): string {
  * Reads a route number the way a driver actually says it aloud, not as
  * a raw number: the first digit read alone, then the remaining two
  * digits read as a single two-digit number, e.g. "124" -> "one twenty
- * four", "403" -> "four oh three", "254" -> "two fifty four". Joined
- * with a plain space (not punctuation) so a TTS engine reads it as one
- * continuous phrase rather than pausing between the two parts. Only
- * three-digit route numbers follow this pattern - anything else is
- * spoken as its raw digits instead.
+ * four", "403" -> "four oh three", "254" -> "two fifty four", "101" ->
+ * "one oh one". Joined with a plain space (not punctuation) so a TTS
+ * engine reads it as one continuous phrase rather than pausing between
+ * the two parts. The one exception: a round hundred (last two digits
+ * both zero, e.g. "100") reads as "one hundred" - nobody says "one oh
+ * zero" - rather than running it through the same "oh" treatment as
+ * every other last-two-digits value. Only three-digit route numbers
+ * follow this pattern - anything else is spoken as its raw digits
+ * instead.
  */
 export function speakRouteNumber(routeNumber: string): string {
   if (!/^\d{3}$/.test(routeNumber)) return routeNumber;
   const first = Number(routeNumber[0]);
   const rest = Number(routeNumber.slice(1));
-  return `${ONES[first]} ${speakTwoDigits(rest)}`;
+  return rest === 0 ? `${ONES[first]} hundred` : `${ONES[first]} ${speakTwoDigits(rest)}`;
 }

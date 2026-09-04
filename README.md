@@ -222,9 +222,11 @@ it, not as a raw number - `speakRouteNumber` in `speech.ts` reads the
 first digit alone, then the remaining two digits as one two-digit
 number, space-joined rather than punctuated so a TTS engine reads it as
 one continuous phrase instead of pausing between the two parts: "124" →
-"one twenty four", "403" → "four oh three", "254" → "two fifty four"
-(confirmed against all three examples, plus edge cases like "110" → "one
-ten" and "100" → "one oh zero"). Only three-digit route numbers get this
+"one twenty four", "403" → "four oh three", "254" → "two fifty four",
+"101" → "one oh one" (confirmed against all of those, plus "110" → "one
+ten"). One deliberate exception to that "oh" treatment: a round hundred
+(last two digits both zero) reads as "one hundred", not "one oh zero" -
+nobody says it that way. Only three-digit route numbers get this
 treatment - anything else falls back to its raw digits, though every
 route in this app (real or `demoRoutes.ts`-fabricated) is three digits.
 
