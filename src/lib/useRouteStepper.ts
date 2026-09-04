@@ -131,9 +131,11 @@ export function useRouteStepper(route: Route) {
   // Lake Elementary.") is now the *entire* depot-phase announcement,
   // rather than being prepended to step 0's own announcement - since
   // depot is its own phase, it gets its own turn to speak instead of
-  // stacking onto the first real step. The "arrived" phase speaks
-  // nothing automatically at all: "Route ended." only fires from
-  // endRoute() below, when "End" is actually tapped.
+  // stacking onto the first real step. The "arrived" phase similarly
+  // gets its own short announcement the moment its screen appears
+  // ("All stops completed.") - separate from "Route ended.", which
+  // still only fires from endRoute() below, when "End" is actually
+  // tapped.
   //
   // announcementDone tracks whether the *last* queued utterance for the
   // current announcement attempt has finished (or errored/timed out) -
@@ -170,7 +172,7 @@ export function useRouteStepper(route: Route) {
             } ${route.schoolName}.`,
           ]
         : phase === "arrived"
-          ? []
+          ? ["All stops completed."]
           : [...currentStep.announcement];
 
     if (parts.length === 0 || typeof window === "undefined" || !("speechSynthesis" in window)) {

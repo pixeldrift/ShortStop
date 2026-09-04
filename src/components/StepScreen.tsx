@@ -75,15 +75,25 @@ export function StepScreen({
           guarantee and shrink-if-crazy-long fallback - see StopContent/
           TurnContent below - rather than by the map yielding space. */}
       <div className="relative h-[30vh] w-full shrink-0 overflow-hidden landscape:h-full landscape:w-[42%]">
-        <RouteMap className="absolute inset-0" />
+        {/* z-0 gives Leaflet's own internal panes/controls (tile pane,
+            zoom control, attribution - several of which carry their own
+            explicit, fairly high z-index, e.g. the zoom control's 1000) a
+            stacking context of their own to escalate within. Without it,
+            since neither this div nor its parent set a z-index, those
+            panes escape to the nearest ancestor stacking context and can
+            paint above the roster popup below despite being earlier in
+            the DOM. */}
+        <RouteMap className="absolute inset-0 z-0" />
 
         {showRoster && (
           <>
             {/* Dim the map rather than hiding it - the check-in card
                 floats above it as its own smaller, opaque, shadowed
-                panel, leaving the dimmed map visible all around it. */}
-            <div className="absolute inset-0 bg-black/35" />
-            <div className="absolute inset-0 flex items-center justify-center p-3">
+                panel, leaving the dimmed map visible all around it.
+                z-10 keeps both above the map's own stacking context
+                (see the z-0 note on RouteMap above). */}
+            <div className="absolute inset-0 z-10 bg-black/35" />
+            <div className="absolute inset-0 z-10 flex items-center justify-center p-3">
               <div className="animate-roster-pop h-[78%] w-[86%]">
                 <RiderCheckInBox
                   roster={roster}
