@@ -32,6 +32,7 @@ for them yet.
 ### Project layout
 
 ```
+.env.local.example        Copy to .env.local (gitignored) - needs ORS_API_KEY
 .github/
   workflows/
     geocode-route.yml     Auto-refreshes route-125-waypoints.json (see below)
@@ -63,7 +64,7 @@ src/
     time.ts               addMinutesToTimeString/parseTimeToMinutes - trip ETA math
     demoRoutes.ts          Fabricates filler rows for the route list (see below)
     deriveWaypoints.ts     CSV row -> geocodable address/intersection (see below)
-    geocode.ts              Nominatim lookup for one derived waypoint (see below)
+    geocode.ts              Swappable geocoding providers (ORS active, see below)
     waypointCache.ts         Cache key + entry types shared with scripts/geocodeRoute.ts
     placeholderMeta.ts     Shared driverName/schoolAddress/distance placeholders
     silence.ts           A tiny silent audio loop (see below)
@@ -1147,39 +1148,22 @@ resolve as a named road in OSM) appears in two derived intersections and
 failed both, exactly as expected - a real, expected gap to either
 accept or word around later, not a bug in the derivation.
 
-**Geocoding itself is Nominatim** (OSM's own geocoder, free, no API
-key - matches the "don't run our own server for a prototype" reasoning
-behind picking ORS over Valhalla for routing) via its free-text search
-endpoint, one query per unique key, rate-limited to Nominatim's usage
-policy (max 1 request/second - only actual network calls wait; a cache
-hit costs nothing) and sent with a real, identifying `User-Agent`
-(policy-required, not optional). Every query other than the school's
-own full address needs a geographic hint to disambiguate a road name
-that could exist in more than one town, so every other query gets the
-school address's own "City, ST" appended (`extractCityState`, a regex
-pull off the end of `PLACEHOLDER_META.schoolAddress`) - the same address
-`page.tsx` already displays, now pulled out to its own module,
-`placeholderMeta.ts`, specifically so the script and the app share one
-copy instead of a second hardcoded one that could quietly drift out of
-sync with it.
-
-**Verified without hitting the network**: this sandboxed session's
-egress policy blocks `nominatim.openstreetmap.org` outright (a 403 on
-the CONNECT, confirmed via the agent-proxy's own status endpoint - a
-deliberate organization policy denial, not a bug to route around, so
-the actual `npm run geocode` run against the real API hasn't happened
-yet and needs to run somewhere with real network access to it - a
-normal dev machine or CI, not this session). Every other piece was
-still verified for real: `scripts/tsconfig.json` compiles the whole
-chain (the script plus every `src/lib` module it touches) standalone to
-CommonJS with plain `tsc`, no bundler or extra devDependency (`tsx`/
-`ts-node`) needed, and a scratch harness ran that compiled output
-against the real 22-row CSV with `geocodeQuery`'s `fetchImpl` parameter
-swapped for a mock (built for exactly this - real code, fake network)
-- confirming the dedup (22 rows, 19 unique keys), the two expected
-Murfreesboro-ramp failures, that a fully-cached second pass makes zero
-network calls, that an edited query produces a different key, and that
-an orphaned cache entry gets flagged for pruning correctly.
+**Geocoding is behind a one-line-swappable provider abstraction**
+(`geocode.ts`) from the start - every caller (`scripts/geocodeRoute.ts`)
+talks only to `geocodeQuery`, a `GeocodeProvider` function value, never
+to a specific service's own request/response shape. Originally that was
+Nominatim (OSM's own geocoder, free, no API key - matching the "don't
+run our own server for a prototype" reasoning behind picking ORS over
+Valhalla for routing); see "Maps, part five" below for why the active
+provider changed and what stayed the same. `queryTextFor` and
+`extractCityState` are shared across every provider, since building
+"Road A and Road B, City, ST" out of a `WaypointQuery` isn't specific to
+who resolves it - every query other than the school's own full address
+needs that geographic hint to disambiguate a road name that could exist
+in more than one town, pulled off the end of
+`PLACEHOLDER_META.schoolAddress` (the same address `page.tsx` displays,
+its own module specifically so the script and the app share one copy
+instead of a second hardcoded one that could drift out of sync with it).
 
 Not yet wired up: rendering any of this on a map, and the ORS routing
 call itself.
@@ -1189,18 +1173,20 @@ call itself.
 The obvious next question once the cache exists: who runs `npm run
 geocode`, and when? Regenerating it on every Vercel deploy was the
 first idea considered, and rejected - not because ~20 seconds (19
-unique queries at Nominatim's required 1-request/second limit) is slow,
-but because it means a live third-party API sits in the build's
-critical path (Nominatim rate-limits or blocks you → your build fails,
-for content that hasn't even changed) and repeatedly re-fetching the
-exact same 19 queries on every single deploy is the kind of pattern
-Nominatim's usage policy exists to discourage - risking exactly the
-rate-limiting/blocking that would then break builds.
+unique queries at a conservative 1-request/second pace) is slow, but
+because it means a live third-party API sits in the build's critical
+path (it rate-limits or blocks you → your build fails, for content
+that hasn't even changed) and repeatedly re-fetching the exact same 19
+queries on every single deploy is exactly the kind of pattern a free
+geocoding API's usage policy exists to discourage - risking the very
+rate-limiting/blocking that would then break builds. (This reasoning
+held for Nominatim originally and holds just as well for ORS now - see
+"Maps, part five" below for the provider switch itself.)
 
 The actual answer is that the committed JSON file already *is* the
 persistent, safe location - that was the whole point of caching it in
 its own file in the first place rather than computing it live - so
-Vercel's build never needs network access to Nominatim at all; it just
+Vercel's build never needs network access to a geocoder at all; it just
 reads whatever's already committed. What was still manual was the
 "refresh it and commit the result" step, now automated by
 `.github/workflows/geocode-route.yml`: triggered by a `push` that
@@ -1230,8 +1216,9 @@ approximate - a general "somewhere in town" anchor, not tied to any
 specific address in the route data) with no route line, stop markers,
 or bus position drawn. Those come once the geocoded waypoint cache
 (`route-125-waypoints.json`, "Maps, part two"/"three" above) is
-actually populated and wired in - still blocked on the same
-GitHub-Actions-runner-vs-Nominatim issue described there.
+actually populated and wired in - still blocked on not having a real
+`ORS_API_KEY` yet to test the provider switch described in "Maps, part
+five" below.
 
 Library choice: plain `leaflet` (+ `@types/leaflet`), not
 `react-leaflet` - for a map this simple (one tile layer, nothing
@@ -1276,8 +1263,87 @@ is what the actual OSM tile imagery looks like; that needs checking
 somewhere with real network access to `tile.openstreetmap.org`, same
 caveat as the waypoint cache.
 
+### Maps, part five: swapping the geocoding provider, and why it was only a one-line change
+
+Three identical failures confirmed the geocode workflow's real problem
+wasn't fixable from this side: Nominatim's usage policy is enforced by
+*IP address*, not an API key, and GitHub Actions' shared runner IPs are
+used by enormous numbers of unrelated jobs worldwide - exactly the kind
+of traffic that policy exists to block, regardless of what `User-Agent`
+a given request carries. First attempt was strengthening the
+`User-Agent` (pointing it at the repo's Issues page instead of just its
+root) on the theory that Nominatim's "identify your application" policy
+language was the issue; re-ran the workflow against that fix
+(`workflow_dispatch`, added temporarily for exactly this, and kept
+afterward - see below) and it failed the same way a third time,
+ruling that out and confirming the IP-block theory instead.
+
+`geocode.ts` was written as a provider abstraction from the start (see
+"Maps, part two" above) specifically so this kind of swap wouldn't
+touch anything else in the codebase - `GeocodeProvider` is the one
+shared shape (`(query, locationContext, apiKey, fetchImpl?) =>
+Promise<WaypointCacheEntry>`) every implementation returns, and
+`geocodeQuery`, the name every caller actually imports, is just
+`export const geocodeQuery: GeocodeProvider = geocodeViaOpenRouteService;`
+at the bottom of the file. Switching providers was changing that one
+line (from `geocodeViaNominatim`) - `scripts/geocodeRoute.ts` didn't
+change at all. `geocodeViaNominatim` stays in the file rather than
+getting deleted - nothing about Nominatim itself was wrong for this
+app's data, only for automated traffic from a shared CI IP, so it's
+still there for a human running `npm run geocode` from their own
+machine, where that policy isn't an issue. `queryTextFor`/
+`extractCityState` (plain query-text construction, no service-specific
+shape) stayed shared across both.
+
+**Why OpenRouteService specifically**: it's key-based, not IP-based, so
+CI works; and this app already needs an ORS key regardless for the
+actual routing/directions call once that's built, so this doesn't add
+a second external service to configure - one key covers geocoding and
+routing both. Its geocoding is Pelias-based, which blends OSM data with
+a few other open sources, so it's still fundamentally OSM-rooted, in
+keeping with "OSM for our data." One real shape difference from
+Nominatim worth calling out: ORS returns coordinates as GeoJSON
+`geometry.coordinates`, `[lon, lat]` order - the *opposite* of
+Nominatim's separate `lat`/`lon` string fields - so
+`geocodeViaOpenRouteService` destructures that tuple explicitly
+(`const [lon, lat] = first.geometry.coordinates;`) rather than reusing
+Nominatim's field-name-based extraction; got this backwards once while
+writing it, then caught it with a mocked-response test asserting the
+unpacked `lat`/`lon` numbers landed the right way round; different
+requests need an `api_key` query param now too, absent from Nominatim's
+call. `WaypointCacheEntry` picked up a `provider` field on both its "ok"
+and "error" shapes (`waypointCache.ts`) so a cache entry stays labeled
+with which service actually resolved it - useful now that entries could
+in principle come from either provider over the cache's lifetime.
+
+**The API key itself is a real, unresolved blocker** - `ORS_API_KEY`
+needs to be a free key from openrouteservice.org, provided by a human
+(sign-up isn't something this session can do), then made available two
+places: as a GitHub repository secret (`Settings → Secrets and
+variables → Actions`, referenced in `geocode-route.yml` as
+`${{ secrets.ORS_API_KEY }}`) for the automated workflow, and locally
+(shell-exported, or in a gitignored `.env.local` - `.env.local.example`
+in the repo root documents the one line needed) for a manual `npm run
+geocode`. `scripts/geocodeRoute.ts` fails fast with a clear message
+if it's unset, before attempting any network call, rather than a
+confusing failure deeper in - confirmed directly (ran the compiled
+script with the var unset: threw immediately, no request attempted).
+Without a real key, the actual ORS response shape is unverified beyond
+what the documented API contract and a hand-built mocked response
+(matching that contract, including the `[lon, lat]` GeoJSON ordering)
+confirm - `workflow_dispatch` on `geocode-route.yml` (added for the
+User-Agent test, kept afterward) is there specifically to run a real
+test the moment a key exists, without needing an unrelated CSV edit to
+trigger it.
+
 ### Next steps
 
+- **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
+  a GitHub repository secret, plus locally in a gitignored `.env.local`
+  if running `npm run geocode` by hand - see "Maps, part five" above.
+  Nothing geocoding-related can actually run for real until this
+  exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
+  confirm the OpenRouteService switch works without needing a CSV edit
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual

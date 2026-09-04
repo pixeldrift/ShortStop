@@ -1,15 +1,19 @@
 import type { WaypointQuery } from "./deriveWaypoints";
 
 /** What one geocode attempt returns - a hit, or a miss with a reason.
- * `source` is the exact text sent to the geocoder, kept on both so a
- * human can see why a lookup did or didn't resolve. Only "ok" entries
- * actually get persisted to the cache file (see geocodeRoute.ts) - a
- * failure almost always means the query wording needs fixing, so
- * leaving it out of the cache means it's retried on the very next run
- * rather than staying silently failed forever. */
+ * `source` is the exact text sent to the geocoder, `provider` is which
+ * one resolved it (e.g. "openrouteservice") - kept on both so a human
+ * can see why, and via what service, a lookup did or didn't resolve.
+ * That matters now that the active provider is swappable (see
+ * geocode.ts) - a cache built under one provider stays clearly labeled
+ * as such even after the active one changes. Only "ok" entries actually
+ * get persisted to the cache file (see geocodeRoute.ts) - a failure
+ * almost always means the query wording needs fixing, so leaving it out
+ * of the cache means it's retried on the very next run rather than
+ * staying silently failed forever. */
 export type WaypointCacheEntry =
-  | { status: "ok"; lat: number; lon: number; displayName: string; source: string }
-  | { status: "error"; message: string; source: string };
+  | { status: "ok"; lat: number; lon: number; displayName: string; source: string; provider: string }
+  | { status: "error"; message: string; source: string; provider: string };
 
 /** public/data/route-125-waypoints.json's shape: every entry keyed by
  * waypointCacheKey(query) below. In practice only ever holds "ok"

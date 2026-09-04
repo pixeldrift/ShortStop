@@ -11,8 +11,10 @@ on:
       - claude/ipad-iphone-nav-app-ss8dsk
     paths:
       - "public/data/route-125.csv"
-  # Temporary, for testing the User-Agent fix in geocode.ts without a
-  # CSV change - remove once confirmed one way or the other.
+  # Kept (not just for the User-Agent test it was added for) so a run
+  # can be triggered manually - e.g. once ORS_API_KEY is first added
+  # as a repository secret, to confirm the switch to OpenRouteService
+  # works without needing an unrelated CSV edit.
   workflow_dispatch: {}
 
 permissions:
@@ -36,6 +38,8 @@ jobs:
         run: npm ci
 
       - name: Refresh route-125-waypoints.json
+        env:
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
         run: npm run geocode
 
       - name: Commit and push if the cache changed

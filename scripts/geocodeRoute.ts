@@ -9,13 +9,33 @@ import type { WaypointCache } from "../src/lib/waypointCache";
 
 const ROUTE_CSV_PATH = join(__dirname, "..", "public", "data", "route-125.csv");
 const CACHE_PATH = join(__dirname, "..", "public", "data", "route-125-waypoints.json");
+const ENV_LOCAL_PATH = join(__dirname, "..", ".env.local");
 
-// Nominatim's usage policy: max 1 request/second. Only applied between
-// actual network calls - a cache hit costs nothing, so it doesn't wait.
+// Conservative pacing between actual network calls - a cache hit costs
+// nothing, so it doesn't wait. Kept from the Nominatim-era 1 req/sec
+// limit; ORS's own geocoding quota is more generous, but there's no
+// need to push it for ~20 lookups.
 const RATE_LIMIT_MS = 1100;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** This script runs as a plain Node process, not through Next.js, so
+ * it doesn't get Next's automatic .env.local loading - a minimal
+ * stand-in rather than pulling in a `dotenv` dependency for five lines
+ * of parsing. Only fills in keys not already set in the environment,
+ * same precedence dotenv itself uses, so a real shell-exported value
+ * (e.g. in CI, via `secrets.ORS_API_KEY`) always wins over the file. */
+function loadEnvLocal(): void {
+  if (!existsSync(ENV_LOCAL_PATH)) return;
+  for (const line of readFileSync(ENV_LOCAL_PATH, "utf8").split(/\r?\n/)) {
+    const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)\s*$/);
+    if (!match) continue;
+    const [, key, rawValue] = match;
+    if (process.env[key] !== undefined) continue;
+    process.env[key] = rawValue.replace(/^["']|["']$/g, "");
+  }
 }
 
 /**
@@ -30,9 +50,21 @@ function sleep(ms: number): Promise<void> {
  * entry no longer referenced by the current CSV, so the cache file
  * doesn't accumulate cruft from since-edited-away rows.
  *
- * Run with `npm run geocode`.
+ * Run with `npm run geocode`. Needs an OpenRouteService API key
+ * (ORS_API_KEY) - free at openrouteservice.org - either exported in
+ * the shell, in a gitignored .env.local, or (in CI) a repository
+ * secret. See geocode.ts for why ORS rather than Nominatim.
  */
 async function main() {
+  loadEnvLocal();
+  const apiKey = process.env.ORS_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "ORS_API_KEY isn't set. Get a free key at openrouteservice.org, then either export it, " +
+        "put it in a gitignored .env.local (ORS_API_KEY=...), or set it as a repository secret in CI.",
+    );
+  }
+
   const csvText = readFileSync(ROUTE_CSV_PATH, "utf8");
   const rows = parseRouteCsvRows(csvText);
   const schoolAddress = PLACEHOLDER_META.schoolAddress;
@@ -65,7 +97,7 @@ async function main() {
       continue;
     }
 
-    const entry = await geocodeQuery(waypoint, locationContext);
+    const entry = await geocodeQuery(waypoint, locationContext, apiKey);
 
     if (entry.status === "ok") {
       cache[key] = entry;
@@ -95,7 +127,7 @@ async function main() {
   );
   if (failed > 0) {
     console.log(
-      "Failed lookups usually need a wording fix in route-125.csv (or the road just isn't in OSM) " +
+      "Failed lookups usually need a wording fix in route-125.csv (or the road just isn't found) " +
         "- they'll be retried automatically next run since they weren't cached.",
     );
   }
