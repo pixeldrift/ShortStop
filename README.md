@@ -32,6 +32,9 @@ for them yet.
 ### Project layout
 
 ```
+.github/
+  workflows/
+    geocode-route.yml     Auto-refreshes route-125-waypoints.json (see below)
 src/
   app/
     page.tsx           Renders the route list, the Start screen, or the
@@ -88,11 +91,15 @@ npm run dev
 Open http://localhost:3000. Works in any modern browser; test the
 Bluetooth remote on an actual iPad/iPhone in Safari.
 
-To refresh the route's geocoded waypoint cache after editing
-`route-125.csv` (see "Maps, part two" below): `npm run geocode`. Needs
-real outbound network access to `nominatim.openstreetmap.org` - not
-available in every environment (this one included), so run it
-somewhere that has it.
+The route's geocoded waypoint cache (`route-125-waypoints.json`, see
+"Maps, part two" below) refreshes itself automatically - a GitHub
+Actions workflow (`.github/workflows/geocode-route.yml`) runs `npm run
+geocode` and commits the result whenever `route-125.csv` changes, so
+there's normally nothing to do by hand. To run it yourself anyway (a
+manual local check, or to retry a failed lookup without touching the
+CSV): `npm run geocode`. Needs real outbound network access to
+`nominatim.openstreetmap.org` - not available in every environment
+(this one included), so run it somewhere that has it.
 
 ### Deploying
 
@@ -1172,9 +1179,42 @@ Murfreesboro-ramp failures, that a fully-cached second pass makes zero
 network calls, that an edited query produces a different key, and that
 an orphaned cache entry gets flagged for pruning correctly.
 
-Not yet wired up: actually running the real `npm run geocode` (blocked
-here, needs a network-unrestricted environment), rendering any of this
-on a map, and the ORS routing call itself.
+Not yet wired up: rendering any of this on a map, and the ORS routing
+call itself.
+
+### Maps, part three: keeping the waypoint cache fresh without redeploying every time
+
+The obvious next question once the cache exists: who runs `npm run
+geocode`, and when? Regenerating it on every Vercel deploy was the
+first idea considered, and rejected - not because ~20 seconds (19
+unique queries at Nominatim's required 1-request/second limit) is slow,
+but because it means a live third-party API sits in the build's
+critical path (Nominatim rate-limits or blocks you → your build fails,
+for content that hasn't even changed) and repeatedly re-fetching the
+exact same 19 queries on every single deploy is the kind of pattern
+Nominatim's usage policy exists to discourage - risking exactly the
+rate-limiting/blocking that would then break builds.
+
+The actual answer is that the committed JSON file already *is* the
+persistent, safe location - that was the whole point of caching it in
+its own file in the first place rather than computing it live - so
+Vercel's build never needs network access to Nominatim at all; it just
+reads whatever's already committed. What was still manual was the
+"refresh it and commit the result" step, now automated by
+`.github/workflows/geocode-route.yml`: triggered by a `push` that
+touches `public/data/route-125.csv` specifically (path-filtered, and
+scoped to `main`/`claude/ipad-iphone-nav-app-ss8dsk`, the only two
+branches in play), it runs `npm run geocode` in GitHub's own runner
+(real network access, unlike this session) and, only if the resulting
+`route-125-waypoints.json` actually changed, commits and pushes it back
+under a `github-actions[bot]` identity. Committing straight to the
+branch rather than opening a PR, for now - same direct-commit workflow
+this session has used throughout - though a PR-based review step (in
+case a lookup ever resolves somewhere unexpected) is an easy switch
+later if that starts to matter more than it does at this route's small
+scale. The workflow's own commit only ever touches
+`route-125-waypoints.json`, never `route-125.csv` itself, so it can't
+re-trigger its own path-filtered listener - no infinite loop risk.
 
 ### Next steps
 
