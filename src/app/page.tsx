@@ -92,6 +92,7 @@ function RouteApp({ route, onBack }: { route: Route; onBack: () => void }) {
     start,
     advance,
     goBack,
+    jumpTo,
     paused,
     togglePause,
     endRoute,
@@ -118,6 +119,7 @@ function RouteApp({ route, onBack }: { route: Route; onBack: () => void }) {
       paused={paused}
       onAdvance={advance}
       onBack={goBack}
+      onSeek={jumpTo}
       onTogglePause={togglePause}
       onEndRoute={endRoute}
       announcementDone={announcementDone}

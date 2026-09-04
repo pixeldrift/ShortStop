@@ -22,6 +22,11 @@ import type { Route } from "./types";
  */
 export type StepPhase = "depot" | "step" | "arrived";
 
+/** Where a tap/scrub on RouteProgressBar wants to land - "step" carries
+ * which of route.steps[], the other two are the virtual depot/arrived
+ * states (see StepPhase above), which aren't indices into that array. */
+export type SeekTarget = { phase: "depot" } | { phase: "arrived" } | { phase: "step"; index: number };
+
 /**
  * Drives the step-through UI: current step, advance/back, and every input
  * path that should move it forward or back.
@@ -121,6 +126,30 @@ export function useRouteStepper(route: Route) {
     }
     // "depot": nothing before it.
   }, [phase, currentIndex, totalSteps]);
+
+  // Direct jump for RouteProgressBar's tap-a-step/scrub gesture - unlike
+  // advance/goBack, this can land on any step in either direction, not
+  // just the adjacent one. Left ungated by `paused` here (StepScreen
+  // itself decides whether to let the gesture reach this at all, same
+  // as it does for onAdvance/onBack) so this stays a plain "go here",
+  // matching what a route mid-scrub actually wants.
+  const jumpTo = useCallback(
+    (target: SeekTarget) => {
+      if (target.phase === "depot") {
+        setPhase("depot");
+        setCurrentIndex(0);
+        return;
+      }
+      if (target.phase === "arrived") {
+        setPhase("arrived");
+        setCurrentIndex(totalSteps - 1);
+        return;
+      }
+      setPhase("step");
+      setCurrentIndex(Math.min(Math.max(target.index, 0), totalSteps - 1));
+    },
+    [totalSteps],
+  );
 
   // Speak the announcement for whatever's current - but not while paused.
   // Each part (stop number / location / rider count) is queued as its
@@ -331,6 +360,7 @@ export function useRouteStepper(route: Route) {
     start,
     advance,
     goBack,
+    jumpTo,
     paused,
     togglePause,
     endRoute,

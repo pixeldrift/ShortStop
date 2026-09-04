@@ -1382,6 +1382,77 @@ giving the map its own stacking context (`z-0`) and lifting the
 overlay above it (`z-10`), so the two no longer compete for a shared,
 unbounded stacking order.
 
+### Maps, part seven: jumping/scrubbing the progress bar, and a live position dot
+
+Two independent additions, landed together:
+
+**RouteProgressBar is now interactive**, not just a display - tapping
+any marker (or the road between them) jumps straight to that step, and
+dragging scrubs live through the route, both directions, exactly like
+scrubbing a video's timeline. One shared gesture handles both: a plain
+tap is just a drag that never moved. `useRouteStepper`'s `jumpTo(target:
+SeekTarget)` is the one new entry point both go through -
+`SeekTarget` is `{ phase: "depot" }`, `{ phase: "arrived" }`, or `{
+phase: "step", index }`, mirroring `StepPhase` itself so the depot/
+arrived virtual states (not real indices into `route.steps[]`) stay
+directly reachable rather than only approachable by clamping to step 0/
+last. `RouteProgressBar` does the pixel math - `seekTargetForLocalX` is
+the inverse of the existing `markerPixelFor`, with a small zone past
+each end marker (closer to that end's cul-de-sac circle than to its
+marker) landing on depot/arrived instead of getting stuck one step
+short. Pointer events (not mouse/touch separately) with
+`setPointerCapture` on pointerdown, so a drag keeps tracking even once
+the finger/cursor leaves the bar's own bounds. `disabled` (wired to
+`paused`) mirrors the same gating the Back/Next footer buttons and the
+tap-to-advance step content already had - the route shouldn't move out
+from under the driver via a fourth gesture that skipped it.
+
+Two gotchas worth flagging for next time. **First**: the pointerdown
+handler's `stopPropagation()` only stops that *drag* from reaching
+StepScreen's own tap-anywhere-to-advance handler - the browser's
+`click` event fires separately, on release, and needed its own
+`stopPropagation()` too, same fix `RiderCheckInBox` already has and for
+the same reason (any interactive control living inside that
+tap-to-advance region has to opt out of both). Caught by the first
+verification pass reading `Stop 1 of 11` after a tap clearly aimed
+elsewhere - turned out to be a genuine extra `advance()` firing on top
+of the real jump, not a pixel-math bug. **Second**: verifying this in a
+headless browser needs clicking against the *outer*, `overflow-hidden`,
+viewport-sized container's bounding box, not the *inner* track div's -
+the inner one is `transform: translateX()`-shifted and, on a route
+longer than the visible window, genuinely wider than the viewport, so a
+naive "70% of the inner div's own width" coordinate can land off-screen
+entirely. Also confirmed: the recentering transform is skipped while
+actively dragging (snaps instantly instead) so the bar doesn't lag
+behind the pointer, and - a nice side effect of that same recentering
+logic - a single drag gesture across just the visible window's width
+can still reach the very end of a route much longer than that window,
+since the window itself keeps recentering on the current step as the
+drag moves it forward.
+
+**RouteMap now shows a live "you are here" dot.** `watchPosition`, not
+a one-shot `getCurrentPosition` - the bus is moving for the whole trip,
+so a single fetched position would go stale immediately. The dot itself
+is a Leaflet `divIcon` built from a plain Tailwind-classed HTML string
+(`bg-blue-600` dot, white ring, `animate-ping` halo for a "this is
+live" cue) rather than an image asset - Tailwind's build-time scanner
+picks up class names anywhere in a `.tsx` file's text, not just actual
+`className` props, so this needed nothing extra. The map recenters on
+the dot exactly once, on the first fix, and never again after that -
+otherwise every subsequent update would yank the view back out from
+under a driver who'd since panned/zoomed elsewhere on purpose. No
+permission-denied UI beyond a `console.warn`; the app is fully usable
+via the turn-by-turn steps regardless, same as if the device simply has
+no GPS fix yet. `navigator.geolocation.clearWatch()` in the effect's
+existing cleanup, right alongside `map?.remove()`. Verified structurally
+in a headless browser with a mocked `geolocation` context permission/
+coordinate (real GPS obviously isn't available here) - confirmed a
+`.leaflet-marker-icon` containing the `animate-ping` element actually
+appears after the mocked position fires. Still just a dot, not tied to
+the route itself yet - no route line exists on the map at all yet (see
+"Maps, part four" above), so there's nothing yet to check the dot's
+position *against*.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
@@ -1399,19 +1470,21 @@ unbounded stacking order.
 - `driverName: "Otto Mann"`, `distance: "8.4 mi"`, and
   `durationMinutes: 28` in `page.tsx` are all placeholders, not real
   data - swap them in once there's an actual driver/routing source
-- The progress bar auto-scrolls but isn't draggable - a driver can't
-  manually pan it to peek further up the route; it only ever tracks the
-  current step. Pinch-zoom on a very long route would also help, since
-  right now the fixed 48px-per-step spacing just makes the track (and
-  the auto-scrolling) longer rather than ever shrinking markers down
+- Pinch-zoom on a very long route would help the progress bar - right
+  now the fixed 48px-per-step spacing just makes the track (and the
+  auto-scrolling) longer rather than ever shrinking markers down to fit
+  more of the route in view at once (tap-a-step and drag-to-scrub are
+  both in now - see "Maps, part seven" below)
 - Move route data into the doc's actual data model
   (District/School/Route/RouteStop/etc.) instead of a flat CSV, once
   there's more than one route
-- Real map integration in place of the placeholder image, tied to
-  wherever the bus actually is - and once that's real, decide how it
-  should coexist with the rider check-in box that currently overlays the
-  same spot on a stop (side by side? a toggle? the box just wins, like
-  now?)
+- The map now shows the driver's own live position (see "Maps, part
+  seven" below), but still has no route line or stop markers drawn on
+  it - those still need the geocoded waypoint cache actually wired in
+  (blocked on `ORS_API_KEY`, above). Once they're there, decide how the
+  map should coexist with the rider check-in box that currently
+  overlays the same spot on a stop (side by side? a toggle? the box
+  just wins, like now?)
 - GPS-based auto-advance as students are picked up / stops are passed —
   the doc treats manual button-advance as the first-prototype mechanism
   and GPS auto-advance as a later step

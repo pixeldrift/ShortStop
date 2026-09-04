@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TurnArrow } from "./icons";
-import type { StepPhase } from "@/lib/useRouteStepper";
+import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
 import type { NavigationStep } from "@/lib/types";
 
 /** Fixed spacing between adjacent markers, so a long route just makes the
@@ -43,6 +43,28 @@ function markerPixelFor(index: number, total: number, trackWidth: number): numbe
   return MARKER_EDGE_INSET_PX + (index / (total - 1)) * usableWidth;
 }
 
+/** Inverse of markerPixelFor: given an x position in the track's own
+ * (untransformed) coordinate space, finds the SeekTarget a tap/drag
+ * there should jump to. A small zone past each end marker - closer to
+ * the cul-de-sac circle at the true track end than to that end's own
+ * marker - lands on the depot/arrived virtual states instead of just
+ * clamping to step 0/last, so dragging all the way to either end
+ * actually reaches them rather than getting stuck one step short. */
+function seekTargetForLocalX(x: number, total: number, trackWidth: number): SeekTarget {
+  if (total <= 1) return { phase: "step", index: 0 };
+
+  const clampedX = Math.min(Math.max(x, 0), trackWidth);
+  const firstMarkerPx = markerPixelFor(0, total, trackWidth);
+  const lastMarkerPx = markerPixelFor(total - 1, total, trackWidth);
+  if (clampedX <= firstMarkerPx / 2) return { phase: "depot" };
+  if (clampedX >= (lastMarkerPx + trackWidth) / 2) return { phase: "arrived" };
+
+  const usableWidth = trackWidth - 2 * MARKER_EDGE_INSET_PX;
+  const t = usableWidth > 0 ? (clampedX - MARKER_EDGE_INSET_PX) / usableWidth : 0;
+  const index = Math.round(Math.min(Math.max(t, 0), 1) * (total - 1));
+  return { phase: "step", index };
+}
+
 /** Builds the left/right fade as a CSS mask - only on whichever edge(s)
  * actually have hidden content, so a route that fits with no scrolling
  * needed shows no fade at all. */
@@ -59,10 +81,21 @@ export function RouteProgressBar({
   steps,
   currentIndex,
   phase,
+  onSeek,
+  disabled,
 }: {
   steps: NavigationStep[];
   currentIndex: number;
   phase: StepPhase;
+  /** Tapping a marker or dragging anywhere along the track jumps
+   * straight there - fires live as the pointer moves, not just on
+   * release, so scrubbing reads the steps go by rather than only
+   * landing wherever the driver's finger happens to lift. */
+  onSeek: (target: SeekTarget) => void;
+  /** Mirrors the Back/Next footer buttons and the tap-to-advance step
+   * content - while paused, the route shouldn't move out from under
+   * the driver via this gesture either. */
+  disabled?: boolean;
 }) {
   const total = steps.length;
   const trackWidth = Math.max(pixelFor(total - 1), 1);
@@ -114,14 +147,66 @@ export function RouteProgressBar({
 
   const maskImage = buildFadeMask(showLeftFade, showRightFade);
 
+  // Drag-to-scrub: trackRef (not containerRef) because seekTargetForLocalX
+  // works in the track's own coordinate space, and getBoundingClientRect()
+  // on the track itself already reflects the recenter transform (offset)
+  // above, translation and all - no separate offset math needed.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const seekToClientX = (clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    onSeek(seekTargetForLocalX(clientX - rect.left, total, trackWidth));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    // Stops this from also bubbling up to StepScreen's tap-anywhere-to-
+    // advance handler on the containing div - a tap/drag here should
+    // only seek, never *also* advance.
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDragging(true);
+    seekToClientX(e.clientX);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging || disabled) return;
+    seekToClientX(e.clientX);
+  };
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setDragging(false);
+  };
+
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-hidden px-8 pt-1 pb-4"
+      className={
+        "w-full touch-none overflow-hidden px-8 pt-1 pb-4 " +
+        (disabled ? "" : "cursor-pointer")
+      }
       style={{ WebkitMaskImage: maskImage, maskImage }}
+      // stopPropagation on pointerdown keeps the *drag* from also
+      // reaching StepScreen's tap-anywhere-to-advance handler, but a
+      // click is its own separate native event fired on release, not
+      // covered by that - needs its own stopPropagation, same as
+      // RiderCheckInBox does for the same reason.
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
     >
       <div
-        className="relative h-12 transition-transform duration-300 ease-out"
+        ref={trackRef}
+        className={
+          "relative h-12 ease-out " + (dragging ? "" : "transition-transform duration-300")
+        }
         style={{ width: trackWidth, transform: `translateX(${offset}px)` }}
       >
         {/* Turn/stop markers - close above the road without touching it */}

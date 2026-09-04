@@ -13,7 +13,7 @@ import {
 } from "./icons";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
-import type { StepPhase } from "@/lib/useRouteStepper";
+import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
 import type { NavigationStep, Route } from "@/lib/types";
 
 export function StepScreen({
@@ -27,6 +27,7 @@ export function StepScreen({
   paused,
   onAdvance,
   onBack,
+  onSeek,
   onTogglePause,
   onEndRoute,
   announcementDone,
@@ -45,6 +46,7 @@ export function StepScreen({
   paused: boolean;
   onAdvance: () => void;
   onBack: () => void;
+  onSeek: (target: SeekTarget) => void;
   onTogglePause: () => void;
   onEndRoute: () => void;
   announcementDone: boolean;
@@ -144,7 +146,13 @@ export function StepScreen({
           className="flex flex-1 touch-manipulation flex-col px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
           onClick={() => !paused && onAdvance()}
         >
-          <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} phase={phase} />
+          <RouteProgressBar
+            steps={route.steps}
+            currentIndex={stepNumber - 1}
+            phase={phase}
+            onSeek={onSeek}
+            disabled={paused}
+          />
 
           <StepTransition
             transitionKey={
