@@ -96,6 +96,7 @@ function RouteApp({ route, onBack }: { route: Route; onBack: () => void }) {
     paused,
     togglePause,
     endRoute,
+    exitTrip,
     announcementDone,
   } = useRouteStepper(route);
 
@@ -122,6 +123,10 @@ function RouteApp({ route, onBack }: { route: Route; onBack: () => void }) {
       onSeek={jumpTo}
       onTogglePause={togglePause}
       onEndRoute={endRoute}
+      onLogoClick={() => {
+        exitTrip();
+        onBack();
+      }}
       announcementDone={announcementDone}
       roster={getRoster(currentStep.id, expectedCount)}
       totalOnboard={totalOnboard}

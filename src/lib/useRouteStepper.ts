@@ -329,17 +329,12 @@ export function useRouteStepper(route: Route) {
     };
   }, []);
 
-  // Tapping "End" from the "arrived" phase: announce that the route
-  // ended, then return to the start screen. Resets everything
-  // (index/phase/pause/silent audio) so a subsequent "Start Route"
-  // begins clean - this doesn't unmount the hook (RouteApp keeps calling
-  // it regardless of `started`), so that reset has to happen explicitly
+  // Shared by endRoute and exitTrip below: resets everything (index/
+  // phase/pause/silent audio) so a subsequent "Start Route" begins
+  // clean - this doesn't unmount the hook (RouteApp keeps calling it
+  // regardless of `started`), so that reset has to happen explicitly
   // here rather than relying on the unmount cleanup above.
-  const endRoute = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance("Route ended."));
-    }
+  const resetTrip = useCallback(() => {
     audioRef.current?.pause();
     audioRef.current = null;
     setPaused(false);
@@ -347,6 +342,28 @@ export function useRouteStepper(route: Route) {
     setCurrentIndex(0);
     setStarted(false);
   }, []);
+
+  // Tapping "End Route" in the confirmation modal from the "arrived"
+  // phase: announce that the route ended, then reset.
+  const endRoute = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance("Route ended."));
+    }
+    resetTrip();
+  }, [resetTrip]);
+
+  // Tapping the logo mid-route: back to the route list immediately, no
+  // "Route ended." announcement - unlike endRoute, this isn't a
+  // deliberate "we finished" moment, just a navigation shortcut, so it
+  // stays quiet (still cancels whatever announcement was mid-speech,
+  // same as pausing does, just without speaking a new one over it).
+  const exitTrip = useCallback(() => {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    resetTrip();
+  }, [resetTrip]);
 
   return {
     currentStep,
@@ -364,6 +381,7 @@ export function useRouteStepper(route: Route) {
     paused,
     togglePause,
     endRoute,
+    exitTrip,
     announcementDone,
   };
 }

@@ -29,11 +29,15 @@ export function useRiderRoster() {
     });
   }, []);
 
-  // A rider added on the spot is, by definition, already on the bus.
+  // A rider added on the spot is, by definition, already on the bus -
+  // and so, in practice, is everyone ahead of them: nobody boards out of
+  // order, so an unexpected rider showing up implies every expected
+  // rider already did too. Checks off the whole roster rather than just
+  // appending the new one, same "fill to" spirit as fillTo above.
   const addUnexpectedRider = useCallback((stepId: number, expectedCount: number) => {
     setRosters((prev) => {
       const current = prev[stepId] ?? Array(expectedCount).fill(false);
-      return { ...prev, [stepId]: [...current, true] };
+      return { ...prev, [stepId]: [...current.map(() => true), true] };
     });
   }, []);
 

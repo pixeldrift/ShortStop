@@ -100,6 +100,17 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
     } while (usedNumbers.has(routeNumber));
     usedNumbers.add(routeNumber);
 
+    // Its own draw, deliberately independent of routeNumber - a bus
+    // number that happens to equal its route's own number reads as a
+    // data bug, not a coincidence (see route-125-meta.csv's real fix
+    // for the same thing). Only re-rolls against a collision with its
+    // *own* route's number - unlike routeNumber, bus numbers aren't
+    // expected to be unique across routes (a district reuses buses).
+    let busNumber: string;
+    do {
+      busNumber = String(100 + Math.floor(rng() * 900));
+    } while (busNumber === routeNumber);
+
     const school = `${pick(rng, NAME_PREFIXES)} ${pick(rng, NAME_SUFFIXES)}`;
     const tripLabel = pick(rng, TRIP_LABELS);
 
@@ -109,7 +120,7 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
       name: `${school} — ${tripLabel}`,
       schoolName: school,
       driverName: `${pick(rng, DRIVER_FIRST)} ${pick(rng, DRIVER_LAST)}`,
-      busNumber: routeNumber,
+      busNumber,
       departureTime: randomDepartureTime(rng),
       tripType: tripLabel === "Morning Pickup" ? "pickup" : "dropoff",
       distance: `${(4 + rng() * 12).toFixed(1)} mi`,
