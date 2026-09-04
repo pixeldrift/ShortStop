@@ -208,17 +208,25 @@ Road-suffix abbreviations are spelled out for speech only
 common USPS suffixes) so the TTS engine doesn't read "Rd" as a word or
 garble it; on-screen text keeps the abbreviated form.
 
-The route itself also gets an announcement naming the route and school
-right before the first step's own announcement, the moment the driver
-taps "Start Route" - e.g. "Starting route 125 from Lavergne Lake
-Elementary." - and a "Route completed." announcement right after the
-final step's own announcement. "From" vs "to" follows `tripType`: a
-dropoff route starts *from* the school (that's where the bus departs),
-a pickup route heads *to* it. Both are queued in the same
-`speechSynthesis.speak()` batch as the step's own parts (in
-`useRouteStepper.ts`) rather than in a separate effect, since a separate
-effect's own `speechSynthesis.cancel()` call would otherwise wipe out
-whichever one queued first before it had a chance to play.
+The route itself also gets an announcement naming the route and school -
+e.g. "Starting route one twenty five from Lavergne Lake Elementary." -
+which is the entire spoken content of the `depot` phase (see "Route flow
+and screens" further below): it plays once, the moment the driver taps
+"Start" from the depot screen, before the first real step's own
+announcement gets its turn. "From" vs "to" follows `tripType`: a dropoff
+route starts *from* the school (that's where the bus departs), a pickup
+route heads *to* it.
+
+The route number itself is spoken the way a driver would actually say
+it, not as a raw number - `speakRouteNumber` in `speech.ts` reads the
+first digit alone, then the remaining two digits as one two-digit
+number, space-joined rather than punctuated so a TTS engine reads it as
+one continuous phrase instead of pausing between the two parts: "124" →
+"one twenty four", "403" → "four oh three", "254" → "two fifty four"
+(confirmed against all three examples, plus edge cases like "110" → "one
+ten" and "100" → "one oh zero"). Only three-digit route numbers get this
+treatment - anything else falls back to its raw digits, though every
+route in this app (real or `demoRoutes.ts`-fabricated) is three digits.
 
 ### Visual design
 

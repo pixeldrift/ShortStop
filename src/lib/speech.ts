@@ -41,3 +41,58 @@ export function speakRoadNames(text: string): string {
     })
     .join(" ");
 }
+
+const ONES = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+];
+const TEENS = [
+  "ten",
+  "eleven",
+  "twelve",
+  "thirteen",
+  "fourteen",
+  "fifteen",
+  "sixteen",
+  "seventeen",
+  "eighteen",
+  "nineteen",
+];
+const TENS = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+
+/** Reads 0-99 the way it'd naturally be said as the last two digits of a
+ * number: "oh three" for a single digit (not "three" alone, or a TTS
+ * engine's own instinct to read a leading zero as "zero"), "twenty
+ * four"/"fifty" for the rest. */
+function speakTwoDigits(n: number): string {
+  if (n < 10) return `oh ${ONES[n]}`;
+  if (n < 20) return TEENS[n - 10];
+  const tens = TENS[Math.floor(n / 10) - 2];
+  const ones = n % 10;
+  return ones === 0 ? tens : `${tens} ${ONES[ones]}`;
+}
+
+/**
+ * Reads a route number the way a driver actually says it aloud, not as
+ * a raw number: the first digit read alone, then the remaining two
+ * digits read as a single two-digit number, e.g. "124" -> "one twenty
+ * four", "403" -> "four oh three", "254" -> "two fifty four". Joined
+ * with a plain space (not punctuation) so a TTS engine reads it as one
+ * continuous phrase rather than pausing between the two parts. Only
+ * three-digit route numbers follow this pattern - anything else is
+ * spoken as its raw digits instead.
+ */
+export function speakRouteNumber(routeNumber: string): string {
+  if (!/^\d{3}$/.test(routeNumber)) return routeNumber;
+  const first = Number(routeNumber[0]);
+  const rest = Number(routeNumber.slice(1));
+  return `${ONES[first]} ${speakTwoDigits(rest)}`;
+}

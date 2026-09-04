@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Route } from "./types";
+import { speakRouteNumber } from "./speech";
 import { SILENT_LOOP_DATA_URI } from "./silence";
+import type { Route } from "./types";
 
 /**
  * The bus's position in the route is one of three phases:
@@ -164,7 +165,7 @@ export function useRouteStepper(route: Route) {
     const parts =
       phase === "depot"
         ? [
-            `Starting route ${route.routeNumber} ${
+            `Starting route ${speakRouteNumber(route.routeNumber)} ${
               route.tripType === "dropoff" ? "from" : "to"
             } ${route.schoolName}.`,
           ]
