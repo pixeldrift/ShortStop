@@ -65,10 +65,21 @@ export function StepScreen({
   // Held off until the stop's own announcement has finished speaking, so
   // the check-in card doesn't pop up over top of still-playing audio.
   const showRoster = !paused && isStop && roster.length > 0 && announcementDone;
-  // Confirmed with a modal rather than ending the instant "End" is
-  // tapped - it's the one footer-button tap that can't be walked back
-  // (Back/Next/Pause all can), so it gets a deliberate second tap.
+  // Guards the logo's exit-to-home tap, not the footer "End" button -
+  // "End" only ever appears once the route is already finished
+  // (arrived phase), so there's nothing left to lose by confirming it.
+  // The logo is reachable mid-route, though, where tapping it resets
+  // the whole trip (check-in progress included), so *that's* the one
+  // that gets a deliberate second tap - skipped once arrived, for the
+  // same "already finished" reason "End" skips it.
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const handleLogoClick = () => {
+    if (phase === "arrived") {
+      onLogoClick();
+    } else {
+      setShowEndConfirm(true);
+    }
+  };
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none landscape:flex-row">
@@ -128,7 +139,7 @@ export function StepScreen({
           <TopBar
             routeNumber={route.routeNumber}
             busNumber={route.busNumber}
-            onLogoClick={onLogoClick}
+            onLogoClick={handleLogoClick}
           />
 
           <div className="mt-0.5 flex items-center justify-between">
@@ -215,7 +226,7 @@ export function StepScreen({
 
           <button
             type="button"
-            onClick={phase === "arrived" ? () => setShowEndConfirm(true) : onAdvance}
+            onClick={phase === "arrived" ? onEndRoute : onAdvance}
             disabled={paused}
             aria-label={phase === "depot" ? "Start" : phase === "arrived" ? "End" : "Next"}
             className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
@@ -227,34 +238,35 @@ export function StepScreen({
       </div>
 
       {showEndConfirm && (
-        <EndRouteConfirmModal
-          onEndRoute={() => {
+        <LeaveRouteConfirmModal
+          onConfirm={() => {
             setShowEndConfirm(false);
-            onEndRoute();
+            onLogoClick();
           }}
-          onReturnToRoute={() => setShowEndConfirm(false)}
+          onCancel={() => setShowEndConfirm(false)}
         />
       )}
     </div>
   );
 }
 
-/** Guards the one footer-button tap that can't be walked back - Back/
- * Next/Pause all reverse cleanly, but "End" resets the whole trip
- * (see endRoute in useRouteStepper.ts). A plain full-screen overlay
- * (fixed inset-0) rather than something scoped to StepScreen's own
- * box, so it isn't affected by the landscape/portrait split above it. */
-function EndRouteConfirmModal({
-  onEndRoute,
-  onReturnToRoute,
+/** Guards the logo's exit-to-home tap while a route's still in
+ * progress (see handleLogoClick above) - unlike Back/Next/Pause, it
+ * resets the whole trip and can't be walked back. A plain full-screen
+ * overlay (fixed inset-0) rather than something scoped to StepScreen's
+ * own box, so it isn't affected by the landscape/portrait split above
+ * it. */
+function LeaveRouteConfirmModal({
+  onConfirm,
+  onCancel,
 }: {
-  onEndRoute: () => void;
-  onReturnToRoute: () => void;
+  onConfirm: () => void;
+  onCancel: () => void;
 }) {
   return (
     <div
       className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
-      onClick={onReturnToRoute}
+      onClick={onCancel}
     >
       <div
         className="w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
@@ -267,14 +279,14 @@ function EndRouteConfirmModal({
         <div className="mt-4 flex gap-3">
           <button
             type="button"
-            onClick={onEndRoute}
+            onClick={onConfirm}
             className="btn-glossy font-heading flex-1 rounded-xl border border-zinc-400 bg-white py-3 text-lg font-semibold text-zinc-900"
           >
             End Route
           </button>
           <button
             type="button"
-            onClick={onReturnToRoute}
+            onClick={onCancel}
             className="btn-glossy font-heading flex-1 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
           >
             Return to Route
