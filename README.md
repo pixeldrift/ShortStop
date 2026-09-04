@@ -348,13 +348,14 @@ landscape (1180×820) viewports.
   elements' actual bounding boxes in a headless browser rather than
   trusting the CSS by eye).
 
-  Horizontally, the bus now sits exactly at the true start (`left: 0`)
-  on the first step and exactly at the true end (`left: trackWidth`) on
-  the last, landing right on the cul-de-sac circle at either end instead
-  of stopping a little short of it - that's `busPx`'s own job
-  (`pixelFor(currentIndex)`, unrelated to where the turn/stop *marker*
-  icons land - see below for how those are now deliberately inset
-  instead). Getting the bus icon to actually *reach* those exact edges
+  Horizontally, the bus sits exactly at the true start (`left: 0`)
+  during the `depot` phase and exactly at the true end (`left:
+  trackWidth`) during `arrived`, landing right on the cul-de-sac circle
+  at either end instead of stopping a little short of it - that's
+  `busPx`'s own job (see "Progress bar: evenly distributed markers"
+  further below for its full per-phase formula, including how it tracks
+  the turn/stop marker positions during the `step` phase in between).
+  Getting the bus icon to actually *reach* those exact edges
   surfaced a real CSS bug along the way: the bus (and, at the very last
   stop, the last pin marker too) would collapse to zero width right at
   the route's true end - not a rendering glitch, but the standard CSS
@@ -829,12 +830,34 @@ that even grid: `MARKER_EDGE_INSET_PX + (index / (total - 1)) *
 gap between every consecutive marker pair on the real 22-step route
 after this change - a constant ~46px throughout, first marker centered
 22px from the start circle and the last 22px from the end circle,
-matching `MARKER_EDGE_INSET_PX` exactly. `busPx` still deliberately uses
-the plain `pixelFor(currentIndex)`, uninset - the bus still needs to
-reach the literal `0`/`trackWidth` ends to visibly park on each circle
-for the `depot`/`arrived` phases (see above); only the marker *icons*
-needed to visually back off and re-space, not the bus or the
-track/circle geometry itself.
+matching `MARKER_EDGE_INSET_PX` exactly.
+
+That round left `busPx` on the plain `pixelFor(currentIndex)`, uninset -
+which was correct for *reaching* the true `0`/`trackWidth` ends, but
+wrong everywhere in between: once the markers moved to the evenly
+re-spaced grid above, the bus (still on the raw `pixelFor` grid) no
+longer landed on top of whichever marker was actually current - caught
+immediately ("the bus doesn't line up with the stops anymore now that
+we've properly spread them out"). `RouteProgressBar` now takes a
+`phase` prop and computes `busPx` per phase instead of one formula for
+all of them: `0` for `depot` (centered on the start circle - the literal
+track start, not a marker), `trackWidth` for `arrived` (centered on the
+end circle, for the "all stops complete" message), and
+`markerPixelFor(currentIndex, total, trackWidth)` - the exact same
+function the marker icons themselves use - for `step`, so the bus
+always lands precisely on the current turn/stop icon rather than a
+separate, no-longer-matching grid. Confirmed by measuring each phase's
+actual rendered bus-center against the corresponding marker/circle
+center on the real route: depot ≈ start circle (0 vs. 2px), the first
+real step exactly matches the first marker (22 vs. 22px), the last real
+step (Stop 11) exactly matches the last marker (986 vs. 986px), and
+arrived ≈ the end circle (1008 vs. 1006px) - the couple-px differences
+are the circles' own border width, not misalignment. The auto-scroll
+centering logic (which keeps the current position roughly centered in
+the visible window) was updated to center on this same `busPx` instead
+of the old raw `pixelFor(currentIndex)`, so it now settles the view on
+wherever the bus/marker pair actually is rather than a slightly
+different, no-longer-used position.
 
 ### Route data: two CSVs now, and a dropped column
 
@@ -874,6 +897,36 @@ anything - the app already derives both, live, from the real steps CSV
 removed there; re-deriving the same numbers from this file's own copy
 would just be a second source that could quietly drift out of sync with
 it.
+
+### Button/road color: darker gray, less glossy highlight, Pause is gray now too
+
+The Back button (`bg-zinc-100`/`border-zinc-300`) read noticeably
+lighter than everything else around it - flagged directly: "the back
+button is so much lighter, we need to reduce the shading effect to
+compensate." Two changes, together:
+
+- `.btn-glossy`'s white top-highlight (`globals.css`) was toned down -
+  the gradient stop from `rgba(255,255,255,0.35)` to `0.2`, the inset
+  top highlight from `0.55` to `0.32` - since that highlight is what was
+  washing the light gray fill out the most; the drop-shadow/bottom-inset
+  components were left close to where they were (one nudged slightly
+  darker, `0.18` → `0.2`) so buttons still read as glossy/dimensional,
+  just without the glare on a light background.
+- The gray itself darkened a step: `bg-zinc-100`/`border-zinc-300` →
+  `bg-zinc-200`/`border-zinc-400`, on both places that combination was
+  used - the footer's Back button (`StepScreen.tsx`) and the
+  trip-summary screen's round back-arrow button (`StartScreen.tsx`).
+  "The route" (`RouteProgressBar.tsx`'s road and both cul-de-sac
+  circles) got the same one-step darkening for consistency -
+  `border-zinc-600`/`bg-zinc-400` → `border-zinc-700`/`bg-zinc-500`.
+
+The Pause button was solid `bg-blue-600` with a white icon - changed to
+match the (now-darker) Back button's gray exactly, border included
+(`border-zinc-400 bg-zinc-200`), with the play/pause icon itself
+recolored from white to `text-zinc-700` for contrast against the
+lighter fill: "Back button and pause button (I want that gray too, not
+blue)." The Start Route/Next/End buttons stay blue - only Back and
+Pause were named.
 
 ### Next steps
 

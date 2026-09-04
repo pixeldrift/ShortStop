@@ -76,7 +76,7 @@ export function StartScreen({
           type="button"
           onClick={onBack}
           aria-label="Back to routes"
-          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-300 bg-zinc-100"
+          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-400 bg-zinc-200"
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>

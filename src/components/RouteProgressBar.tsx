@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TurnArrow } from "./icons";
+import type { StepPhase } from "@/lib/useRouteStepper";
 import type { NavigationStep } from "@/lib/types";
 
 /** Fixed spacing between adjacent markers, so a long route just makes the
@@ -57,13 +58,30 @@ function buildFadeMask(showLeft: boolean, showRight: boolean): string | undefine
 export function RouteProgressBar({
   steps,
   currentIndex,
+  phase,
 }: {
   steps: NavigationStep[];
   currentIndex: number;
+  phase: StepPhase;
 }) {
   const total = steps.length;
   const trackWidth = Math.max(pixelFor(total - 1), 1);
-  const currentPx = pixelFor(currentIndex);
+
+  // The bus needs to land exactly where the *current* step reads on
+  // screen - which, now that markers are evenly re-spaced (see
+  // markerPixelFor above) rather than sitting on the raw pixelFor grid,
+  // is no longer always pixelFor(currentIndex). During "depot"/"arrived"
+  // there's no marker to match - the bus instead needs to reach the
+  // literal track ends (0/trackWidth) to visibly park on each
+  // cul-de-sac circle; during "step" it needs to match whichever
+  // marker is current exactly, via the same markerPixelFor the marker
+  // itself is drawn with.
+  const busPx =
+    phase === "depot"
+      ? 0
+      : phase === "arrived"
+        ? trackWidth
+        : markerPixelFor(currentIndex, total, trackWidth);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -85,22 +103,16 @@ export function RouteProgressBar({
       return { offset: 0, showLeftFade: false, showRightFade: false };
     }
     const minOffset = containerWidth - trackWidth; // negative
-    const idealOffset = containerWidth / 2 - currentPx;
+    const idealOffset = containerWidth / 2 - busPx;
     const clamped = Math.min(0, Math.max(minOffset, idealOffset));
     return {
       offset: clamped,
       showLeftFade: clamped < -0.5,
       showRightFade: clamped > minOffset + 0.5,
     };
-  }, [containerWidth, trackWidth, currentPx]);
+  }, [containerWidth, trackWidth, busPx]);
 
   const maskImage = buildFadeMask(showLeftFade, showRightFade);
-
-  // Every step in between is spaced 48px apart (PX_PER_STEP), well clear
-  // of the track's own edges, so the bus only ever needs the true start
-  // (0) or true end (trackWidth) positions - it's meant to visibly pull
-  // onto the cul-de-sac circle at either end, not stop just short of it.
-  const busPx = currentPx;
 
   return (
     <div
@@ -138,7 +150,7 @@ export function RouteProgressBar({
 
         {/* The road */}
         <div
-          className="absolute bottom-0 h-4 rounded-full border-2 border-zinc-600 bg-zinc-400"
+          className="absolute bottom-0 h-4 rounded-full border-2 border-zinc-700 bg-zinc-500"
           style={{ width: trackWidth }}
         >
           <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/90" />
@@ -155,8 +167,8 @@ export function RouteProgressBar({
               that, the container's own overflow-hidden was cutting off
               the bottom of the bus and circles even in the middle of the
               route, not just at either end. */}
-          <div className="absolute top-1/2 left-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400" />
-          <div className="absolute top-1/2 left-full h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-600 bg-zinc-400" />
+          <div className="absolute top-1/2 left-0 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-700 bg-zinc-500" />
+          <div className="absolute top-1/2 left-full h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-zinc-700 bg-zinc-500" />
         </div>
 
         {/* Bus - overlaid directly on top of the road at the current
