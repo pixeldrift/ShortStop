@@ -127,9 +127,15 @@ export function StepScreen({
             this area's own content is sized (via clamp()) to fit
             whatever space is left after the regions above/below it,
             which matters most on the tablet-landscape viewports this is
-            built for. */}
+            built for. No gap between the progress bar and the step
+            content below it - the step-content box's top edge needs to
+            sit flush against the progress bar's own bottom edge, not a
+            few px below it, so an exiting step (see StepTransition)
+            gets clipped right at that shared edge instead of visibly
+            vanishing into a gap first - that reads as sliding underneath
+            the bar rather than just disappearing. */}
         <div
-          className="flex flex-1 touch-manipulation flex-col gap-1.5 px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
+          className="flex flex-1 touch-manipulation flex-col px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
           onClick={() => !paused && onAdvance()}
         >
           <RouteProgressBar steps={route.steps} currentIndex={stepNumber - 1} phase={phase} />

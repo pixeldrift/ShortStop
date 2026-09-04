@@ -928,6 +928,44 @@ lighter fill: "Back button and pause button (I want that gray too, not
 blue)." The Start Route/Next/End buttons stay blue - only Back and
 Pause were named.
 
+### Step content: flush against the progress bar, fading in from below
+
+The step-content box (`StepTransition.tsx`, holding the current
+turn/stop's icon and street name) sat a few px below the progress bar
+- the flex column wrapping both had its own `gap-1.5`. On an outgoing
+step (sliding straight up and off, see the odometer-roll doc comment on
+that component), that gap meant the content visibly vanished into a
+strip of plain background for a beat before it would have reached the
+bar, rather than reading as ducking under it: "make the directions
+container box reach all the way to the bottom of the progress bar...
+rather than being cut off before that." Removing that `gap-1.5`
+(`StepScreen.tsx` - the flex column has exactly the two children,
+`RouteProgressBar` and `StepTransition`, so there was nothing else the
+gap was doing double duty for) puts the step box's top edge flush
+against the bar's own bottom edge (confirmed at 0px in a headless
+browser across all three viewports); an outgoing step now gets clipped
+right at that shared line instead of a beat early, which is what
+actually sells "goes underneath the bar" - the box's `overflow-hidden`
+top edge was already a hard clip, it just needed to be in the right
+place.
+
+The bottom edge got the opposite treatment: a soft `mask-image` fade
+(`BOTTOM_FADE_PX = 24`, the same `linear-gradient(to bottom, black
+calc(100% - Npx), transparent 100%)` technique the progress bar's own
+left/right edge fades already use) rather than a hard line, since an
+*incoming* step slides up through that edge from below and a sharp
+cutoff there read as an abrupt pop-in right as it crossed it: "put a
+fade mask so it's not a hard clipped line as the directions fly in from
+below." Confirmed on a slowed-down transition (`animation-duration`
+overridden to 1600ms via an injected stylesheet, several screenshots
+taken through it) that the incoming icon's leading edge now dissolves
+in smoothly rather than snapping into view. The two edges are
+deliberately asymmetric - hard clip at the top so it reads as sliding
+behind an opaque bar, a soft fade at the bottom so it reads as
+materializing rather than popping in - matching what's actually
+adjacent to each: the progress bar at the top, empty space (no
+adjacent element to "duck under") at the bottom.
+
 ### Next steps
 
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
