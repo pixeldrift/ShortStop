@@ -1,4 +1,5 @@
 import { Logo } from "./Logo";
+import { BackArrowIcon } from "./icons";
 
 export function TopBar({
   routeNumber,
@@ -22,6 +23,17 @@ export function TopBar({
           Route
         </p>
         <p className="font-heading -mt-1 text-3xl font-black tracking-tight">#{routeNumber}</p>
+        {/* Same destination/confirmation as the logo (onLogoClick) - a
+            second, labeled way to reach it for anyone who wouldn't
+            think to tap the logo itself. */}
+        <button
+          type="button"
+          onClick={onLogoClick}
+          className="mt-0.5 flex w-full items-center justify-center gap-1 text-[10px] font-semibold text-zinc-500"
+        >
+          <BackArrowIcon className="h-2.5 w-2.5" />
+          Back to Routes
+        </button>
       </div>
 
       <div className="col-start-3 justify-self-end text-right">
