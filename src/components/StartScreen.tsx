@@ -97,11 +97,11 @@ export function StartScreen({
 
         <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1 text-lg">
           <dt className="text-zinc-500">Departure</dt>
-          <dd className="text-left font-medium">{route.departureTime}</dd>
+          <dd className="text-right font-medium">{route.departureTime}</dd>
           <dt className="text-zinc-500">Bus</dt>
-          <dd className="text-left font-medium">#{route.busNumber}</dd>
+          <dd className="text-right font-medium">#{route.busNumber}</dd>
           <dt className="text-zinc-500">Driver</dt>
-          <dd className="text-left font-medium">{route.driverName}</dd>
+          <dd className="text-right font-medium">{route.driverName}</dd>
         </dl>
       </div>
 
