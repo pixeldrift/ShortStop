@@ -22,10 +22,12 @@ function parseCsvLine(line: string): string[] {
 
 /**
  * Turns the doc's proposed CSV schema
- * (sequence,time,action,from_at,onto_at,rider_count,side,notes) into route
- * steps. Built for the real Bus 125 route sheet, which only records
+ * (time,action,from_at,onto_at,rider_count,side,notes) into route steps.
+ * Built for the real Bus 125 route sheet, which only records
  * turn-by-turn directions and stop locations - no times or special
- * instructions yet, so those fields come through empty.
+ * instructions yet, so those fields come through empty. The sheet's own
+ * leading sequence-number column was dropped entirely (unneeded - each
+ * row's position in the file already gives it an order).
  */
 export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
   const [, ...rows] = csvText.trim().split(/\r?\n/); // drop header row
@@ -34,7 +36,7 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
   const steps: NavigationStep[] = rows
     .filter((line) => line.trim().length > 0)
     .map((line, index) => {
-      const [, , action, fromAt, ontoAt, riderCount, side, notes] = parseCsvLine(line);
+      const [, action, fromAt, ontoAt, riderCount, side, notes] = parseCsvLine(line);
       const studentCount = riderCount ? Number(riderCount) : undefined;
       const sideOfRoad = side || undefined;
       const specialInstruction = notes || undefined;

@@ -11,28 +11,35 @@ import type { NavigationStep } from "@/lib/types";
 const PX_PER_STEP = 48;
 const EDGE_FADE_PX = 28;
 
-/** How far the first/last turn-or-stop marker is pulled in from the
- * cul-de-sac circle it would otherwise sit directly on top of - see
- * markerPixelFor below. Capped at half a step's spacing so it can never
- * cross into the neighboring marker's position on a very short route. */
+/** How far the first/last marker sits from the track's true ends - see
+ * markerPixelFor below. Capped at half a step's nominal spacing so it
+ * can never cross into a neighboring marker's position on a very short
+ * route. */
 const MARKER_EDGE_INSET_PX = Math.min(22, PX_PER_STEP / 2);
 
 function pixelFor(index: number): number {
   return index * PX_PER_STEP;
 }
 
-/** Where a turn/stop marker icon is drawn - almost always the same
- * pixelFor(index) spot the bus itself travels through, except the very
- * first and last markers, which are pulled in from the true track ends
- * so they read as "the next step after Start" / "the step before End"
- * rather than sitting right on top of the start/end cul-de-sac circle.
- * The bus's own position (busPx below) deliberately does NOT use this -
- * it still needs to reach the true 0/trackWidth ends to visibly park on
- * each circle for the depot/arrived phases. */
+/** Where a turn/stop marker icon is drawn: all of them evenly spaced
+ * across the span between an inset start and an inset end
+ * (MARKER_EDGE_INSET_PX in from each true track end), rather than the
+ * bus/road/circles' own pixelFor spacing. Evenly re-dividing *every*
+ * marker across that span - not just pulling the first/last one in and
+ * leaving the rest on the raw pixelFor grid - matters because doing
+ * only the ends left an uneven gap at either edge (pitch-minus-inset)
+ * compared to the constant full pitch everywhere else; dividing the
+ * whole inset-to-inset span by (total - 1) keeps every gap identical.
+ * The bus's own position (busPx below) deliberately keeps using
+ * pixelFor instead - it still needs to reach the literal 0/trackWidth
+ * ends to visibly park on each cul-de-sac circle during the
+ * depot/arrived phases; only the marker *icons* needed to read as
+ * pulled in from those ends, not the bus or the track/circle geometry
+ * itself. */
 function markerPixelFor(index: number, total: number, trackWidth: number): number {
-  if (index === 0) return MARKER_EDGE_INSET_PX;
-  if (index === total - 1) return trackWidth - MARKER_EDGE_INSET_PX;
-  return pixelFor(index);
+  if (total <= 1) return trackWidth / 2;
+  const usableWidth = trackWidth - 2 * MARKER_EDGE_INSET_PX;
+  return MARKER_EDGE_INSET_PX + (index / (total - 1)) * usableWidth;
 }
 
 /** Builds the left/right fade as a CSS mask - only on whichever edge(s)

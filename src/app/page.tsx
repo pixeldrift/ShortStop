@@ -6,6 +6,7 @@ import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
 import { buildDemoRoutes } from "@/lib/demoRoutes";
 import { parseRouteCsv } from "@/lib/parseRouteCsv";
+import { parseRouteMetaCsv } from "@/lib/parseRouteMetaCsv";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
@@ -16,19 +17,14 @@ import type { Route } from "@/lib/types";
 // and search filtering - see demoRoutes.ts.
 const DEMO_ROUTE_COUNT = 24;
 
-// distance/durationMinutes are placeholders - no real mileage/timing
-// data exists for this route yet.
-const ROUTE_META = {
-  name: "Lavergne Lake Elementary — Afternoon Drop Off",
-  routeNumber: "125",
+// The only RouteMeta fields the route-125-meta.csv schema doesn't cover
+// (driverName, schoolAddress, distance) - real mileage/driver-roster
+// data doesn't exist yet, so these stay hardcoded placeholders merged
+// in alongside whatever parseRouteMetaCsv parses out of the sheet.
+const PLACEHOLDER_META = {
   driverName: "Otto Mann",
-  busNumber: "125",
-  departureTime: "3:30 PM",
-  schoolName: "Lavergne Lake Elementary",
   schoolAddress: "1425 Lake Forest Dr, Smyrna, TN 37167",
-  tripType: "dropoff" as const,
   distance: "8.4 mi",
-  durationMinutes: 28,
 };
 
 export default function Home() {
@@ -41,12 +37,20 @@ export default function Home() {
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
 
   useEffect(() => {
-    fetch("/data/route-125.csv")
-      .then((res) => {
+    Promise.all([
+      fetch("/data/route-125.csv").then((res) => {
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         return res.text();
+      }),
+      fetch("/data/route-125-meta.csv").then((res) => {
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+        return res.text();
+      }),
+    ])
+      .then(([stepsCsv, metaCsv]) => {
+        const meta = { ...parseRouteMetaCsv(metaCsv), ...PLACEHOLDER_META };
+        setRoute(parseRouteCsv(stepsCsv, meta));
       })
-      .then((text) => setRoute(parseRouteCsv(text, ROUTE_META)))
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
 

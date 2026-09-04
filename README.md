@@ -50,7 +50,8 @@ src/
                             person (outline + solid) SVGs
   lib/
     types.ts             Route / NavigationStep types
-    parseRouteCsv.ts     CSV → Route parsing (see below)
+    parseRouteCsv.ts     Steps CSV → Route parsing (see below)
+    parseRouteMetaCsv.ts CSV → the route-level metadata fields (see below)
     useRouteStepper.ts   State + all input wiring, incl. pause (see below)
     useRiderRoster.ts    Per-stop rider check-in state (see below)
     useFitLines.ts        Shrink text to fit N lines (see below)
@@ -60,7 +61,8 @@ src/
     silence.ts           A tiny silent audio loop (see below)
 public/
   manifest.json          PWA manifest
-  data/route-125.csv     Bus 125's route data
+  data/route-125.csv       Bus 125's turn-by-turn steps
+  data/route-125-meta.csv  Bus 125's route-level metadata (see below)
   assets/
     logo.png              ShortStop wordmark
     pin.png                Stop marker (background removed)
@@ -94,9 +96,10 @@ Branch at `claude/ipad-iphone-nav-app-ss8dsk`, or merge that branch into
 
 ### Route data
 
-`public/data/route-125.csv` follows the doc's proposed CSV schema, plus
-one addition:
-`sequence,time,action,from_at,onto_at,rider_count,side,notes`.
+`public/data/route-125.csv` follows the doc's proposed CSV schema
+(originally plus one addition, a leading `sequence` column, since
+dropped - see "Route data: two CSVs now, and a dropped column" further
+below): `time,action,from_at,onto_at,rider_count,side,notes`.
 Transcribed from Bus 125's handwritten route sheet (turns as
 `Left`/`Right` with the road being left and the road being turned onto;
 `Stop` rows as the road plus cross street, or a bare address). A few rows
@@ -114,9 +117,13 @@ under Visual design above, and `parseRouteCsv.ts` for the spoken "On the
 right"/"On the left" announcement) — replace with the real values once
 they exist.
 
-`Route.schoolName`/`schoolAddress` (set in `ROUTE_META`, `page.tsx`) are
-what the start screen's "School" row and the "Starting route..."
-announcement (see Audio below) both read from. They used to be
+`Route.schoolName`/`schoolAddress` (`schoolName` now sourced from
+`route-125-meta.csv`, `schoolAddress` still a placeholder in
+`page.tsx` - see "Route data: two CSVs now" further below) are
+what the trip-summary screen's subtitle (`schoolName` is folded into
+`route.name` there, not its own row - see "Route flow and screens"
+further below) and the "Starting route..." announcement (see Audio
+below) both read from. They used to be
 hardcoded directly in `StartScreen.tsx`'s JSX instead of coming from the
 route data at all - harmless while only one screen used them, but it
 meant the spoken announcement had no way to say the same name, so
@@ -303,10 +310,15 @@ landscape (1180×820) viewports.
   like a cul-de-sac. Turn steps get a small circular marker with a mini
   direction arrow, sitting close above the road without touching it
   (`bottom-5`); stop steps get a small map-pin marker at the same height.
-  Every step gets its own
-  marker at a fixed 48px spacing (`PX_PER_STEP`) - no thinning/hiding -
-  so a longer route just makes the underlying track wider than the
-  visible window instead of crowding markers together. That window
+  Every step gets its own marker, and the underlying track itself is
+  still sized off a fixed 48px-per-step increment (`PX_PER_STEP`/
+  `pixelFor`) - no thinning/hiding - so a longer route just makes the
+  track wider than the visible window instead of crowding markers
+  together. The markers' own on-screen positions are a separate matter
+  from that track sizing (evenly re-spaced and inset from the true ends
+  - see "Progress bar: evenly distributed markers" further below); only
+  the road/bus/cul-de-sac geometry still uses the raw `pixelFor`
+  increments directly. That window
   (`overflow-hidden` outer container) shows a `ResizeObserver`-measured
   slice of the track, auto-scrolled (via a CSS `transform:
   translateX()`, not native scrolling - nothing on this app scrolls, see
@@ -339,9 +351,10 @@ landscape (1180×820) viewports.
   Horizontally, the bus now sits exactly at the true start (`left: 0`)
   on the first step and exactly at the true end (`left: trackWidth`) on
   the last, landing right on the cul-de-sac circle at either end instead
-  of stopping a little short of it - every step in between is already 48px
-  clear of both edges (`PX_PER_STEP`), so no separate inset/clamp is
-  needed there. Getting the icon to actually *reach* those exact edges
+  of stopping a little short of it - that's `busPx`'s own job
+  (`pixelFor(currentIndex)`, unrelated to where the turn/stop *marker*
+  icons land - see below for how those are now deliberately inset
+  instead). Getting the bus icon to actually *reach* those exact edges
   surfaced a real CSS bug along the way: the bus (and, at the very last
   stop, the last pin marker too) would collapse to zero width right at
   the route's true end - not a rendering glitch, but the standard CSS
@@ -793,24 +806,74 @@ only one possible row to tap. `page.tsx` now keeps
 actually opens Route 943's own trip-summary screen instead of always
 reopening the real route regardless of which row was tapped.
 
-### Progress bar: first/last markers no longer sit on the cul-de-sac circles
+### Progress bar: evenly distributed markers
 
-The turn/stop marker for `route.steps[0]` was drawn at `pixelFor(0)` -
-exactly the same pixel position as the start cul-de-sac circle and the
-bus's own parked position during the `depot` phase, so the very first
-turn icon visually sat right on top of the circle instead of reading as
-a distinct upcoming step. Same problem at the other end: the last
-marker sat exactly on the end circle. A new `markerPixelFor(index,
-total, trackWidth)` in `RouteProgressBar.tsx` pulls just those two
-markers in from the true track ends by `MARKER_EDGE_INSET_PX` (22px,
-capped at `PX_PER_STEP / 2` so it can never cross into the next marker's
-own position on a very short route) while every other marker keeps
-using the plain `pixelFor(index)` spacing. Deliberately *not* touching
-`busPx` (still `pixelFor(currentIndex)`, uninset) - the bus still needs
-to reach the literal `0`/`trackWidth` ends to visibly park on each
-circle for the `depot`/`arrived` phases from the previous round; only
-the *icons* needed to visually back off, not the bus or the track/circle
-geometry itself.
+First pass at pulling the first/last marker off the cul-de-sac circles
+(so the very first turn icon didn't visually sit right on top of the
+start circle, and likewise at the end) only special-cased those two:
+`markerPixelFor` returned an inset position for `index === 0` and
+`index === total - 1`, but left every marker in between on the plain
+`pixelFor(index)` grid. That created its own visible problem - the gap
+between marker 0 and marker 1 was `PX_PER_STEP` minus the inset (a
+shorter gap than everywhere else), not the same pitch as every other
+pair of markers. The fix, on explicit feedback ("don't just indent the
+first and last... make that the starting point of the bar that they are
+all divided equally spaced between"): `markerPixelFor(index, total,
+trackWidth)` now divides the *entire* span between an inset start and
+an inset end (`MARKER_EDGE_INSET_PX`, still 22px, still capped at
+`PX_PER_STEP / 2` so it can never cross into a neighboring marker's
+position on a very short route) into `total - 1` perfectly equal
+segments, and places every marker - not just the first and last - on
+that even grid: `MARKER_EDGE_INSET_PX + (index / (total - 1)) *
+(trackWidth - 2 * MARKER_EDGE_INSET_PX)`. Measured the actual rendered
+gap between every consecutive marker pair on the real 22-step route
+after this change - a constant ~46px throughout, first marker centered
+22px from the start circle and the last 22px from the end circle,
+matching `MARKER_EDGE_INSET_PX` exactly. `busPx` still deliberately uses
+the plain `pixelFor(currentIndex)`, uninset - the bus still needs to
+reach the literal `0`/`trackWidth` ends to visibly park on each circle
+for the `depot`/`arrived` phases (see above); only the marker *icons*
+needed to visually back off and re-space, not the bus or the
+track/circle geometry itself.
+
+### Route data: two CSVs now, and a dropped column
+
+`public/data/route-125.csv` (the turn-by-turn steps) had its leading
+`sequence` column dropped entirely, on request ("we don't need the
+numbers") - each row's position in the file already gives it an order,
+so the column was purely redundant. Schema is now
+`time,action,from_at,onto_at,rider_count,side,notes`; `parseRouteCsv.ts`
+updated its destructure to skip one leading column instead of two.
+
+A second file, `public/data/route-125-meta.csv`, now sits alongside it -
+the route-level metadata (`name`, `routeNumber`, `driverName`,
+`busNumber`, `departureTime`, `schoolName`, `schoolAddress`, `tripType`,
+`distance`, `durationMinutes`) used to live as a hardcoded `ROUTE_META`
+object directly in `page.tsx`; per "I'm building [a CSV] to keep track
+of the route metadata... move all the stuff you created into that
+file," it's now sourced from this real, tab-separated sheet instead
+(`route_number, route_name, bus_number, school_name, pickup_dropoff,
+start_time, end_time, stop_count, rider_count` - one header row, one
+data row per route), parsed by the new `parseRouteMetaCsv.ts`. Its
+schema doesn't happen to cover every `RouteMeta` field though:
+`driverName`, `schoolAddress`, and `distance` have no column in it, so
+those three stay hardcoded placeholders in `page.tsx`
+(`PLACEHOLDER_META`), merged in alongside whatever the CSV parses out
+(`{ ...parseRouteMetaCsv(metaCsv), ...PLACEHOLDER_META }`) - the same
+"flag it as a placeholder rather than silently fabricate it" spirit as
+`distance`/`durationMinutes` were before, just narrowed down to only the
+fields that genuinely have nowhere else to come from yet.
+`durationMinutes` is one that *does* get to stop being a guess now: the
+metadata sheet gives `start_time`/`end_time` instead of a duration
+directly, so `parseRouteMetaCsv` computes it (wrapping across midnight
+the same way `addMinutesToTimeString` does), which happens to land on
+30 real minutes rather than the previous guessed 28. `stop_count`/
+`rider_count` are in the sheet too, but deliberately not parsed into
+anything - the app already derives both, live, from the real steps CSV
+(`parseRouteCsv`), which stays correct if a stop is ever added or
+removed there; re-deriving the same numbers from this file's own copy
+would just be a second source that could quietly drift out of sync with
+it.
 
 ### Next steps
 
