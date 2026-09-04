@@ -11,6 +11,9 @@ on:
       - claude/ipad-iphone-nav-app-ss8dsk
     paths:
       - "public/data/route-125.csv"
+  # Temporary, for testing the User-Agent fix in geocode.ts without a
+  # CSV change - remove once confirmed one way or the other.
+  workflow_dispatch: {}
 
 permissions:
   contents: write
