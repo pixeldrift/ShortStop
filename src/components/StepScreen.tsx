@@ -280,16 +280,16 @@ function LeaveRouteConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            className="btn-glossy font-heading flex-1 rounded-xl border border-zinc-400 bg-white py-3 text-lg font-semibold text-zinc-900"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-400 bg-white py-3 text-lg font-semibold text-zinc-900"
           >
-            End Route
+            <TriangleIcon direction="left" className="h-6 w-6" /> End Route
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="btn-glossy font-heading flex-1 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
           >
-            Return to Route
+            Return to Route <TriangleIcon direction="right" className="h-6 w-6" />
           </button>
         </div>
       </div>
