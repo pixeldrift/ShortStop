@@ -1,4 +1,5 @@
 import type { RouteMeta } from "./parseRouteCsv";
+import { durationBetween24HourTimes, format24HourAsAmPm } from "./time";
 
 /** Fields this file's schema actually covers - driverName,
  * schoolAddress, distance, isFavorite, id, status, and schoolLevel
@@ -18,19 +19,6 @@ export type RouteMetaCsvFields = Omit<
   "driverName" | "schoolAddress" | "distance" | "isFavorite" | "id" | "status" | "schoolLevel"
 >;
 
-function to12HourClock(hhmm: string): string {
-  const [hourStr, minuteStr] = hhmm.split(":");
-  const hour24 = parseInt(hourStr, 10);
-  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
-  const period = hour24 >= 12 ? "PM" : "AM";
-  return `${hour12}:${minuteStr.padStart(2, "0")} ${period}`;
-}
-
-function toMinutesSinceMidnight(hhmm: string): number {
-  const [hourStr, minuteStr] = hhmm.split(":");
-  return parseInt(hourStr, 10) * 60 + parseInt(minuteStr, 10);
-}
-
 /**
  * Parses the tab-separated route-metadata sheet (route_number,
  * route_name, bus_number, school_name, pickup_dropoff, start_time,
@@ -46,17 +34,13 @@ export function parseRouteMetaCsv(csvText: string): RouteMetaCsvFields {
   const values = dataLine.split("\t").map((v) => v.trim());
   const row = Object.fromEntries(headers.map((header, i) => [header, values[i]]));
 
-  const startMinutes = toMinutesSinceMidnight(row.start_time);
-  const endMinutes = toMinutesSinceMidnight(row.end_time);
-  const durationMinutes = ((endMinutes - startMinutes) % 1440 + 1440) % 1440;
-
   return {
     routeNumber: row.route_number,
     name: row.route_name,
     busNumber: row.bus_number,
     schoolName: row.school_name,
     tripType: row.pickup_dropoff.toLowerCase() === "pickup" ? "pickup" : "dropoff",
-    departureTime: to12HourClock(row.start_time),
-    durationMinutes,
+    departureTime: format24HourAsAmPm(row.start_time),
+    durationMinutes: durationBetween24HourTimes(row.start_time, row.end_time),
   };
 }
