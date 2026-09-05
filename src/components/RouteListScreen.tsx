@@ -285,7 +285,7 @@ export function RouteListScreen({
           adminMode ? "border-2 border-red-400" : "border-zinc-300"
         }`}
       >
-        <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-[0.4375rem] text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+        <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
           <div className="flex items-center">
             <SortableHeader
               label="#"
@@ -329,7 +329,7 @@ export function RouteListScreen({
                 <button
                   type="button"
                   onClick={() => handleRowClick(route)}
-                  className="grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-2.5 text-left active:bg-zinc-100"
+                  className="grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left active:bg-zinc-100"
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="font-heading text-lg leading-none font-black">
@@ -431,7 +431,7 @@ export function RouteListScreen({
         <button
           type="button"
           onClick={onToggleAdminMode}
-          className="flex items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
+          className="flex items-center gap-1 text-xs font-medium text-blue-600 active:text-blue-800"
         >
           <EditIcon className="h-3 w-3" />
           {adminMode ? "Exit Edit Mode" : "Edit Mode"}
@@ -502,15 +502,18 @@ export function RouteListScreen({
 
 /** A school name, single-line and non-wrapping - a long name used to
  * wrap "School" onto its own line (line-clamp-2), which read as an
- * orphaned word more than a real second line of content. Measures its
- * own rendered width against its available column width instead: if
- * the full name doesn't fit, it drops a trailing " School" (the only
- * word actually worth shortening away - "Elementary"/"Middle"/"High"
- * all carry real information "School" alone repeats) and re-measures
- * on resize; a name that's still too long even without that word (or
- * one that never had it) just truncates normally, browser ellipsis and
- * all - there's no further clever shortening beyond the one word this
- * app's own real school names, see schools.csv, prompted this for. */
+ * orphaned word more than a real second line of content. A smaller
+ * `text-sm` (down from the row's own default size) buys back some of
+ * that room on its own before anything below even has to kick in.
+ * Measures its own rendered width against its available column width
+ * next: if the full name still doesn't fit, it drops a trailing
+ * " School" (the only word actually worth shortening away -
+ * "Elementary"/"Middle"/"High" all carry real information "School"
+ * alone repeats) and re-measures on resize; a name that's still too
+ * long even without that word (or one that never had it) just
+ * truncates normally, browser ellipsis and all - there's no further
+ * clever shortening beyond the one word this app's own real school
+ * names, see schools.csv, prompted this for. */
 function SchoolNameLabel({ name }: { name: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [dropSchoolWord, setDropSchoolWord] = useState(false);
@@ -529,7 +532,7 @@ function SchoolNameLabel({ name }: { name: string }) {
   }, [name]);
 
   return (
-    <span ref={ref} className="block truncate leading-snug text-zinc-700">
+    <span ref={ref} className="block truncate text-sm leading-snug text-zinc-700">
       {dropSchoolWord ? name.replace(/ School$/, "") : name}
     </span>
   );
