@@ -32,10 +32,14 @@ export type WaypointCache = Record<string, WaypointCacheEntry>;
  * intersection's two roads are sorted before joining, so "A & B" and
  * "B & A" - the same real intersection, however the CSV happens to
  * state it on a given row - always resolve to one shared entry rather
- * than two redundant lookups.
+ * than two redundant lookups. "unresolvable" queries never actually
+ * reach the cache - the geocoding pipeline skips them before ever
+ * calling this function (see geocodeRoute.ts) - but a key is still
+ * defined here so the switch stays exhaustive at the type level.
  */
 export function waypointCacheKey(query: WaypointQuery): string {
   if (query.kind === "address") return `address:${query.text}`;
+  if (query.kind === "unresolvable") return `unresolvable:${query.description}`;
   const [a, b] = [query.roadA, query.roadB].sort((x, y) => x.localeCompare(y));
   return `intersection:${a} & ${b}`;
 }

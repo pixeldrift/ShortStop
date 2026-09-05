@@ -35,8 +35,8 @@ for them yet.
 .env.local.example        Copy to .env.local (gitignored) - needs ORS_API_KEY
 .github/
   workflows/
-    geocode-route.yml     Auto-refreshes route-125-waypoints.json (see below)
-    prototype-overpass.yml Manual-only run of the Overpass prototype (see below)
+    geocode-route.yml     Auto-refreshes every route's own *-waypoints.json (see below)
+    prototype-overpass.yml Manual-only re-test harness for src/lib/overpassGeocode.ts
 src/
   app/
     page.tsx           Renders the route list, the Start screen, or the
@@ -65,14 +65,17 @@ src/
     useFitGrid.ts          Shrink a bubble grid to fit (see below)
     time.ts               addMinutesToTimeString/parseTimeToMinutes - trip ETA math
     demoRoutes.ts          Fabricates filler rows for the route list (see below)
-    deriveWaypoints.ts     CSV row -> geocodable address/intersection (see below)
-    geocode.ts              Swappable geocoding providers (ORS active, see below)
+    deriveWaypoints.ts     CSV row -> geocodable address/intersection/unresolvable (see below)
+    geocode.ts              Swappable free-text geocoding providers (ORS active, see below)
+    overpassGeocode.ts       Structured intersection lookup via the Overpass API (see below)
     waypointCache.ts         Cache key + entry types shared with scripts/geocodeRoute.ts
     placeholderMeta.ts     Shared driverName/distance placeholders + favorites
     silence.ts           A tiny silent audio loop (see below)
 scripts/
-  geocodeRoute.ts        `npm run geocode` - refreshes route-125-waypoints.json (see below)
-  tsconfig.json            Standalone tsc config so the script needs no bundler
+  geocodeRoute.ts        `npm run geocode` - refreshes every active route's own
+                            *-waypoints.json sidecar cache (see below)
+  prototypeOverpassGeocode.ts `npm run prototype:overpass` - re-test harness, see below
+  tsconfig.json            Standalone tsc config so the scripts need no bundler
 public/
   manifest.json          PWA manifest
   data/125-PM-EL.csv           Bus 125's turn-by-turn steps
@@ -84,7 +87,9 @@ public/
   data/120-PM-HS.csv           Bus 120's PM High run steps (incomplete, status: inactive)
   data/route-master-list.csv   Route-level metadata for every real route (see below)
   data/schools.csv             School name → address, one row per school (see below)
-  data/route-125-waypoints.json  Geocoding cache, generated - see "Maps, part two" below
+  data/125-PM-EL-waypoints.json  Bus 125's geocoding cache, generated - see "Maps, part two"/
+                                  "part ten" below (one such sidecar per active route, named
+                                  to match its own steps CSV - not listed individually here)
   assets/
     logo.png              ShortStop wordmark
     pin.png                Stop marker (background removed)
@@ -102,15 +107,18 @@ npm run dev
 Open http://localhost:3000. Works in any modern browser; test the
 Bluetooth remote on an actual iPad/iPhone in Safari.
 
-The route's geocoded waypoint cache (`route-125-waypoints.json`, see
-"Maps, part two" below) refreshes itself automatically - a GitHub
-Actions workflow (`.github/workflows/geocode-route.yml`) runs `npm run
-geocode` and commits the result whenever `125-PM-EL.csv` changes, so
-there's normally nothing to do by hand. To run it yourself anyway (a
-manual local check, or to retry a failed lookup without touching the
-CSV): `npm run geocode`. Needs real outbound network access to
-`nominatim.openstreetmap.org` - not available in every environment
-(this one included), so run it somewhere that has it.
+Every active route's own geocoded waypoint cache (`{route}-waypoints.json`,
+one sidecar per steps CSV - see "Maps, part two"/"part ten" below)
+refreshes itself automatically - a GitHub Actions workflow
+(`.github/workflows/geocode-route.yml`) runs `npm run geocode` and
+commits whatever changed whenever any `public/data/*.csv` file changes,
+so there's normally nothing to do by hand. To run it yourself anyway (a
+manual local check, or to retry a failed lookup without touching a
+CSV): `npm run geocode`. Needs a real `ORS_API_KEY` (addresses, and the
+one-time per-route anchor point Overpass's intersection lookups use)
+and real outbound network access to `api.openrouteservice.org` and
+`overpass-api.de` - not available in every environment (this one
+included), so run it somewhere that has both.
 
 ### Deploying
 
@@ -1732,6 +1740,84 @@ in the source data, not a limitation of the Overpass approach -
 school address had a third (see "Route data: real school addresses"
 above).
 
+### Maps, part ten: wiring Overpass into the real pipeline, one cache per route
+
+The prototype in "Maps, part nine" above answered the two open
+questions (does the Overpass approach work? does pacing fix the
+429/504s?) well enough to stop being a side script and become the real
+provider. Four changes landed together, since none of them was useful
+alone:
+
+**"Unresolvable" rows, detected before ever spending a query.**
+`deriveWaypoints.ts` gained a third `WaypointQuery` kind alongside
+`address`/`intersection` - `unresolvable`, for a route-sheet road
+description that reads like a name but never was one. Right now that's
+just `/\bramp\b/i` - "Ramp toward Murfreesboro" (see "Maps, part nine"
+above - this is the exact case that prototype's one genuinely-expected
+empty result turned out to be) - caught by pattern instead of by a
+human flagging it row-by-row. Deliberately narrow: a false positive
+here silently drops a real, resolvable stop, which is worse than an
+unresolvable one occasionally still getting queried and failing loudly
+with "no shared node found." Expand the pattern only against another
+confirmed real case, not preemptively. `waypointCacheKey` and
+`geocode.ts`'s `queryTextFor`/`GeocodeProvider` both had to account for
+the new kind - the latter by narrowing its accepted type to exclude it
+entirely (`GeocodableQuery`), so a caller holding a full `WaypointQuery`
+has to filter unresolvable ones out before it type-checks, not just
+remember to at runtime.
+
+**Pacing and retry, not just pacing.** The prototype's 429/504s came
+from zero delay between back-to-back calls to the same public Overpass
+instance. `overpassGeocode.ts` (below) adds both: a fixed delay between
+calls (reusing the same 1100ms the Nominatim era already established),
+and up to two retries with a pause when a single call itself comes back
+429 or 504, rather than counting a rate-limited response as a real miss.
+
+**The prototype's Overpass code, promoted to `src/lib/overpassGeocode.ts`.**
+`boundingBoxAround`, `buildIntersectionQuery`, `parseIntersectionResponse`,
+`pickNearest`, and `resolveIntersection` (now with the retry above) moved
+out of `scripts/prototypeOverpassGeocode.ts` into a real `src/lib` module,
+the same way `geocode.ts` already holds the ORS/Nominatim providers.
+The prototype script now imports from it instead of keeping its own
+copy - it's still useful as a re-test harness (`PROTOTYPE_FILTER` to
+re-check just one road name fix without spending a whole route's worth
+of calls), just no longer the only place this code lives.
+
+**`scripts/geocodeRoute.ts`, generalized from one hardcoded route to
+every active one.** It now reads `route-master-list.csv` itself, computes
+each active row's steps-CSV basename via `stepsCsvBaseName`
+(`parseRouteMasterList.ts` - the exact inverse of how that file derives
+`tripType`/`schoolLevel` from the sheet's own `am_pm`/`school_type`
+columns), and - skipping any active row whose steps CSV doesn't exist on
+disk yet, or whose school has no address in `schools.csv`, the same kind
+of gap `page.tsx` already tolerates - geocodes each one's waypoints into
+its **own** sidecar cache file (`{basename}-waypoints.json`), not one
+shared `route-125-waypoints.json`. Addresses still go through ORS
+(`geocode.ts`); intersections now go through the promoted Overpass module
+instead of ORS's free-text search; an `unresolvable` row is skipped
+entirely, spending no query and needing no cache entry. `RouteMap.tsx`
+follows the same convention on the read side - it now takes a
+`waypointsUrl` prop (computed by `StepScreen.tsx` from the current
+route, the same `stepsCsvBaseName` call) instead of a single hardcoded
+constant, so each route's step screen loads its own cache file. A demo
+(fabricated) route's computed URL simply 404s, resolving to an empty
+cache exactly like a real route whose geocode run hasn't populated one
+yet - no special-casing needed.
+
+`geocode-route.yml`'s trigger broadened from the one CSV path it used to
+watch to `public/data/*.csv` (every steps sheet, `schools.csv`, and
+`route-master-list.csv` itself - adding/removing an active row, or
+changing which school/trip/level it names, changes which sidecar gets
+built), and its commit step now stages `public/data/*-waypoints.json`
+as a whole rather than one named file.
+
+None of this has run for real yet - still blocked on the same missing
+`ORS_API_KEY` "Maps, part five"/"Next steps" have been tracking, and
+this sandbox's own network restrictions (see "Maps, part four") mean
+verification has to happen via `geocode-route.yml`/`workflow_dispatch`
+in CI, same as every other real-network check this project has needed
+so far.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
@@ -1740,18 +1826,13 @@ above).
   Nothing geocoding-related can actually run for real until this
   exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
   confirm the OpenRouteService switch works without needing a CSV edit
-- The Overpass prototype (see "Maps, part nine" above) is now 5-for-5
-  (excluding rate-limited attempts) across every crossroads it's been
-  asked to re-check after a name fix - Bill Stewart Blvd and Redbud Ln
-  both went from a consistent miss to resolving clean the moment
-  `125-PM-EL.csv` had the right name. The one real blocker left is
-  pacing: every multi-query run so far has hit 429/504 from zero delay
-  between calls (7 across the two 8-query runs). Add real pacing (a
-  delay between calls, and/or retrying a 429/504 once instead of
-  counting it as a miss), then do a clean full-route re-run before
-  deciding whether to wire this into `geocode.ts` as a real provider
-  (intersections through Overpass, plain addresses still through ORS)
-  instead of a standalone script
+- The Overpass approach (see "Maps, part nine" above) is now wired into
+  the real pipeline, pacing/retry included (see "Maps, part ten" above)
+  - `scripts/geocodeRoute.ts` uses it for every route's intersections,
+  ORS for plain addresses. Still needs one clean full-run verification
+  once `ORS_API_KEY` exists (bullet above) - everything so far has only
+  been checked via the standalone prototype/type-checking, not a real
+  end-to-end `npm run geocode` against live network access
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual
@@ -1770,8 +1851,8 @@ above).
   `ROUTE_STEPS_CSV_PATHS`
 - Lavergne Lake Elementary's address is corrected in `schools.csv`
   (201 Davids Way, not the old 1425 Lake Forest Dr - see "Route data:
-  real school addresses" above), but `route-125-waypoints.json` hasn't
-  actually been regenerated against it yet - blocked on the same
+  real school addresses" above), but no route's sidecar waypoint cache
+  has actually been generated against it yet - blocked on the same
   missing `ORS_API_KEY` as the bullet above. Once that's in place,
   either wait for `geocode-route.yml` to pick up this change or run
   `npm run geocode` by hand
@@ -1834,17 +1915,18 @@ above).
 - Whatever comes in through that import tool (or the manual editor)
   would feed an "auto-resolve coordinates" pass - live per-row status
   as it runs (a green check + the resolved lat/lon, or a red X), then a
-  summary of what worked and what didn't, essentially productizing what
-  `prototypeOverpassGeocode.ts`'s console output already does by hand
-  (see "Maps, part nine" above). Surfacing API usage/quota in that UI
-  would be nice, but it's not actually clear yet what OpenRouteService's
-  or Overpass's real gating criteria are (a request quota? a rate
-  limit? both?) - worth understanding before promising a usage meter
-  that might not mean what it looks like it means. The pacing problem
-  this session's prototype runs kept hitting (429/504 from zero delay
-  between calls) belongs here too, and isn't specific to this tool -
-  the whole geocoding pipeline needs to query slower than "as fast as
-  possible" (see the Overpass bullet, above)
+  summary of what worked and what didn't - essentially a UI over what
+  `scripts/geocodeRoute.ts` now already does for real (see "Maps, part
+  ten" above): per-route sidecar caching, pacing, retry-on-429/504, and
+  an `unresolvable` row (a driver instruction, not a real road -
+  `deriveWaypoints.ts`) skipped up front rather than queried and shown
+  as a red X. This is the one piece of "Add Route/Edit Route" the user
+  explicitly called out as now unblocked - the pipeline it drives is in
+  place, just not this UI on top of it. Surfacing API usage/quota in
+  that UI would be nice, but it's not actually clear yet what
+  OpenRouteService's or Overpass's real gating criteria are (a request
+  quota? a rate limit? both?) - worth understanding before promising a
+  usage meter that might not mean what it looks like it means
 - For whatever's left unresolved after that pass: a per-row "Retry"
   button, and a manual fallback - a single paste-able "lat, lon" text
   field standing in for the two separate coordinate columns on that

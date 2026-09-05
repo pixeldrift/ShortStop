@@ -8,6 +8,20 @@ const SCHOOL_TYPE_TO_LEVEL: Record<string, SchoolLevel> = {
   HS: "high",
 };
 
+// Exact inverses of the maps above - used by stepsCsvBaseName below to
+// go from a parsed route back to the district's own file-naming
+// convention, rather than the app's own tripType/schoolLevel spelling.
+const LEVEL_TO_SCHOOL_TYPE: Record<SchoolLevel, string> = {
+  elementary: "EL",
+  middle: "MS",
+  high: "HS",
+};
+
+const TRIP_TYPE_TO_AM_PM: Record<TripType, string> = {
+  pickup: "AM",
+  dropoff: "PM",
+};
+
 // Same tripType -> display-label pairing as demoRoutes.ts's TRIP_LABELS,
 // duplicated locally rather than shared - it's two fixed strings, not
 // parsing logic, and this file otherwise has no reason to import from a
@@ -77,4 +91,20 @@ export function parseRouteMasterList(csvText: string): MasterListRoute[] {
           : undefined,
       };
     });
+}
+
+/**
+ * Computes a route's steps-CSV basename (no extension, no directory) -
+ * "125-PM-EL", "120-AM-MS" - from the district's own file-naming
+ * convention: route number, AM/PM, school type. The exact inverse of
+ * how this file derives tripType/schoolLevel from the master list's own
+ * am_pm/school_type columns above, so it's computed rather than kept in
+ * a separate hardcoded per-route table - used by the geocoding pipeline
+ * (scripts/geocodeRoute.ts) to find each active route's own steps sheet
+ * and sidecar waypoint cache.
+ */
+export function stepsCsvBaseName(
+  route: Pick<MasterListRoute, "routeNumber" | "tripType" | "schoolLevel">,
+): string {
+  return `${route.routeNumber}-${TRIP_TYPE_TO_AM_PM[route.tripType]}-${LEVEL_TO_SCHOOL_TYPE[route.schoolLevel]}`;
 }

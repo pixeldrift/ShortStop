@@ -5,17 +5,19 @@ import "leaflet/dist/leaflet.css";
 import type { Map as LeafletMap, Marker } from "leaflet";
 import type { WaypointCache } from "@/lib/waypointCache";
 
-/** One "stop" step's marker: waypointKey looks it up in the geocoded
- * cache (route-125-waypoints.json), number is its position among stops
- * (1-indexed) for the pin's on-map label - matching the same numbering
- * RouteProgressBar/StopContent already show for the same stop. */
+/** One "stop" step's marker: waypointKey looks it up in the route's own
+ * geocoded sidecar cache (waypointsUrl prop, below), number is its
+ * position among stops (1-indexed) for the pin's on-map label -
+ * matching the same numbering RouteProgressBar/StopContent already show
+ * for the same stop. */
 export type StopMarker = { waypointKey: string; number: number };
 
 // La Vergne, TN's approximate town center - a placeholder anchor until
-// the route's own geocoded waypoints (deriveWaypoints.ts,
-// route-125-waypoints.json) give this a real, route-derived center
-// (or bounds) instead. Not tied to any specific address in the route
-// data - just a general "somewhere in town" starting view.
+// the route's own geocoded waypoints (deriveWaypoints.ts, and each
+// route's own sidecar cache file - see waypointsUrl below) give this a
+// real, route-derived center (or bounds) instead. Not tied to any
+// specific address in the route data - just a general "somewhere in
+// town" starting view.
 const LA_VERGNE_CENTER: [number, number] = [36.0134, -86.5581];
 const DEFAULT_ZOOM = 13;
 
@@ -43,13 +45,6 @@ const LOCATION_DOT_HTML =
   '<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-60"></span>' +
   '<span class="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-blue-600 shadow-md"></span>' +
   "</span>";
-
-// Same red numbered pin as StopContent/RouteProgressBar (pin.png +
-// a number near its top), so a stop reads as the same thing wherever
-// it appears - map included. iconSize/iconAnchor below match this
-// 28x44 box, anchored at its bottom-center point (the pin's tip),
-// same convention Leaflet's own default marker icon uses.
-const WAYPOINTS_URL = "/data/route-125-waypoints.json";
 
 function stopMarkerHtml(stopNumber: number): string {
   return (
@@ -83,14 +78,25 @@ function stopMarkerHtml(stopNumber: number): string {
 export function RouteMap({
   className,
   stops = [],
+  waypointsUrl,
 }: {
   className?: string;
-  /** A pin per stop, at whatever position route-125-waypoints.json's
-   * cache has for it - stops with no cache entry (the whole cache is
-   * empty until a real ORS_API_KEY-backed `npm run geocode` run
-   * populates it - see README, "Maps" sections) are silently skipped
-   * rather than placed anywhere approximate. */
+  /** A pin per stop, at whatever position this route's own sidecar
+   * waypoint cache (waypointsUrl below) has for it - stops with no
+   * cache entry (the whole cache is empty until a real
+   * ORS_API_KEY-backed `npm run geocode` run populates it - see
+   * README, "Maps" sections) are silently skipped rather than placed
+   * anywhere approximate. */
   stops?: StopMarker[];
+  /** This route's own sidecar cache file, e.g.
+   * "/data/125-PM-EL-waypoints.json" - one per real route (see
+   * scripts/geocodeRoute.ts), computed by the caller from the same
+   * routeNumber/tripType/schoolLevel-based naming convention its steps
+   * CSV itself uses (see stepsCsvBaseName, parseRouteMasterList.ts). A
+   * demo (fabricated) route's computed URL simply won't exist - a 404
+   * resolves to an empty cache below, same as a real route whose
+   * geocode run hasn't populated one yet. */
+  waypointsUrl: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Read inside the mount effect's async callback below rather than
@@ -103,6 +109,14 @@ export function RouteMap({
   useEffect(() => {
     stopsRef.current = stops;
   }, [stops]);
+  // Same reasoning as stopsRef above - read once inside the mount
+  // effect rather than re-running the whole effect if it ever changed
+  // (it doesn't, mid-trip: StepScreen computes it once from `route`,
+  // unchanged for the whole trip).
+  const waypointsUrlRef = useRef(waypointsUrl);
+  useEffect(() => {
+    waypointsUrlRef.current = waypointsUrl;
+  }, [waypointsUrl]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -130,7 +144,7 @@ export function RouteMap({
       // fetch/parse failure via the .catch below - either way, that
       // just means every stop below is a no-op cache miss, not an
       // error worth surfacing over a map that's otherwise working fine.
-      void fetch(WAYPOINTS_URL)
+      void fetch(waypointsUrlRef.current)
         .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
         .catch(() => ({}) as WaypointCache)
         .then((cache) => {

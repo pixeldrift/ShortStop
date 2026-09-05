@@ -1,8 +1,11 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deriveWaypoints } from "../src/lib/deriveWaypoints";
+import type { WaypointQuery } from "../src/lib/deriveWaypoints";
 import { extractCityState, geocodeQuery } from "../src/lib/geocode";
+import { boundingBoxAround, pickNearest, resolveIntersection } from "../src/lib/overpassGeocode";
 import { parseRouteCsvRows } from "../src/lib/parseRouteCsv";
+import { parseRouteMasterList, stepsCsvBaseName } from "../src/lib/parseRouteMasterList";
 import { parseSchoolsCsv } from "../src/lib/parseSchoolsCsv";
 import { waypointCacheKey } from "../src/lib/waypointCache";
 import type { WaypointCache } from "../src/lib/waypointCache";
@@ -20,16 +23,27 @@ import type { WaypointCache } from "../src/lib/waypointCache";
 // runs package.json scripts with the directory containing that
 // package.json (here, the repo root - the only one in this project)
 // as cwd, regardless of the caller's own working directory.
-const ROUTE_CSV_PATH = join(process.cwd(), "public", "data", "125-PM-EL.csv");
-const SCHOOLS_CSV_PATH = join(process.cwd(), "public", "data", "schools.csv");
-const CACHE_PATH = join(process.cwd(), "public", "data", "route-125-waypoints.json");
+const DATA_DIR = join(process.cwd(), "public", "data");
+const MASTER_LIST_PATH = join(DATA_DIR, "route-master-list.csv");
+const SCHOOLS_CSV_PATH = join(DATA_DIR, "schools.csv");
 const ENV_LOCAL_PATH = join(process.cwd(), ".env.local");
 
 // Conservative pacing between actual network calls - a cache hit costs
 // nothing, so it doesn't wait. Kept from the Nominatim-era 1 req/sec
-// limit; ORS's own geocoding quota is more generous, but there's no
-// need to push it for ~20 lookups.
+// limit; both ORS's geocoding quota and Overpass's public instance are
+// more generous than that, but there's no need to push it for the
+// handful of lookups a route's whole steps sheet has. Applied uniformly
+// to every real network call regardless of which of the two services
+// (ORS for addresses, Overpass for intersections) answered it.
 const RATE_LIMIT_MS = 1100;
+
+// Half-width of the Overpass search box around each route's own school
+// address, in degrees - see src/lib/overpassGeocode.ts and README,
+// "Maps, part nine", for why this is wide enough to hold a route this
+// size without also catching a same-named road elsewhere in the metro
+// area. Shared across every route rather than tuned per-route since
+// they're all short in-town routes around the same handful of schools.
+const SEARCH_RADIUS_DEG = 0.06;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -52,37 +66,31 @@ function loadEnvLocal(): void {
   }
 }
 
-/**
- * Refreshes public/data/route-125-waypoints.json from 125-PM-EL.csv:
- * derives every row's geocodable location (deriveWaypoints.ts), looks
- * up whichever ones aren't already cached, and writes the result back.
- * 125-PM-EL.csv stays the one source of truth for the route - editing
- * it changes what deriveWaypoints produces, which changes the cache
- * keys (content-addressed, see waypointCacheKey), which is what makes
- * "edit the CSV, re-run this" a real refresh rather than something
- * that needs separate invalidation bookkeeping. Also prunes any cache
- * entry no longer referenced by the current CSV, so the cache file
- * doesn't accumulate cruft from since-edited-away rows.
- *
- * Run with `npm run geocode`. Needs an OpenRouteService API key
- * (ORS_API_KEY) - free at openrouteservice.org - either exported in
- * the shell, in a gitignored .env.local, or (in CI) a repository
- * secret. See geocode.ts for why ORS rather than Nominatim.
- */
-async function main() {
-  loadEnvLocal();
-  const apiKey = process.env.ORS_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "ORS_API_KEY isn't set. Get a free key at openrouteservice.org, then either export it, " +
-        "put it in a gitignored .env.local (ORS_API_KEY=...), or set it as a repository secret in CI.",
-    );
-  }
+/** Refreshes one route's own sidecar waypoint cache
+ * (`${baseName}-waypoints.json`) from its own steps CSV
+ * (`${baseName}.csv`): derives every row's geocodable location
+ * (deriveWaypoints.ts), looks up whichever ones aren't already cached
+ * - addresses via ORS, intersections via the Overpass module, an
+ * "unresolvable" row (a driver instruction, not a real road - see
+ * deriveWaypoints.ts) skipped entirely, spending no query at all - and
+ * writes the result back. The steps CSV stays the one source of truth
+ * for the route - editing it changes what deriveWaypoints produces,
+ * which changes the cache keys (content-addressed, see
+ * waypointCacheKey), which is what makes "edit the CSV, re-run this" a
+ * real refresh rather than something that needs separate invalidation
+ * bookkeeping. Also prunes any cache entry no longer referenced by the
+ * current CSV, so the cache file doesn't accumulate cruft from
+ * since-edited-away rows. */
+async function geocodeRoute(
+  baseName: string,
+  schoolAddress: string,
+  apiKey: string,
+): Promise<{ hits: number; fetched: number; failed: number; skipped: number; pruned: number }> {
+  const stepsCsvPath = join(DATA_DIR, `${baseName}.csv`);
+  const cachePath = join(DATA_DIR, `${baseName}-waypoints.json`);
 
-  const csvText = readFileSync(ROUTE_CSV_PATH, "utf8");
+  const csvText = readFileSync(stepsCsvPath, "utf8");
   const rows = parseRouteCsvRows(csvText);
-  const schoolAddresses = parseSchoolsCsv(readFileSync(SCHOOLS_CSV_PATH, "utf8"));
-  const schoolAddress = schoolAddresses["Lavergne Lake Elementary"];
   const waypoints = deriveWaypoints(rows, schoolAddress);
 
   const locationContext = extractCityState(schoolAddress);
@@ -90,9 +98,14 @@ async function main() {
     throw new Error(`Couldn't pull a "City, ST" context out of schoolAddress: "${schoolAddress}"`);
   }
 
-  const currentKeys = new Set(waypoints.map(waypointCacheKey));
-  const existingCache: WaypointCache = existsSync(CACHE_PATH)
-    ? JSON.parse(readFileSync(CACHE_PATH, "utf8"))
+  const skipped = waypoints.filter((w) => w.kind === "unresolvable").length;
+  const geocodable = waypoints.filter(
+    (w): w is Extract<WaypointQuery, { kind: "address" | "intersection" }> => w.kind !== "unresolvable",
+  );
+
+  const currentKeys = new Set(geocodable.map(waypointCacheKey));
+  const existingCache: WaypointCache = existsSync(cachePath)
+    ? JSON.parse(readFileSync(cachePath, "utf8"))
     : {};
   const prunedCount = Object.keys(existingCache).filter((key) => !currentKeys.has(key)).length;
 
@@ -105,45 +118,180 @@ async function main() {
   let fetched = 0;
   let failed = 0;
 
-  for (const waypoint of waypoints) {
+  // Only computed (one ORS call) if this route actually has an
+  // uncached intersection to resolve - Overpass needs it as the center
+  // of its search box, but a route with every intersection already
+  // cached, or with none at all, shouldn't spend the call.
+  let anchor: { lat: number; lon: number } | null = null;
+  let lastResolved: { lat: number; lon: number } | null = null;
+
+  for (const waypoint of geocodable) {
     const key = waypointCacheKey(waypoint);
-    if (cache[key]) {
+    const cached = cache[key];
+    if (cached) {
       hits++;
+      // Only "ok" entries are ever written to the cache (see
+      // WaypointCacheEntry's doc comment) - this narrows purely for
+      // the type checker's benefit, not a real runtime possibility.
+      if (waypoint.kind === "intersection" && cached.status === "ok") {
+        lastResolved = { lat: cached.lat, lon: cached.lon };
+      }
       continue;
     }
 
-    const entry = await geocodeQuery(waypoint, locationContext, apiKey);
+    if (waypoint.kind === "address") {
+      const entry = await geocodeQuery(waypoint, locationContext, apiKey);
+      await sleep(RATE_LIMIT_MS);
 
-    if (entry.status === "ok") {
-      cache[key] = entry;
-      fetched++;
-      console.log(`  ok    ${key}\n        -> ${entry.lat}, ${entry.lon} (${entry.displayName})`);
-    } else {
-      // Not cached, deliberately - a failure usually means the query
-      // wording needs fixing, and leaving it uncached means it's
-      // retried on the very next run with no separate cache-clearing
-      // step needed, rather than silently staying failed forever.
-      failed++;
-      console.log(`  FAIL  ${key}\n        "${entry.source}": ${entry.message}`);
+      if (entry.status === "ok") {
+        cache[key] = entry;
+        fetched++;
+        console.log(`  ok    ${key}\n        -> ${entry.lat}, ${entry.lon} (${entry.displayName})`);
+      } else {
+        // Not cached, deliberately - a failure usually means the query
+        // wording needs fixing, and leaving it uncached means it's
+        // retried on the very next run with no separate cache-clearing
+        // step needed, rather than silently staying failed forever.
+        failed++;
+        console.log(`  FAIL  ${key}\n        "${entry.source}": ${entry.message}`);
+      }
+      continue;
     }
 
-    // Only actual network calls need to be rate-limited.
-    await sleep(RATE_LIMIT_MS);
+    // From here, waypoint.kind === "intersection" - needs the school's
+    // own anchor point (for Overpass's search box), computed lazily
+    // the first time one is actually needed.
+    if (!anchor) {
+      const anchorEntry = await geocodeQuery(
+        { stepId: -1, kind: "address", text: schoolAddress },
+        locationContext,
+        apiKey,
+      );
+      await sleep(RATE_LIMIT_MS);
+      if (anchorEntry.status !== "ok") {
+        throw new Error(`Couldn't geocode the school address itself: ${anchorEntry.message}`);
+      }
+      anchor = { lat: anchorEntry.lat, lon: anchorEntry.lon };
+      lastResolved = lastResolved ?? anchor;
+    }
+
+    const box = boundingBoxAround(anchor.lat, anchor.lon, SEARCH_RADIUS_DEG);
+    const label = `${waypoint.roadA} & ${waypoint.roadB}`;
+    const source = `${waypoint.roadA} and ${waypoint.roadB}, ${locationContext}`;
+
+    try {
+      const resolution = await resolveIntersection(waypoint.roadA, waypoint.roadB, box);
+      await sleep(RATE_LIMIT_MS);
+
+      if (resolution.status === "ok") {
+        cache[key] = { status: "ok", lat: resolution.lat, lon: resolution.lon, displayName: label, source, provider: "overpass" };
+        lastResolved = { lat: resolution.lat, lon: resolution.lon };
+        fetched++;
+        console.log(`  ok    ${key}\n        -> ${resolution.lat}, ${resolution.lon}`);
+      } else if (resolution.status === "ambiguous") {
+        const picked = pickNearest(resolution.candidates, lastResolved ?? anchor);
+        cache[key] = { status: "ok", lat: picked.lat, lon: picked.lon, displayName: label, source, provider: "overpass" };
+        lastResolved = picked;
+        fetched++;
+        console.log(
+          `  ok    ${key}\n        -> ${picked.lat}, ${picked.lon} ` +
+            `(ambiguous - ${resolution.candidates.length} shared nodes, picked nearest to last-resolved point)`,
+        );
+      } else {
+        failed++;
+        console.log(`  FAIL  ${key}\n        "${source}": no shared node found in the search box`);
+      }
+    } catch (err) {
+      failed++;
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`  FAIL  ${key}\n        "${source}": ${message}`);
+    }
   }
 
   const sortedCache: WaypointCache = Object.fromEntries(
     Object.entries(cache).sort(([a], [b]) => a.localeCompare(b)),
   );
-  writeFileSync(CACHE_PATH, JSON.stringify(sortedCache, null, 2) + "\n");
+  writeFileSync(cachePath, JSON.stringify(sortedCache, null, 2) + "\n");
+
+  return { hits, fetched, failed, skipped, pruned: prunedCount };
+}
+
+/**
+ * Refreshes every active route's own sidecar waypoint cache from
+ * public/data/route-master-list.csv - one geocodeRoute() call per
+ * active row whose steps CSV actually exists on disk (an active row
+ * with no steps sheet yet, or with no school address on file, is
+ * logged and skipped rather than crashing the whole run - the same
+ * kind of gap page.tsx already tolerates for a route whose data isn't
+ * ready).
+ *
+ * Run with `npm run geocode`. Needs an OpenRouteService API key
+ * (ORS_API_KEY) - free at openrouteservice.org - either exported in
+ * the shell, in a gitignored .env.local, or (in CI) a repository
+ * secret. See geocode.ts for why ORS rather than Nominatim for
+ * addresses; see overpassGeocode.ts for why Overpass rather than a
+ * free-text geocoder for intersections.
+ */
+async function main() {
+  loadEnvLocal();
+  const apiKey = process.env.ORS_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "ORS_API_KEY isn't set. Get a free key at openrouteservice.org, then either export it, " +
+        "put it in a gitignored .env.local (ORS_API_KEY=...), or set it as a repository secret in CI.",
+    );
+  }
+
+  const masterList = parseRouteMasterList(readFileSync(MASTER_LIST_PATH, "utf8"));
+  const schoolAddresses = parseSchoolsCsv(readFileSync(SCHOOLS_CSV_PATH, "utf8"));
+  const activeRoutes = masterList.filter((route) => route.status === "active");
+
+  let totalHits = 0;
+  let totalFetched = 0;
+  let totalFailed = 0;
+  let totalSkipped = 0;
+  let totalPruned = 0;
+  let routesProcessed = 0;
+
+  for (const route of activeRoutes) {
+    const baseName = stepsCsvBaseName(route);
+    const stepsCsvPath = join(DATA_DIR, `${baseName}.csv`);
+
+    if (!existsSync(stepsCsvPath)) {
+      console.log(`Skipping ${baseName} (${route.id}) - no steps CSV at ${stepsCsvPath} yet.\n`);
+      continue;
+    }
+
+    const schoolAddress = schoolAddresses[route.schoolName];
+    if (!schoolAddress) {
+      console.log(`Skipping ${baseName} (${route.id}) - no address on file for "${route.schoolName}" in schools.csv.\n`);
+      continue;
+    }
+
+    console.log(`${baseName} (${route.id}):`);
+    const result = await geocodeRoute(baseName, schoolAddress, apiKey);
+    routesProcessed++;
+    totalHits += result.hits;
+    totalFetched += result.fetched;
+    totalFailed += result.failed;
+    totalSkipped += result.skipped;
+    totalPruned += result.pruned;
+
+    console.log(
+      `  -> ${result.hits} cached, ${result.fetched} newly geocoded, ${result.failed} failed, ` +
+        `${result.skipped} unresolvable (skipped), ${result.pruned} stale entries pruned.\n`,
+    );
+  }
 
   console.log(
-    `\n${hits} already cached, ${fetched} newly geocoded, ${failed} failed, ${prunedCount} stale ` +
-      `entries pruned. ${Object.keys(sortedCache).length} total entries written to ${CACHE_PATH}.`,
+    `${routesProcessed} route(s) processed. ${totalHits} already cached, ${totalFetched} newly ` +
+      `geocoded, ${totalFailed} failed, ${totalSkipped} unresolvable rows skipped, ${totalPruned} ` +
+      `stale entries pruned overall.`,
   );
-  if (failed > 0) {
+  if (totalFailed > 0) {
     console.log(
-      "Failed lookups usually need a wording fix in 125-PM-EL.csv (or the road just isn't found) " +
-        "- they'll be retried automatically next run since they weren't cached.",
+      "Failed lookups usually need a wording fix in the route's steps CSV (or the road just isn't " +
+        "found) - they'll be retried automatically next run since they weren't cached.",
     );
   }
 }

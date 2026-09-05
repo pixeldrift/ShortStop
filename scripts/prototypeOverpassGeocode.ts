@@ -3,19 +3,24 @@ import { join } from "node:path";
 import { deriveWaypoints } from "../src/lib/deriveWaypoints";
 import type { WaypointQuery } from "../src/lib/deriveWaypoints";
 import { extractCityState, geocodeQuery } from "../src/lib/geocode";
+import { boundingBoxAround, pickNearest, resolveIntersection } from "../src/lib/overpassGeocode";
 import { parseRouteCsvRows } from "../src/lib/parseRouteCsv";
 import { parseSchoolsCsv } from "../src/lib/parseSchoolsCsv";
-import { speakRoadNames } from "../src/lib/speech";
 
 /**
- * PROTOTYPE - not wired into the app or scripts/geocodeRoute.ts. Tests
- * whether resolving a route's cross-street stops ("Bill Stewart Rd &
- * Hidden Forest Ln") against OpenStreetMap's actual road graph (via the
- * Overpass API) works better than treating them as free-text search
- * against a general geocoder (ORS/Nominatim's /geocode/search, which is
- * what geocode.ts's providers do today - fine for real addresses, but
- * "Road A and Road B, City, ST" is still just fuzzy text matching, not
- * a real intersection lookup).
+ * One-off re-test harness for the Overpass intersection lookup in
+ * src/lib/overpassGeocode.ts (the same module scripts/geocodeRoute.ts
+ * now uses in production) - not itself part of the production
+ * pipeline. Useful for re-checking a specific road name fix (via
+ * PROTOTYPE_FILTER) without spending a full route's worth of calls, or
+ * for inspecting raw results in scripts/prototype-overpass-results.json.
+ * Tests whether resolving a route's cross-street stops ("Bill Stewart
+ * Blvd & Hidden Forest Ln") against OpenStreetMap's actual road graph
+ * works better than treating them as free-text search against a
+ * general geocoder (ORS/Nominatim's /geocode/search, which is what
+ * geocode.ts's providers do for plain addresses - fine there, but "Road
+ * A and Road B, City, ST" sent to a geocoder is still just fuzzy text
+ * matching, not a real intersection lookup).
  *
  * The approach: geocode the school's own real address once (the
  * existing ORS provider still does this fine - it's a normal address,
@@ -40,14 +45,6 @@ const SCHOOLS_CSV_PATH = join(process.cwd(), "public", "data", "schools.csv");
 const OUTPUT_PATH = join(process.cwd(), "scripts", "prototype-overpass-results.json");
 const ENV_LOCAL_PATH = join(process.cwd(), ".env.local");
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-
-// Same courtesy convention as geocode.ts's NOMINATIM_USER_AGENT - a
-// live run against overpass-api.de came back 406 Not Acceptable on
-// every single query until this was added, so it's not optional in
-// practice either, whatever the HTTP spec says 406 is supposed to mean.
-const OVERPASS_USER_AGENT = "ShortStop-prototype (https://github.com/pixeldrift/ShortStop/issues)";
-
 // Half-width of the search box around the school's own geocoded point,
 // in degrees - route 125 is 8.4 miles round trip (see
 // route-master-list.csv), so every stop is well within this. Roughly
@@ -65,123 +62,6 @@ function loadEnvLocal(): void {
     if (process.env[key] !== undefined) continue;
     process.env[key] = rawValue.replace(/^["']|["']$/g, "");
   }
-}
-
-interface BoundingBox {
-  south: number;
-  west: number;
-  north: number;
-  east: number;
-}
-
-function boundingBoxAround(lat: number, lon: number, radiusDeg: number): BoundingBox {
-  return {
-    south: lat - radiusDeg,
-    north: lat + radiusDeg,
-    west: lon - radiusDeg * 1.25, // longitude degrees are narrower than latitude at this latitude
-    east: lon + radiusDeg * 1.25,
-  };
-}
-
-/** Overpass QL's own bbox filter is "(south,west,north,east)". */
-function bboxFilter(box: BoundingBox): string {
-  return `(${box.south},${box.west},${box.north},${box.east})`;
-}
-
-/** Escapes a road name for use inside an Overpass regex tag filter -
- * only characters that are actually regex-special in the handful of
- * real road names this route has (currently none need it, but a road
- * with a "." like "St. Something" would). */
-function escapeForRegex(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Builds the Overpass QL query for "find a node that's part of both
- * roadA's and roadB's ways, inside this box" - the standard
- * street-intersection recipe (node(w.a)(w.b) intersects two way sets by
- * shared membership). Road names are expanded the same way
- * speakRoadNames does for TTS ("Rd" -> "Road") since OSM's own `name`
- * tags are almost always spelled out in full, not abbreviated the way
- * the paper route sheet is - matching case-insensitively (the ",i"
- * flag) so capitalization differences don't matter either.
- */
-export function buildIntersectionQuery(roadA: string, roadB: string, box: BoundingBox): string {
-  const nameA = escapeForRegex(speakRoadNames(roadA));
-  const nameB = escapeForRegex(speakRoadNames(roadB));
-  const box_ = bboxFilter(box);
-
-  return (
-    `[out:json][timeout:25];\n` +
-    `way["name"~"^${nameA}$",i]${box_}->.a;\n` +
-    `way["name"~"^${nameB}$",i]${box_}->.b;\n` +
-    `node(w.a)(w.b);\n` +
-    `out body;`
-  );
-}
-
-interface OverpassNode {
-  type: "node";
-  id: number;
-  lat: number;
-  lon: number;
-}
-
-interface OverpassResponse {
-  elements: OverpassNode[];
-}
-
-export type IntersectionResolution =
-  | { status: "ok"; lat: number; lon: number; candidateCount: 1 }
-  | { status: "ambiguous"; candidates: { lat: number; lon: number }[] }
-  | { status: "none" };
-
-/** Picks the closest candidate to `near` when Overpass returns more
- * than one shared node (two roads can legitimately cross twice, or a
- * road can split into multiple OSM ways that each touch the other
- * road) - this is the one place "start from a known point and go
- * step by step" actually earns its keep: not for the initial lookup,
- * but as a tie-breaker using wherever the route was last resolved to. */
-export function pickNearest(
-  candidates: { lat: number; lon: number }[],
-  near: { lat: number; lon: number },
-): { lat: number; lon: number } {
-  return candidates.reduce((closest, candidate) => {
-    const d = (a: { lat: number; lon: number }) => (a.lat - near.lat) ** 2 + (a.lon - near.lon) ** 2;
-    return d(candidate) < d(closest) ? candidate : closest;
-  });
-}
-
-export function parseIntersectionResponse(body: OverpassResponse): IntersectionResolution {
-  const nodes = body.elements.filter((el) => el.type === "node");
-  if (nodes.length === 0) return { status: "none" };
-  if (nodes.length === 1) {
-    return { status: "ok", lat: nodes[0].lat, lon: nodes[0].lon, candidateCount: 1 };
-  }
-  return { status: "ambiguous", candidates: nodes.map((n) => ({ lat: n.lat, lon: n.lon })) };
-}
-
-async function resolveIntersection(
-  roadA: string,
-  roadB: string,
-  box: BoundingBox,
-  fetchImpl: typeof fetch,
-): Promise<IntersectionResolution> {
-  const query = buildIntersectionQuery(roadA, roadB, box);
-  const res = await fetchImpl(OVERPASS_URL, {
-    method: "POST",
-    body: `data=${encodeURIComponent(query)}`,
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": OVERPASS_USER_AGENT,
-      Accept: "application/json",
-    },
-  });
-  if (!res.ok) {
-    throw new Error(`Overpass returned ${res.status} ${res.statusText} for "${roadA}" & "${roadB}"`);
-  }
-  const body = (await res.json()) as OverpassResponse;
-  return parseIntersectionResponse(body);
 }
 
 async function main() {

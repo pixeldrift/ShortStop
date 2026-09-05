@@ -19,10 +19,18 @@ function hasStateSuffix(address: string): boolean {
   return /,\s*[A-Z]{2}(\s+\d{5})?\s*$/.test(address.trim());
 }
 
+/** A WaypointQuery that's actually geocodable - excludes "unresolvable",
+ * which by design never reaches a geocoder at all (see
+ * deriveWaypoints.ts). Every free-text provider below takes only this
+ * narrowed type, so a caller holding a full WaypointQuery must filter
+ * "unresolvable" ones out first - a compile-time guardrail rather than
+ * a runtime check that could silently no-op instead. */
+export type GeocodableQuery = Extract<WaypointQuery, { kind: "address" | "intersection" }>;
+
 /** Builds the free-text search string sent to whichever geocoding
  * provider is active - shared across all of them below, since it's
  * just plain-English query construction, nothing provider-specific. */
-export function queryTextFor(query: WaypointQuery, locationContext: string): string {
+export function queryTextFor(query: GeocodableQuery, locationContext: string): string {
   if (query.kind === "address") {
     return hasStateSuffix(query.text) ? query.text : `${query.text}, ${locationContext}`;
   }
@@ -41,7 +49,7 @@ export function queryTextFor(query: WaypointQuery, locationContext: string): str
  * environment) shouldn't need to know which providers do.
  */
 export type GeocodeProvider = (
-  query: WaypointQuery,
+  query: GeocodableQuery,
   locationContext: string,
   apiKey: string,
   fetchImpl?: typeof fetch,

@@ -1,14 +1,16 @@
 import type { RawRouteRow } from "./parseRouteCsv";
 
 /** A geocodable location for one route-125.csv row: either a literal
- * street address ("216 Lake Forest Dr"), or a crossroads pair of two
- * road names to resolve as an intersection. `stepId` matches the
- * NavigationStep `id` parseRouteCsv assigns the same row (its index),
- * so a later geocoding pass can write results back onto the right
- * step. */
+ * street address ("216 Lake Forest Dr"), a crossroads pair of two road
+ * names to resolve as an intersection, or - when a row's "road" is
+ * really a driver instruction rather than a name - "unresolvable",
+ * carrying no lookup at all. `stepId` matches the NavigationStep `id`
+ * parseRouteCsv assigns the same row (its index), so a later geocoding
+ * pass can write results back onto the right step. */
 export type WaypointQuery =
   | { stepId: number; kind: "address"; text: string }
-  | { stepId: number; kind: "intersection"; roadA: string; roadB: string };
+  | { stepId: number; kind: "intersection"; roadA: string; roadB: string }
+  | { stepId: number; kind: "unresolvable"; description: string };
 
 /** Generic placeholder road names from the paper route sheet that
  * aren't a real, geocodable public road - "School Parking Lot" is the
@@ -21,6 +23,23 @@ export type WaypointQuery =
  * geocode as a named road either. */
 function isGenericPlaceholder(road: string): boolean {
   return /\b(driveway|parking lot)\b/i.test(road);
+}
+
+/** Route-sheet road descriptions that read like a name but never are -
+ * a highway ramp/connector described the way a driver would say it out
+ * loud ("Ramp toward Murfreesboro"), not anything with its own real
+ * name to look up. Caught here, before ever reaching a geocoder, so it
+ * comes back "unresolvable" (skipped entirely - see WaypointQuery
+ * above) instead of spending a query only to land on "no match",
+ * indistinguishable from a real miss (see README, "Maps, part nine" -
+ * this exact case is what that prototype's one genuinely-expected
+ * empty result turned out to be). Narrow on purpose - a false positive
+ * here silently drops a real, resolvable stop, which is worse than an
+ * unresolvable one occasionally still getting queried and failing
+ * loudly. Expand the pattern only against another confirmed real
+ * case, not preemptively. */
+function isUnresolvableDescription(road: string): boolean {
+  return /\bramp\b/i.test(road);
 }
 
 /** Strips a leading house number off a literal street address, e.g.
@@ -37,6 +56,13 @@ function locationFor(
   schoolAddress: string,
   stepId: number,
 ): WaypointQuery {
+  if (isUnresolvableDescription(roadA) || isUnresolvableDescription(roadB)) {
+    return {
+      stepId,
+      kind: "unresolvable",
+      description: isUnresolvableDescription(roadA) ? roadA : roadB,
+    };
+  }
   if (isGenericPlaceholder(roadA) || isGenericPlaceholder(roadB)) {
     return { stepId, kind: "address", text: schoolAddress };
   }
@@ -87,6 +113,9 @@ export function deriveWaypoints(rows: RawRouteRow[], schoolAddress: string): Way
         return locationFor(row.fromAt, row.ontoAt, schoolAddress, stepId);
       }
       currentRoad = roadNameFromAddress(row.fromAt);
+      if (isUnresolvableDescription(row.fromAt)) {
+        return { stepId, kind: "unresolvable", description: row.fromAt };
+      }
       return { stepId, kind: "address", text: row.fromAt };
     }
 
@@ -96,9 +125,14 @@ export function deriveWaypoints(rows: RawRouteRow[], schoolAddress: string): Way
     }
 
     const destination = row.fromAt;
-    const waypoint: WaypointQuery = currentRoad
-      ? locationFor(currentRoad, destination, schoolAddress, stepId)
-      : { stepId, kind: "address", text: destination };
+    let waypoint: WaypointQuery;
+    if (isUnresolvableDescription(destination)) {
+      waypoint = { stepId, kind: "unresolvable", description: destination };
+    } else {
+      waypoint = currentRoad
+        ? locationFor(currentRoad, destination, schoolAddress, stepId)
+        : { stepId, kind: "address", text: destination };
+    }
     currentRoad = destination;
     return waypoint;
   });
