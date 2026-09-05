@@ -43,12 +43,15 @@ src/
                             step screen
     layout.tsx          Root layout, metadata
     globals.css         Tailwind
+    api/geocode/route.ts  Server-side geocode endpoint behind EditRouteScreen's
+                            Fetch Location/Fetch All Locations (see below)
   components/
     RouteListScreen.tsx Home screen: searchable, sortable, scrollable route
-                            list, plus the admin-only "Add Route" link (see below)
+                            list, plus the admin-only "Edit Mode" toggle (see below)
     StartScreen.tsx     Route summary + trip stats + "Start Route" button,
                             plus the admin-only "Edit Route" link (see below)
     EditRouteScreen.tsx    Admin-only Add/Edit Route screen (see below)
+    ConfirmModal.tsx       Shared yes/no overlay - activate/deactivate/delete (see below)
     StepScreen.tsx       The step-through screen, incl. rider check-in
     RouteMap.tsx           Real OSM tile map, no route drawn yet (see below)
     StepTransition.tsx    Odometer-style roll between steps (see below)
@@ -76,6 +79,10 @@ src/
                                 uploaded route (see below) - used by EditRouteScreen.tsx
     routeResolutionStatus.ts Per-row auto-resolve status (resolved/unresolved/
                                 skipped) against a WaypointCache (see below)
+    resolveWaypoint.ts       Shared "resolve one query for real" logic - used by
+                                scripts/geocodeRoute.ts and api/geocode/route.ts
+    routeReadiness.ts        Is a route's own cache fully resolved? (list-level
+                                Activate check, see below)
     placeholderMeta.ts     Shared driverName/distance placeholders + favorites
     silence.ts           A tiny silent audio loop (see below)
 scripts/
@@ -1906,55 +1913,89 @@ so far.
   Longer term, RFID transport badges could let students check
   themselves in as they board, rather than the driver tapping for each
   one.
-- **Add Route / Edit Route, first pass - built.** `EditRouteScreen.tsx`
-  (reached via RouteListScreen's small "Add Route" link, or a route's
-  own "Edit Route" link on StartScreen - both admin-only, easy to miss
-  on purpose) takes a metadata form plus a pasted/typed stops list
-  through `parseRouteImport.ts`'s graceful column matching - the app's
-  full CSV schema, a properly-headered sheet missing optional columns,
-  or a header-less plain list of stops (or stops and turns) all work,
-  not just the doc's own exact column names. A "Validate Stops" button
-  shows live per-row status (green check + coordinates, red X, or a
-  skipped/greyed-out row for an `unresolvable` one) against whatever
-  geocoded cache already exists for that route number/trip/level -
-  essentially a UI over what `scripts/geocodeRoute.ts` now already does
-  for real (see "Maps, part ten" above). "Make Active" is replaced by a
-  ⚠️ warning explaining what's still unresolved until every geocodable
-  stop actually resolves - a new route sits at `status: "pending"`
-  until then, distinct from "inactive" (ready, just not running) -
-  `Make Inactive` stays available on an already-active route regardless
-  of readiness, since deactivating never needs the check. In admin
-  mode (turned on by using either link), the route list also reveals
-  inactive/pending real routes, dimmed with a status label, instead of
-  hiding everything but "active".
+- **Add Route / Edit Route, second pass - built.** RouteListScreen's
+  bottom link is "Edit Mode," not a direct "Add Route" - toggling it on
+  (or using a route's own "Edit Route" link on StartScreen) reveals
+  inactive real routes on the list, dimmed with a status label, and a
+  "New Route" link next to "Exit Edit Mode" (only shown once already in
+  edit mode - there's no direct route to it otherwise). Each admin-only
+  row also gets its own quick actions: Deactivate on an active route,
+  Activate + Delete on an inactive one, all three behind a shared
+  `ConfirmModal.tsx` (delete's is the only one styled destructive/red).
+  Deleting only makes sense for an inactive route - an active one has
+  to be deactivated first, mirroring how the district would actually
+  want to retire something that's currently running.
 
-  Explicitly a first pass, not the full spec: no Excel-file import yet
-  (CSV/TSV/plain-text paste only - see parseRouteImport.ts), no manual
-  per-row step editor (an "Add Step" button, a stop/turn dropdown per
-  row) for building or fixing a route without touching the paste box,
-  no retry/manual-coordinate-entry or map-picker for a single
-  unresolved row, and no live "run the real geocoder from this screen"
-  button - Validate Stops only reads whatever's already cached, it
-  doesn't spend a new ORS/Overpass query itself (deliberately, given
-  the pacing/quota story in "Maps, part ten" above).
+  Adding a route is deliberately two steps: `EditRouteScreen.tsx` in
+  `mode: "add"` only offers the metadata form, the stops paste box
+  (`parseRouteImport.ts`'s graceful column matching still applies - the
+  app's full schema, a properly-headered sheet missing optional
+  columns, or a header-less plain list of stops or stops-and-turns all
+  work), and a "Create Route" button - no validation, no per-row
+  review, no activate control, since there's nothing to review yet for
+  a route that isn't a saved entity. Saving creates it `status:
+  "inactive"` and hands control straight to `mode: "edit"` for the same
+  route, where the real review lives: an always-visible per-row list
+  (resolved/unresolved/skipped, `routeResolutionStatus.ts`) against
+  whatever's already geocoded, "Make Active" replaced by a ⚠️ warning
+  until every geocodable stop resolves, and `Make Inactive` staying
+  available on an already-active route regardless of readiness (that
+  direction never needs the check).
 
-  **Also session-only, not real persistence** - `onSave` hands the
-  built Route to an in-memory admin-route store in page.tsx, the same
-  "real workflow, no persistence yet" honesty this app already applies
-  to rider check-in state (see useRiderRoster.ts): a page reload loses
-  every admin edit, and "Make Active" doesn't write back to
-  `route-master-list.csv` or commit a real steps CSV anywhere. Getting
-  an admin-entered route to actually run for real still needs someone
-  to commit its steps CSV for real and run the actual geocoding
-  pipeline against it. Writing admin edits back to real committed files
-  (or a real datastore) instead of session state is its own follow-up -
-  worth deciding deliberately (a GitHub-committing API route? a real
+  **"Fetch Location" and "Fetch All Locations" now make real calls.**
+  A new route handler, `src/app/api/geocode/route.ts`, resolves a
+  query (or a batch of them) exactly the way `scripts/geocodeRoute.ts`
+  does - ORS for an address, Overpass for an intersection, anchored on
+  the school's own geocoded point - server-side, so `ORS_API_KEY` never
+  reaches the browser. Both the script and the route handler now share
+  the actual "resolve one query" logic (`src/lib/resolveWaypoint.ts`),
+  split out specifically so a bug in it (like the duplicate-anchor-query
+  403 from "Maps, part ten" above) can only exist once. "Fetch
+  Location" (one row) and "Fetch All Locations" (every row not already
+  resolved) both call this endpoint; the school's own anchor point,
+  once known, is cached client-side for the rest of the edit session so
+  repeated single-row fetches don't re-geocode the school address every
+  time. Needs `ORS_API_KEY` set as a real environment variable
+  wherever the app itself runs (Vercel's project settings, not just the
+  GitHub Actions secret `geocode-route.yml` uses) - Next.js reads
+  `.env.local` for this automatically, no loader needed the way the
+  standalone script has its own.
+
+  The list's own "Activate" click (and the edit screen's own control)
+  both run the same readiness check (`src/lib/routeReadiness.ts`)
+  against a route's own committed sidecar cache merged with whatever
+  this session has fetched-but-not-yet-committed for it - an
+  inactive route that isn't actually ready skips the confirm modal
+  entirely and opens the edit screen instead, where the real warning
+  and the Fetch buttons that can actually fix it already live.
+
+  Explicitly still not the full spec: no Excel-file import (CSV/TSV/
+  plain-text paste only), no manual per-row step editor (an "Add Step"
+  button, a stop/turn dropdown per row) for building or fixing a route
+  without touching the paste box, and no retry/manual-coordinate-entry
+  or map-picker for a single unresolved row.
+
+  **Still session-only, not real persistence** - `onSave` hands the
+  built Route (and this session's own fetched waypoint cache) to an
+  in-memory admin-route store in page.tsx, the same "real workflow, no
+  persistence yet" honesty this app already applies to rider check-in
+  state (see useRiderRoster.ts): a page reload loses every admin edit,
+  every fetched coordinate, and every delete. "Make Active" doesn't
+  write back to `route-master-list.csv` or commit a real steps CSV
+  anywhere, and a freshly-fetched coordinate here doesn't reach
+  RouteMap.tsx either (it still only reads the real, committed sidecar
+  file) - this is for review, not yet what actually puts a pin on the
+  map. Writing admin edits back to real committed files (or a real
+  datastore) instead of session state is its own follow-up - worth
+  deciding deliberately (a GitHub-committing API route? a real
   database?) rather than defaulting into whichever's easiest to bolt on
-- Surfacing API usage/quota in the validate UI would be nice, but it's
-  not actually clear yet what OpenRouteService's or Overpass's real
-  gating criteria are (a request quota? a rate limit? both?) - worth
-  understanding before promising a usage meter that might not mean what
-  it looks like it means
+- Surfacing API usage/quota in the Add/Edit Route UI would be nice, but
+  it's not actually clear yet what OpenRouteService's or Overpass's
+  real gating criteria are (a request quota? a rate limit? both?) -
+  worth understanding before promising a usage meter that might not
+  mean what it looks like it means. OpenRouteService's free tier does
+  have *some* quota, confirmed the hard way - see "Maps, part ten"
+  above
 - For whatever's left unresolved after a validate pass: a per-row
   "Retry" button, and a manual fallback - a single paste-able "lat, lon"
   text field standing in for the two separate coordinate columns on

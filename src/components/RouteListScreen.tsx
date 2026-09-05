@@ -1,10 +1,30 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ConfirmModal } from "./ConfirmModal";
 import { Logo } from "./Logo";
-import { HeartIcon, PlusIcon, SearchIcon, SortIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
+import {
+  EditIcon,
+  HeartIcon,
+  PlusIcon,
+  SearchIcon,
+  SortIcon,
+  SunIcon,
+  SunriseIcon,
+  TriangleIcon,
+} from "./icons";
+import { fetchCommittedWaypointCache, isRouteFullyResolved } from "@/lib/routeReadiness";
 import { parseTimeToMinutes } from "@/lib/time";
-import type { Route } from "@/lib/types";
+import type { Route, RouteStatus } from "@/lib/types";
+import type { WaypointCache } from "@/lib/waypointCache";
+
+/** A pending confirm-modal request - which action, on which route.
+ * Rendered as a single shared ConfirmModal below rather than one
+ * inline per row, so at most one is ever open at a time. */
+type ConfirmRequest =
+  | { type: "activate"; route: Route }
+  | { type: "deactivate"; route: Route }
+  | { type: "delete"; route: Route };
 
 type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
 type SortDir = "asc" | "desc";
@@ -55,18 +75,49 @@ const VIEW_OPTIONS: { value: ViewFilter; label: string }[] = [
 export function RouteListScreen({
   routes,
   adminMode,
+  adminWaypointCaches,
+  onToggleAdminMode,
   onSelect,
+  onEditRoute,
   onAddRoute,
+  onSetRouteStatus,
+  onDeleteRoute,
 }: {
   routes: Route[];
-  /** Reveals inactive/pending real routes below, dimmed, rather than
-   * hiding everything but "active" - see page.tsx, which turns this on
-   * once "Add Route" or a route's "Edit Route" link has been used. */
+  /** Reveals inactive real routes below, dimmed, and turns on the
+   * per-row activate/deactivate/delete controls - toggled by the
+   * "Edit Mode" link at the bottom (onToggleAdminMode), or turned on
+   * unconditionally by a route's own "Edit Route" link on StartScreen
+   * (see page.tsx). */
   adminMode: boolean;
+  /** This session's own fetched-coordinates overlay per route id (see
+   * page.tsx) - merged on top of each route's real committed sidecar
+   * cache before deciding whether "Activate" is actually allowed
+   * (handleActivateClick below), so a route made ready via
+   * EditRouteScreen's "Fetch Location"/"Fetch All Locations" this
+   * session is recognized as ready here too. */
+  adminWaypointCaches: Record<string, WaypointCache>;
+  onToggleAdminMode: () => void;
+  /** Normal navigation - the trip-summary/step flow. Used for every
+   * route when not in admin mode, and for active/demo routes even
+   * while in admin mode (only an inactive real route's row opens
+   * straight into editing instead - see handleRowClick below). */
   onSelect: (route: Route) => void;
+  /** Opens EditRouteScreen directly for this route - admin mode only,
+   * inactive real routes only (see handleRowClick), or an inactive
+   * route that isn't actually ready to activate yet (see
+   * handleActivateClick). */
+  onEditRoute: (route: Route) => void;
   onAddRoute: () => void;
+  onSetRouteStatus: (route: Route, status: RouteStatus) => void;
+  onDeleteRoute: (route: Route) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  // Only set while handleActivateClick's own readiness check is in
+  // flight - not surfaced as a spinner anywhere yet, just prevents a
+  // second tap on the same row from firing a second check.
+  const [checkingRouteId, setCheckingRouteId] = useState<string | null>(null);
   const [view, setView] = useState<ViewFilter>("all");
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   // departureTime/asc as the default matches the order routes already
@@ -88,9 +139,9 @@ export function RouteListScreen({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matching = routes.filter((route) => {
-      // A real (non-"demo") route that isn't "active" (inactive or
-      // still-pending) only ever shows up in admin mode - a normal
-      // driver never needs to see a route nobody's actually running.
+      // A real (non-"demo") route that isn't "active" only ever shows
+      // up in admin mode - a normal driver never needs to see a route
+      // nobody's actually running.
       const isAdminOnly = route.status !== "active" && route.status !== "demo";
       if (isAdminOnly && !adminMode) return false;
 
@@ -122,6 +173,42 @@ export function RouteListScreen({
       return sortDir === "asc" ? result : -result;
     });
   }, [routes, query, view, sortField, sortDir, adminMode]);
+
+  // In admin mode, tapping an inactive real route's row goes straight
+  // to editing it instead of the normal trip flow - it isn't running,
+  // so there's nothing useful to "start." An active route (or a demo
+  // one) always opens normally, even while in admin mode - only the
+  // per-row action buttons below (visible in admin mode) manage
+  // status/deletion for those.
+  function handleRowClick(route: Route) {
+    const isAdminOnly = route.status !== "active" && route.status !== "demo";
+    if (adminMode && isAdminOnly) onEditRoute(route);
+    else onSelect(route);
+  }
+
+  // "Activate" never just flips the status - the same "every
+  // geocodable stop has to actually resolve first" rule
+  // EditRouteScreen.tsx enforces applies here too, checked against the
+  // route's own committed sidecar cache merged with this session's own
+  // fetched-but-not-yet-committed overlay (adminWaypointCaches). A
+  // route that isn't ready skips the confirm modal entirely and goes
+  // straight to the edit screen instead, where the real warning UI
+  // (and the Fetch/Fetch All buttons that actually fix this) already
+  // lives - no separate warning needed here.
+  async function handleActivateClick(route: Route) {
+    setCheckingRouteId(route.id);
+    try {
+      const committed = await fetchCommittedWaypointCache(route);
+      const merged = { ...committed, ...(adminWaypointCaches[route.id] ?? {}) };
+      if (isRouteFullyResolved(route, merged)) {
+        setConfirmRequest({ type: "activate", route });
+      } else {
+        onEditRoute(route);
+      }
+    } finally {
+      setCheckingRouteId(null);
+    }
+  }
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
@@ -228,47 +315,87 @@ export function RouteListScreen({
         </div>
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map((route) => {
-            const isAdminOnly = route.status !== "active" && route.status !== "demo";
+            const isDemo = route.status === "demo";
+            const isAdminOnly = !isDemo && route.status !== "active";
             return (
-              <button
-                key={route.id}
-                type="button"
-                onClick={() => onSelect(route)}
-                className={`grid w-full grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100 ${
-                  isAdminOnly ? "opacity-50" : ""
-                }`}
-              >
-                <span className="text-center font-heading text-lg leading-none font-black">
-                  #{route.routeNumber}
-                </span>
-                <div className="flex items-center justify-center gap-0.5 text-blue-500">
-                  <span className="font-heading text-lg leading-none font-black">
-                    {route.tripType === "pickup" ? "AM" : "PM"}
+              <div key={route.id} className={isAdminOnly ? "opacity-50" : ""}>
+                <button
+                  type="button"
+                  onClick={() => handleRowClick(route)}
+                  className="grid w-full grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
+                >
+                  <span className="text-center font-heading text-lg leading-none font-black">
+                    #{route.routeNumber}
                   </span>
-                  {route.tripType === "pickup" ? (
-                    <SunriseIcon className="h-3.5 w-3.5" />
-                  ) : (
-                    <SunIcon className="h-3.5 w-3.5" />
-                  )}
-                </div>
-                <span className="min-w-0">
-                  <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
-                  {isAdminOnly && (
-                    <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-                      {route.status}
+                  <div className="flex items-center justify-center gap-0.5 text-blue-500">
+                    <span className="font-heading text-lg leading-none font-black">
+                      {route.tripType === "pickup" ? "AM" : "PM"}
                     </span>
-                  )}
-                </span>
-                <span className="text-right text-sm font-semibold text-zinc-500">
-                  {route.departureTime}
-                </span>
-                <HeartIcon
-                  filled={route.isFavorite}
-                  className={`h-4 w-4 justify-self-end ${
-                    route.isFavorite ? "text-blue-600" : "text-zinc-300"
-                  }`}
-                />
-              </button>
+                    {route.tripType === "pickup" ? (
+                      <SunriseIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <SunIcon className="h-3.5 w-3.5" />
+                    )}
+                  </div>
+                  <span className="min-w-0">
+                    <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
+                    {isAdminOnly && (
+                      <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+                        {route.status}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-right text-sm font-semibold text-zinc-500">
+                    {route.departureTime}
+                  </span>
+                  <HeartIcon
+                    filled={route.isFavorite}
+                    className={`h-4 w-4 justify-self-end ${
+                      route.isFavorite ? "text-blue-600" : "text-zinc-300"
+                    }`}
+                  />
+                </button>
+
+                {/* Admin-only quick actions - each one a confirm-modal
+                    request, never fired directly from here, so a
+                    stray tap can't silently flip a route live or
+                    delete one. Every real (non-demo) route gets
+                    Deactivate once active; an inactive one gets
+                    Activate and Delete instead - deleting an active
+                    route isn't offered at all, it has to be
+                    deactivated first. */}
+                {adminMode && !isDemo && (
+                  <div className="-mt-1 flex items-center gap-2 px-4 pb-2">
+                    {route.status === "active" ? (
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRequest({ type: "deactivate", route })}
+                        className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
+                      >
+                        Deactivate
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleActivateClick(route)}
+                          disabled={checkingRouteId === route.id}
+                          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50 active:bg-zinc-100"
+                        >
+                          {checkingRouteId === route.id ? "Checking…" : "Activate"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmRequest({ type: "delete", route })}
+                          className="rounded-lg border border-red-300 px-2 py-1 text-xs font-semibold text-red-600 active:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             );
           })}
 
@@ -282,15 +409,68 @@ export function RouteListScreen({
 
       {/* Small and unobtrusive on purpose - a district-admin tool, not
           a primary driver action, tucked below the list rather than up
-          with Search/View. */}
-      <button
-        type="button"
-        onClick={onAddRoute}
-        className="flex shrink-0 items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
-      >
-        <PlusIcon className="h-3 w-3" />
-        Add Route
-      </button>
+          with Search/View. "New Route" only appears once already in
+          edit mode - there's no direct route to it from the normal
+          (non-admin) list. */}
+      <div className="flex shrink-0 items-center gap-4">
+        <button
+          type="button"
+          onClick={onToggleAdminMode}
+          className="flex items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
+        >
+          <EditIcon className="h-3 w-3" />
+          {adminMode ? "Exit Edit Mode" : "Edit Mode"}
+        </button>
+        {adminMode && (
+          <button
+            type="button"
+            onClick={onAddRoute}
+            className="flex items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
+          >
+            <PlusIcon className="h-3 w-3" />
+            New Route
+          </button>
+        )}
+      </div>
+
+      {confirmRequest && (
+        <ConfirmModal
+          title={
+            confirmRequest.type === "delete"
+              ? `Delete Route ${confirmRequest.route.routeNumber}?`
+              : confirmRequest.type === "activate"
+                ? `Activate Route ${confirmRequest.route.routeNumber}?`
+                : `Deactivate Route ${confirmRequest.route.routeNumber}?`
+          }
+          message={
+            confirmRequest.type === "delete"
+              ? "This removes it for the rest of this session and can't be undone."
+              : confirmRequest.type === "activate"
+                ? "Drivers will see this route as soon as it's active."
+                : "Drivers will no longer see this route until it's activated again."
+          }
+          confirmLabel={
+            confirmRequest.type === "delete"
+              ? "Delete"
+              : confirmRequest.type === "activate"
+                ? "Activate"
+                : "Deactivate"
+          }
+          destructive={confirmRequest.type === "delete"}
+          onCancel={() => setConfirmRequest(null)}
+          onConfirm={() => {
+            if (confirmRequest.type === "delete") {
+              onDeleteRoute(confirmRequest.route);
+            } else {
+              onSetRouteStatus(
+                confirmRequest.route,
+                confirmRequest.type === "activate" ? "active" : "inactive",
+              );
+            }
+            setConfirmRequest(null);
+          }}
+        />
+      )}
     </div>
   );
 }

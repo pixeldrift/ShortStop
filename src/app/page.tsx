@@ -19,7 +19,8 @@ import {
 import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
-import type { Route } from "@/lib/types";
+import type { Route, RouteStatus } from "@/lib/types";
+import type { WaypointCache } from "@/lib/waypointCache";
 
 // How many fabricated routes to add to the real ones, purely so the
 // route-list screen has enough rows to actually demonstrate scrolling
@@ -56,8 +57,10 @@ async function fetchText(path: string): Promise<string> {
  * null` now that there's more than one non-list screen to be on.
  * "trip" is the existing StartScreen/StepScreen flow for actually
  * running a route; "add-route"/"edit-route" are the admin-only
- * EditRouteScreen, reached via RouteListScreen's "Add Route" link or
- * StartScreen's "Edit Route" link (see AppScreen below). */
+ * EditRouteScreen, reached via RouteListScreen's "New Route" link
+ * (edit mode only), tapping an inactive route's row in edit mode,
+ * StartScreen's "Edit Route" link, or an "Activate" attempt that turns
+ * out not to be ready yet (see RouteListScreen.tsx). */
 type Screen =
   | { kind: "list" }
   | { kind: "trip"; route: Route }
@@ -87,10 +90,24 @@ export default function Home() {
   // back to real files yet.
   const [adminRoutes, setAdminRoutes] = useState<Record<string, Route>>({});
   const [adminRawStepsById, setAdminRawStepsById] = useState<Record<string, string>>({});
-  // Sticky for the rest of the session once entered (via "Add Route" or
-  // "Edit Route") - reveals inactive/pending real routes on the list,
-  // dimmed, rather than silently hiding admin-relevant routes the
-  // moment the edit screen closes.
+  // This session's own fetched-coordinates overlay per route id, from
+  // EditRouteScreen's "Fetch Location"/"Fetch All Locations" - kept
+  // alongside adminRoutes so a route made ready this session (but
+  // never committed to a real sidecar file) is still recognized as
+  // ready by both the list's own readiness check and a later re-open
+  // of the same route's edit screen (see EditRouteScreen's
+  // initialWaypointCache prop).
+  const [adminWaypointCaches, setAdminWaypointCaches] = useState<Record<string, WaypointCache>>({});
+  // Deleted this session (see RouteListScreen's "Delete" action, and
+  // its own confirm modal) - filtered out of every screen below,
+  // whether the route came from a real committed CSV or was itself
+  // only ever an admin draft. Same session-only honesty as the rest of
+  // this admin store: nothing is actually removed from any real file.
+  const [deletedRouteIds, setDeletedRouteIds] = useState<ReadonlySet<string>>(new Set());
+  // Toggled by RouteListScreen's own "Edit Mode" link, or turned on
+  // unconditionally by a route's "Edit Route" link on StartScreen -
+  // reveals inactive real routes on the list, dimmed, and the per-row
+  // activate/deactivate/delete controls alongside them.
   const [adminMode, setAdminMode] = useState(false);
 
   useEffect(() => {
@@ -137,13 +154,15 @@ export default function Home() {
   // realRoutes overlaid with any session-only admin edits/new routes -
   // an edited real route's admin version wins outright (steps, status,
   // everything), and a brand-new route (an id realRoutes never had) is
-  // simply added.
+  // simply added - with anything deleted this session filtered back
+  // out again regardless of which of those two groups it came from.
   const effectiveRealRoutes = useMemo(() => {
     if (!realRoutes) return null;
     const byId = new Map(realRoutes.map((r) => [r.id, r]));
     for (const [id, route] of Object.entries(adminRoutes)) byId.set(id, route);
+    for (const id of deletedRouteIds) byId.delete(id);
     return Array.from(byId.values());
-  }, [realRoutes, adminRoutes]);
+  }, [realRoutes, adminRoutes, deletedRouteIds]);
 
   // buildDemoRoutes fabricates the rest purely so the list has enough
   // rows to demonstrate scrolling/search. Computed once per fetched
@@ -156,10 +175,24 @@ export default function Home() {
     );
   }, [effectiveRealRoutes]);
 
-  function handleSaveRoute(route: Route, rawStepsText: string) {
+  function handleSaveRoute(route: Route, rawStepsText: string, waypointCache: WaypointCache) {
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
     setAdminRawStepsById((prev) => ({ ...prev, [route.id]: rawStepsText }));
+    setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
     setScreen({ kind: "edit-route", route });
+  }
+
+  function handleSetRouteStatus(route: Route, status: RouteStatus) {
+    setAdminRoutes((prev) => ({ ...prev, [route.id]: { ...route, status } }));
+  }
+
+  function handleDeleteRoute(route: Route) {
+    setDeletedRouteIds((prev) => new Set(prev).add(route.id));
+    setAdminRoutes((prev) => {
+      const next = { ...prev };
+      delete next[route.id];
+      return next;
+    });
   }
 
   if (error) {
@@ -198,6 +231,7 @@ export default function Home() {
         mode="edit"
         route={screen.route}
         rawStepsText={rawStepsText}
+        initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schoolAddresses={schoolAddresses}
         onCancel={() => setScreen({ kind: "list" })}
         onSave={handleSaveRoute}
@@ -222,11 +256,13 @@ export default function Home() {
     <RouteListScreen
       routes={routes}
       adminMode={adminMode}
+      adminWaypointCaches={adminWaypointCaches}
+      onToggleAdminMode={() => setAdminMode((prev) => !prev)}
       onSelect={(route) => setScreen({ kind: "trip", route })}
-      onAddRoute={() => {
-        setAdminMode(true);
-        setScreen({ kind: "add-route" });
-      }}
+      onEditRoute={(route) => setScreen({ kind: "edit-route", route })}
+      onAddRoute={() => setScreen({ kind: "add-route" })}
+      onSetRouteStatus={handleSetRouteStatus}
+      onDeleteRoute={handleDeleteRoute}
     />
   );
 }

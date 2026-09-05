@@ -2,11 +2,11 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { deriveWaypoints } from "../src/lib/deriveWaypoints";
 import type { WaypointQuery } from "../src/lib/deriveWaypoints";
-import { extractCityState, geocodeQuery } from "../src/lib/geocode";
-import { boundingBoxAround, pickNearest, resolveIntersection } from "../src/lib/overpassGeocode";
+import { extractCityState } from "../src/lib/geocode";
 import { parseRouteCsvRows } from "../src/lib/parseRouteCsv";
 import { parseRouteMasterList, stepsCsvBaseName } from "../src/lib/parseRouteMasterList";
 import { parseSchoolsCsv } from "../src/lib/parseSchoolsCsv";
+import { resolveGeocodableQuery, resolveSchoolAnchor } from "../src/lib/resolveWaypoint";
 import { waypointCacheKey } from "../src/lib/waypointCache";
 import type { WaypointCache } from "../src/lib/waypointCache";
 
@@ -140,7 +140,13 @@ async function geocodeRoute(
     }
 
     if (waypoint.kind === "address") {
-      const entry = await geocodeQuery(waypoint, locationContext, apiKey);
+      const { entry } = await resolveGeocodableQuery(waypoint, {
+        locationContext,
+        apiKey,
+        anchor: null,
+        near: null,
+        searchRadiusDeg: SEARCH_RADIUS_DEG,
+      });
       await sleep(RATE_LIMIT_MS);
 
       if (entry.status === "ok") {
@@ -176,52 +182,43 @@ async function geocodeRoute(
     if (!anchor) {
       const schoolAddressQuery: WaypointQuery = { stepId: -1, kind: "address", text: schoolAddress };
       const schoolAddressKey = waypointCacheKey(schoolAddressQuery);
-      const cachedAnchor = cache[schoolAddressKey];
-
-      if (cachedAnchor?.status === "ok") {
-        anchor = { lat: cachedAnchor.lat, lon: cachedAnchor.lon };
-      } else {
-        const anchorEntry = await geocodeQuery(schoolAddressQuery, locationContext, apiKey);
-        await sleep(RATE_LIMIT_MS);
-        if (anchorEntry.status !== "ok") {
-          throw new Error(`Couldn't geocode the school address itself: ${anchorEntry.message}`);
-        }
-        cache[schoolAddressKey] = anchorEntry;
-        anchor = { lat: anchorEntry.lat, lon: anchorEntry.lon };
+      const alreadyCached = cache[schoolAddressKey];
+      const { entry: anchorEntry, point } = await resolveSchoolAnchor(
+        schoolAddress,
+        locationContext,
+        apiKey,
+        alreadyCached,
+      );
+      if (!point) {
+        throw new Error(
+          `Couldn't geocode the school address itself: ${anchorEntry.status === "error" ? anchorEntry.message : "unknown error"}`,
+        );
       }
+      if (!alreadyCached) {
+        cache[schoolAddressKey] = anchorEntry;
+        await sleep(RATE_LIMIT_MS);
+      }
+      anchor = point;
       lastResolved = lastResolved ?? anchor;
     }
 
-    const box = boundingBoxAround(anchor.lat, anchor.lon, SEARCH_RADIUS_DEG);
-    const label = `${waypoint.roadA} & ${waypoint.roadB}`;
-    const source = `${waypoint.roadA} and ${waypoint.roadB}, ${locationContext}`;
+    const { entry, resolvedPoint } = await resolveGeocodableQuery(waypoint, {
+      locationContext,
+      apiKey,
+      anchor,
+      near: lastResolved,
+      searchRadiusDeg: SEARCH_RADIUS_DEG,
+    });
+    await sleep(RATE_LIMIT_MS);
 
-    try {
-      const resolution = await resolveIntersection(waypoint.roadA, waypoint.roadB, box);
-      await sleep(RATE_LIMIT_MS);
-
-      if (resolution.status === "ok") {
-        cache[key] = { status: "ok", lat: resolution.lat, lon: resolution.lon, displayName: label, source, provider: "overpass" };
-        lastResolved = { lat: resolution.lat, lon: resolution.lon };
-        fetched++;
-        console.log(`  ok    ${key}\n        -> ${resolution.lat}, ${resolution.lon}`);
-      } else if (resolution.status === "ambiguous") {
-        const picked = pickNearest(resolution.candidates, lastResolved ?? anchor);
-        cache[key] = { status: "ok", lat: picked.lat, lon: picked.lon, displayName: label, source, provider: "overpass" };
-        lastResolved = picked;
-        fetched++;
-        console.log(
-          `  ok    ${key}\n        -> ${picked.lat}, ${picked.lon} ` +
-            `(ambiguous - ${resolution.candidates.length} shared nodes, picked nearest to last-resolved point)`,
-        );
-      } else {
-        failed++;
-        console.log(`  FAIL  ${key}\n        "${source}": no shared node found in the search box`);
-      }
-    } catch (err) {
+    if (entry.status === "ok") {
+      cache[key] = entry;
+      if (resolvedPoint) lastResolved = resolvedPoint;
+      fetched++;
+      console.log(`  ok    ${key}\n        -> ${entry.lat}, ${entry.lon}`);
+    } else {
       failed++;
-      const message = err instanceof Error ? err.message : String(err);
-      console.log(`  FAIL  ${key}\n        "${source}": ${message}`);
+      console.log(`  FAIL  ${key}\n        "${entry.source}": ${entry.message}`);
     }
   }
 

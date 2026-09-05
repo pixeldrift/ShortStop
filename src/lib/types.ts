@@ -5,14 +5,12 @@ export type TripType = "pickup" | "dropoff";
  * out the route list - never a real district route, whatever its
  * other fields claim. "Active"/"inactive" are both real data,
  * distinguished by whether the route is currently run - a route
- * doesn't stop being real just because the district retired it.
- * "Pending" is also real data, but not yet geocoded - an admin can
- * save a route's steps at any point (see routeResolutionStatus.ts),
- * but it can't be flipped to "active" until every geocodable waypoint
- * actually resolves, so a route that's saved but still missing
- * coordinates sits here instead, distinct from "inactive" (a route
- * that's fully ready but deliberately not running). */
-export type RouteStatus = "active" | "inactive" | "pending" | "demo";
+ * doesn't stop being real just because the district retired it, and a
+ * brand-new admin-created route (see EditRouteScreen.tsx) starts out
+ * "inactive" too, whether or not it's actually been geocoded yet -
+ * readiness is checked at the moment of flipping to "active"
+ * (routeResolutionStatus.ts), not tracked as its own status. */
+export type RouteStatus = "active" | "inactive" | "demo";
 /** Which school a route serves - turn-by-turn instructions differ by
  * level even for the same bus/trip type (a district's elementary,
  * middle, and high school runs are each their own real path, their

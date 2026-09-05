@@ -6,13 +6,17 @@ import { BackArrowIcon, CheckCircleIcon, WarningIcon, XCircleIcon } from "./icon
 import { buildRouteFromRows } from "@/lib/parseRouteCsv";
 import type { RouteMeta } from "@/lib/parseRouteCsv";
 import { deriveWaypoints } from "@/lib/deriveWaypoints";
+import type { WaypointQuery } from "@/lib/deriveWaypoints";
+import type { GeocodableQuery } from "@/lib/geocode";
 import { stepsCsvBaseName } from "@/lib/parseRouteMasterList";
 import { parseRouteImport, unresolvedRequiredFields } from "@/lib/parseRouteImport";
 import { PLACEHOLDER_DISTANCE, PLACEHOLDER_DRIVER_NAME } from "@/lib/placeholderMeta";
 import { resolutionCounts, summarizeRouteResolution } from "@/lib/routeResolutionStatus";
 import type { RowResolutionStatus } from "@/lib/routeResolutionStatus";
-import type { WaypointCache } from "@/lib/waypointCache";
+import { waypointCacheKey } from "@/lib/waypointCache";
+import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
+import type { GeocodeResponseBody } from "@/app/api/geocode/route";
 
 const SCHOOL_LEVEL_OPTIONS: { value: SchoolLevel; label: string }[] = [
   { value: "elementary", label: "Elementary" },
@@ -33,7 +37,7 @@ Bill Stewart Blvd & Hidden Forest Ln
 Left, Rock Springs Rd
 Stop, Bill Stewart Blvd, Hidden Forest Ln
 
-Only the location itself is ever required - time, rider counts, side of street, and notes can all be left out.`;
+Only the location itself is ever required - time, rider counts, side of street, and notes can all be left out.`;
 
 const inputClass =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
@@ -48,59 +52,102 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function ResolutionRow({ row }: { row: RowResolutionStatus }) {
-  if (row.status === "resolved") {
+/** The same text deriveWaypoints itself would send a geocoder - what
+ * a review row shows for an unresolved/skipped stop, so a human can
+ * tell what it's actually trying to look up. */
+function waypointLabel(query: WaypointQuery): string {
+  if (query.kind === "address") return query.text;
+  if (query.kind === "intersection") return `${query.roadA} & ${query.roadB}`;
+  return query.description;
+}
+
+function ResolutionRow({
+  waypoint,
+  status,
+  fetching,
+  onFetch,
+}: {
+  waypoint: WaypointQuery;
+  status: RowResolutionStatus;
+  fetching: boolean;
+  onFetch: () => void;
+}) {
+  if (status.status === "skipped") {
     return (
-      <div className="flex items-start gap-2 py-1.5 text-sm">
-        <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
-        <span className="text-zinc-700">
-          {row.displayName} <span className="text-zinc-400">({row.lat.toFixed(5)}, {row.lon.toFixed(5)})</span>
-        </span>
+      <div className="flex items-center gap-2 py-1.5 text-sm text-zinc-400">
+        <span className="h-4 w-4 shrink-0 text-center leading-4">–</span>
+        <span>Skipped (not a real road): {status.reason}</span>
       </div>
     );
   }
-  if (row.status === "skipped") {
-    return (
-      <div className="flex items-start gap-2 py-1.5 text-sm text-zinc-400">
-        <span className="mt-0.5 h-4 w-4 shrink-0 text-center leading-4">–</span>
-        <span>Skipped (not a real road): {row.reason}</span>
-      </div>
-    );
-  }
+
   return (
-    <div className="flex items-start gap-2 py-1.5 text-sm">
-      <XCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-      <span className="text-zinc-700">Step {row.stepId + 1}: {row.reason}</span>
+    <div className="flex items-center justify-between gap-2 py-1.5 text-sm">
+      <span className="flex min-w-0 items-start gap-2">
+        {status.status === "resolved" ? (
+          <CheckCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+        ) : (
+          <XCircleIcon className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+        )}
+        <span className="text-zinc-700">
+          {waypointLabel(waypoint)}
+          {status.status === "resolved" && (
+            <span className="text-zinc-400">
+              {" "}
+              ({status.lat.toFixed(5)}, {status.lon.toFixed(5)})
+            </span>
+          )}
+        </span>
+      </span>
+      <button
+        type="button"
+        onClick={onFetch}
+        disabled={fetching}
+        className="shrink-0 rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50"
+      >
+        {fetching ? "Fetching…" : "Fetch"}
+      </button>
     </div>
   );
 }
 
 /**
  * The admin-only Add Route / Edit Route screen - reached via
- * RouteListScreen's "Add Route" link or StartScreen's "Edit Route"
- * link. Builds a Route from a pasted/typed stops list (via
- * parseRouteImport's graceful column/header matching - a plain list of
- * stops, stops and turns with no other columns, or the app's own full
- * schema all work) plus a small metadata form, checks it against
- * whatever geocoded waypoint cache already exists for this route
- * number/trip/level (empty for a brand-new one), and only allows
- * "Make Active" once every geocodable stop actually resolves - a
- * warning icon stands in for that button otherwise, rather than a
- * disabled control with no explanation.
+ * RouteListScreen's "Edit Mode" toggle (a new route, or clicking an
+ * inactive one) or StartScreen's "Edit Route" link. Builds a Route from
+ * a pasted/typed stops list (via parseRouteImport's graceful
+ * column/header matching - a plain list of stops, stops and turns with
+ * no other columns, or the app's own full schema all work) plus a
+ * small metadata form.
+ *
+ * Adding a new route is deliberately two steps, not one: this screen's
+ * `mode: "add"` only ever offers Save (no validation, no per-row
+ * review, no activate control - there's no point reviewing coordinates
+ * for a route that doesn't exist as a saved entity yet), which creates
+ * the route as "inactive" and hands control straight back to page.tsx,
+ * which immediately reopens this same screen in `mode: "edit"` for it.
+ * Editing is where the real review lives: an always-visible per-row
+ * list (resolved/unresolved/skipped, via routeResolutionStatus.ts)
+ * against whatever's already geocoded, a "Fetch" button per row and a
+ * "Fetch All Locations" button that both call /api/geocode for real
+ * (server-side, so ORS_API_KEY never reaches the browser) - and "Make
+ * Active" is replaced by a warning until every geocodable stop actually
+ * resolves.
  *
  * Session-only for now: `onSave` hands the built Route back up to
  * page.tsx's in-memory admin-route store, not a real committed file -
  * same "real workflow, no persistence yet" honesty this app already
- * uses for rider check-in state (see useRiderRoster.ts). Making a
- * brand-new route's status "active" for real still needs someone to
- * run the actual geocoding pipeline (scripts/geocodeRoute.ts) against
- * its steps once they're committed for real - this screen can't do
- * that itself (see EditRouteScreen's own README entry, "Next steps").
+ * uses for rider check-in state (see useRiderRoster.ts). A freshly
+ * fetched coordinate here lives in this screen's own state too, not a
+ * committed sidecar cache file - RouteMap.tsx still reads only the
+ * real, committed one, so "Fetch Location" is for review here, not yet
+ * what actually puts a pin on the map.
  */
 export function EditRouteScreen({
   mode,
   route,
   rawStepsText,
+  initialWaypointCache,
   schoolAddresses,
   onCancel,
   onSave,
@@ -111,12 +158,25 @@ export function EditRouteScreen({
   /** The route's own current steps text (pre-fills the textarea) -
    * always "" for `mode: "add"`. */
   rawStepsText: string;
+  /** A previous edit session's own fetched cache for this exact route,
+   * if page.tsx has one - takes priority over fetching the real
+   * committed sidecar file, so coordinates fetched and saved earlier
+   * this session aren't lost the next time this route is reopened
+   * (see page.tsx's adminWaypointCaches). Undefined for `mode: "add"`
+   * and for a route that's never had one fetched. */
+  initialWaypointCache?: WaypointCache;
   /** School name -> address, from schools.csv - offered as a one-click
    * fill-in for the school address field rather than auto-overwriting
    * whatever the admin already typed. */
   schoolAddresses: Record<string, string>;
   onCancel: () => void;
-  onSave: (route: Route, rawStepsText: string) => void;
+  /** `cache` is this session's complete waypoint cache for the route
+   * (whatever was loaded plus anything freshly fetched) - page.tsx
+   * keeps it alongside the route itself so a later re-open of this
+   * same route (or the list's own "Activate" readiness check) sees it
+   * too, instead of every fetched coordinate vanishing the moment this
+   * screen closes. */
+  onSave: (route: Route, rawStepsText: string, cache: WaypointCache) => void;
 }) {
   const [routeNumber, setRouteNumber] = useState(route?.routeNumber ?? "");
   const [busNumber, setBusNumber] = useState(route?.busNumber ?? "");
@@ -131,16 +191,44 @@ export function EditRouteScreen({
   const [driverName, setDriverName] = useState(route?.driverName ?? PLACEHOLDER_DRIVER_NAME);
   const [distance, setDistance] = useState(route?.distance ?? PLACEHOLDER_DISTANCE);
   const [stepsText, setStepsText] = useState(rawStepsText);
-  const [status, setStatus] = useState<RouteStatus>(route?.status ?? "pending");
-  const [showValidation, setShowValidation] = useState(false);
-  const [cache, setCache] = useState<WaypointCache>({});
+  // A brand-new route always starts "inactive" - readiness to flip to
+  // "active" is checked live (canActivate below), not tracked as a
+  // separate status of its own.
+  const [status, setStatus] = useState<RouteStatus>(route?.status ?? "inactive");
+  // Seeded straight from initialWaypointCache when there is one (this
+  // exact route's own cache from an earlier edit this session) - a
+  // lazy initializer, not an effect, so there's no real network fetch
+  // to skip in that case at all, only a genuine cache miss ever
+  // reaches the effect below.
+  const [cache, setCache] = useState<WaypointCache>(() => initialWaypointCache ?? {});
   const [message, setMessage] = useState<string | null>(null);
+
+  // The school's own geocoded point, once known - reused across every
+  // "Fetch"/"Fetch All" call in this edit session instead of
+  // re-geocoding the school address on every single click (see
+  // /api/geocode's own doc comment for why that specific repeat is
+  // worse than merely wasteful - it's what actually triggered a live
+  // 403 in production).
+  const [schoolAnchor, setSchoolAnchor] = useState<{ lat: number; lon: number } | null>(null);
+  const [fetchingStepIds, setFetchingStepIds] = useState<ReadonlySet<number>>(new Set());
+  const [fetchAllRunning, setFetchAllRunning] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Whatever's already geocoded for this exact route number/trip/level
   // combination, if anything - a real route's committed sidecar cache
   // once one exists, or nothing at all for a brand-new one (a 404
   // resolves to an empty cache, same as RouteMap.tsx's own fetch).
   useEffect(() => {
+    // initialWaypointCache already seeded `cache` above (see its
+    // useState initializer), so there's no fetch to do for the route
+    // this screen originally opened for. Accepted simplification: if
+    // the admin then edits routeNumber/tripType/schoolLevel mid-edit
+    // (changing which route this actually is), this still won't fetch
+    // that new identity's own cache until a fresh mount (e.g. saving
+    // and reopening) - a narrow, rare enough case not to add a second
+    // piece of ref-tracked state for.
+    if (initialWaypointCache) return;
+
     let cancelled = false;
     // No route number yet - nothing to look up. Left as whatever cache
     // was already loaded rather than reset here (a direct setState
@@ -159,7 +247,7 @@ export function EditRouteScreen({
     return () => {
       cancelled = true;
     };
-  }, [routeNumber, tripType, schoolLevel]);
+  }, [routeNumber, tripType, schoolLevel, initialWaypointCache]);
 
   const parseResult = useMemo(() => parseRouteImport(stepsText), [stepsText]);
   const missingRequired = useMemo(
@@ -185,6 +273,71 @@ export function EditRouteScreen({
   const canToggleActive = status === "active" || canActivate;
 
   const knownSchoolAddress = schoolAddresses[schoolName];
+
+  async function callGeocodeApi(queries: GeocodableQuery[]): Promise<GeocodeResponseBody> {
+    const res = await fetch("/api/geocode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: queries,
+        schoolAddress,
+        anchor: schoolAnchor ?? undefined,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? `${res.status} ${res.statusText}`);
+    return data as GeocodeResponseBody;
+  }
+
+  async function fetchLocation(waypoint: GeocodableQuery) {
+    setFetchError(null);
+    setFetchingStepIds((prev) => new Set(prev).add(waypoint.stepId));
+    try {
+      const data = await callGeocodeApi([waypoint]);
+      if (data.anchor) setSchoolAnchor(data.anchor);
+      const entry: WaypointCacheEntry | null = data.results[0];
+      if (entry) {
+        const key = waypointCacheKey(waypoint);
+        setCache((prev) => ({ ...prev, [key]: entry }));
+      }
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFetchingStepIds((prev) => {
+        const next = new Set(prev);
+        next.delete(waypoint.stepId);
+        return next;
+      });
+    }
+  }
+
+  async function fetchAllLocations() {
+    const toFetch = waypoints.filter(
+      (w): w is GeocodableQuery => w.kind !== "unresolvable" && cache[waypointCacheKey(w)]?.status !== "ok",
+    );
+    if (toFetch.length === 0) return;
+
+    setFetchError(null);
+    setFetchAllRunning(true);
+    setFetchingStepIds(new Set(toFetch.map((w) => w.stepId)));
+    try {
+      const data = await callGeocodeApi(toFetch);
+      if (data.anchor) setSchoolAnchor(data.anchor);
+      setCache((prev) => {
+        const next = { ...prev };
+        toFetch.forEach((w, i) => {
+          const entry = data.results[i];
+          if (entry) next[waypointCacheKey(w)] = entry;
+        });
+        return next;
+      });
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFetchAllRunning(false);
+      setFetchingStepIds(new Set());
+    }
+  }
 
   function buildMeta(nextStatus: RouteStatus): RouteMeta | null {
     if (!routeNumber.trim() || !schoolName.trim() || !schoolAddress.trim()) {
@@ -224,7 +377,7 @@ export function EditRouteScreen({
     const built = buildRouteFromRows(parseResult.rows, meta);
     setStatus(nextStatus);
     setMessage("Saved.");
-    onSave(built, stepsText);
+    onSave(built, stepsText, cache);
   }
 
   function handleToggleActive() {
@@ -382,15 +535,11 @@ export function EditRouteScreen({
           </p>
         )}
 
-        <button
-          type="button"
-          onClick={() => setShowValidation(true)}
-          className="btn-glossy font-heading mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
-        >
-          Validate Stops
-        </button>
-
-        {showValidation && (
+        {/* Reviewing/fetching real coordinates only makes sense once
+            the route is a saved entity page.tsx can track edits
+            against - a brand-new route in mode "add" just gets saved
+            (as "inactive") and reopened here in mode "edit" instead. */}
+        {mode === "edit" && (
           <div className="mt-3">
             {missingRequired.length > 0 ? (
               <p className="text-sm text-red-600">
@@ -399,13 +548,30 @@ export function EditRouteScreen({
               </p>
             ) : (
               <>
-                <p className="text-sm font-semibold text-zinc-700">
-                  {counts.resolved} resolved, {counts.unresolved} need attention, {counts.skipped}{" "}
-                  skipped ({counts.total} total)
-                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-zinc-700">
+                    {counts.resolved} resolved, {counts.unresolved} need attention, {counts.skipped}{" "}
+                    skipped ({counts.total} total)
+                  </p>
+                  <button
+                    type="button"
+                    onClick={fetchAllLocations}
+                    disabled={fetchAllRunning || counts.unresolved === 0}
+                    className="btn-glossy shrink-0 rounded-lg border border-zinc-500 bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900 disabled:opacity-50"
+                  >
+                    {fetchAllRunning ? "Fetching…" : "Fetch All Locations"}
+                  </button>
+                </div>
+                {fetchError && <p className="mt-1 text-xs text-red-600">{fetchError}</p>}
                 <div className="mt-1 max-h-56 divide-y divide-zinc-200 overflow-y-auto">
-                  {resolutionRows.map((row) => (
-                    <ResolutionRow key={row.stepId} row={row} />
+                  {waypoints.map((waypoint, index) => (
+                    <ResolutionRow
+                      key={waypoint.stepId}
+                      waypoint={waypoint}
+                      status={resolutionRows[index]}
+                      fetching={fetchingStepIds.has(waypoint.stepId)}
+                      onFetch={() => fetchLocation(waypoint as GeocodableQuery)}
+                    />
                   ))}
                 </div>
               </>
@@ -422,7 +588,7 @@ export function EditRouteScreen({
           onClick={() => handleSave()}
           className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white"
         >
-          Save
+          {mode === "add" ? "Create Route" : "Save"}
         </button>
 
         {mode === "edit" &&
