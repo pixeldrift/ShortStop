@@ -1812,3 +1812,41 @@ re-run yet (see Next steps).
   Longer term, RFID transport badges could let students check
   themselves in as they board, rather than the driver tapping for each
   one.
+- **A route import tool** - every route's steps sheet is currently a
+  hand-transcribed CSV; a real workflow needs to take in whatever a
+  district actually sends. Accept an Excel file, a CSV/TSV, or a
+  straight paste into a text box, with a documented column guide
+  (`time,action,from_at,onto_at,rider_count,side,notes`, matching what
+  `parseRouteCsv.ts` already reads) - but don't require it verbatim: if
+  the header row doesn't match, try resolving by header name
+  (case/spacing-insensitive) regardless of column order or count
+  before falling back to asking the user to map columns by hand.
+  Alongside straight import, an optional manual step editor - an "Add
+  Step" button, a stop/turn dropdown, and fields for whichever columns
+  that kind uses - for building a route from scratch or fixing up a bad
+  import without hand-editing the CSV
+- Whatever comes in through that import tool (or the manual editor)
+  would feed an "auto-resolve coordinates" pass - live per-row status
+  as it runs (a green check + the resolved lat/lon, or a red X), then a
+  summary of what worked and what didn't, essentially productizing what
+  `prototypeOverpassGeocode.ts`'s console output already does by hand
+  (see "Maps, part nine" above). Surfacing API usage/quota in that UI
+  would be nice, but it's not actually clear yet what OpenRouteService's
+  or Overpass's real gating criteria are (a request quota? a rate
+  limit? both?) - worth understanding before promising a usage meter
+  that might not mean what it looks like it means. The pacing problem
+  this session's prototype runs kept hitting (429/504 from zero delay
+  between calls) belongs here too, and isn't specific to this tool -
+  the whole geocoding pipeline needs to query slower than "as fast as
+  possible" (see the Overpass bullet, above)
+- For whatever's left unresolved after that pass: a per-row "Retry"
+  button, and a manual fallback - a single paste-able "lat, lon" text
+  field standing in for the two separate coordinate columns on that
+  row, so a real coordinate found some other way doesn't need typing
+  into two boxes. Longer term, a small map under an unresolved row,
+  centered on the last successfully-resolved point, to drag/tap a pin
+  into place instead of typing coordinates blind - and eventually
+  showing the already-resolved pins/turns for reference on that same
+  map, maybe even drawing the route so far, so placing the next one is
+  a visual "where does this fit" instead of guessing from street names
+  alone
