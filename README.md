@@ -1671,6 +1671,18 @@ is ready, but a run before that secret exists will fail at the same
 "ORS_API_KEY isn't set" check `scripts/geocodeRoute.ts` already has,
 confirmed locally.
 
+First real run (once `ORS_API_KEY` was added): the school-address
+anchor geocode worked fine (a real address, ORS handles it same as
+always - 201 Davids Way resolved to 36.038689, -86.555189), but all 20
+of route 125's real crossroads came back `406 Not Acceptable` from
+Overpass - not "no intersection found," an outright rejection before
+Overpass even looked at the query. Turned out to be the same class of
+problem `geocode.ts`'s `NOMINATIM_USER_AGENT` comment already warns
+about: no identifying `User-Agent` on the request. Added one (plus an
+explicit `Accept: application/json`), same string Nominatim already
+uses - not optional in practice for either service, whatever the HTTP
+spec says 406 is supposed to mean.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as

@@ -42,6 +42,12 @@ const ENV_LOCAL_PATH = join(process.cwd(), ".env.local");
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
+// Same courtesy convention as geocode.ts's NOMINATIM_USER_AGENT - a
+// live run against overpass-api.de came back 406 Not Acceptable on
+// every single query until this was added, so it's not optional in
+// practice either, whatever the HTTP spec says 406 is supposed to mean.
+const OVERPASS_USER_AGENT = "ShortStop-prototype (https://github.com/pixeldrift/ShortStop/issues)";
+
 // Half-width of the search box around the school's own geocoded point,
 // in degrees - route 125 is 8.4 miles round trip (see
 // route-master-list.csv), so every stop is well within this. Roughly
@@ -165,7 +171,11 @@ async function resolveIntersection(
   const res = await fetchImpl(OVERPASS_URL, {
     method: "POST",
     body: `data=${encodeURIComponent(query)}`,
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": OVERPASS_USER_AGENT,
+      Accept: "application/json",
+    },
   });
   if (!res.ok) {
     throw new Error(`Overpass returned ${res.status} ${res.statusText} for "${roadA}" & "${roadB}"`);
