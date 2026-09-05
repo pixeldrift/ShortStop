@@ -77,7 +77,7 @@ export function StartScreen({
           type="button"
           onClick={onBack}
           aria-label="Back to routes"
-          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-400 bg-zinc-200"
+          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
@@ -95,7 +95,9 @@ export function StartScreen({
       </div>
 
       <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">
-        <p className="text-lg leading-tight text-zinc-500">{route.name}</p>
+        <p className="font-heading text-xl leading-tight font-bold text-zinc-700">
+          {route.schoolName}
+        </p>
         <p className="mt-1 flex items-center justify-center gap-1 text-sm text-zinc-500">
           <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
           {route.schoolAddress}
@@ -120,7 +122,7 @@ export function StartScreen({
         <button
           type="button"
           onClick={() => setShowStopsModal(true)}
-          className="btn-glossy font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-white py-2.5 text-base font-semibold text-zinc-700"
+          className="btn-glossy font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
         >
           View All Stops
         </button>
@@ -141,16 +143,41 @@ export function StartScreen({
   );
 }
 
+/** The school row in AllStopsModal - no stop number, since it isn't one
+ * of the route's actual numbered stops. Styled like every other
+ * school-address callout in the app (MapPinIcon + address, under the
+ * school's name) rather than like a Stop row. */
+function SchoolEntry({ route }: { route: Route }) {
+  return (
+    <div className="py-3 text-left">
+      <span className="font-heading font-black">{route.schoolName}</span>
+      <p className="mt-0.5 flex items-center gap-1 text-sm text-zinc-500">
+        <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+        {route.schoolAddress}
+      </p>
+    </div>
+  );
+}
+
 /** Scrolling list of every stop on the route, in order - tapping "View
  * All Stops" on the Route info screen above. Only "stop" steps for
  * now, not turns - a later toggle to also show turns (see the
  * StepScreen "TURN {direction}" heading/subheading convention) can
  * switch which steps this filters to without changing anything else
- * here. */
+ * here.
+ *
+ * The school itself isn't one of route.steps' own stops (see
+ * parseRouteCsv.ts - it only ever turns route-125.csv's rows into
+ * steps, and the school is where those rows start or end, not a row of
+ * its own), so it's rendered here as its own entry rather than folded
+ * into the stops list - first for a dropoff route (the bus starts
+ * there), last for a pickup route (the bus ends there), matching which
+ * end of the real trip it actually is. */
 function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }) {
   const stops = route.steps.filter((step): step is NavigationStep & { kind: "stop" } =>
     step.kind === "stop",
   );
+  const schoolEntry = <SchoolEntry route={route} />;
 
   return (
     <div
@@ -162,22 +189,40 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
-          <h2 className="font-heading text-xl font-black tracking-tight">All Stops</h2>
+          <div>
+            <h2 className="font-heading text-xl font-black tracking-tight">All Stops</h2>
+            <p className="font-heading flex items-center gap-1 text-sm font-bold text-blue-500">
+              Route {route.routeNumber}
+              <span className="flex items-center gap-1">
+                {route.tripType === "pickup" ? "AM" : "PM"}
+                {route.tripType === "pickup" ? (
+                  <SunriseIcon className="h-3.5 w-3.5" />
+                ) : (
+                  <SunIcon className="h-3.5 w-3.5" />
+                )}
+              </span>
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
           >
             <CloseIcon className="h-5 w-5" />
           </button>
         </div>
 
         <div className="divide-y divide-zinc-200 overflow-y-auto px-5">
+          {route.tripType === "dropoff" && schoolEntry}
+
           {stops.map((step, index) => (
             <div key={step.id} className="py-3 text-left">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="font-heading font-black">Stop {index + 1}</span>
+                <span className="font-heading flex items-center gap-1.5 text-lg font-black">
+                  <MapPinIcon className="h-4 w-4 shrink-0 text-blue-500" />
+                  Stop {index + 1}
+                </span>
                 {step.studentCount != null && (
                   <span className="shrink-0 text-sm text-zinc-500">
                     {step.studentCount} rider{step.studentCount === 1 ? "" : "s"}
@@ -193,6 +238,8 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
               )}
             </div>
           ))}
+
+          {route.tripType === "pickup" && schoolEntry}
         </div>
       </div>
     </div>

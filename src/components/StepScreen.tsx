@@ -223,7 +223,7 @@ export function StepScreen({
             onClick={onBack}
             disabled={phase === "depot" || paused}
             aria-label="Back"
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-400 bg-zinc-200 py-3 text-lg font-semibold disabled:opacity-40"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-lg font-semibold text-zinc-900 disabled:opacity-40"
           >
             <TriangleIcon direction="left" className="h-6 w-6" /> Back
           </button>
@@ -232,7 +232,7 @@ export function StepScreen({
             type="button"
             onClick={onTogglePause}
             aria-label={paused ? "Resume route" : "Pause route"}
-            className="btn-glossy flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-400 bg-zinc-200 text-zinc-700"
+            className="btn-glossy flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
           >
             {paused ? (
               <TriangleIcon direction="right" className="h-6 w-6" />
@@ -297,7 +297,7 @@ function LeaveRouteConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-400 bg-white py-3 text-lg font-semibold text-zinc-900"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
           >
             <TriangleIcon direction="left" className="h-6 w-6" /> End Route
           </button>
