@@ -168,6 +168,27 @@ export function BackArrowIcon({ className }: { className?: string }) {
   );
 }
 
+/** BackArrowIcon's own path mirrored - a real shaft-and-chevron "->"
+ * rather than TriangleIcon's solid play-button shape, for a button
+ * whose forward action isn't literally "play/start" (e.g. "Create
+ * Route"). */
+export function RightArrowIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
 /** Checkmark in a filled circle - used for the "arrived, all stops
  * complete" state. */
 export function CheckCircleIcon({ className }: { className?: string }) {

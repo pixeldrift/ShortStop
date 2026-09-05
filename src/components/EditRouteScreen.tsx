@@ -10,6 +10,7 @@ import {
   EditIcon,
   MapPinIcon,
   PersonSolidIcon,
+  RightArrowIcon,
   SaveIcon,
   TrashIcon,
   TurnArrow,
@@ -828,16 +829,6 @@ export function EditRouteScreen({
               placeholder="125"
             />
           </Field>
-          <Field label="Trip">
-            <select
-              className={inputClass}
-              value={tripType}
-              onChange={(e) => setTripType(e.target.value as TripType)}
-            >
-              <option value="pickup">AM Pickup</option>
-              <option value="dropoff">PM Drop Off</option>
-            </select>
-          </Field>
           {/* School level and address are never picked or typed
               separately - both come from whichever school is chosen
               here, looked up in `schools` (schools.csv). */}
@@ -853,6 +844,16 @@ export function EditRouteScreen({
                   {name}
                 </option>
               ))}
+            </select>
+          </Field>
+          <Field label="Trip">
+            <select
+              className={inputClass}
+              value={tripType}
+              onChange={(e) => setTripType(e.target.value as TripType)}
+            >
+              <option value="pickup">AM Pickup</option>
+              <option value="dropoff">PM Drop Off</option>
             </select>
           </Field>
         </div>
@@ -1023,8 +1024,17 @@ export function EditRouteScreen({
           onClick={() => handleSave()}
           className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white"
         >
-          <SaveIcon className="h-5 w-5" />
-          {mode === "add" ? "Create Route" : "Save"}
+          {mode === "add" ? (
+            <>
+              Create Route
+              <RightArrowIcon className="h-5 w-5" />
+            </>
+          ) : (
+            <>
+              <SaveIcon className="h-5 w-5" />
+              Save
+            </>
+          )}
         </button>
 
         {mode === "edit" &&
