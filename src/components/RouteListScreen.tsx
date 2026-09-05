@@ -2,8 +2,23 @@
 
 import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
-import { HeartIcon, SearchIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
+import { HeartIcon, SearchIcon, SortIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
+import { parseTimeToMinutes } from "@/lib/time";
 import type { Route } from "@/lib/types";
+
+type SortField = "routeNumber" | "schoolName" | "departureTime";
+type SortDir = "asc" | "desc";
+
+// One comparator per sortable header - routeNumber compares numerically
+// (route numbers sort as text otherwise: "120" would land after "20"),
+// departureTime goes through parseTimeToMinutes rather than comparing
+// the displayed "3:30 PM" strings directly, since those don't sort into
+// chronological order as text either.
+const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
+  routeNumber: (a, b) => Number(a.routeNumber) - Number(b.routeNumber),
+  schoolName: (a, b) => a.schoolName.localeCompare(b.schoolName),
+  departureTime: (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
+};
 
 /** What the View dropdown filters to - "all"/"favorites" aren't
  * TripType/SchoolLevel values, so this is its own union rather than
@@ -44,6 +59,21 @@ export function RouteListScreen({
   const [query, setQuery] = useState("");
   const [view, setView] = useState<ViewFilter>("all");
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  // departureTime/asc as the default matches the order routes already
+  // arrive in (page.tsx sorts real+demo routes by departure time before
+  // handing them to this screen), so picking this as the initial sort
+  // doesn't change anything a user would notice until they tap a header.
+  const [sortField, setSortField] = useState<SortField>("departureTime");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const toggleSort = (field: SortField) => {
+    if (field === sortField) {
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -61,19 +91,21 @@ export function RouteListScreen({
       return matchesQuery && matchesView;
     });
 
-    if (view !== "favorites") return matching;
-
-    // Real routes (status !== "demo") always read first here, purely
-    // for demo legibility - every fabricated filler route (see
-    // demoRoutes.ts) sorts after them. A stable sort
-    // (Array.prototype.sort is stable in every modern engine) means
-    // everything else keeps its existing (departure-time) order.
+    const compare = SORT_COMPARATORS[sortField];
     return [...matching].sort((a, b) => {
-      const aReal = a.status !== "demo";
-      const bReal = b.status !== "demo";
-      return aReal === bReal ? 0 : aReal ? -1 : 1;
+      // Real routes (status !== "demo") always read first here, purely
+      // for demo legibility - every fabricated filler route (see
+      // demoRoutes.ts) sorts after them, regardless of the chosen
+      // column sort, which only decides order *within* each group.
+      if (view === "favorites") {
+        const aReal = a.status !== "demo";
+        const bReal = b.status !== "demo";
+        if (aReal !== bReal) return aReal ? -1 : 1;
+      }
+      const result = compare(a, b);
+      return sortDir === "asc" ? result : -result;
     });
-  }, [routes, query, view]);
+  }, [routes, query, view, sortField, sortDir]);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
@@ -144,10 +176,29 @@ export function RouteListScreen({
       </div>
 
       <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
-        <div className="grid grid-cols-[3rem_1fr_4.25rem_1.25rem] gap-x-3 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-          <span>#</span>
-          <span>School</span>
-          <span className="text-right">Start</span>
+        <div className="grid grid-cols-[3rem_1fr_4.25rem_1.25rem] items-stretch gap-x-3 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+          <SortableHeader
+            label="#"
+            field="routeNumber"
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={toggleSort}
+          />
+          <SortableHeader
+            label="School"
+            field="schoolName"
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={toggleSort}
+          />
+          <SortableHeader
+            label="Start"
+            field="departureTime"
+            align="right"
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={toggleSort}
+          />
           <span />
         </div>
         <div className="divide-y divide-zinc-200 overflow-y-auto">
@@ -194,5 +245,42 @@ export function RouteListScreen({
         </div>
       </div>
     </div>
+  );
+}
+
+/** One clickable, sortable column header - label plus the traditional
+ * stacked up/down carets (SortIcon), which always render but only show
+ * the active direction solid once this is the column being sorted by.
+ * `align="right"` (the Start column, matching its right-aligned data
+ * below) keeps label-then-icon order but pushes the pair to the
+ * column's right edge, rather than mirroring the icon in front of the
+ * label. */
+function SortableHeader({
+  label,
+  field,
+  align = "left",
+  sortField,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  field: SortField;
+  align?: "left" | "right";
+  sortField: SortField;
+  sortDir: SortDir;
+  onSort: (field: SortField) => void;
+}) {
+  const active = sortField === field;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(field)}
+      className={`flex items-center gap-1 bg-transparent pl-3 first:pl-0 ${
+        align === "right" ? "justify-end" : ""
+      } ${active ? "text-zinc-700" : ""}`}
+    >
+      <span>{label}</span>
+      <SortIcon direction={active ? sortDir : "none"} className="h-2.5 w-2.5 shrink-0" />
+    </button>
   );
 }

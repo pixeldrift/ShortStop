@@ -93,6 +93,26 @@ export function PlayIcon({ className }: { className?: string }) {
   return <TriangleIcon direction="right" className={className} />;
 }
 
+/** The traditional stacked up/down carets next to a sortable table
+ * column header - both drawn always, with whichever one matches the
+ * active sort direction solid and the other faint, so the icon itself
+ * shows the current state rather than needing a separate indicator.
+ * `direction: "none"` (an unsorted column) shows both equally faint. */
+export function SortIcon({
+  direction = "none",
+  className,
+}: {
+  direction?: "asc" | "desc" | "none";
+  className?: string;
+}) {
+  return (
+    <svg viewBox="0 0 10 16" className={className} fill="currentColor" aria-hidden="true">
+      <path d="M5 0 L9 6 H1 Z" opacity={direction === "asc" ? 1 : 0.35} />
+      <path d="M5 16 L9 10 H1 Z" opacity={direction === "desc" ? 1 : 0.35} />
+    </svg>
+  );
+}
+
 /** Outline person - used for a rider not yet checked in. */
 export function PersonIcon({ className }: { className?: string }) {
   return (
