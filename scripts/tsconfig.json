@@ -12,6 +12,7 @@
   },
   "include": [
     "./geocodeRoute.ts",
+    "./prototypeOverpassGeocode.ts",
     "../src/lib/parseRouteCsv.ts",
     "../src/lib/deriveWaypoints.ts",
     "../src/lib/speech.ts",

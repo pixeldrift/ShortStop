@@ -1,0 +1,56 @@
+name: Prototype - Overpass intersection lookup
+
+# Manual only, on purpose - this runs scripts/prototypeOverpassGeocode.ts
+# as a one-off test against route 125's real crossroads (see README,
+# "Maps, part nine"), not a production pipeline like geocode-route.yml.
+# It's read-only: no commit step, nothing in the repo changes from a
+# run. Needs ORS_API_KEY (the same repo secret geocode-route.yml uses)
+# for the one-time school-address geocode the prototype anchors its
+# search box on - this workflow can't do anything useful until that
+# secret exists (see README, "Next steps").
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  prototype:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run prototype against route 125
+        env:
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+        run: npm run prototype:overpass 2>&1 | tee prototype-output.log
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Overpass intersection prototype - route 125"
+            echo
+            echo '```'
+            cat prototype-output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prototype-overpass-results
+          path: |
+            prototype-output.log
+            scripts/prototype-overpass-results.json
+          if-no-files-found: ignore

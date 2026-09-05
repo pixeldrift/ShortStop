@@ -36,6 +36,7 @@ for them yet.
 .github/
   workflows/
     geocode-route.yml     Auto-refreshes route-125-waypoints.json (see below)
+    prototype-overpass.yml Manual-only run of the Overpass prototype (see below)
 src/
   app/
     page.tsx           Renders the route list, the Start screen, or the
@@ -1654,9 +1655,21 @@ coordinates. This sandbox's network egress policy blocks
 `overpass-api.de` outright (confirmed the same "gateway answered 403 to
 CONNECT" way `tile.openstreetmap.org`/Nominatim/ORS already are - see
 "Maps, part four") - the same policy also currently blocks the ORS call
-this prototype needs first, to geocode the school address itself. Needs
-running somewhere with real network access (locally, or a CI job) to
-see whether it actually resolves better than what's live today.
+this prototype needs first, to geocode the school address itself.
+
+`.github/workflows/prototype-overpass.yml` (`workflow_dispatch` only -
+no push trigger, no commit step, doesn't touch the repo) runs it
+somewhere that actually has network access instead: `npm run
+prototype:overpass` (new script, compiles the same way `npm run
+geocode` does - `tsc --project scripts/tsconfig.json`, then plain
+`node` on the output, no runtime TS-execution dependency needed), with
+its console output written to the run's job summary and
+`scripts/prototype-overpass-results.json` uploaded as an artifact.
+Still blocked on the same missing `ORS_API_KEY` repository secret
+everything geocoding-related is (see Next steps) - the workflow itself
+is ready, but a run before that secret exists will fail at the same
+"ORS_API_KEY isn't set" check `scripts/geocodeRoute.ts` already has,
+confirmed locally.
 
 ### Next steps
 
@@ -1666,12 +1679,13 @@ see whether it actually resolves better than what's live today.
   Nothing geocoding-related can actually run for real until this
   exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
   confirm the OpenRouteService switch works without needing a CSV edit
-- Run `scripts/prototypeOverpassGeocode.ts` somewhere with real network
-  access (see "Maps, part nine" above) against route 125's real
-  crossroads and see how many actually resolve to one node - if it
-  beats what's live today, wire it into `geocode.ts` as a real
-  provider (intersections through Overpass, plain addresses still
-  through ORS) instead of a standalone script
+- Once `ORS_API_KEY` exists as a repository secret (bullet above),
+  run the `prototype-overpass.yml` workflow (Actions tab ->
+  "Prototype - Overpass intersection lookup" -> Run workflow) and see
+  how many of route 125's real crossroads actually resolve to one node
+  - see "Maps, part nine" above. If it beats what's live today, wire it
+  into `geocode.ts` as a real provider (intersections through Overpass,
+  plain addresses still through ORS) instead of a standalone script
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual

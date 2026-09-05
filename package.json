@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "geocode": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeRoute.js"
+    "geocode": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeRoute.js",
+    "prototype:overpass": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/prototypeOverpassGeocode.js"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
