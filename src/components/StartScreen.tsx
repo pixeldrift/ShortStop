@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
+import { ToggleSwitch } from "./ToggleSwitch";
 import {
   BackArrowIcon,
   CloseIcon,
@@ -11,6 +12,7 @@ import {
   SunIcon,
   SunriseIcon,
   TriangleIcon,
+  TurnArrow,
 } from "./icons";
 import type { NavigationStep, Route } from "@/lib/types";
 
@@ -182,12 +184,31 @@ function SchoolEntry({ route }: { route: Route }) {
   );
 }
 
+/** One turn step's row - same card shape as a stop's, but the turn
+ * arrow (mirrored per direction, same as StepScreen's own big one)
+ * stands in for the numbered map pin, and there's no rider count. Only
+ * shown at all once the "Show turns" toggle is on (see AllStopsModal). */
+function TurnRow({ step }: { step: NavigationStep }) {
+  return (
+    <div className="py-3 text-left">
+      <span className="font-heading flex items-center gap-1.5 text-base font-bold text-zinc-500">
+        {step.direction && <TurnArrow direction={step.direction} className="h-4 w-4 shrink-0" />}
+        {step.heading}
+      </span>
+      <p className="text-zinc-700">{step.subheading}</p>
+      {step.specialInstruction && (
+        <p className="mt-0.5 text-sm text-zinc-500">{step.specialInstruction}</p>
+      )}
+    </div>
+  );
+}
+
 /** Scrolling list of every stop on the route, in order - tapping "View
- * All Stops" on the Route info screen above. Only "stop" steps for
- * now, not turns - a later toggle to also show turns (see the
- * StepScreen "TURN {direction}" heading/subheading convention) can
- * switch which steps this filters to without changing anything else
- * here.
+ * All Stops" on the Route info screen above. Stops only by default
+ * (matching how this always used to work); the "Show turns" toggle
+ * interleaves turn steps back in at their real position in the route
+ * rather than appending them separately, so the order shown always
+ * matches the real drive.
  *
  * The school itself isn't one of route.steps' own stops (see
  * parseRouteCsv.ts - it only ever turns route-125.csv's rows into
@@ -197,10 +218,17 @@ function SchoolEntry({ route }: { route: Route }) {
  * there), last for a pickup route (the bus ends there), matching which
  * end of the real trip it actually is. */
 function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }) {
-  const stops = route.steps.filter((step): step is NavigationStep & { kind: "stop" } =>
-    step.kind === "stop",
-  );
+  const [showTurns, setShowTurns] = useState(false);
   const schoolEntry = <SchoolEntry route={route} />;
+
+  // Precomputed outside the JSX map below (not incremented inline in the
+  // render callback) so React Compiler's per-item memoization doesn't see a
+  // mutated closure variable - each stop step looks up its own number here.
+  let stopCounter = 0;
+  const stopNumbers = new Map<number, number>();
+  for (const step of route.steps) {
+    if (step.kind === "stop") stopNumbers.set(step.id, ++stopCounter);
+  }
 
   return (
     <div
@@ -235,32 +263,45 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
           </button>
         </div>
 
+        <div className="flex shrink-0 justify-end border-b border-zinc-200 px-5 py-2">
+          <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
+        </div>
+
         <div className="divide-y divide-zinc-200 overflow-y-auto px-5">
           {route.tripType === "dropoff" && schoolEntry}
 
-          {stops.map((step, index) => (
-            <div key={step.id} className="py-3 text-left">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="font-heading flex items-center gap-1.5 text-lg font-black">
-                  <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
-                  Stop {index + 1}
-                </span>
-                {step.studentCount != null && (
-                  <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
-                    <PersonSolidIcon className="h-4 w-4" />
-                    {step.studentCount} rider{step.studentCount === 1 ? "" : "s"}
-                  </span>
-                )}
-              </div>
-              <p className="text-zinc-700">
-                {step.subheading}
-                {step.sideOfRoad ? ` (${step.sideOfRoad})` : ""}
-              </p>
-              {step.specialInstruction && (
-                <p className="mt-0.5 text-sm text-zinc-500">{step.specialInstruction}</p>
-              )}
-            </div>
-          ))}
+          {route.steps.map((step) => {
+            if (step.kind === "stop") {
+              const number = stopNumbers.get(step.id);
+              return (
+                <div key={step.id} className="py-3 text-left">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-heading flex items-center gap-1.5 text-lg font-black">
+                      <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
+                      Stop {number}
+                    </span>
+                    {step.studentCount != null && (
+                      <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
+                        <PersonSolidIcon className="h-4 w-4" />
+                        {step.studentCount} rider{step.studentCount === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-zinc-700">
+                    {step.subheading}
+                    {step.sideOfRoad ? ` (${step.sideOfRoad})` : ""}
+                  </p>
+                  {step.specialInstruction && (
+                    <p className="mt-0.5 text-sm text-zinc-500">{step.specialInstruction}</p>
+                  )}
+                </div>
+              );
+            }
+            if (step.kind === "turn" && showTurns) {
+              return <TurnRow key={step.id} step={step} />;
+            }
+            return null;
+          })}
 
           {route.tripType === "pickup" && schoolEntry}
         </div>

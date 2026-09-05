@@ -235,7 +235,8 @@ export function PlusIcon({ className }: { className?: string }) {
   );
 }
 
-/** Small pencil - the Edit Route link on the route-info screen. */
+/** Small pencil - every edit link/button (StartScreen's "Edit Route",
+ * the route-list "Edit Mode" toggle and its header badge). */
 export function EditIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" aria-hidden="true">
@@ -245,6 +246,68 @@ export function EditIcon({ className }: { className?: string }) {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+/** Trash can - every delete action (RouteListScreen's per-row Delete
+ * button and its confirm modal). */
+export function TrashIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 7 H19 M9 7 V5 A1 1 0 0 1 10 4 H14 A1 1 0 0 1 15 5 V7 M7 7 L8 19 A1 1 0 0 0 9 20 H15 A1 1 0 0 0 16 19 L17 7" />
+      <path d="M10 11 V16 M14 11 V16" />
+    </svg>
+  );
+}
+
+/** The traditional "save" glyph - an arrow pointing down into an open
+ * box/tray - used on every Save button (as opposed to EditIcon, which
+ * marks a link/button that only ever *opens* an edit screen). */
+export function SaveIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 14 V18.5 A1.5 1.5 0 0 0 5.5 20 H18.5 A1.5 1.5 0 0 0 20 18.5 V14" />
+      <path d="M12 3 V13.5 M7.5 9 L12 13.5 L16.5 9" />
+    </svg>
+  );
+}
+
+/** SaveIcon flipped the other way - an arrow lifting up off a base
+ * line - the Add Route screen's "Upload File" button (an alternative
+ * to pasting stops in directly). */
+export function UploadIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 18 V18.5 A1.5 1.5 0 0 0 5.5 20 H18.5 A1.5 1.5 0 0 0 20 18.5 V18" />
+      <path d="M12 15 V4.5 M7.5 9 L12 4.5 L16.5 9" />
     </svg>
   );
 }

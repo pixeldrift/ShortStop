@@ -4,7 +4,7 @@
 // flat placeholders regardless of which route they're merged into (not
 // per-route fabrications - the same "we don't have this yet" stand-in
 // everywhere, same spirit as "Otto Mann" always having been a
-// placeholder name even for route 125's real, "active" data).
+// placeholder name even for route 125's real, "published" data).
 export const PLACEHOLDER_DRIVER_NAME = "Otto Mann";
 export const PLACEHOLDER_DISTANCE = "8.4 mi";
 
@@ -19,6 +19,6 @@ export const SCHOOL_ADDRESS_NOT_YET_PROVIDED = "Address not yet provided, Smyrna
 // Only route 125 defaults to a favorite - it was the app's original
 // (and for a while only) real route. The other real routes now coming
 // in from the master list default to not-favorited, same as demo
-// routes do, rather than every "active" route being pre-favorited with
+// routes do, rather than every "published" route being pre-favorited with
 // no real signal for it.
 export const FAVORITE_ROUTE_IDS = new Set(["125-dropoff-elementary"]);

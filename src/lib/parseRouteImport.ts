@@ -262,3 +262,22 @@ export function unresolvedRequiredFields(mapping: ImportColumnMapping[]): Import
   const required: ImportColumnField[] = ["action", "fromAt"];
   return mapping.filter((m) => required.includes(m.field) && !m.resolved).map((m) => m.field);
 }
+
+/**
+ * The inverse of parsing - turns RawRouteRow[] back into the app's own
+ * comma-separated schema, header row included. Used by
+ * EditRouteScreen.tsx to persist its structured, editable stop list
+ * (added/removed/edited rows, not raw text) through the same
+ * text-shaped storage page.tsx already uses for every route's steps -
+ * round-tripping through this rather than changing that storage shape
+ * itself. Re-parsing this output (parseRouteImport) always finds a
+ * real header (every one of these column names matches exactly), so
+ * it never takes the header-less path back.
+ */
+export function rowsToCsvText(rows: RawRouteRow[]): string {
+  const header = "action,from_at,onto_at,rider_count,side,notes";
+  const lines = rows.map((row) =>
+    [row.action, row.fromAt, row.ontoAt, row.riderCount, row.side, row.notes].join(","),
+  );
+  return [header, ...lines].join("\n");
+}

@@ -2,7 +2,7 @@
 
 /**
  * A shared yes/no confirmation overlay - used for the admin-only
- * activate/deactivate/delete actions on RouteListScreen's edit-mode
+ * publish/unpublish/delete actions on RouteListScreen's edit-mode
  * rows, all three consequential enough (delete especially) to need a
  * second tap rather than firing immediately on the first one. Same
  * visual pattern as StepScreen.tsx's own one-off LeaveRouteConfirmModal
@@ -14,6 +14,7 @@ export function ConfirmModal({
   title,
   message,
   confirmLabel,
+  confirmIcon,
   destructive = false,
   onConfirm,
   onCancel,
@@ -21,8 +22,12 @@ export function ConfirmModal({
   title: string;
   message?: string;
   confirmLabel: string;
+  /** Icon shown before confirmLabel - a trash can for delete, say -
+   * kept optional/generic rather than hardcoding delete's icon here,
+   * since this modal serves publish/unpublish too. */
+  confirmIcon?: React.ReactNode;
   /** Red confirm button for delete - amber/blue destructive-lite isn't
-   * needed for activate/deactivate, which are always reversible. */
+   * needed for publish/unpublish, which are always reversible. */
   destructive?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -54,6 +59,7 @@ export function ConfirmModal({
               destructive ? "bg-red-600" : "bg-blue-600"
             }`}
           >
+            {confirmIcon}
             {confirmLabel}
           </button>
         </div>

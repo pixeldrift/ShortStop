@@ -5,8 +5,8 @@ import type { WaypointCache } from "./waypointCache";
 /**
  * Whether every one of a route's own geocodable steps already has an
  * "ok" entry in `cache` - the same rule EditRouteScreen.tsx enforces
- * before letting a route go "active" (see its own canActivate), reused
- * here so RouteListScreen's quick per-row "Activate" action can't
+ * before letting a route go "published" (see its own canPublish),
+ * reused here so RouteListScreen's quick per-row "Publish" action can't
  * bypass it. Reads each step's own precomputed `waypointKey`
  * (parseRouteCsv.ts) directly rather than re-deriving waypoints from
  * scratch - an "unresolvable" key (see waypointCacheKey's own doc

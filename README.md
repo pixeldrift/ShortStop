@@ -97,12 +97,12 @@ public/
   data/120-AM-MS.csv           Bus 120's AM Middle run steps
   data/120-AM-HS.csv           Bus 120's AM High run steps
   data/120-PM-EL.csv           Bus 120's PM Elementary run steps
-  data/120-PM-MS.csv           Bus 120's PM Middle run steps (incomplete, status: inactive)
-  data/120-PM-HS.csv           Bus 120's PM High run steps (incomplete, status: inactive)
+  data/120-PM-MS.csv           Bus 120's PM Middle run steps
+  data/120-PM-HS.csv           Bus 120's PM High run steps (incomplete, status: draft)
   data/route-master-list.csv   Route-level metadata for every real route (see below)
   data/schools.csv             School name → address, one row per school (see below)
   data/125-PM-EL-waypoints.json  Bus 125's geocoding cache, generated - see "Maps, part two"/
-                                  "part ten" below (one such sidecar per active route, named
+                                  "part ten" below (one such sidecar per published route, named
                                   to match its own steps CSV - not listed individually here)
   assets/
     logo.png              ShortStop wordmark
@@ -2007,3 +2007,79 @@ so far.
   map, maybe even drawing the route so far, so placing the next one is
   a visual "where does this fit" instead of guessing from street names
   alone
+- **Add Route / Edit Route, third pass - draft/published, a real row
+  editor, and file upload.** `RouteStatus`'s two non-demo values are now
+  `"published"`/`"draft"` instead of `"active"`/`"inactive"` (see
+  `types.ts`'s own doc comment) - the same distinction, renamed because
+  a driver-facing "published" reads more honestly than "active" for a
+  route that's correct and ready but simply isn't the one running this
+  week. Every control that used to say Activate/Deactivate/Make
+  Active/Make Inactive now says Publish/Unpublish; the master list's
+  `active`/`inactive` values were renamed to match (`sed` over
+  `route-master-list.csv`, `scripts/geocodeRoute.ts`'s own filter
+  updated alongside).
+
+  **Destructive actions are unmistakable now.** `icons.tsx` gained
+  `TrashIcon` (delete), `SaveIcon` (an arrow into an open box/tray, for
+  Save/Create Route), and `UploadIcon` (`SaveIcon` mirrored, for Upload
+  File) alongside the existing `EditIcon`. RouteListScreen's per-row
+  Delete now sits left of Publish (the destructive action reads first),
+  carries the trash icon, and `ConfirmModal.tsx` grew an optional
+  `confirmIcon` prop so its own Delete button carries one too - Cancel
+  always stays the non-destructive, left-hand option.
+
+  **`mode: "edit"` no longer shows raw text at all.** The paste-box/
+  textarea is `mode: "add"` only now (creating a brand-new route, still
+  reviewed immediately after in `mode: "edit"` - see the second-pass
+  entry above for why that split exists); editing an existing draft
+  instead renders every stop and turn as its own editable row
+  (`EditableStepRow` in `EditRouteScreen.tsx`), styled like
+  StartScreen's own "View All Stops" list - a numbered pin for a stop,
+  a mirrored turn arrow for a turn - but with real inputs: a type
+  selector (Stop/Turn Left/Turn Right), side, from/onto text, rider
+  count, notes, plus that row's own resolution status and a per-row
+  Fetch button. A trash-can button removes a row; "Add Step" appends a
+  blank one. None of this changes what actually gets persisted -
+  `parseRouteImport.ts` grew `rowsToCsvText`, the exact inverse of its
+  own parsing, so the edited rows still round-trip through the same
+  `rawStepsText: string` contract `page.tsx`'s admin store already
+  uses; only `EditRouteScreen.tsx`'s internal handling of that text
+  changed, not the storage shape itself.
+
+  Both this row list and StartScreen's "View All Stops" modal got the
+  same **"Show turns" toggle** (`ToggleSwitch.tsx`, a small new shared
+  component) - off by default (stops only, matching how both screens
+  already read), and interleaving turn entries back in at their real
+  position in the route when switched on, rather than appending them
+  separately - so what's shown always matches the order of the actual
+  drive. Same UI pattern in both places, implemented once per file
+  since the two render different underlying data (`NavigationStep[]`,
+  read-only, in StartScreen; `RawRouteRow[]`, being edited, in
+  EditRouteScreen).
+
+  **File upload, one file at a time.** `mode: "add"`'s stops card now
+  also has an "Upload File" button (`UploadIcon`, a hidden
+  `<input type="file">` under it) alongside the paste box - a
+  `FileReader` reads the chosen file's text into the same textarea
+  `parseRouteImport.ts` already parses, so an uploaded CSV/TSV gets
+  identical graceful column-matching to a pasted one. The file input
+  has no `multiple` attribute, so the browser's own picker only ever
+  offers one file - deliberately, for now (see Next steps below for the
+  multi-file follow-up the file-picker's own helper text already flags
+  in the UI).
+
+  One bug this phase's own testing caught: `page.tsx` was rendering the
+  same `<EditRouteScreen>` element (same position in the tree) for both
+  `mode: "add"` and the `mode: "edit"` screen it immediately switches
+  to after saving - React reused the existing component instance rather
+  than mounting a fresh one, so the new row-editor's `rows` state (which
+  only ever seeds itself from `rawStepsText` once, on mount) never
+  re-seeded with the just-created route's own stops, leaving the edit
+  screen looking empty. Fixed with a `key` on each branch
+  (`key="add"`, `key={\`edit-${route.id}\`}`) so switching between them,
+  or between editing two different routes, always mounts fresh.
+- Multiple files at once, building multiple routes in one go, is on the
+  roadmap - the current Upload File button deliberately only ever lets
+  a district pick one file/one route for now; a real multi-file flow
+  needs its own review UI (which file became which route, a way to fix
+  one without restarting all of them) that's out of scope for this pass

@@ -233,8 +233,8 @@ async function geocodeRoute(
 /**
  * Refreshes every active route's own sidecar waypoint cache from
  * public/data/route-master-list.csv - one geocodeRoute() call per
- * active row whose steps CSV actually exists on disk (an active row
- * with no steps sheet yet, or with no school address on file, is
+ * published row whose steps CSV actually exists on disk (a published
+ * row with no steps sheet yet, or with no school address on file, is
  * logged and skipped rather than crashing the whole run - the same
  * kind of gap page.tsx already tolerates for a route whose data isn't
  * ready).
@@ -258,7 +258,7 @@ async function main() {
 
   const masterList = parseRouteMasterList(readFileSync(MASTER_LIST_PATH, "utf8"));
   const schoolAddresses = parseSchoolsCsv(readFileSync(SCHOOLS_CSV_PATH, "utf8"));
-  const activeRoutes = masterList.filter((route) => route.status === "active");
+  const publishedRoutes = masterList.filter((route) => route.status === "published");
 
   let totalHits = 0;
   let totalFetched = 0;
@@ -267,7 +267,7 @@ async function main() {
   let totalPruned = 0;
   let routesProcessed = 0;
 
-  for (const route of activeRoutes) {
+  for (const route of publishedRoutes) {
     const baseName = stepsCsvBaseName(route);
     const stepsCsvPath = join(DATA_DIR, `${baseName}.csv`);
 

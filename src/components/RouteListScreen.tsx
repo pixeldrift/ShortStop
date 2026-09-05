@@ -11,6 +11,7 @@ import {
   SortIcon,
   SunIcon,
   SunriseIcon,
+  TrashIcon,
   TriangleIcon,
 } from "./icons";
 import { fetchCommittedWaypointCache, isRouteFullyResolved } from "@/lib/routeReadiness";
@@ -22,8 +23,8 @@ import type { WaypointCache } from "@/lib/waypointCache";
  * Rendered as a single shared ConfirmModal below rather than one
  * inline per row, so at most one is ever open at a time. */
 type ConfirmRequest =
-  | { type: "activate"; route: Route }
-  | { type: "deactivate"; route: Route }
+  | { type: "publish"; route: Route }
+  | { type: "unpublish"; route: Route }
   | { type: "delete"; route: Route };
 
 type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
@@ -84,29 +85,28 @@ export function RouteListScreen({
   onDeleteRoute,
 }: {
   routes: Route[];
-  /** Reveals inactive real routes below, dimmed, and turns on the
-   * per-row activate/deactivate/delete controls - toggled by the
+  /** Reveals draft real routes below, dimmed, and turns on the
+   * per-row publish/unpublish/delete controls - toggled by the
    * "Edit Mode" link at the bottom (onToggleAdminMode), or turned on
    * unconditionally by a route's own "Edit Route" link on StartScreen
    * (see page.tsx). */
   adminMode: boolean;
   /** This session's own fetched-coordinates overlay per route id (see
    * page.tsx) - merged on top of each route's real committed sidecar
-   * cache before deciding whether "Activate" is actually allowed
-   * (handleActivateClick below), so a route made ready via
+   * cache before deciding whether "Publish" is actually allowed
+   * (handlePublishClick below), so a route made ready via
    * EditRouteScreen's "Fetch Location"/"Fetch All Locations" this
    * session is recognized as ready here too. */
   adminWaypointCaches: Record<string, WaypointCache>;
   onToggleAdminMode: () => void;
   /** Normal navigation - the trip-summary/step flow. Used for every
-   * route when not in admin mode, and for active/demo routes even
-   * while in admin mode (only an inactive real route's row opens
-   * straight into editing instead - see handleRowClick below). */
+   * route when not in admin mode, and for published/demo routes even
+   * while in admin mode (only a draft route's row opens straight into
+   * editing instead - see handleRowClick below). */
   onSelect: (route: Route) => void;
   /** Opens EditRouteScreen directly for this route - admin mode only,
-   * inactive real routes only (see handleRowClick), or an inactive
-   * route that isn't actually ready to activate yet (see
-   * handleActivateClick). */
+   * draft routes only (see handleRowClick), or a draft route that
+   * isn't actually ready to publish yet (see handlePublishClick). */
   onEditRoute: (route: Route) => void;
   onAddRoute: () => void;
   onSetRouteStatus: (route: Route, status: RouteStatus) => void;
@@ -114,7 +114,7 @@ export function RouteListScreen({
 }) {
   const [query, setQuery] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
-  // Only set while handleActivateClick's own readiness check is in
+  // Only set while handlePublishClick's own readiness check is in
   // flight - not surfaced as a spinner anywhere yet, just prevents a
   // second tap on the same row from firing a second check.
   const [checkingRouteId, setCheckingRouteId] = useState<string | null>(null);
@@ -139,10 +139,10 @@ export function RouteListScreen({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matching = routes.filter((route) => {
-      // A real (non-"demo") route that isn't "active" only ever shows
-      // up in admin mode - a normal driver never needs to see a route
-      // nobody's actually running.
-      const isAdminOnly = route.status !== "active" && route.status !== "demo";
+      // A real (non-"demo") route that isn't "published" only ever
+      // shows up in admin mode - a normal driver never needs to see a
+      // route nobody's actually running.
+      const isAdminOnly = route.status !== "published" && route.status !== "demo";
       if (isAdminOnly && !adminMode) return false;
 
       const matchesQuery =
@@ -174,34 +174,34 @@ export function RouteListScreen({
     });
   }, [routes, query, view, sortField, sortDir, adminMode]);
 
-  // In admin mode, tapping an inactive real route's row goes straight
-  // to editing it instead of the normal trip flow - it isn't running,
-  // so there's nothing useful to "start." An active route (or a demo
+  // In admin mode, tapping a draft real route's row goes straight to
+  // editing it instead of the normal trip flow - it isn't running, so
+  // there's nothing useful to "start." A published route (or a demo
   // one) always opens normally, even while in admin mode - only the
   // per-row action buttons below (visible in admin mode) manage
   // status/deletion for those.
   function handleRowClick(route: Route) {
-    const isAdminOnly = route.status !== "active" && route.status !== "demo";
+    const isAdminOnly = route.status !== "published" && route.status !== "demo";
     if (adminMode && isAdminOnly) onEditRoute(route);
     else onSelect(route);
   }
 
-  // "Activate" never just flips the status - the same "every
-  // geocodable stop has to actually resolve first" rule
-  // EditRouteScreen.tsx enforces applies here too, checked against the
-  // route's own committed sidecar cache merged with this session's own
+  // "Publish" never just flips the status - the same "every geocodable
+  // stop has to actually resolve first" rule EditRouteScreen.tsx
+  // enforces applies here too, checked against the route's own
+  // committed sidecar cache merged with this session's own
   // fetched-but-not-yet-committed overlay (adminWaypointCaches). A
   // route that isn't ready skips the confirm modal entirely and goes
   // straight to the edit screen instead, where the real warning UI
   // (and the Fetch/Fetch All buttons that actually fix this) already
   // lives - no separate warning needed here.
-  async function handleActivateClick(route: Route) {
+  async function handlePublishClick(route: Route) {
     setCheckingRouteId(route.id);
     try {
       const committed = await fetchCommittedWaypointCache(route);
       const merged = { ...committed, ...(adminWaypointCaches[route.id] ?? {}) };
       if (isRouteFullyResolved(route, merged)) {
-        setConfirmRequest({ type: "activate", route });
+        setConfirmRequest({ type: "publish", route });
       } else {
         onEditRoute(route);
       }
@@ -323,7 +323,7 @@ export function RouteListScreen({
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map((route) => {
             const isDemo = route.status === "demo";
-            const isAdminOnly = !isDemo && route.status !== "active";
+            const isAdminOnly = !isDemo && route.status !== "published";
             return (
               <div key={route.id} className={isAdminOnly ? "opacity-50" : ""}>
                 <button
@@ -366,37 +366,39 @@ export function RouteListScreen({
                 {/* Admin-only quick actions - each one a confirm-modal
                     request, never fired directly from here, so a
                     stray tap can't silently flip a route live or
-                    delete one. Every real (non-demo) route gets
-                    Deactivate once active; an inactive one gets
-                    Activate and Delete instead - deleting an active
-                    route isn't offered at all, it has to be
-                    deactivated first. */}
+                    delete one. Delete (the destructive one) always
+                    reads leftmost. Every real (non-demo) route gets
+                    Unpublish once published; a draft one gets Delete
+                    and Publish instead - deleting a published route
+                    isn't offered at all, it has to be unpublished
+                    first. */}
                 {adminMode && !isDemo && (
                   <div className="-mt-1 flex items-center gap-2 px-4 pb-2">
-                    {route.status === "active" ? (
+                    {route.status === "published" ? (
                       <button
                         type="button"
-                        onClick={() => setConfirmRequest({ type: "deactivate", route })}
+                        onClick={() => setConfirmRequest({ type: "unpublish", route })}
                         className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
                       >
-                        Deactivate
+                        Unpublish
                       </button>
                     ) : (
                       <>
                         <button
                           type="button"
-                          onClick={() => handleActivateClick(route)}
-                          disabled={checkingRouteId === route.id}
-                          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50 active:bg-zinc-100"
+                          onClick={() => setConfirmRequest({ type: "delete", route })}
+                          className="flex items-center gap-1 rounded-lg border border-red-300 px-2 py-1 text-xs font-semibold text-red-600 active:bg-red-50"
                         >
-                          {checkingRouteId === route.id ? "Checking…" : "Activate"}
+                          <TrashIcon className="h-3.5 w-3.5" />
+                          Delete
                         </button>
                         <button
                           type="button"
-                          onClick={() => setConfirmRequest({ type: "delete", route })}
-                          className="rounded-lg border border-red-300 px-2 py-1 text-xs font-semibold text-red-600 active:bg-red-50"
+                          onClick={() => handlePublishClick(route)}
+                          disabled={checkingRouteId === route.id}
+                          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50 active:bg-zinc-100"
                         >
-                          Delete
+                          {checkingRouteId === route.id ? "Checking…" : "Publish"}
                         </button>
                       </>
                     )}
@@ -445,23 +447,26 @@ export function RouteListScreen({
           title={
             confirmRequest.type === "delete"
               ? `Delete Route ${confirmRequest.route.routeNumber}?`
-              : confirmRequest.type === "activate"
-                ? `Activate Route ${confirmRequest.route.routeNumber}?`
-                : `Deactivate Route ${confirmRequest.route.routeNumber}?`
+              : confirmRequest.type === "publish"
+                ? `Publish Route ${confirmRequest.route.routeNumber}?`
+                : `Unpublish Route ${confirmRequest.route.routeNumber}?`
           }
           message={
             confirmRequest.type === "delete"
               ? "This removes it for the rest of this session and can't be undone."
-              : confirmRequest.type === "activate"
-                ? "Drivers will see this route as soon as it's active."
-                : "Drivers will no longer see this route until it's activated again."
+              : confirmRequest.type === "publish"
+                ? "Drivers will see this route as soon as it's published."
+                : "Drivers will no longer see this route until it's published again."
           }
           confirmLabel={
             confirmRequest.type === "delete"
               ? "Delete"
-              : confirmRequest.type === "activate"
-                ? "Activate"
-                : "Deactivate"
+              : confirmRequest.type === "publish"
+                ? "Publish"
+                : "Unpublish"
+          }
+          confirmIcon={
+            confirmRequest.type === "delete" ? <TrashIcon className="h-4 w-4" /> : undefined
           }
           destructive={confirmRequest.type === "delete"}
           onCancel={() => setConfirmRequest(null)}
@@ -471,7 +476,7 @@ export function RouteListScreen({
             } else {
               onSetRouteStatus(
                 confirmRequest.route,
-                confirmRequest.type === "activate" ? "active" : "inactive",
+                confirmRequest.type === "publish" ? "published" : "draft",
               );
             }
             setConfirmRequest(null);

@@ -35,7 +35,7 @@ const DEMO_ROUTE_COUNT = 24;
 // tripType/schoolLevel spelling. Deliberately only covers routes a real
 // steps sheet exists for - 120-PM-HS has no entry here yet (its sheet
 // came in visibly incomplete, cutting off mid-neighborhood, so the
-// master list marks it "inactive" - see route-master-list.csv), and any
+// master list marks it "draft" - see route-master-list.csv), and any
 // row with no entry here is skipped rather than crashing (see the
 // `.filter` below).
 const ROUTE_STEPS_CSV_PATHS: Record<string, string> = {
@@ -58,8 +58,8 @@ async function fetchText(path: string): Promise<string> {
  * "trip" is the existing StartScreen/StepScreen flow for actually
  * running a route; "add-route"/"edit-route" are the admin-only
  * EditRouteScreen, reached via RouteListScreen's "New Route" link
- * (edit mode only), tapping an inactive route's row in edit mode,
- * StartScreen's "Edit Route" link, or an "Activate" attempt that turns
+ * (edit mode only), tapping a draft route's row in edit mode,
+ * StartScreen's "Edit Route" link, or a "Publish" attempt that turns
  * out not to be ready yet (see RouteListScreen.tsx). */
 type Screen =
   | { kind: "list" }
@@ -106,8 +106,8 @@ export default function Home() {
   const [deletedRouteIds, setDeletedRouteIds] = useState<ReadonlySet<string>>(new Set());
   // Toggled by RouteListScreen's own "Edit Mode" link, or turned on
   // unconditionally by a route's "Edit Route" link on StartScreen -
-  // reveals inactive real routes on the list, dimmed, and the per-row
-  // activate/deactivate/delete controls alongside them.
+  // reveals draft real routes on the list, dimmed, and the per-row
+  // publish/unpublish/delete controls alongside them.
   const [adminMode, setAdminMode] = useState(false);
 
   useEffect(() => {
@@ -214,6 +214,13 @@ export default function Home() {
   if (screen.kind === "add-route") {
     return (
       <EditRouteScreen
+        // Forces a fresh mount when handleSaveRoute switches straight
+        // from this add screen into editing the just-created route
+        // below - without a key, React sees the same <EditRouteScreen>
+        // element at the same position and reuses the instance, so its
+        // `rows` state (lazily seeded from rawStepsText once on mount)
+        // would never re-seed with the route just saved.
+        key="add"
         mode="add"
         route={null}
         rawStepsText=""
@@ -228,6 +235,7 @@ export default function Home() {
     const rawStepsText = adminRawStepsById[screen.route.id] ?? rawStepsById[screen.route.id] ?? "";
     return (
       <EditRouteScreen
+        key={`edit-${screen.route.id}`}
         mode="edit"
         route={screen.route}
         rawStepsText={rawStepsText}

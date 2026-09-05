@@ -3,14 +3,15 @@ export type TurnDirection = "left" | "right";
 export type TripType = "pickup" | "dropoff";
 /** "Demo" marks the fabricated filler routes (demoRoutes.ts) that pad
  * out the route list - never a real district route, whatever its
- * other fields claim. "Active"/"inactive" are both real data,
+ * other fields claim. "Published"/"draft" are both real data,
  * distinguished by whether the route is currently run - a route
- * doesn't stop being real just because the district retired it, and a
- * brand-new admin-created route (see EditRouteScreen.tsx) starts out
- * "inactive" too, whether or not it's actually been geocoded yet -
- * readiness is checked at the moment of flipping to "active"
- * (routeResolutionStatus.ts), not tracked as its own status. */
-export type RouteStatus = "active" | "inactive" | "demo";
+ * doesn't stop being real just because the district retired it (back
+ * to "draft", not deleted), and a brand-new admin-created route (see
+ * EditRouteScreen.tsx) starts out "draft" too, whether or not it's
+ * actually been geocoded yet - readiness is checked at the moment of
+ * publishing (routeResolutionStatus.ts), not tracked as its own
+ * status. */
+export type RouteStatus = "published" | "draft" | "demo";
 /** Which school a route serves - turn-by-turn instructions differ by
  * level even for the same bus/trip type (a district's elementary,
  * middle, and high school runs are each their own real path, their
