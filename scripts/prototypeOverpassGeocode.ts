@@ -218,9 +218,25 @@ async function main() {
       `(${box.north.toFixed(4)}, ${box.east.toFixed(4)})\n`,
   );
 
-  const intersections = waypoints.filter(
+  const allIntersections = waypoints.filter(
     (w): w is WaypointQuery & { kind: "intersection" } => w.kind === "intersection",
   );
+
+  // Optional: re-test just the intersections naming one road, instead
+  // of the whole route - useful after fixing a specific name mismatch
+  // (see README, "Maps, part nine") without re-spending calls (and
+  // rate-limit risk) on ones already known to resolve or not.
+  const filter = process.env.PROTOTYPE_FILTER?.toLowerCase();
+  const intersections = filter
+    ? allIntersections.filter(
+        (w) => w.roadA.toLowerCase().includes(filter) || w.roadB.toLowerCase().includes(filter),
+      )
+    : allIntersections;
+
+  if (filter) {
+    console.log(`Filter: only intersections naming "${process.env.PROTOTYPE_FILTER}"`);
+    console.log(`  -> ${intersections.length} of ${allIntersections.length} total\n`);
+  }
 
   let lastResolved = { lat: anchor.lat, lon: anchor.lon };
   const results: Record<string, unknown>[] = [];

@@ -1690,7 +1690,7 @@ infrastructure failures (429/504 from hitting the public
 `overpass-api.de` instance too fast, back-to-back with no pacing - not
 a verdict on the method, just a "needs rate-limiting before this is
 more than a prototype" finding), and the other 10 came back "no shared
-node in the search box." That last bucket isn't evenly spread: 7 of
+node in the search box." That last bucket isn't evenly spread: 8 of
 those 10 are every single query naming "Bill Stewart Rd" - one road,
 consistently, regardless of which cross street it's paired with. Every
 other road name (Rock Springs Rd, Old Nashville Hwy, Sam Ridley Pkwy,
@@ -1719,11 +1719,15 @@ look up.
   confirm the OpenRouteService switch works without needing a CSV edit
 - The Overpass prototype (see "Maps, part nine" above) resolved 5/20
   of route 125's real crossroads cleanly on its first working run - the
-  "Bill Stewart Rd" name mismatch behind 7 of the 10 misses is now
+  "Bill Stewart Rd" name mismatch behind 8 of the 10 misses is now
   fixed (it's "Bill Stewart Blvd" - corrected in `125-PM-EL.csv`), but
   that's a data fix, not a code one, so the actual hit rate needs a
-  re-run to confirm. Also still needs pacing between Overpass calls (4
-  of 20 hit 429/504 from having none at all - not a resolution failure,
+  re-run to confirm. `prototype-overpass.yml` now takes an optional
+  `filter` input to re-test just the intersections naming one road
+  (e.g. "Bill Stewart") instead of spending calls re-confirming ones
+  already known to resolve or not. Also still needs pacing between
+  Overpass calls (4 of 20 hit 429/504 from having none at all - not a
+  resolution failure,
   just too fast for the public instance) before the hit rate means much.
   If it holds up after both, wire it into `geocode.ts` as a real
   provider (intersections through Overpass, plain addresses still

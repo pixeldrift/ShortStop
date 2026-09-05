@@ -9,7 +9,15 @@ name: Prototype - Overpass intersection lookup
 # search box on - this workflow can't do anything useful until that
 # secret exists (see README, "Next steps").
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: >-
+          Only re-test intersections naming this road (case-insensitive
+          substring, e.g. "Bill Stewart") - leave blank to run all of
+          route 125's crossroads.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -32,6 +40,7 @@ jobs:
       - name: Run prototype against route 125
         env:
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          PROTOTYPE_FILTER: ${{ inputs.filter }}
         run: npm run prototype:overpass 2>&1 | tee prototype-output.log
 
       - name: Write job summary
