@@ -6,14 +6,20 @@ import { HeartIcon, SearchIcon, TriangleIcon } from "./icons";
 import type { Route } from "@/lib/types";
 
 /** What the View dropdown filters to - "all"/"favorites" aren't
- * TripType values, so this is its own union rather than reusing that
- * type the way the old AM/PM toggle pair did. */
-type ViewFilter = "all" | "pickup" | "dropoff" | "favorites";
+ * TripType/SchoolLevel values, so this is its own union rather than
+ * reusing either type the way the old AM/PM toggle pair did. */
+type ViewFilter = "all" | "pickup" | "dropoff" | "elementary" | "middle" | "high" | "favorites";
 
+// Order here is the dropdown's own order - AM/PM, then school level,
+// with Favorites deliberately last rather than grouped with the
+// trip-type/level filters it otherwise reads like a peer of.
 const VIEW_OPTIONS: { value: ViewFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "pickup", label: "Morning Pickup" },
   { value: "dropoff", label: "Afternoon Drop Off" },
+  { value: "elementary", label: "Elementary" },
+  { value: "middle", label: "Middle School" },
+  { value: "high", label: "High School" },
   { value: "favorites", label: "Favorites" },
 ];
 
@@ -45,7 +51,13 @@ export function RouteListScreen({
       const matchesQuery =
         !q || route.name.toLowerCase().includes(q) || route.routeNumber.includes(q);
       const matchesView =
-        view === "all" || (view === "favorites" ? route.isFavorite : route.tripType === view);
+        view === "all"
+          ? true
+          : view === "favorites"
+            ? route.isFavorite
+            : view === "pickup" || view === "dropoff"
+              ? route.tripType === view
+              : route.schoolLevel === view;
       return matchesQuery && matchesView;
     });
 
@@ -147,7 +159,7 @@ export function RouteListScreen({
               className="grid w-full grid-cols-[2.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
             >
               <span className="font-heading text-lg font-black">{route.routeNumber}</span>
-              <span className="line-clamp-2 leading-snug text-zinc-700">{route.name}</span>
+              <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
               <span className="text-right text-sm font-semibold text-zinc-500">
                 {route.departureTime}
               </span>

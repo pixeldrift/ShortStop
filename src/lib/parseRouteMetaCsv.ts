@@ -1,21 +1,21 @@
 import type { RouteMeta } from "./parseRouteCsv";
 
 /** Fields this file's schema actually covers - driverName,
- * schoolAddress, distance, isFavorite, id, and status aren't columns
- * here, so callers merge those in separately (see PLACEHOLDER_META in
- * page.tsx). id/status in particular aren't placeholders so much as
- * data this sheet's schema simply hasn't grown yet - once more real
- * routes exist, they likely belong here instead (a route_id and/or
- * status column), not in a hardcoded constant shared by every route.
- * stop_count/rider_count are in the schema too, but aren't parsed into
- * anything: the app already derives both, live, from the real steps
- * CSV (parseRouteCsv), which stays correct if a stop is ever added or
- * removed there - re-deriving the same numbers from this file's own
- * copy would just be a second source that could drift out of sync
- * with it. */
+ * schoolAddress, distance, isFavorite, id, status, and schoolLevel
+ * aren't columns here, so callers merge those in separately (see
+ * PLACEHOLDER_META in page.tsx). id/status/schoolLevel in particular
+ * aren't placeholders so much as data this sheet's schema simply
+ * hasn't grown yet - once more real routes exist, they likely belong
+ * here instead (a route_id, status, and school_level column), not in
+ * a hardcoded constant shared by every route. stop_count/rider_count
+ * are in the schema too, but aren't parsed into anything: the app
+ * already derives both, live, from the real steps CSV (parseRouteCsv),
+ * which stays correct if a stop is ever added or removed there -
+ * re-deriving the same numbers from this file's own copy would just
+ * be a second source that could drift out of sync with it. */
 export type RouteMetaCsvFields = Omit<
   RouteMeta,
-  "driverName" | "schoolAddress" | "distance" | "isFavorite" | "id" | "status"
+  "driverName" | "schoolAddress" | "distance" | "isFavorite" | "id" | "status" | "schoolLevel"
 >;
 
 function to12HourClock(hhmm: string): string {

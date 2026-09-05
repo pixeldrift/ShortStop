@@ -1,4 +1,4 @@
-import type { Route } from "./types";
+import type { Route, SchoolLevel } from "./types";
 
 const NAME_PREFIXES = [
   "Oakwood",
@@ -26,7 +26,18 @@ const NAME_PREFIXES = [
   "Timberline",
   "Windsor",
 ];
-const NAME_SUFFIXES = ["Elementary", "Middle School", "High School", "Academy"];
+// Paired rather than two separate arrays - each demo route needs both
+// the display suffix and the real schoolLevel it implies (turn-by-turn
+// instructions genuinely differ by level, not just cosmetically - see
+// SchoolLevel in types.ts), and picking them independently could land
+// on a suffix/level mismatch (a "High School" that's secretly
+// "elementary"). Dropped the old fourth option, "Academy" - it didn't
+// map to any real SchoolLevel.
+const NAME_SUFFIXES: { suffix: string; level: SchoolLevel }[] = [
+  { suffix: "Elementary", level: "elementary" },
+  { suffix: "Middle School", level: "middle" },
+  { suffix: "High School", level: "high" },
+];
 const TRIP_LABELS = ["Morning Pickup", "Afternoon Drop Off"] as const;
 const DRIVER_FIRST = [
   "Maria",
@@ -130,21 +141,24 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
       busNumber = String(100 + Math.floor(rng() * 900));
     } while (busNumber === routeNumber);
 
-    const school = `${pick(rng, NAME_PREFIXES)} ${pick(rng, NAME_SUFFIXES)}`;
+    const { suffix, level: schoolLevel } = pick(rng, NAME_SUFFIXES);
+    const school = `${pick(rng, NAME_PREFIXES)} ${suffix}`;
     const tripLabel = pick(rng, TRIP_LABELS);
     const tripType = tripLabel === "Morning Pickup" ? "pickup" : "dropoff";
 
     return {
       ...base,
-      // Same `${routeNumber}-${tripType}` convention as the real
-      // route (see Route.id's doc comment in types.ts) - routeNumber
-      // alone is already unique across every demo route (usedNumbers,
-      // above), so this doesn't need its own collision check.
-      id: `${routeNumber}-${tripType}`,
+      // Same `${routeNumber}-${tripType}-${schoolLevel}` convention as
+      // the real route (see Route.id's doc comment in types.ts) -
+      // routeNumber alone is already unique across every demo route
+      // (usedNumbers, above), so this doesn't need its own collision
+      // check.
+      id: `${routeNumber}-${tripType}-${schoolLevel}`,
       status: "demo",
       routeNumber,
       name: `${school} — ${tripLabel}`,
       schoolName: school,
+      schoolLevel,
       driverName: `${pick(rng, DRIVER_FIRST)} ${pick(rng, DRIVER_LAST)}`,
       busNumber,
       departureTime: randomDepartureTime(rng),

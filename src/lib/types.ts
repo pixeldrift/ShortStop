@@ -7,6 +7,13 @@ export type TripType = "pickup" | "dropoff";
  * distinguished by whether the route is currently run - a route
  * doesn't stop being real just because the district retired it. */
 export type RouteStatus = "active" | "inactive" | "demo";
+/** Which school a route serves - turn-by-turn instructions differ by
+ * level even for the same bus/trip type (a district's elementary,
+ * middle, and high school runs are each their own real path, their
+ * own CSV), so this is real routing data, not just a display detail -
+ * see Route.id below, and RouteListScreen's View dropdown, which
+ * filters on it directly. */
+export type SchoolLevel = "elementary" | "middle" | "high";
 
 export interface NavigationStep {
   id: number;
@@ -43,13 +50,12 @@ export interface NavigationStep {
 export interface Route {
   /** The true unique identifier - routeNumber turns out to just be the
    * bus's own number (see busNumber), and a district reuses a bus
-   * across multiple distinct paths (AM pickup vs. PM dropoff, and a
-   * separate run - its own CSV, its own turn-by-turn - per school
-   * level it serves), so routeNumber alone can't tell two routes
-   * apart. Convention for now: `${routeNumber}-${tripType}`, unique as
-   * long as a bus doesn't run two same-trip-type routes; extend with
-   * schoolName (or a dedicated school-level field) if that ever
-   * actually happens once more real routes exist. */
+   * across multiple distinct paths (AM pickup vs. PM dropoff, crossed
+   * with a separate run - its own CSV, its own turn-by-turn - per
+   * school level it serves), so routeNumber alone can't tell two
+   * routes apart. Convention: `${routeNumber}-${tripType}-
+   * ${schoolLevel}`, unique as long as a bus doesn't run two routes at
+   * the same level and trip type in one day. */
   id: string;
   status: RouteStatus;
   name: string;
@@ -59,6 +65,7 @@ export interface Route {
   departureTime: string;
   schoolName: string;
   schoolAddress: string;
+  schoolLevel: SchoolLevel;
   /** A pickup route arrives somewhere (school); a dropoff route doesn't
    * have one single destination, so the trip-summary label reads
    * "Complete" instead of "Arrive". */

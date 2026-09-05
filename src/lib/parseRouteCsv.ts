@@ -1,6 +1,13 @@
 import { deriveWaypoints } from "./deriveWaypoints";
 import { speakRoadNames } from "./speech";
-import type { NavigationStep, Route, RouteStatus, TripType, TurnDirection } from "./types";
+import type {
+  NavigationStep,
+  Route,
+  RouteStatus,
+  SchoolLevel,
+  TripType,
+  TurnDirection,
+} from "./types";
 import { waypointCacheKey } from "./waypointCache";
 
 export interface RouteMeta {
@@ -13,6 +20,7 @@ export interface RouteMeta {
   departureTime: string;
   schoolName: string;
   schoolAddress: string;
+  schoolLevel: SchoolLevel;
   tripType: TripType;
   distance: string;
   durationMinutes: number;
