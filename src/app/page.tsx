@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { EditRouteScreen } from "@/components/EditRouteScreen";
 import { RouteListScreen } from "@/components/RouteListScreen";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
@@ -31,11 +32,11 @@ const DEMO_ROUTE_COUNT = 24;
 // types.ts). File names follow the district's own convention -
 // route, AM/PM, school type (e.g. "120-AM-MS.csv"), not this app's
 // tripType/schoolLevel spelling. Deliberately only covers routes a real
-// steps sheet exists for - 120-PM-HS is an "active" candidate with no
-// entry here yet (its sheet came in visibly incomplete, cutting off
-// mid-neighborhood, so the master list marks it "inactive" instead -
-// see route-master-list.csv), and any future "active" row with no
-// entry here is skipped rather than crashing (see the `.filter` below).
+// steps sheet exists for - 120-PM-HS has no entry here yet (its sheet
+// came in visibly incomplete, cutting off mid-neighborhood, so the
+// master list marks it "inactive" - see route-master-list.csv), and any
+// row with no entry here is skipped rather than crashing (see the
+// `.filter` below).
 const ROUTE_STEPS_CSV_PATHS: Record<string, string> = {
   "125-dropoff-elementary": "/data/125-PM-EL.csv",
   "120-pickup-elementary": "/data/120-AM-EL.csv",
@@ -51,39 +52,65 @@ async function fetchText(path: string): Promise<string> {
   return res.text();
 }
 
+/** Which screen is showing, replacing a plain `selectedRoute: Route |
+ * null` now that there's more than one non-list screen to be on.
+ * "trip" is the existing StartScreen/StepScreen flow for actually
+ * running a route; "add-route"/"edit-route" are the admin-only
+ * EditRouteScreen, reached via RouteListScreen's "Add Route" link or
+ * StartScreen's "Edit Route" link (see AppScreen below). */
+type Screen =
+  | { kind: "list" }
+  | { kind: "trip"; route: Route }
+  | { kind: "add-route" }
+  | { kind: "edit-route"; route: Route };
+
 export default function Home() {
-  // null while the master list + every active route's steps sheet are
-  // still loading; an empty array is a real (if unexpected) "loaded but
-  // nothing came back" result, kept distinct from still-loading so the
-  // spinner doesn't hang forever on that edge case.
+  // null while the master list + every loadable route's steps sheet
+  // are still loading; an empty array is a real (if unexpected) "loaded
+  // but nothing came back" result, kept distinct from still-loading so
+  // the spinner doesn't hang forever on that edge case.
   const [realRoutes, setRealRoutes] = useState<Route[] | null>(null);
+  // Each loaded real route's own source steps text, alongside the
+  // parsed Route itself - EditRouteScreen needs the raw text to
+  // pre-fill its textarea, not just the already-derived NavigationSteps.
+  const [rawStepsById, setRawStepsById] = useState<Record<string, string>>({});
+  const [schoolAddresses, setSchoolAddresses] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  // Which route (if any) is selected for the trip-summary/step flow -
-  // null means we're on the route-list home screen. Cleared back to
-  // null whenever the user taps the back arrow on the trip-summary
-  // screen.
-  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
+  const [screen, setScreen] = useState<Screen>({ kind: "list" });
+
+  // Session-only admin edits/new routes, keyed by route id - overlaid
+  // on top of whatever realRoutes loaded from the committed CSVs (see
+  // effectiveRoutes below). Not persisted anywhere real yet: a page
+  // reload loses it, same known-gap honesty this app already applies
+  // to rider check-in state (see useRiderRoster.ts) - see
+  // EditRouteScreen's own doc comment for why saving here can't write
+  // back to real files yet.
+  const [adminRoutes, setAdminRoutes] = useState<Record<string, Route>>({});
+  const [adminRawStepsById, setAdminRawStepsById] = useState<Record<string, string>>({});
+  // Sticky for the rest of the session once entered (via "Add Route" or
+  // "Edit Route") - reveals inactive/pending real routes on the list,
+  // dimmed, rather than silently hiding admin-relevant routes the
+  // moment the edit screen closes.
+  const [adminMode, setAdminMode] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchText("/data/route-master-list.csv"), fetchText("/data/schools.csv")])
       .then(async ([masterListCsv, schoolsCsv]) => {
-        const activeRows = parseRouteMasterList(masterListCsv).filter(
-          (row) => row.status === "active",
-        );
-        const schoolAddresses = parseSchoolsCsv(schoolsCsv);
+        const allRows = parseRouteMasterList(masterListCsv);
+        const addresses = parseSchoolsCsv(schoolsCsv);
+        setSchoolAddresses(addresses);
 
         const built = await Promise.all(
-          activeRows.map(async (row) => {
+          allRows.map(async (row) => {
             const stepsPath = ROUTE_STEPS_CSV_PATHS[row.id];
             if (!stepsPath) return null;
 
-            // An "active" row with no computable duration (blank
-            // end_time) means the master list is claiming this route
-            // is fully run without actually recording when it ends -
-            // a data problem worth surfacing rather than silently
-            // showing a fake "0 min" trip.
+            // A row with no computable duration (blank end_time) means
+            // the master list hasn't recorded when this route ends yet
+            // - a data problem worth surfacing rather than silently
+            // showing a fake "0 min" trip, whatever its status.
             if (row.durationMinutes == null) {
-              console.warn(`Active route ${row.id} has no end_time in the master list - skipped`);
+              console.warn(`Route ${row.id} has no end_time in the master list - skipped`);
               return null;
             }
 
@@ -92,29 +119,48 @@ export default function Home() {
               ...row,
               durationMinutes: row.durationMinutes,
               driverName: PLACEHOLDER_DRIVER_NAME,
-              schoolAddress: schoolAddresses[row.schoolName] ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
+              schoolAddress: addresses[row.schoolName] ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
               distance: PLACEHOLDER_DISTANCE,
               isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
             };
-            return parseRouteCsv(stepsCsv, meta);
+            return { route: parseRouteCsv(stepsCsv, meta), rawStepsText: stepsCsv };
           }),
         );
 
-        setRealRoutes(built.filter((r): r is Route => r !== null));
+        const loaded = built.filter((r): r is { route: Route; rawStepsText: string } => r !== null);
+        setRealRoutes(loaded.map((l) => l.route));
+        setRawStepsById(Object.fromEntries(loaded.map((l) => [l.route.id, l.rawStepsText])));
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
+
+  // realRoutes overlaid with any session-only admin edits/new routes -
+  // an edited real route's admin version wins outright (steps, status,
+  // everything), and a brand-new route (an id realRoutes never had) is
+  // simply added.
+  const effectiveRealRoutes = useMemo(() => {
+    if (!realRoutes) return null;
+    const byId = new Map(realRoutes.map((r) => [r.id, r]));
+    for (const [id, route] of Object.entries(adminRoutes)) byId.set(id, route);
+    return Array.from(byId.values());
+  }, [realRoutes, adminRoutes]);
 
   // buildDemoRoutes fabricates the rest purely so the list has enough
   // rows to demonstrate scrolling/search. Computed once per fetched
   // batch of real routes (not on every render) via useMemo, so the
   // list doesn't reshuffle each time the user navigates back to it.
   const routes = useMemo(() => {
-    if (!realRoutes || realRoutes.length === 0) return realRoutes ?? [];
-    return [...realRoutes, ...buildDemoRoutes(realRoutes, DEMO_ROUTE_COUNT)].sort(
+    if (!effectiveRealRoutes || effectiveRealRoutes.length === 0) return effectiveRealRoutes ?? [];
+    return [...effectiveRealRoutes, ...buildDemoRoutes(effectiveRealRoutes, DEMO_ROUTE_COUNT)].sort(
       (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
     );
-  }, [realRoutes]);
+  }, [effectiveRealRoutes]);
+
+  function handleSaveRoute(route: Route, rawStepsText: string) {
+    setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
+    setAdminRawStepsById((prev) => ({ ...prev, [route.id]: rawStepsText }));
+    setScreen({ kind: "edit-route", route });
+  }
 
   if (error) {
     return (
@@ -132,14 +178,68 @@ export default function Home() {
     );
   }
 
-  if (!selectedRoute) {
-    return <RouteListScreen routes={routes} onSelect={setSelectedRoute} />;
+  if (screen.kind === "add-route") {
+    return (
+      <EditRouteScreen
+        mode="add"
+        route={null}
+        rawStepsText=""
+        schoolAddresses={schoolAddresses}
+        onCancel={() => setScreen({ kind: "list" })}
+        onSave={handleSaveRoute}
+      />
+    );
   }
 
-  return <RouteApp route={selectedRoute} onBack={() => setSelectedRoute(null)} />;
+  if (screen.kind === "edit-route") {
+    const rawStepsText = adminRawStepsById[screen.route.id] ?? rawStepsById[screen.route.id] ?? "";
+    return (
+      <EditRouteScreen
+        mode="edit"
+        route={screen.route}
+        rawStepsText={rawStepsText}
+        schoolAddresses={schoolAddresses}
+        onCancel={() => setScreen({ kind: "list" })}
+        onSave={handleSaveRoute}
+      />
+    );
+  }
+
+  if (screen.kind === "trip") {
+    return (
+      <RouteApp
+        route={screen.route}
+        onBack={() => setScreen({ kind: "list" })}
+        onEdit={() => {
+          setAdminMode(true);
+          setScreen({ kind: "edit-route", route: screen.route });
+        }}
+      />
+    );
+  }
+
+  return (
+    <RouteListScreen
+      routes={routes}
+      adminMode={adminMode}
+      onSelect={(route) => setScreen({ kind: "trip", route })}
+      onAddRoute={() => {
+        setAdminMode(true);
+        setScreen({ kind: "add-route" });
+      }}
+    />
+  );
 }
 
-function RouteApp({ route, onBack }: { route: Route; onBack: () => void }) {
+function RouteApp({
+  route,
+  onBack,
+  onEdit,
+}: {
+  route: Route;
+  onBack: () => void;
+  onEdit: () => void;
+}) {
   const {
     currentStep,
     currentIndex,
@@ -162,7 +262,7 @@ function RouteApp({ route, onBack }: { route: Route; onBack: () => void }) {
   const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
 
   if (!started) {
-    return <StartScreen route={route} onStart={start} onBack={onBack} />;
+    return <StartScreen route={route} onStart={start} onBack={onBack} onEdit={onEdit} />;
   }
 
   const expectedCount = phase === "step" ? (currentStep.studentCount ?? 0) : 0;

@@ -186,6 +186,69 @@ export function CheckCircleIcon({ className }: { className?: string }) {
   );
 }
 
+/** A miss, alongside CheckCircleIcon's hit - same filled-circle-plus-
+ * mark shape so the two read as a matched pair (auto-resolve status
+ * rows, see routeResolutionStatus.ts), just an X instead of a check. */
+export function XCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15" />
+      <path
+        d="M8.5 8.5 15.5 15.5M15.5 8.5 8.5 15.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** A route that can't be made active yet (still has unresolved
+ * waypoints) - shown in place of the Make Active button on the edit-
+ * route screen, and as a dimmed-list badge, rather than a plain
+ * disabled button with no explanation of why. */
+export function WarningIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path
+        d="M12 3 L22 20 H2 Z"
+        fill="currentColor"
+        fillOpacity="0.15"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <rect x="11" y="9" width="2" height="6" rx="1" fill="currentColor" />
+      <rect x="11" y="16.5" width="2" height="2" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Plain "+" - the Add Route link on the route list. */
+export function PlusIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" aria-hidden="true">
+      <path d="M12 5 V19 M5 12 H19" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** Small pencil - the Edit Route link on the route-info screen. */
+export function EditIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" aria-hidden="true">
+      <path
+        d="M4 20 L4.8 16.4 L16 5.2 A1.5 1.5 0 0 1 18 5.2 L18.8 6 A1.5 1.5 0 0 1 18.8 8 L7.6 19.2 Z M14.5 6.7 L17.3 9.5"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Magnifying glass - used inline in the route-list search box. */
 export function SearchIcon({ className }: { className?: string }) {
   return (

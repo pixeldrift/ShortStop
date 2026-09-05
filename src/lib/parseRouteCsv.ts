@@ -86,12 +86,20 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
  * turn-by-turn directions and stop locations - no times or special
  * instructions yet, so those fields come through empty. The sheet's own
  * leading sequence-number column was dropped entirely (unneeded - each
- * row's position in the file already gives it an order).
+ * row's position in the file already gives it an order). A thin
+ * wrapper over buildRouteFromRows below - the real work, split out so
+ * a caller that already has RawRouteRow[] from somewhere other than a
+ * strict CSV file (see parseRouteImport.ts's graceful column/header
+ * matching, used by the route-import/edit UI) can build a Route
+ * without round-tripping back through CSV text first.
  */
 export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
+  return buildRouteFromRows(parseRouteCsvRows(csvText), meta);
+}
+
+export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route {
   let stopCounter = 0;
 
-  const rows = parseRouteCsvRows(csvText);
   const waypoints = deriveWaypoints(rows, meta.schoolAddress);
 
   const steps: NavigationStep[] = rows.map((row, index) => {

@@ -44,8 +44,11 @@ src/
     layout.tsx          Root layout, metadata
     globals.css         Tailwind
   components/
-    RouteListScreen.tsx Home screen: searchable, scrollable #/Name/Start list
-    StartScreen.tsx     Route summary + trip stats + "Start Route" button
+    RouteListScreen.tsx Home screen: searchable, sortable, scrollable route
+                            list, plus the admin-only "Add Route" link (see below)
+    StartScreen.tsx     Route summary + trip stats + "Start Route" button,
+                            plus the admin-only "Edit Route" link (see below)
+    EditRouteScreen.tsx    Admin-only Add/Edit Route screen (see below)
     StepScreen.tsx       The step-through screen, incl. rider check-in
     RouteMap.tsx           Real OSM tile map, no route drawn yet (see below)
     StepTransition.tsx    Odometer-style roll between steps (see below)
@@ -69,6 +72,10 @@ src/
     geocode.ts              Swappable free-text geocoding providers (ORS active, see below)
     overpassGeocode.ts       Structured intersection lookup via the Overpass API (see below)
     waypointCache.ts         Cache key + entry types shared with scripts/geocodeRoute.ts
+    parseRouteImport.ts      Graceful column/header matching for a pasted or
+                                uploaded route (see below) - used by EditRouteScreen.tsx
+    routeResolutionStatus.ts Per-row auto-resolve status (resolved/unresolved/
+                                skipped) against a WaypointCache (see below)
     placeholderMeta.ts     Shared driverName/distance placeholders + favorites
     silence.ts           A tiny silent audio loop (see below)
 scripts/
@@ -1899,41 +1906,62 @@ so far.
   Longer term, RFID transport badges could let students check
   themselves in as they board, rather than the driver tapping for each
   one.
-- **A route import tool** - every route's steps sheet is currently a
-  hand-transcribed CSV; a real workflow needs to take in whatever a
-  district actually sends. Accept an Excel file, a CSV/TSV, or a
-  straight paste into a text box, with a documented column guide
-  (`time,action,from_at,onto_at,rider_count,side,notes`, matching what
-  `parseRouteCsv.ts` already reads) - but don't require it verbatim: if
-  the header row doesn't match, try resolving by header name
-  (case/spacing-insensitive) regardless of column order or count
-  before falling back to asking the user to map columns by hand.
-  Alongside straight import, an optional manual step editor - an "Add
-  Step" button, a stop/turn dropdown, and fields for whichever columns
-  that kind uses - for building a route from scratch or fixing up a bad
-  import without hand-editing the CSV
-- Whatever comes in through that import tool (or the manual editor)
-  would feed an "auto-resolve coordinates" pass - live per-row status
-  as it runs (a green check + the resolved lat/lon, or a red X), then a
-  summary of what worked and what didn't - essentially a UI over what
-  `scripts/geocodeRoute.ts` now already does for real (see "Maps, part
-  ten" above): per-route sidecar caching, pacing, retry-on-429/504, and
-  an `unresolvable` row (a driver instruction, not a real road -
-  `deriveWaypoints.ts`) skipped up front rather than queried and shown
-  as a red X. This is the one piece of "Add Route/Edit Route" the user
-  explicitly called out as now unblocked - the pipeline it drives is in
-  place, just not this UI on top of it. Surfacing API usage/quota in
-  that UI would be nice, but it's not actually clear yet what
-  OpenRouteService's or Overpass's real gating criteria are (a request
-  quota? a rate limit? both?) - worth understanding before promising a
-  usage meter that might not mean what it looks like it means
-- For whatever's left unresolved after that pass: a per-row "Retry"
-  button, and a manual fallback - a single paste-able "lat, lon" text
-  field standing in for the two separate coordinate columns on that
-  row, so a real coordinate found some other way doesn't need typing
-  into two boxes. Longer term, a small map under an unresolved row,
-  centered on the last successfully-resolved point, to drag/tap a pin
-  into place instead of typing coordinates blind - and eventually
+- **Add Route / Edit Route, first pass - built.** `EditRouteScreen.tsx`
+  (reached via RouteListScreen's small "Add Route" link, or a route's
+  own "Edit Route" link on StartScreen - both admin-only, easy to miss
+  on purpose) takes a metadata form plus a pasted/typed stops list
+  through `parseRouteImport.ts`'s graceful column matching - the app's
+  full CSV schema, a properly-headered sheet missing optional columns,
+  or a header-less plain list of stops (or stops and turns) all work,
+  not just the doc's own exact column names. A "Validate Stops" button
+  shows live per-row status (green check + coordinates, red X, or a
+  skipped/greyed-out row for an `unresolvable` one) against whatever
+  geocoded cache already exists for that route number/trip/level -
+  essentially a UI over what `scripts/geocodeRoute.ts` now already does
+  for real (see "Maps, part ten" above). "Make Active" is replaced by a
+  ⚠️ warning explaining what's still unresolved until every geocodable
+  stop actually resolves - a new route sits at `status: "pending"`
+  until then, distinct from "inactive" (ready, just not running) -
+  `Make Inactive` stays available on an already-active route regardless
+  of readiness, since deactivating never needs the check. In admin
+  mode (turned on by using either link), the route list also reveals
+  inactive/pending real routes, dimmed with a status label, instead of
+  hiding everything but "active".
+
+  Explicitly a first pass, not the full spec: no Excel-file import yet
+  (CSV/TSV/plain-text paste only - see parseRouteImport.ts), no manual
+  per-row step editor (an "Add Step" button, a stop/turn dropdown per
+  row) for building or fixing a route without touching the paste box,
+  no retry/manual-coordinate-entry or map-picker for a single
+  unresolved row, and no live "run the real geocoder from this screen"
+  button - Validate Stops only reads whatever's already cached, it
+  doesn't spend a new ORS/Overpass query itself (deliberately, given
+  the pacing/quota story in "Maps, part ten" above).
+
+  **Also session-only, not real persistence** - `onSave` hands the
+  built Route to an in-memory admin-route store in page.tsx, the same
+  "real workflow, no persistence yet" honesty this app already applies
+  to rider check-in state (see useRiderRoster.ts): a page reload loses
+  every admin edit, and "Make Active" doesn't write back to
+  `route-master-list.csv` or commit a real steps CSV anywhere. Getting
+  an admin-entered route to actually run for real still needs someone
+  to commit its steps CSV for real and run the actual geocoding
+  pipeline against it. Writing admin edits back to real committed files
+  (or a real datastore) instead of session state is its own follow-up -
+  worth deciding deliberately (a GitHub-committing API route? a real
+  database?) rather than defaulting into whichever's easiest to bolt on
+- Surfacing API usage/quota in the validate UI would be nice, but it's
+  not actually clear yet what OpenRouteService's or Overpass's real
+  gating criteria are (a request quota? a rate limit? both?) - worth
+  understanding before promising a usage meter that might not mean what
+  it looks like it means
+- For whatever's left unresolved after a validate pass: a per-row
+  "Retry" button, and a manual fallback - a single paste-able "lat, lon"
+  text field standing in for the two separate coordinate columns on
+  that row, so a real coordinate found some other way doesn't need
+  typing into two boxes. Longer term, a small map under an unresolved
+  row, centered on the last successfully-resolved point, to drag/tap a
+  pin into place instead of typing coordinates blind - and eventually
   showing the already-resolved pins/turns for reference on that same
   map, maybe even drawing the route so far, so placing the next one is
   a visual "where does this fit" instead of guessing from street names

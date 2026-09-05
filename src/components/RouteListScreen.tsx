@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
-import { HeartIcon, SearchIcon, SortIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
+import { HeartIcon, PlusIcon, SearchIcon, SortIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
 import { parseTimeToMinutes } from "@/lib/time";
 import type { Route } from "@/lib/types";
 
@@ -54,10 +54,17 @@ const VIEW_OPTIONS: { value: ViewFilter; label: string }[] = [
  */
 export function RouteListScreen({
   routes,
+  adminMode,
   onSelect,
+  onAddRoute,
 }: {
   routes: Route[];
+  /** Reveals inactive/pending real routes below, dimmed, rather than
+   * hiding everything but "active" - see page.tsx, which turns this on
+   * once "Add Route" or a route's "Edit Route" link has been used. */
+  adminMode: boolean;
   onSelect: (route: Route) => void;
+  onAddRoute: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [view, setView] = useState<ViewFilter>("all");
@@ -81,6 +88,12 @@ export function RouteListScreen({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matching = routes.filter((route) => {
+      // A real (non-"demo") route that isn't "active" (inactive or
+      // still-pending) only ever shows up in admin mode - a normal
+      // driver never needs to see a route nobody's actually running.
+      const isAdminOnly = route.status !== "active" && route.status !== "demo";
+      if (isAdminOnly && !adminMode) return false;
+
       const matchesQuery =
         !q || route.name.toLowerCase().includes(q) || route.routeNumber.includes(q);
       const matchesView =
@@ -108,7 +121,7 @@ export function RouteListScreen({
       const result = compare(a, b);
       return sortDir === "asc" ? result : -result;
     });
-  }, [routes, query, view, sortField, sortDir]);
+  }, [routes, query, view, sortField, sortDir, adminMode]);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
@@ -214,38 +227,50 @@ export function RouteListScreen({
           <span />
         </div>
         <div className="divide-y divide-zinc-200 overflow-y-auto">
-          {filtered.map((route) => (
-            <button
-              key={route.id}
-              type="button"
-              onClick={() => onSelect(route)}
-              className="grid w-full grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
-            >
-              <span className="text-center font-heading text-lg leading-none font-black">
-                #{route.routeNumber}
-              </span>
-              <div className="flex items-center justify-center gap-0.5 text-blue-500">
-                <span className="font-heading text-lg leading-none font-black">
-                  {route.tripType === "pickup" ? "AM" : "PM"}
-                </span>
-                {route.tripType === "pickup" ? (
-                  <SunriseIcon className="h-3.5 w-3.5" />
-                ) : (
-                  <SunIcon className="h-3.5 w-3.5" />
-                )}
-              </div>
-              <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
-              <span className="text-right text-sm font-semibold text-zinc-500">
-                {route.departureTime}
-              </span>
-              <HeartIcon
-                filled={route.isFavorite}
-                className={`h-4 w-4 justify-self-end ${
-                  route.isFavorite ? "text-blue-600" : "text-zinc-300"
+          {filtered.map((route) => {
+            const isAdminOnly = route.status !== "active" && route.status !== "demo";
+            return (
+              <button
+                key={route.id}
+                type="button"
+                onClick={() => onSelect(route)}
+                className={`grid w-full grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100 ${
+                  isAdminOnly ? "opacity-50" : ""
                 }`}
-              />
-            </button>
-          ))}
+              >
+                <span className="text-center font-heading text-lg leading-none font-black">
+                  #{route.routeNumber}
+                </span>
+                <div className="flex items-center justify-center gap-0.5 text-blue-500">
+                  <span className="font-heading text-lg leading-none font-black">
+                    {route.tripType === "pickup" ? "AM" : "PM"}
+                  </span>
+                  {route.tripType === "pickup" ? (
+                    <SunriseIcon className="h-3.5 w-3.5" />
+                  ) : (
+                    <SunIcon className="h-3.5 w-3.5" />
+                  )}
+                </div>
+                <span className="min-w-0">
+                  <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
+                  {isAdminOnly && (
+                    <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+                      {route.status}
+                    </span>
+                  )}
+                </span>
+                <span className="text-right text-sm font-semibold text-zinc-500">
+                  {route.departureTime}
+                </span>
+                <HeartIcon
+                  filled={route.isFavorite}
+                  className={`h-4 w-4 justify-self-end ${
+                    route.isFavorite ? "text-blue-600" : "text-zinc-300"
+                  }`}
+                />
+              </button>
+            );
+          })}
 
           {filtered.length === 0 && (
             <p className="px-4 py-6 text-center text-sm text-zinc-500">
@@ -254,6 +279,18 @@ export function RouteListScreen({
           )}
         </div>
       </div>
+
+      {/* Small and unobtrusive on purpose - a district-admin tool, not
+          a primary driver action, tucked below the list rather than up
+          with Search/View. */}
+      <button
+        type="button"
+        onClick={onAddRoute}
+        className="flex shrink-0 items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
+      >
+        <PlusIcon className="h-3 w-3" />
+        Add Route
+      </button>
     </div>
   );
 }

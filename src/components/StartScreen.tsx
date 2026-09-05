@@ -5,6 +5,7 @@ import { Logo } from "./Logo";
 import {
   BackArrowIcon,
   CloseIcon,
+  EditIcon,
   MapPinIcon,
   PersonSolidIcon,
   SunIcon,
@@ -66,10 +67,15 @@ export function StartScreen({
   route,
   onStart,
   onBack,
+  onEdit,
 }: {
   route: Route;
   onStart: () => void;
   onBack: () => void;
+  /** Admin-only - opens EditRouteScreen for this route (see page.tsx).
+   * Small and easy to miss on purpose: this is a district-admin tool
+   * living on the same screen every driver sees, not a primary action. */
+  onEdit: () => void;
 }) {
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
   const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
@@ -142,6 +148,15 @@ export function StartScreen({
         className="btn-glossy font-heading flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
       >
         Start Route <TriangleIcon direction="right" className="h-6 w-6" />
+      </button>
+
+      <button
+        type="button"
+        onClick={onEdit}
+        className="flex items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
+      >
+        <EditIcon className="h-3 w-3" />
+        Edit Route
       </button>
 
       {showStopsModal && (
