@@ -17,6 +17,7 @@
     "../src/lib/speech.ts",
     "../src/lib/types.ts",
     "../src/lib/placeholderMeta.ts",
+    "../src/lib/parseSchoolsCsv.ts",
     "../src/lib/geocode.ts",
     "../src/lib/waypointCache.ts"
   ]

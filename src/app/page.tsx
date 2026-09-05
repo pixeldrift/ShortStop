@@ -8,11 +8,12 @@ import { buildDemoRoutes } from "@/lib/demoRoutes";
 import { parseRouteCsv } from "@/lib/parseRouteCsv";
 import type { RouteMeta } from "@/lib/parseRouteCsv";
 import { parseRouteMasterList } from "@/lib/parseRouteMasterList";
+import { parseSchoolsCsv } from "@/lib/parseSchoolsCsv";
 import {
   FAVORITE_ROUTE_IDS,
   PLACEHOLDER_DISTANCE,
   PLACEHOLDER_DRIVER_NAME,
-  SCHOOL_ADDRESSES,
+  SCHOOL_ADDRESS_NOT_YET_PROVIDED,
 } from "@/lib/placeholderMeta";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
@@ -64,11 +65,12 @@ export default function Home() {
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
 
   useEffect(() => {
-    fetchText("/data/route-master-list.csv")
-      .then(async (masterListCsv) => {
+    Promise.all([fetchText("/data/route-master-list.csv"), fetchText("/data/schools.csv")])
+      .then(async ([masterListCsv, schoolsCsv]) => {
         const activeRows = parseRouteMasterList(masterListCsv).filter(
           (row) => row.status === "active",
         );
+        const schoolAddresses = parseSchoolsCsv(schoolsCsv);
 
         const built = await Promise.all(
           activeRows.map(async (row) => {
@@ -90,7 +92,7 @@ export default function Home() {
               ...row,
               durationMinutes: row.durationMinutes,
               driverName: PLACEHOLDER_DRIVER_NAME,
-              schoolAddress: SCHOOL_ADDRESSES[row.schoolName] ?? SCHOOL_ADDRESSES["Lavergne Lake Elementary"],
+              schoolAddress: schoolAddresses[row.schoolName] ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
               distance: PLACEHOLDER_DISTANCE,
               isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
             };

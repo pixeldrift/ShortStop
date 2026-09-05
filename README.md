@@ -57,6 +57,7 @@ src/
     types.ts             Route / NavigationStep types
     parseRouteCsv.ts     Steps CSV → Route parsing (see below)
     parseRouteMasterList.ts Master list → route-level metadata, one row per route (see below)
+    parseSchoolsCsv.ts     Schools sheet → address-by-school-name lookup (see below)
     useRouteStepper.ts   State + all input wiring, incl. pause (see below)
     useRiderRoster.ts    Per-stop rider check-in state (see below)
     useFitLines.ts        Shrink text to fit N lines (see below)
@@ -66,7 +67,7 @@ src/
     deriveWaypoints.ts     CSV row -> geocodable address/intersection (see below)
     geocode.ts              Swappable geocoding providers (ORS active, see below)
     waypointCache.ts         Cache key + entry types shared with scripts/geocodeRoute.ts
-    placeholderMeta.ts     Shared driverName/distance placeholders + per-school addresses
+    placeholderMeta.ts     Shared driverName/distance placeholders + favorites
     silence.ts           A tiny silent audio loop (see below)
 scripts/
   geocodeRoute.ts        `npm run geocode` - refreshes route-125-waypoints.json (see below)
@@ -81,6 +82,7 @@ public/
   data/120-PM-MS.csv           Bus 120's PM Middle run steps (incomplete, status: inactive)
   data/120-PM-HS.csv           Bus 120's PM High run steps (incomplete, status: inactive)
   data/route-master-list.csv   Route-level metadata for every real route (see below)
+  data/schools.csv             School name → address, one row per school (see below)
   data/route-125-waypoints.json  Geocoding cache, generated - see "Maps, part two" below
   assets/
     logo.png              ShortStop wordmark
@@ -149,9 +151,9 @@ right"/"On the left" announcement) — replace with the real values once
 they exist.
 
 `Route.schoolName`/`schoolAddress` (`schoolName` now sourced from
-`route-master-list.csv`, `schoolAddress` still a placeholder keyed by
-school name in `placeholderMeta.ts` - see "Route data: two CSVs now"
-and "Route data: the master list" further below) are
+`route-master-list.csv`, `schoolAddress` looked up by school name from
+`schools.csv` - see "Route data: two CSVs now", "Route data: the master
+list", and "Route data: real school addresses" further below) are
 what the trip-summary screen's subtitle (`schoolName` is folded into
 `route.name` there, not its own row - see "Route flow and screens"
 further below) and the "Starting route..." announcement (see Audio
@@ -1568,6 +1570,40 @@ everywhere. Only route 125 defaults to a Favorite; the new real routes
 default to not-favorited like demo routes do, absent any real signal
 for which routes a driver actually favorites.
 
+### Route data: real school addresses, in their own sheet
+
+`placeholderMeta.ts`'s `SCHOOL_ADDRESSES` object (above) is gone -
+addresses now live in `public/data/schools.csv` (`school_name`,
+`address` - one header row, one row per school), parsed by the new
+`parseSchoolsCsv.ts` into the same by-school-name lookup `page.tsx` and
+`scripts/geocodeRoute.ts` both already used, just sourced from a real
+sheet instead of a hardcoded object - the first step toward "a table of
+schools (and eventually school IDs) instead of addresses living in
+app code," with room to grow more columns later the same way
+`route-master-list.csv` did. `placeholderMeta.ts` keeps only
+`driverName`/`distance` (still flat placeholders) and
+`SCHOOL_ADDRESS_NOT_YET_PROVIDED`, now just a fallback for a school the
+sheet doesn't have a row for yet, not a hardcoded default for two
+specific schools.
+
+Lavergne Middle School (382 Stones River Rd) and Lavergne High School
+(250 Wolverine Trail), both La Vergne, TN 37086, replace the
+"Address not yet provided" placeholder that filled that gap before -
+looked up via NCES's public school directory (the federal Common Core
+of Data), cross-checked against several independent real-estate/school
+listing sites, not guessed.
+
+**Worth a look:** that same search turned up a real address for
+Lavergne Lake Elementary - 201 Davids Way, La Vergne, TN 37086 (also
+NCES, also cross-checked) - that doesn't match the "1425 Lake Forest
+Dr, Smyrna, TN 37167" this app has treated as real, verified data since
+early on (originally from `route-125-meta.csv`). "Davids Way" is also a
+street name that appears repeatedly in `125-PM-EL.csv`'s own stop data,
+which fits a school actually located there better than it fits Lake
+Forest Dr. Left as-is in `schools.csv` rather than changed unasked -
+only Middle/High were missing an address, Elementary already had one -
+but this is worth confirming and likely correcting.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
@@ -1592,9 +1628,12 @@ for which routes a driver actually favorites.
   above) - once the rest of its stop data arrives, flip it to `active`
   in `route-master-list.csv` and add its entry to `page.tsx`'s
   `ROUTE_STEPS_CSV_PATHS`
-- Middle and High School don't have a real `schoolAddress` yet
-  (`placeholderMeta.ts`'s `SCHOOL_ADDRESSES` has an honest placeholder
-  for both) - needed before geocoding their stops for real
+- Confirm whether Lavergne Lake Elementary's `schools.csv` address
+  (1425 Lake Forest Dr, Smyrna, TN 37167) should actually be 201 Davids
+  Way, La Vergne, TN 37086 - see "Route data: real school addresses"
+  above. If so, update `schools.csv` and re-run `npm run geocode` (a
+  different `schoolAddress` changes what `deriveWaypoints` produces for
+  every stop, so the waypoint cache needs refreshing too)
 - Pinch-zoom on a very long route would help the progress bar - right
   now the fixed 48px-per-step spacing just makes the track (and the
   auto-scrolling) longer rather than ever shrinking markers down to fit

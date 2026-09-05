@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { deriveWaypoints } from "../src/lib/deriveWaypoints";
 import { extractCityState, geocodeQuery } from "../src/lib/geocode";
 import { parseRouteCsvRows } from "../src/lib/parseRouteCsv";
-import { SCHOOL_ADDRESSES } from "../src/lib/placeholderMeta";
+import { parseSchoolsCsv } from "../src/lib/parseSchoolsCsv";
 import { waypointCacheKey } from "../src/lib/waypointCache";
 import type { WaypointCache } from "../src/lib/waypointCache";
 
@@ -21,6 +21,7 @@ import type { WaypointCache } from "../src/lib/waypointCache";
 // package.json (here, the repo root - the only one in this project)
 // as cwd, regardless of the caller's own working directory.
 const ROUTE_CSV_PATH = join(process.cwd(), "public", "data", "125-PM-EL.csv");
+const SCHOOLS_CSV_PATH = join(process.cwd(), "public", "data", "schools.csv");
 const CACHE_PATH = join(process.cwd(), "public", "data", "route-125-waypoints.json");
 const ENV_LOCAL_PATH = join(process.cwd(), ".env.local");
 
@@ -80,7 +81,8 @@ async function main() {
 
   const csvText = readFileSync(ROUTE_CSV_PATH, "utf8");
   const rows = parseRouteCsvRows(csvText);
-  const schoolAddress = SCHOOL_ADDRESSES["Lavergne Lake Elementary"];
+  const schoolAddresses = parseSchoolsCsv(readFileSync(SCHOOLS_CSV_PATH, "utf8"));
+  const schoolAddress = schoolAddresses["Lavergne Lake Elementary"];
   const waypoints = deriveWaypoints(rows, schoolAddress);
 
   const locationContext = extractCityState(schoolAddress);
