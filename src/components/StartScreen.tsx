@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
-import { BackArrowIcon, TriangleIcon } from "./icons";
+import { BackArrowIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
 import type { Route } from "@/lib/types";
 
 // Not currently rendered (see StartScreen below) - kept ready to
@@ -80,9 +80,21 @@ export function StartScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1 className="font-heading text-4xl font-black tracking-tight">
-          Route {route.routeNumber}
-        </h1>
+        <div className="flex flex-col items-center">
+          <h1 className="font-heading text-4xl font-black tracking-tight">
+            Route {route.routeNumber}
+          </h1>
+          <div className="flex items-center gap-1 text-blue-500">
+            {route.tripType === "pickup" ? (
+              <SunriseIcon className="h-4 w-4" />
+            ) : (
+              <SunIcon className="h-4 w-4" />
+            )}
+            <span className="text-sm font-bold">
+              {route.tripType === "pickup" ? "AM" : "PM"}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">

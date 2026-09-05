@@ -161,6 +161,7 @@ export function StepScreen({
           <TopBar
             routeNumber={route.routeNumber}
             busNumber={route.busNumber}
+            tripType={route.tripType}
             onLogoClick={handleLogoClick}
             stopProgressNumber={stopProgressNumber}
             totalStops={totalStops}

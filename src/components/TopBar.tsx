@@ -1,9 +1,11 @@
 import { Logo } from "./Logo";
-import { BackArrowIcon, PersonSolidIcon } from "./icons";
+import { BackArrowIcon, PersonSolidIcon, SunIcon, SunriseIcon } from "./icons";
+import type { TripType } from "@/lib/types";
 
 export function TopBar({
   routeNumber,
   busNumber,
+  tripType,
   onLogoClick,
   stopProgressNumber,
   totalStops,
@@ -11,6 +13,7 @@ export function TopBar({
 }: {
   routeNumber: string;
   busNumber: string;
+  tripType: TripType;
   onLogoClick: () => void;
   stopProgressNumber: number;
   totalStops: number;
@@ -41,6 +44,14 @@ export function TopBar({
           Route
         </p>
         <p className="font-heading -mt-1 text-3xl font-black tracking-tight">#{routeNumber}</p>
+        <div className="-mt-0.5 flex items-center justify-center gap-0.5 text-blue-500">
+          {tripType === "pickup" ? (
+            <SunriseIcon className="h-3 w-3" />
+          ) : (
+            <SunIcon className="h-3 w-3" />
+          )}
+          <span className="text-[10px] font-bold">{tripType === "pickup" ? "AM" : "PM"}</span>
+        </div>
         {/* Same destination/confirmation as the logo (onLogoClick) - a
             second, labeled way to reach it for anyone who wouldn't
             think to tap the logo itself. */}
