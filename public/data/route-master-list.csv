@@ -4,5 +4,5 @@ route_id	route_number	bus_number	am_pm	school_type	school_name	start_time	end_ti
 	120	120	AM	MS	Lavergne Middle School	7:00:00	7:25:00			active
 	120	120	AM	HS	Lavergne High School	7:35:00	7:56:00			active
 	120	120	PM	EL	Lavergne Lake Elementary	14:30:00	14:57:00			active
-	120	120	PM	MS	Lavergne Middle School	15:02:00				inactive
+	120	120	PM	MS	Lavergne Middle School	15:02:00	15:25:06			active
 	120	120	PM	HS	Lavergne High School	15:45:00				inactive

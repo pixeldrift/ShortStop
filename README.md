@@ -1536,20 +1536,24 @@ every real route's number, not just one, and picks its filler-content
 template from the first real route rather than assuming there's only
 ever one).
 
-Two of Bus 120's six routes (`120-dropoff-middle`, `120-dropoff-high`)
-came in with visibly incomplete steps data - stated directly for the
-first ("I'm missing some stop info"), and independently confirmed for
-the second (it cuts off six rows in, mid-neighborhood, versus its AM
-counterpart's eighteen). Both are marked `status: "inactive"` in the
-master list rather than wired into the app - asked whether the missing
-half of `120-dropoff-middle` could just be inferred by reversing its AM
-counterpart, and declined: turn directions and which side of the road a
-stop is on don't mirror simply from a route run the other way (one-way
-streets, and pickup order that isn't just dropoff order backwards), and
-this is real "active"-status data a driver could actually use, not demo
-filler - worth being honestly incomplete rather than quietly wrong.
-Their steps sheets are still saved to `public/data/` as sent, in case
-the rest of the data comes in later.
+Of Bus 120's six routes, `120-dropoff-high` came in with visibly
+incomplete steps data - it cuts off six rows in, mid-neighborhood,
+versus its AM counterpart's eighteen. It's marked `status: "inactive"`
+in the master list rather than wired into the app, and its sheet is
+still saved to `public/data/` as sent, in case the rest arrives later.
+Asked whether the missing part could just be inferred by reversing its
+AM counterpart, and declined: turn directions and which side of the
+road a stop is on don't mirror simply from a route run the other way
+(one-way streets, and pickup order that isn't just dropoff order
+backwards), and this is real "active"-status data a driver could
+actually use, not demo filler - worth being honestly incomplete rather
+than quietly wrong. `120-dropoff-middle` looked similarly suspect at
+first pass - it ends mid-street with no closing "arrive" marker after
+it - but that's actually how a real dropoff route's data normally ends
+in this district's paperwork (`120-dropoff-elementary` and the original
+125 route both end the same way, at the last kid's stop rather than any
+explicit "return to yard" row), confirmed and corrected to
+`status: "active"`.
 
 `schoolAddress` now varies by school instead of one hardcoded value -
 `placeholderMeta.ts`'s `SCHOOL_ADDRESSES` keys it by `schoolName`.
@@ -1583,11 +1587,10 @@ for which routes a driver actually favorites.
   once there's an actual driver/routing source. `durationMinutes` no
   longer needs one for any `active` route - the master list's
   `start_time`/`end_time` cover that now
-- Two of Bus 120's six routes (`120-dropoff-middle`, `120-dropoff-high`)
-  are sitting on `status: "inactive"` because their steps sheets came in
-  incomplete (see "Route data: the master list" above) - once the rest
-  of their stop data arrives, flip them to `active` in
-  `route-master-list.csv` and add their entries to `page.tsx`'s
+- `120-dropoff-high` is sitting on `status: "inactive"` because its
+  steps sheet came in incomplete (see "Route data: the master list"
+  above) - once the rest of its stop data arrives, flip it to `active`
+  in `route-master-list.csv` and add its entry to `page.tsx`'s
   `ROUTE_STEPS_CSV_PATHS`
 - Middle and High School don't have a real `schoolAddress` yet
   (`placeholderMeta.ts`'s `SCHOOL_ADDRESSES` has an honest placeholder
