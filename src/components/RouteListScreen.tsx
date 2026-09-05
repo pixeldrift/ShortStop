@@ -83,6 +83,7 @@ export function RouteListScreen({
   onAddRoute,
   onSetRouteStatus,
   onDeleteRoute,
+  onToggleFavorite,
 }: {
   routes: Route[];
   /** Reveals draft real routes below, dimmed, and turns on the
@@ -111,6 +112,10 @@ export function RouteListScreen({
   onAddRoute: () => void;
   onSetRouteStatus: (route: Route, status: RouteStatus) => void;
   onDeleteRoute: (route: Route) => void;
+  /** Toggles a route's own favorite heart - independent of the row's
+   * main click (handleRowClick), which navigates/edits instead; see the
+   * row rendering below for how the heart gets its own tap target. */
+  onToggleFavorite: (route: Route) => void;
 }) {
   const [query, setQuery] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
@@ -126,6 +131,34 @@ export function RouteListScreen({
   // doesn't change anything a user would notice until they tap a header.
   const [sortField, setSortField] = useState<SortField>("departureTime");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Lets a tap outside the red admin-mode box exit it (see the effect
+  // below) without also swallowing a tap on the "Exit Edit Mode"/"New
+  // Route" controls themselves, which sit below the box and already
+  // handle their own clicks correctly - those live in `controlsRef`,
+  // specifically excluded so this effect never double-fires alongside
+  // them (Exit Edit Mode) or fights their own action (New Route, which
+  // needs adminMode to stay on across the navigation it triggers).
+  const boxRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!adminMode) return;
+    function handleOutsideClick(e: MouseEvent) {
+      // A confirm modal (delete/publish/unpublish) is its own in-progress
+      // action - exiting admin mode underneath it at the same time would
+      // be a jarring side effect of whatever the modal itself is doing.
+      if (confirmRequest) return;
+      const target = e.target as Node;
+      if (boxRef.current?.contains(target)) return;
+      if (controlsRef.current?.contains(target)) return;
+      onToggleAdminMode();
+    }
+    // Capture phase - fires even if a row button or dropdown item
+    // stops propagation on the way up, same as any standard
+    // "click outside to close" pattern needs to.
+    document.addEventListener("click", handleOutsideClick, true);
+    return () => document.removeEventListener("click", handleOutsideClick, true);
+  }, [adminMode, confirmRequest, onToggleAdminMode]);
 
   const toggleSort = (field: SortField) => {
     if (field === sortField) {
@@ -214,7 +247,7 @@ export function RouteListScreen({
       <Logo size="large" />
       <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
         {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
-        {adminMode ? "Editing Routes" : "Routes"}
+        {adminMode ? "Edit Routes" : "Routes"}
       </h1>
 
       <div className="flex w-full max-w-md shrink-0 items-center gap-2">
@@ -281,6 +314,7 @@ export function RouteListScreen({
       </div>
 
       <div
+        ref={boxRef}
         className={`flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border text-left ${
           adminMode ? "border-2 border-red-400" : "border-zinc-300"
         }`}
@@ -326,48 +360,55 @@ export function RouteListScreen({
             const isAdminOnly = !isDemo && route.status !== "published";
             return (
               <div key={route.id} className={isAdminOnly ? "opacity-50" : ""}>
-                <button
-                  type="button"
-                  onClick={() => handleRowClick(route)}
-                  className="grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left active:bg-zinc-100"
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-heading text-lg leading-none font-black">
-                      #{route.routeNumber}
-                    </span>
-                    <div className="flex items-center gap-0.5 text-blue-500">
+                <div className="grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left">
+                  <button
+                    type="button"
+                    onClick={() => handleRowClick(route)}
+                    className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-center gap-x-1 text-left active:bg-zinc-100"
+                  >
+                    <div className="flex items-center gap-1.5">
                       <span className="font-heading text-lg leading-none font-black">
-                        {route.tripType === "pickup" ? "AM" : "PM"}
+                        #{route.routeNumber}
                       </span>
-                      {route.tripType === "pickup" ? (
-                        <SunriseIcon className="h-3.5 w-3.5" />
-                      ) : (
-                        <SunIcon className="h-3.5 w-3.5" />
-                      )}
+                      <div className="flex items-center gap-0.5 text-blue-500">
+                        <span className="font-heading text-lg leading-none font-black">
+                          {route.tripType === "pickup" ? "AM" : "PM"}
+                        </span>
+                        {route.tripType === "pickup" ? (
+                          <SunriseIcon className="h-3.5 w-3.5" />
+                        ) : (
+                          <SunIcon className="h-3.5 w-3.5" />
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <span className="min-w-0 pl-3">
-                    <SchoolNameLabel name={route.schoolName} />
-                    {isAdminOnly && (
-                      <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-                        {route.status}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-right text-sm font-semibold text-zinc-500">
-                    {route.departureTime}
-                  </span>
+                    <span className="min-w-0 pl-3">
+                      <SchoolNameLabel name={route.schoolName} />
+                      {isAdminOnly && (
+                        <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+                          {route.status}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-right text-sm font-semibold text-zinc-500">
+                      {route.departureTime}
+                    </span>
+                  </button>
                   {adminMode && !isDemo ? (
                     <EditIcon className="h-4 w-4 justify-self-end text-zinc-400" />
                   ) : (
-                    <HeartIcon
-                      filled={route.isFavorite}
-                      className={`h-4 w-4 justify-self-end ${
-                        route.isFavorite ? "text-blue-600" : "text-zinc-300"
-                      }`}
-                    />
+                    <button
+                      type="button"
+                      onClick={() => onToggleFavorite(route)}
+                      aria-label={route.isFavorite ? "Remove favorite" : "Add favorite"}
+                      className="justify-self-end p-1 active:opacity-70"
+                    >
+                      <HeartIcon
+                        filled={route.isFavorite}
+                        className={`h-4 w-4 ${route.isFavorite ? "text-blue-600" : "text-zinc-300"}`}
+                      />
+                    </button>
                   )}
-                </button>
+                </div>
 
                 {/* Admin-only quick actions - each one a confirm-modal
                     request, never fired directly from here, so a
@@ -427,7 +468,7 @@ export function RouteListScreen({
           with Search/View. "New Route" only appears once already in
           edit mode - there's no direct route to it from the normal
           (non-admin) list. */}
-      <div className="flex shrink-0 items-center gap-4">
+      <div ref={controlsRef} className="flex shrink-0 items-center gap-4">
         <button
           type="button"
           onClick={onToggleAdminMode}

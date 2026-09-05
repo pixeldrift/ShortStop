@@ -105,6 +105,13 @@ export default function Home() {
   // only ever an admin draft. Same session-only honesty as the rest of
   // this admin store: nothing is actually removed from any real file.
   const [deletedRouteIds, setDeletedRouteIds] = useState<ReadonlySet<string>>(new Set());
+  // The route list's own heart toggle (RouteListScreen) - a separate
+  // overlay from adminRoutes since it needs to apply to fabricated demo
+  // routes too, not just real ones, and demo routes aren't in that map
+  // at all (buildDemoRoutes fabricates them fresh every time `routes`
+  // below recomputes). Same session-only honesty as everything else
+  // here - nothing about a favorite is written back anywhere real.
+  const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({});
   // Toggled by RouteListScreen's own "Edit Mode" link, or turned on
   // unconditionally by a route's "Edit Route" link on StartScreen -
   // reveals draft real routes on the list, dimmed, and the per-row
@@ -171,10 +178,17 @@ export default function Home() {
   // list doesn't reshuffle each time the user navigates back to it.
   const routes = useMemo(() => {
     if (!effectiveRealRoutes || effectiveRealRoutes.length === 0) return effectiveRealRoutes ?? [];
-    return [...effectiveRealRoutes, ...buildDemoRoutes(effectiveRealRoutes, DEMO_ROUTE_COUNT)].sort(
-      (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
-    );
-  }, [effectiveRealRoutes]);
+    const combined = [...effectiveRealRoutes, ...buildDemoRoutes(effectiveRealRoutes, DEMO_ROUTE_COUNT)];
+    return combined
+      .map((route) =>
+        route.id in favoriteOverrides ? { ...route, isFavorite: favoriteOverrides[route.id] } : route,
+      )
+      .sort((a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime));
+  }, [effectiveRealRoutes, favoriteOverrides]);
+
+  function handleToggleFavorite(route: Route) {
+    setFavoriteOverrides((prev) => ({ ...prev, [route.id]: !route.isFavorite }));
+  }
 
   function handleSaveRoute(route: Route, rawStepsText: string, waypointCache: WaypointCache) {
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
@@ -272,6 +286,7 @@ export default function Home() {
       onAddRoute={() => setScreen({ kind: "add-route" })}
       onSetRouteStatus={handleSetRouteStatus}
       onDeleteRoute={handleDeleteRoute}
+      onToggleFavorite={handleToggleFavorite}
     />
   );
 }

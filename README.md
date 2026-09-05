@@ -2193,3 +2193,35 @@ so far.
   that ties a real route to its own school's address/level. "LaVergne
   Lake Elementary" also gained the trailing "School" its official name
   actually has, matching every other school entry's own naming.
+- **Favoriting actually works now, HeartIcon's own path bug fixed, a
+  couple of small edit-mode polish items.** The heart was purely
+  decorative before - tapping it just fired the row's own click
+  (navigate/edit), the same click target covering the whole row, so
+  there was never a way to toggle one at all. The row is two separate
+  tap targets now: a button spanning the #/AM-PM/School/Start columns
+  (unchanged navigate-or-edit behavior) and a sibling button for just
+  the heart (or the pencil, in admin mode) - no nested `<button>`s
+  needed, the "row" button spans 3 of the outer grid's 4 columns via
+  `col-span-3` plus its own matching inner column widths, which lets a
+  fixed-width sum work out to exactly the outer's own flexible `1fr`
+  column without CSS subgrid. A new session-only `favoriteOverrides`
+  map in page.tsx (same "real workflow, no persistence yet" honesty as
+  every other admin/rider state here) applies on top of both real and
+  fabricated demo routes alike, since demo routes aren't in the
+  `adminRoutes` overlay other route edits use - `buildDemoRoutes` makes
+  them fresh every time (deterministically, via its own seeded PRNG,
+  so re-running it after a favorite toggle doesn't reshuffle the list).
+
+  HeartIcon's own SVG path had a real bug, not just a rendering quirk -
+  its last curve closed at x=10 instead of x=12 (the shape's own
+  center), leaving a flat notch where the two lobes should meet in a
+  clean point at the bottom. Fixed the two wrong coordinates directly.
+
+  Also: the admin-mode heading reads "Edit Routes" now (was "Editing
+  Routes"), and tapping anywhere outside the red admin-mode box exits
+  it - a `document`-level capture-phase click listener that explicitly
+  excludes the box itself and the "Exit Edit Mode"/"New Route" controls
+  below it (which already handle their own clicks correctly and would
+  otherwise double-fire or fight their own navigation), and steps aside
+  entirely while a confirm modal is open so canceling or confirming an
+  action isn't interrupted by also exiting admin mode underneath it.
