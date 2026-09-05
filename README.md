@@ -2083,3 +2083,38 @@ so far.
   a district pick one file/one route for now; a real multi-file flow
   needs its own review UI (which file became which route, a way to fix
   one without restarting all of them) that's out of scope for this pass
+- **Add Route / Edit Route, fourth pass - fewer requirements, a
+  collapsed row list, upload-first.** Saving a draft now only ever
+  requires a route number (`buildMeta` in `EditRouteScreen.tsx`) -
+  school name/address, stops, whether anything's geocoded, none of it
+  blocks Save anymore, so a stub route can exist before any of its real
+  details are known. Publishing is unaffected - `canPublish` still
+  requires real, resolved stops (and now also a non-blank school
+  address, closing a gap where an empty one could otherwise read as
+  "nothing left unresolved" simply because there was nothing to
+  resolve).
+
+  `mode: "add"`'s stops card now leads with Upload File, not the paste
+  box - the box is explicitly secondary ("Or paste manually"), starts
+  small, and grows with whatever ends up in it instead of being a large
+  form field by default (a small `useEffect` on `stepsText` resizes the
+  textarea to its own scrollHeight, so an uploaded file's text expands
+  it exactly the same way typing would).
+
+  **`mode: "edit"`'s row list is collapsed by default now.** Every
+  stop/turn renders as `StepRowView` - the same one-line-plus-subheading
+  shape as StartScreen's "View All Stops," with only a small resolution
+  icon and a pencil icon added - instead of the full input form for
+  every row at once from the previous pass. Tapping a row's pencil
+  swaps it for `StepRowEditor`, the same fields the old always-open row
+  had, now behind Delete/Cancel/Update controls instead of committing
+  every keystroke straight to the route - editing works against a
+  `draftRow` copy, so Cancel genuinely discards whatever was typed
+  rather than a would-be-Cancel needing to un-type it manually. Only
+  one row is ever expanded at a time (every other row's pencil disables
+  meanwhile, rather than hiding - still visible that editing is
+  possible there, just not until the open one's Update or Cancel), and
+  "Add Step" appends a blank row already expanded for its own first
+  edit - canceling that specific row removes it outright instead of
+  leaving a blank one behind, tracked via a `newlyAddedIndex` alongside
+  `expandedIndex`/`draftRow`.

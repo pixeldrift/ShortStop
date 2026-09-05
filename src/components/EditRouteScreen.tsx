@@ -7,7 +7,9 @@ import { ToggleSwitch } from "./ToggleSwitch";
 import {
   BackArrowIcon,
   CheckCircleIcon,
+  EditIcon,
   MapPinIcon,
+  PersonSolidIcon,
   SaveIcon,
   TrashIcon,
   TurnArrow,
@@ -36,20 +38,17 @@ const SCHOOL_LEVEL_OPTIONS: { value: SchoolLevel; label: string }[] = [
   { value: "high", label: "High School" },
 ];
 
-const STEPS_PLACEHOLDER = `Paste stops (and turns, if you have them), or upload a file below. A few formats all work:
-
-action,from_at,onto_at,rider_count,side,notes
-Stop,Bill Stewart Blvd,Hidden Forest Ln,5,Right,
-
-...or just a plain list, one stop per line, nothing else:
-216 Lake Forest Dr
-Bill Stewart Blvd & Hidden Forest Ln
-
-...or stops and turns together, no header row at all:
-Left, Rock Springs Rd
-Stop, Bill Stewart Blvd, Hidden Forest Ln
-
-Only the location itself is ever required - time, rider counts, side of street, and notes can all be left out.`;
+// Short on purpose - this box starts small (see the textarea's own
+// className below) and only grows with real content, so a long
+// multi-example placeholder would just get clipped rather than
+// actually helping. The fuller format explanation this used to hold
+// (a properly-headered sheet, a plain one-stop-per-line list, or
+// stops/turns together with no header at all) still applies exactly
+// as before - parseRouteImport.ts does the real work - it's just not
+// spelled out here anymore now that Upload File, above, is the
+// primary path and this is the secondary one.
+const STEPS_PLACEHOLDER =
+  "One stop per line, or action,from_at,onto_at,rider_count,side,notes - only the location is ever required.";
 
 const BLANK_ROW: RawRouteRow = { action: "Stop", fromAt: "", ontoAt: "", riderCount: "", side: "", notes: "" };
 
@@ -75,71 +74,149 @@ function waypointLabel(query: WaypointQuery): string {
   return query.description;
 }
 
+/** A small resolved/unresolved/skipped indicator - shared between the
+ * collapsed row's one-line summary and the expanded editor's own
+ * fuller status line below. */
+function ResolutionIcon({ status, className }: { status: RowResolutionStatus["status"]; className: string }) {
+  if (status === "resolved") return <CheckCircleIcon className={`${className} text-green-600`} />;
+  if (status === "skipped") return <span className={`${className} text-center leading-none text-zinc-400`}>–</span>;
+  return <XCircleIcon className={`${className} text-red-500`} />;
+}
+
 /**
- * One editable stop/turn card - same card shape as StartScreen's own
- * "View All Stops" rows (numbered pin for a stop, turn arrow for a
- * turn), but every field is a live input instead of static text, plus
- * a resolution status line (green check + coordinates, red X, or a
- * skipped/greyed row for an `unresolvable` one) with its own "Fetch"
- * button, and a trash-can button to remove the row entirely. The
- * "type" select is what deriveWaypoints.ts actually reads as `action` -
- * changing it between Stop/Turn Left/Turn Right changes how this row's
- * own location gets resolved (a Stop's own address/cross-street vs. a
- * turn's destination road), not just how it displays.
+ * One stop/turn's collapsed row - the default view for every row in
+ * the list, styled identically to StartScreen's own "View All Stops"
+ * rows (numbered pin for a stop, turn arrow for a turn, rider count,
+ * notes) so the edit list reads as the same at-a-glance ordered list,
+ * not a form. A small resolution icon stands in for the fuller
+ * status line the expanded editor shows, and a pencil icon on the far
+ * right is the only thing this adds beyond that read-only view -
+ * tapping it is the sole way into StepRowEditor below. Deliberately no
+ * inputs and no trash can here - editing or deleting a row both only
+ * ever happen one at a time, inside the expanded editor.
  */
-function EditableStepRow({
+function StepRowView({
+  row,
+  stopNumber,
+  status,
+  locked,
+  onEdit,
+}: {
+  row: RawRouteRow;
+  stopNumber: number | null;
+  status: RowResolutionStatus | undefined;
+  /** True while a different row's editor is open - this row's own
+   * pencil is disabled rather than hidden, so it's still clear editing
+   * is possible here, just not until the other row's Update/Cancel. */
+  locked: boolean;
+  onEdit: () => void;
+}) {
+  const isStop = stopNumber !== null;
+  const direction = row.action.toLowerCase() === "left" ? "left" : "right";
+  const subheading = row.ontoAt ? `${row.fromAt} & ${row.ontoAt}` : row.fromAt;
+
+  return (
+    <div className="flex items-start gap-2 border-b border-zinc-200 py-3 text-left last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-heading flex items-center gap-1.5 text-base font-black">
+            {isStop ? (
+              <>
+                <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
+                Stop {stopNumber}
+              </>
+            ) : (
+              <>
+                <TurnArrow direction={direction} className="h-4 w-4 shrink-0" />
+                Turn
+              </>
+            )}
+          </span>
+          {isStop && row.riderCount && (
+            <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
+              <PersonSolidIcon className="h-4 w-4" />
+              {row.riderCount} rider{row.riderCount === "1" ? "" : "s"}
+            </span>
+          )}
+        </div>
+        <p className="truncate text-zinc-700">
+          {subheading ? (
+            <>
+              {subheading}
+              {row.side ? ` (${row.side})` : ""}
+            </>
+          ) : (
+            <span className="text-zinc-400 italic">No location yet</span>
+          )}
+        </p>
+        {row.notes && <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>}
+        {status && (
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
+            <ResolutionIcon status={status.status} className="h-3.5 w-3.5 shrink-0" />
+            {status.status === "resolved"
+              ? "Geocoded"
+              : status.status === "skipped"
+                ? "Skipped"
+                : "Needs attention"}
+          </p>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onEdit}
+        disabled={locked}
+        aria-label={isStop ? `Edit stop ${stopNumber}` : "Edit turn"}
+        className="mt-0.5 shrink-0 text-zinc-400 active:text-blue-600 disabled:opacity-30"
+      >
+        <EditIcon className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The expanded form for one row, in place of its collapsed
+ * StepRowView - every field editable, plus the same resolution status/
+ * Fetch line the old always-editable row had, and Delete/Cancel/Update
+ * controls instead of committing every keystroke live. `row` here is a
+ * local draft (see EditRouteScreen's `draftRow`), not the committed
+ * `rows` entry - Cancel discards it, Update is the only thing that
+ * writes it back. The "type" select is what deriveWaypoints.ts
+ * actually reads as `action` - changing it between Stop/Turn Left/Turn
+ * Right changes how this row's own location gets resolved, not just
+ * how it displays.
+ */
+function StepRowEditor({
   row,
   stopNumber,
   waypoint,
   status,
   fetching,
   onChange,
-  onRemove,
   onFetch,
+  onCancel,
+  onDelete,
+  onUpdate,
 }: {
   row: RawRouteRow;
-  /** This row's own stop number (1-indexed), or null for a turn. */
   stopNumber: number | null;
-  /** This row's own derived location, once every row in the route has
-   * at least an action and a from_at (see EditRouteScreen's
-   * `hasIncompleteRow`) - undefined until then, since deriveWaypoints
-   * needs the whole list to track "current road" across rows. */
+  /** This row's own last-*committed* location - still derived from
+   * EditRouteScreen's real `rows`, not this draft, so Fetch here always
+   * geocodes whatever's actually saved; a location edited in this same
+   * draft only takes effect once Update commits it. */
   waypoint: WaypointQuery | undefined;
   status: RowResolutionStatus | undefined;
   fetching: boolean;
   onChange: (patch: Partial<RawRouteRow>) => void;
-  onRemove: () => void;
   onFetch: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+  onUpdate: () => void;
 }) {
   const isStop = stopNumber !== null;
-  const direction = row.action.toLowerCase() === "left" ? "left" : "right";
 
   return (
     <div className="border-b border-zinc-200 py-3 text-left last:border-b-0">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-heading flex items-center gap-1.5 text-base font-black">
-          {isStop ? (
-            <>
-              <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
-              Stop {stopNumber}
-            </>
-          ) : (
-            <>
-              <TurnArrow direction={direction} className="h-4 w-4 shrink-0" />
-              Turn
-            </>
-          )}
-        </span>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="Remove step"
-          className="text-zinc-400 active:text-red-600"
-        >
-          <TrashIcon className="h-4 w-4" />
-        </button>
-      </div>
-
       <div className="mt-2 grid grid-cols-2 gap-2">
         <select
           className={inputClass}
@@ -201,13 +278,7 @@ function EditableStepRow({
       {waypoint && status && (
         <div className="mt-2 flex items-center justify-between gap-2 text-sm">
           <span className="flex min-w-0 items-center gap-1.5">
-            {status.status === "resolved" ? (
-              <CheckCircleIcon className="h-4 w-4 shrink-0 text-green-600" />
-            ) : status.status === "skipped" ? (
-              <span className="h-4 w-4 shrink-0 text-center leading-4 text-zinc-400">–</span>
-            ) : (
-              <XCircleIcon className="h-4 w-4 shrink-0 text-red-500" />
-            )}
+            <ResolutionIcon status={status.status} className="h-4 w-4 shrink-0" />
             <span className="truncate text-zinc-500">
               {status.status === "resolved"
                 ? `${waypointLabel(waypoint)} (${status.lat.toFixed(5)}, ${status.lon.toFixed(5)})`
@@ -228,6 +299,33 @@ function EditableStepRow({
           )}
         </div>
       )}
+
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="Delete step"
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-600 active:bg-red-50"
+        >
+          <TrashIcon className="h-3.5 w-3.5" />
+          Delete
+        </button>
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={onCancel}
+          className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onUpdate}
+          className="btn-glossy shrink-0 rounded-lg border border-zinc-500 bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+        >
+          Update
+        </button>
+      </div>
     </div>
   );
 }
@@ -247,16 +345,28 @@ function EditableStepRow({
  * for a route that doesn't exist as a saved entity yet), which creates
  * the route as "draft" and hands control straight back to page.tsx,
  * which immediately reopens this same screen in `mode: "edit"` for it.
+ * The only thing Save ever actually requires is a route number
+ * (buildMeta below) - a stub with nothing else filled in yet is a
+ * legitimate draft, not an error. `mode: "add"`'s own stops card leads
+ * with Upload File, not the paste box - the box is the secondary path,
+ * starts small, and grows with whatever ends up in it (typed or
+ * uploaded) instead of being a large form field by default.
  *
  * Editing is where the real review lives, and it stops showing raw
- * text at that point - the stops list becomes a structured, editable
- * card per stop/turn (EditableStepRow above, styled like StartScreen's
- * "View All Stops"), each with a live resolution status (via
- * routeResolutionStatus.ts) against whatever's already geocoded, its
- * own "Fetch" button, and a "Fetch All Locations" button for the whole
- * route - all three calling /api/geocode for real (server-side, so
- * ORS_API_KEY never reaches the browser). "Make Active" is replaced by
- * a warning until every geocodable stop actually resolves.
+ * text at that point - the stops list becomes an ordered list of
+ * collapsed rows (StepRowView above), styled like StartScreen's "View
+ * All Stops" and just as compact, each with only a resolution icon and
+ * a pencil added. Tapping the pencil swaps that one row for its full
+ * editor (StepRowEditor) - live resolution status (via
+ * routeResolutionStatus.ts), its own "Fetch" button, and Delete/
+ * Cancel/Update controls instead of committing every keystroke
+ * directly, since real edits here are almost always "tweak one row" or
+ * "add one new stop," not a whole form's worth at once. Only one row
+ * is ever expanded at a time - every other row's pencil is disabled
+ * meanwhile, not hidden, and "Add Step" appends a blank row already
+ * expanded for its own first edit. A "Fetch All Locations" button
+ * still covers the whole route in one call, and "Publish" is replaced
+ * by a warning until every geocodable stop actually resolves.
  *
  * Session-only for now: `onSave` hands the built Route back up to
  * page.tsx's in-memory admin-route store, not a real committed file -
@@ -325,6 +435,7 @@ export function EditRouteScreen({
   // `rows` state that's authoritative from then on.
   const [stepsText, setStepsText] = useState(rawStepsText);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stepsTextareaRef = useRef<HTMLTextAreaElement>(null);
   // mode "edit" only - seeded once from rawStepsText (whatever CSV
   // shape it came in as, real committed file or a prior edit's own
   // rowsToCsvText output - parseRouteImport reads either fine), then
@@ -332,6 +443,20 @@ export function EditRouteScreen({
   // re-derived from text again.
   const [rows, setRows] = useState<RawRouteRow[]>(() => parseRouteImport(rawStepsText).rows);
   const [showTurns, setShowTurns] = useState(false);
+  // Which row (an index into `rows`) currently has its full editor
+  // open, if any - only ever one at a time, matching how this screen's
+  // own editing actually happens ("tweak a few details, or add one new
+  // waypoint"), not a form for every row at once. `draftRow` is that
+  // row's own working copy while expanded - StepRowEditor's onChange
+  // only ever touches this, never `rows` directly, so Cancel can
+  // discard it and Update is the only path that actually commits it.
+  // `newlyAddedIndex` remembers the one row `addRow` just appended (see
+  // below) so this same Cancel button removes it outright instead of
+  // leaving a blank orphaned row behind - any row that's ever been
+  // Updated even once is no longer "new" for this purpose.
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [draftRow, setDraftRow] = useState<RawRouteRow | null>(null);
+  const [newlyAddedIndex, setNewlyAddedIndex] = useState<number | null>(null);
   // A brand-new route always starts "draft" - readiness to publish is
   // checked live (canPublish below), not tracked as a separate status
   // of its own.
@@ -390,6 +515,20 @@ export function EditRouteScreen({
     };
   }, [routeNumber, tripType, schoolLevel, initialWaypointCache]);
 
+  // mode "add" only - the paste box starts small (its own min-height,
+  // see the textarea's className below) and grows with its content
+  // instead of scrolling internally, so an upload or a long paste both
+  // read the same way an actual textarea growing under a person's
+  // typing would. Recomputed on every stepsText change, including the
+  // one `handleFileChosen` makes, so an uploaded file's text expands
+  // the box immediately rather than only once someone types into it.
+  useEffect(() => {
+    const el = stepsTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [stepsText]);
+
   // mode "add" only - parses the paste/upload box's raw text.
   const parseResult = useMemo(() => parseRouteImport(stepsText), [stepsText]);
   const missingRequired = useMemo(
@@ -414,7 +553,11 @@ export function EditRouteScreen({
   );
   const counts = useMemo(() => resolutionCounts(resolutionRows), [resolutionRows]);
   const canPublish =
-    mode === "edit" && !hasIncompleteRow && rows.length > 0 && counts.unresolved === 0;
+    mode === "edit" &&
+    !hasIncompleteRow &&
+    rows.length > 0 &&
+    schoolAddress.trim().length > 0 &&
+    counts.unresolved === 0;
   // The readiness check only ever gates *publishing* - unpublishing an
   // already-published route (one that's live despite having unresolved
   // waypoints, e.g. before the real geocoding pipeline has ever run
@@ -424,14 +567,61 @@ export function EditRouteScreen({
 
   const knownSchoolAddress = schoolAddresses[schoolName];
 
-  function updateRow(index: number, patch: Partial<RawRouteRow>) {
-    setRows((prev) => prev.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  // Opens row `index`'s full editor - always switches straight to it
+  // even if a different row's editor is already open (that row's own
+  // pencil is disabled while this is true instead, see the render
+  // below, so in practice this only ever fires for the one unlocked
+  // row). `draftRow` starts as a copy of the real committed row, not a
+  // reference to it, so editing it can't touch `rows` until Update.
+  function openRowEditor(index: number) {
+    setExpandedIndex(index);
+    setDraftRow({ ...rows[index] });
   }
-  function removeRow(index: number) {
+  function handleDraftChange(patch: Partial<RawRouteRow>) {
+    setDraftRow((prev) => (prev ? { ...prev, ...patch } : prev));
+  }
+  function handleUpdateRow() {
+    if (expandedIndex === null || !draftRow) return;
+    const index = expandedIndex;
+    setRows((prev) => prev.map((r, i) => (i === index ? draftRow : r)));
+    if (newlyAddedIndex === index) setNewlyAddedIndex(null);
+    setExpandedIndex(null);
+    setDraftRow(null);
+  }
+  // Discards the draft - for a row that already existed before this
+  // edit, that's the whole story (the committed `rows` entry was never
+  // touched). For the one row `addRow` just appended and nobody has
+  // Updated yet, canceling removes it outright instead, so backing out
+  // of adding a step doesn't leave a blank orphaned row in the list.
+  function handleCancelRow() {
+    if (expandedIndex === null) return;
+    if (newlyAddedIndex === expandedIndex) {
+      const index = expandedIndex;
+      setRows((prev) => prev.filter((_, i) => i !== index));
+      setNewlyAddedIndex(null);
+    }
+    setExpandedIndex(null);
+    setDraftRow(null);
+  }
+  function handleDeleteRow(index: number) {
     setRows((prev) => prev.filter((_, i) => i !== index));
+    if (expandedIndex === index) {
+      setExpandedIndex(null);
+      setDraftRow(null);
+    }
+    if (newlyAddedIndex === index) setNewlyAddedIndex(null);
   }
+  // Appends a blank row and opens it for editing immediately - a new
+  // stop or turn always needs its details filled in right away, so
+  // there's no point leaving it collapsed first. See handleCancelRow
+  // above for what backing out of this specific row does differently
+  // from canceling an edit to one that already existed.
   function addRow() {
+    const index = rows.length;
     setRows((prev) => [...prev, { ...BLANK_ROW }]);
+    setExpandedIndex(index);
+    setDraftRow({ ...BLANK_ROW });
+    setNewlyAddedIndex(index);
   }
 
   function handleFileChosen(e: ChangeEvent<HTMLInputElement>) {
@@ -510,29 +700,16 @@ export function EditRouteScreen({
     }
   }
 
+  // The only real requirement to save at all - a route number is what
+  // gives a draft its own identity (see `id` below), and everything
+  // else (school, stops, whether they're geocoded) can genuinely be
+  // filled in later. This deliberately lets a stub with nothing but a
+  // route number get saved - readiness for anything past that is
+  // Publish's own concern (canPublish above), not Save's.
   function buildMeta(nextStatus: RouteStatus): RouteMeta | null {
-    if (!routeNumber.trim() || !schoolName.trim() || !schoolAddress.trim()) {
-      setMessage("Route number, school name, and school address are all required.");
+    if (!routeNumber.trim()) {
+      setMessage("Route number is required.");
       return null;
-    }
-    if (mode === "add") {
-      if (missingRequired.length > 0) {
-        setMessage(`Couldn't find a column for: ${missingRequired.join(", ")}. Every stop needs at least an action and a location.`);
-        return null;
-      }
-      if (parseResult.rows.length === 0) {
-        setMessage("Add at least one stop before saving.");
-        return null;
-      }
-    } else {
-      if (rows.length === 0) {
-        setMessage("Add at least one stop before saving.");
-        return null;
-      }
-      if (hasIncompleteRow) {
-        setMessage("Every stop needs at least a type and a location.");
-        return null;
-      }
     }
 
     return {
@@ -717,18 +894,12 @@ export function EditRouteScreen({
       {mode === "add" ? (
         <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
           <span className={labelClass}>Stops</span>
-          <textarea
-            className={`${inputClass} mt-1 h-48 font-mono text-sm`}
-            value={stepsText}
-            onChange={(e) => setStepsText(e.target.value)}
-            placeholder={STEPS_PLACEHOLDER}
-          />
 
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-1 flex items-center gap-2">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-600"
+              className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-500 bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
             >
               <UploadIcon className="h-3.5 w-3.5" />
               Upload File
@@ -745,6 +916,28 @@ export function EditRouteScreen({
             />
           </div>
 
+          <p className="mt-3 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            Or paste manually
+          </p>
+          {/* Starts small (min-h below) and grows with its own content
+              (the height effect above) rather than scrolling internally -
+              an uploaded file's text expands it the same way typing
+              would, since this is meant to read as secondary either way,
+              not a large form field of its own. */}
+          <textarea
+            ref={stepsTextareaRef}
+            className={`${inputClass} mt-1 min-h-[3.5rem] resize-none overflow-hidden font-mono text-sm`}
+            value={stepsText}
+            onChange={(e) => setStepsText(e.target.value)}
+            placeholder={STEPS_PLACEHOLDER}
+          />
+
+          {missingRequired.length > 0 && (
+            <p className="mt-2 text-xs text-amber-600">
+              Couldn&apos;t find a column for: {missingRequired.join(", ")} - stops won&apos;t come
+              through until that&apos;s fixed, but the route can still be saved as a draft.
+            </p>
+          )}
           {parseResult.headerless && parseResult.rows.length > 0 && (
             <p className="mt-2 text-xs text-zinc-500">
               No column header recognized - read as a plain list ({parseResult.rows.length} row
@@ -790,18 +983,34 @@ export function EditRouteScreen({
             {visibleRowIndices.map((index) => {
               const row = rows[index];
               const isStop = row.action.toLowerCase() === "stop";
+              const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
               const waypoint = waypoints[index];
+
+              if (expandedIndex === index && draftRow) {
+                return (
+                  <StepRowEditor
+                    key={index}
+                    row={draftRow}
+                    stopNumber={stopNumber}
+                    waypoint={waypoint}
+                    status={waypoint ? resolutionRows[index] : undefined}
+                    fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
+                    onChange={handleDraftChange}
+                    onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
+                    onCancel={handleCancelRow}
+                    onDelete={() => handleDeleteRow(index)}
+                    onUpdate={handleUpdateRow}
+                  />
+                );
+              }
               return (
-                <EditableStepRow
+                <StepRowView
                   key={index}
                   row={row}
-                  stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
-                  waypoint={waypoint}
+                  stopNumber={stopNumber}
                   status={waypoint ? resolutionRows[index] : undefined}
-                  fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
-                  onChange={(patch) => updateRow(index, patch)}
-                  onRemove={() => removeRow(index)}
-                  onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
+                  locked={expandedIndex !== null}
+                  onEdit={() => openRowEditor(index)}
                 />
               );
             })}
@@ -810,7 +1019,8 @@ export function EditRouteScreen({
           <button
             type="button"
             onClick={addRow}
-            className="btn-glossy font-heading mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
+            disabled={expandedIndex !== null}
+            className="btn-glossy font-heading mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900 disabled:opacity-50"
           >
             Add Step
           </button>
