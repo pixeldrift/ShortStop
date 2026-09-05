@@ -285,7 +285,7 @@ export function RouteListScreen({
           adminMode ? "border-2 border-red-400" : "border-zinc-300"
         }`}
       >
-        <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-1.5 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+        <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-[0.4375rem] text-xs font-semibold tracking-wide text-zinc-500 uppercase">
           <div className="flex items-center">
             <SortableHeader
               label="#"
@@ -329,7 +329,7 @@ export function RouteListScreen({
                 <button
                   type="button"
                   onClick={() => handleRowClick(route)}
-                  className="grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-2 text-left active:bg-zinc-100"
+                  className="grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-2.5 text-left active:bg-zinc-100"
                 >
                   <div className="flex items-center gap-1.5">
                     <span className="font-heading text-lg leading-none font-black">
@@ -346,7 +346,7 @@ export function RouteListScreen({
                       )}
                     </div>
                   </div>
-                  <span className="min-w-0">
+                  <span className="min-w-0 pl-3">
                     <SchoolNameLabel name={route.schoolName} />
                     {isAdminOnly && (
                       <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
