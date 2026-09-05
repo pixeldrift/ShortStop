@@ -158,15 +158,17 @@ export function RouteListScreen({
               onClick={() => onSelect(route)}
               className="grid w-full grid-cols-[3rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
             >
-              <div className="flex flex-col items-center gap-0.5">
-                <span className="font-heading text-lg font-black">{route.routeNumber}</span>
+              <div className="flex flex-col items-center gap-0">
+                <span className="font-heading text-lg leading-none font-black">
+                  #{route.routeNumber}
+                </span>
                 <div className="flex items-center gap-0.5 text-blue-500">
                   {route.tripType === "pickup" ? (
                     <SunriseIcon className="h-3.5 w-3.5" />
                   ) : (
                     <SunIcon className="h-3.5 w-3.5" />
                   )}
-                  <span className="text-[0.65rem] leading-none font-bold">
+                  <span className="text-xs leading-none font-bold">
                     {route.tripType === "pickup" ? "AM" : "PM"}
                   </span>
                 </div>
