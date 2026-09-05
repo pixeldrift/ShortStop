@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
-import { BackArrowIcon, MapPinIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
-import type { Route } from "@/lib/types";
+import { BackArrowIcon, CloseIcon, MapPinIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
+import type { NavigationStep, Route } from "@/lib/types";
 
 // Not currently rendered (see StartScreen below) - kept ready to
 // re-enable later, so it's exported rather than deleted.
@@ -66,6 +66,7 @@ export function StartScreen({
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
   const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
   const [distanceValue] = splitValueUnit(route.distance);
+  const [showStopsModal, setShowStopsModal] = useState(false);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-6 pb-6 text-center landscape:pt-4">
@@ -115,6 +116,14 @@ export function StartScreen({
           <dt className="text-right text-zinc-500">Driver</dt>
           <dd className="text-left font-medium">{route.driverName}</dd>
         </dl>
+
+        <button
+          type="button"
+          onClick={() => setShowStopsModal(true)}
+          className="btn-glossy font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-300 bg-white py-2.5 text-base font-semibold text-zinc-700"
+        >
+          View All Stops
+        </button>
       </div>
 
       <button
@@ -124,6 +133,68 @@ export function StartScreen({
       >
         Start Route <TriangleIcon direction="right" className="h-6 w-6" />
       </button>
+
+      {showStopsModal && (
+        <AllStopsModal route={route} onClose={() => setShowStopsModal(false)} />
+      )}
+    </div>
+  );
+}
+
+/** Scrolling list of every stop on the route, in order - tapping "View
+ * All Stops" on the Route info screen above. Only "stop" steps for
+ * now, not turns - a later toggle to also show turns (see the
+ * StepScreen "TURN {direction}" heading/subheading convention) can
+ * switch which steps this filters to without changing anything else
+ * here. */
+function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }) {
+  const stops = route.steps.filter((step): step is NavigationStep & { kind: "stop" } =>
+    step.kind === "stop",
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-full max-w-sm flex-col rounded-xl bg-[var(--background)] shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
+          <h2 className="font-heading text-xl font-black tracking-tight">All Stops</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="divide-y divide-zinc-200 overflow-y-auto px-5">
+          {stops.map((step, index) => (
+            <div key={step.id} className="py-3 text-left">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-heading font-black">Stop {index + 1}</span>
+                {step.studentCount != null && (
+                  <span className="shrink-0 text-sm text-zinc-500">
+                    {step.studentCount} rider{step.studentCount === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+              <p className="text-zinc-700">
+                {step.subheading}
+                {step.sideOfRoad ? ` (${step.sideOfRoad})` : ""}
+              </p>
+              {step.specialInstruction && (
+                <p className="mt-0.5 text-sm text-zinc-500">{step.specialInstruction}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
