@@ -9,6 +9,7 @@ import {
   EditIcon,
   MapPinIcon,
   PersonSolidIcon,
+  RoundedTriangleIcon,
   SunIcon,
   SunriseIcon,
   TriangleIcon,
@@ -279,6 +280,15 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
                     <span className="font-heading flex items-center gap-1.5 text-lg font-black">
                       <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
                       Stop {number}
+                      {step.sideOfRoad && (
+                        <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
+                          (on {step.sideOfRoad.toLowerCase()}
+                          <RoundedTriangleIcon
+                            direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
+                            className="h-3 w-3"
+                          />)
+                        </span>
+                      )}
                     </span>
                     {step.studentCount != null && (
                       <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
@@ -287,10 +297,7 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
                       </span>
                     )}
                   </div>
-                  <p className="text-zinc-700">
-                    {step.subheading}
-                    {step.sideOfRoad ? ` (${step.sideOfRoad})` : ""}
-                  </p>
+                  <p className="text-zinc-700">{step.subheading}</p>
                   {step.specialInstruction && (
                     <p className="mt-0.5 text-sm text-zinc-500">{step.specialInstruction}</p>
                   )}
