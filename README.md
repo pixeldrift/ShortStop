@@ -1722,8 +1722,15 @@ the whole problem for this road, not the method.
 
 Red Bud Ln turned out to be the same class of mistake, just smaller -
 confirmed against a real map: it's "Redbud Ln," one word, not "Red
-Bud" as two. Fixed in `125-PM-EL.csv` alongside Bill Stewart. Not
-re-run yet (see Next steps).
+Bud" as two. Fixed in `125-PM-EL.csv` alongside Bill Stewart, then
+re-run on its own (`PROTOTYPE_FILTER=Redbud` - a single query, no rate
+limiting to worry about): resolved clean on the first try, 36.0434458,
+-86.540132. Every single "why didn't this match" question this
+prototype has raised so far has turned out to be a real name mismatch
+in the source data, not a limitation of the Overpass approach -
+`125-PM-EL.csv` had two of them (Bill Stewart Blvd, Redbud Ln), the
+school address had a third (see "Route data: real school addresses"
+above).
 
 ### Next steps
 
@@ -1733,19 +1740,18 @@ re-run yet (see Next steps).
   Nothing geocoding-related can actually run for real until this
   exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
   confirm the OpenRouteService switch works without needing a CSV edit
-- The Overpass prototype (see "Maps, part nine" above) went from 0/8 to
-  4/5 (excluding rate-limited attempts) on the "Bill Stewart Blvd"
-  intersections once its name was fixed - confirms the diagnosis, but
-  every run so far still hits 429/504 from having zero pacing between
-  calls (3 more this time, on top of the first run's 4). Add real
-  pacing (a delay between calls, and/or retrying a 429/504 once instead
-  of counting it as a miss) before the hit rate on the full route means
-  anything solid. "Bill Stewart Blvd & Red Bud Ln" is fixed too -
-  Redbud is one word, confirmed against a real map, corrected in
-  `125-PM-EL.csv` - but not re-run yet. Once pacing's in and the full
-  route gets a clean re-run, decide whether to wire this into `geocode.ts` as
-  a real provider (intersections through Overpass, plain addresses
-  still through ORS) instead of a standalone script
+- The Overpass prototype (see "Maps, part nine" above) is now 5-for-5
+  (excluding rate-limited attempts) across every crossroads it's been
+  asked to re-check after a name fix - Bill Stewart Blvd and Redbud Ln
+  both went from a consistent miss to resolving clean the moment
+  `125-PM-EL.csv` had the right name. The one real blocker left is
+  pacing: every multi-query run so far has hit 429/504 from zero delay
+  between calls (7 across the two 8-query runs). Add real pacing (a
+  delay between calls, and/or retrying a 429/504 once instead of
+  counting it as a miss), then do a clean full-route re-run before
+  deciding whether to wire this into `geocode.ts` as a real provider
+  (intersections through Overpass, plain addresses still through ORS)
+  instead of a standalone script
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual
