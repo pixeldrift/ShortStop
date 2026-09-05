@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
-import { BackArrowIcon, CloseIcon, MapPinIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
+import {
+  BackArrowIcon,
+  CloseIcon,
+  MapPinIcon,
+  PersonSolidIcon,
+  SunIcon,
+  SunriseIcon,
+  TriangleIcon,
+} from "./icons";
 import type { NavigationStep, Route } from "@/lib/types";
 
 // Not currently rendered (see StartScreen below) - kept ready to
@@ -189,20 +197,19 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
-          <div>
-            <h2 className="font-heading text-xl font-black tracking-tight">All Stops</h2>
-            <p className="font-heading flex items-center gap-1 text-sm font-bold text-blue-500">
-              Route {route.routeNumber}
-              <span className="flex items-center gap-1">
-                {route.tripType === "pickup" ? "AM" : "PM"}
-                {route.tripType === "pickup" ? (
-                  <SunriseIcon className="h-3.5 w-3.5" />
-                ) : (
-                  <SunIcon className="h-3.5 w-3.5" />
-                )}
-              </span>
-            </p>
-          </div>
+          <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
+            Route {route.routeNumber}
+            <span className="flex items-center gap-1 text-blue-500">
+              {route.tripType === "pickup" ? "AM" : "PM"}
+              {route.tripType === "pickup" ? (
+                <SunriseIcon className="h-4 w-4" />
+              ) : (
+                <SunIcon className="h-4 w-4" />
+              )}
+            </span>
+            <span className="text-zinc-400">-</span>
+            All Stops
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -220,11 +227,12 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
             <div key={step.id} className="py-3 text-left">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="font-heading flex items-center gap-1.5 text-lg font-black">
-                  <MapPinIcon className="h-4 w-4 shrink-0 text-blue-500" />
+                  <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
                   Stop {index + 1}
                 </span>
                 {step.studentCount != null && (
-                  <span className="shrink-0 text-sm text-zinc-500">
+                  <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
+                    <PersonSolidIcon className="h-4 w-4" />
                     {step.studentCount} rider{step.studentCount === 1 ? "" : "s"}
                   </span>
                 )}
