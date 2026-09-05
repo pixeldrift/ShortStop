@@ -27,18 +27,20 @@ const DEMO_ROUTE_COUNT = 24;
 // Where each master-list row's own turn-by-turn steps sheet lives,
 // keyed by the same `${routeNumber}-${tripType}-${schoolLevel}` id the
 // master list generates/carries (see Route.id's doc comment in
-// types.ts). Deliberately only covers routes a real steps sheet exists
-// for - 120-dropoff-middle/120-dropoff-high are "active" candidates
+// types.ts). File names follow the district's own convention -
+// route, AM/PM, school type (e.g. "120-AM-MS.csv"), not this app's
+// tripType/schoolLevel spelling. Deliberately only covers routes a real
+// steps sheet exists for - 120-PM-MS/120-PM-HS are "active" candidates
 // with no entry here yet (their sheets came in visibly incomplete, so
 // the master list marks them "inactive" instead - see
 // route-master-list.csv), and any future "active" row with no entry
 // here is skipped rather than crashing (see the `.filter` below).
 const ROUTE_STEPS_CSV_PATHS: Record<string, string> = {
-  "125-dropoff-elementary": "/data/route-125.csv",
-  "120-pickup-elementary": "/data/route-120-pickup-elementary.csv",
-  "120-pickup-middle": "/data/route-120-pickup-middle.csv",
-  "120-pickup-high": "/data/route-120-pickup-high.csv",
-  "120-dropoff-elementary": "/data/route-120-dropoff-elementary.csv",
+  "125-dropoff-elementary": "/data/125-PM-EL.csv",
+  "120-pickup-elementary": "/data/120-AM-EL.csv",
+  "120-pickup-middle": "/data/120-AM-MS.csv",
+  "120-pickup-high": "/data/120-AM-HS.csv",
+  "120-dropoff-elementary": "/data/120-PM-EL.csv",
 };
 
 async function fetchText(path: string): Promise<string> {

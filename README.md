@@ -73,13 +73,13 @@ scripts/
   tsconfig.json            Standalone tsc config so the script needs no bundler
 public/
   manifest.json          PWA manifest
-  data/route-125.csv           Bus 125's turn-by-turn steps
-  data/route-120-pickup-elementary.csv   Bus 120's AM Elementary run steps
-  data/route-120-pickup-middle.csv       Bus 120's AM Middle run steps
-  data/route-120-pickup-high.csv         Bus 120's AM High run steps
-  data/route-120-dropoff-elementary.csv  Bus 120's PM Elementary run steps
-  data/route-120-dropoff-middle.csv      Bus 120's PM Middle run steps (incomplete, status: inactive)
-  data/route-120-dropoff-high.csv        Bus 120's PM High run steps (incomplete, status: inactive)
+  data/125-PM-EL.csv           Bus 125's turn-by-turn steps
+  data/120-AM-EL.csv           Bus 120's AM Elementary run steps
+  data/120-AM-MS.csv           Bus 120's AM Middle run steps
+  data/120-AM-HS.csv           Bus 120's AM High run steps
+  data/120-PM-EL.csv           Bus 120's PM Elementary run steps
+  data/120-PM-MS.csv           Bus 120's PM Middle run steps (incomplete, status: inactive)
+  data/120-PM-HS.csv           Bus 120's PM High run steps (incomplete, status: inactive)
   data/route-master-list.csv   Route-level metadata for every real route (see below)
   data/route-125-waypoints.json  Geocoding cache, generated - see "Maps, part two" below
   assets/
@@ -102,7 +102,7 @@ Bluetooth remote on an actual iPad/iPhone in Safari.
 The route's geocoded waypoint cache (`route-125-waypoints.json`, see
 "Maps, part two" below) refreshes itself automatically - a GitHub
 Actions workflow (`.github/workflows/geocode-route.yml`) runs `npm run
-geocode` and commits the result whenever `route-125.csv` changes, so
+geocode` and commits the result whenever `125-PM-EL.csv` changes, so
 there's normally nothing to do by hand. To run it yourself anyway (a
 manual local check, or to retry a failed lookup without touching the
 CSV): `npm run geocode`. Needs real outbound network access to
@@ -125,10 +125,12 @@ Branch at `claude/ipad-iphone-nav-app-ss8dsk`, or merge that branch into
 
 ### Route data
 
-`public/data/route-125.csv` follows the doc's proposed CSV schema
-(originally plus one addition, a leading `sequence` column, since
-dropped - see "Route data: two CSVs now, and a dropped column" further
-below): `time,action,from_at,onto_at,rider_count,side,notes`.
+`public/data/125-PM-EL.csv` (Bus 125's PM Elementary run - file names
+follow the district's own route/AM-PM/school-type convention, e.g.
+`120-AM-MS.csv`, not this app's tripType/schoolLevel spelling) follows
+the doc's proposed CSV schema (originally plus one addition, a leading
+`sequence` column, since dropped - see "Route data: two CSVs now, and a
+dropped column" further below): `time,action,from_at,onto_at,rider_count,side,notes`.
 Transcribed from Bus 125's handwritten route sheet (turns as
 `Left`/`Right` with the road being left and the road being turned onto;
 `Stop` rows as the road plus cross street, or a bare address). A few rows
@@ -147,8 +149,9 @@ right"/"On the left" announcement) — replace with the real values once
 they exist.
 
 `Route.schoolName`/`schoolAddress` (`schoolName` now sourced from
-`route-125-meta.csv`, `schoolAddress` still a placeholder in
-`page.tsx` - see "Route data: two CSVs now" further below) are
+`route-master-list.csv`, `schoolAddress` still a placeholder keyed by
+school name in `placeholderMeta.ts` - see "Route data: two CSVs now"
+and "Route data: the master list" further below) are
 what the trip-summary screen's subtitle (`schoolName` is folded into
 `route.name` there, not its own row - see "Route flow and screens"
 further below) and the "Starting route..." announcement (see Audio
@@ -233,7 +236,7 @@ individually via `speechSynthesis.speak()` in `useRouteStepper.ts` so
 there's an audible pause between each rather than one run-on sentence.
 Road-suffix abbreviations are spelled out for speech only
 (`speakRoadNames` in `src/lib/speech.ts`: "Rd" → "Road", "Ln" → "Lane",
-"Pkwy" → "Parkway", etc. - covers what's in `route-125.csv` plus the
+"Pkwy" → "Parkway", etc. - covers what's in `125-PM-EL.csv` plus the
 common USPS suffixes) so the TTS engine doesn't read "Rd" as a word or
 garble it; on-screen text keeps the abbreviated form.
 
@@ -1516,15 +1519,17 @@ well, rather than duplicating it.
 It turns out Bus 120 runs the same six-way split every other real bus
 apparently will: AM pickup and PM dropoff, crossed with elementary/
 middle/high school, each its own real path with its own steps sheet
-(`route-120-pickup-elementary.csv` through `route-120-dropoff-high.csv`)
-- exactly the scenario `Route.id`'s convention was written for, now
-confirmed against real data instead of just demo filler. `parseRouteCsv.ts`'s
-row parser (`parseRouteCsvRows`) had to become header-driven rather
-than assuming fixed comma-separated columns: Bus 120's sheets are
-tab-separated, have a populated `time` column (still not parsed into
-anything - `NavigationStep` has no per-step time field) instead of
-route-125.csv's always-blank one, and drop the `side` column entirely
-rather than leaving it blank. `page.tsx` now fetches the master list,
+(`120-AM-EL.csv` through `120-PM-HS.csv` - file names follow the
+district's own route/AM-PM/school-type convention, e.g. `120-AM-MS.csv`,
+rather than this app's own tripType/schoolLevel spelling) - exactly the
+scenario `Route.id`'s convention was written for, now confirmed against
+real data instead of just demo filler. `parseRouteCsv.ts`'s row parser
+(`parseRouteCsvRows`) had to become header-driven rather than assuming
+fixed comma-separated columns: Bus 120's sheets are tab-separated, have
+a populated `time` column (still not parsed into anything -
+`NavigationStep` has no per-step time field) instead of `125-PM-EL.csv`'s
+always-blank one, and drop the `side` column entirely rather than
+leaving it blank. `page.tsx` now fetches the master list,
 builds a real `Route` for every `active`-status row that has a steps
 sheet, and feeds all of them into `buildDemoRoutes` (which now reserves
 every real route's number, not just one, and picks its filler-content

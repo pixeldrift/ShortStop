@@ -20,7 +20,7 @@ import type { WaypointCache } from "../src/lib/waypointCache";
 // runs package.json scripts with the directory containing that
 // package.json (here, the repo root - the only one in this project)
 // as cwd, regardless of the caller's own working directory.
-const ROUTE_CSV_PATH = join(process.cwd(), "public", "data", "route-125.csv");
+const ROUTE_CSV_PATH = join(process.cwd(), "public", "data", "125-PM-EL.csv");
 const CACHE_PATH = join(process.cwd(), "public", "data", "route-125-waypoints.json");
 const ENV_LOCAL_PATH = join(process.cwd(), ".env.local");
 
@@ -52,10 +52,10 @@ function loadEnvLocal(): void {
 }
 
 /**
- * Refreshes public/data/route-125-waypoints.json from route-125.csv:
+ * Refreshes public/data/route-125-waypoints.json from 125-PM-EL.csv:
  * derives every row's geocodable location (deriveWaypoints.ts), looks
  * up whichever ones aren't already cached, and writes the result back.
- * route-125.csv stays the one source of truth for the route - editing
+ * 125-PM-EL.csv stays the one source of truth for the route - editing
  * it changes what deriveWaypoints produces, which changes the cache
  * keys (content-addressed, see waypointCacheKey), which is what makes
  * "edit the CSV, re-run this" a real refresh rather than something
@@ -140,7 +140,7 @@ async function main() {
   );
   if (failed > 0) {
     console.log(
-      "Failed lookups usually need a wording fix in route-125.csv (or the road just isn't found) " +
+      "Failed lookups usually need a wording fix in 125-PM-EL.csv (or the road just isn't found) " +
         "- they'll be retried automatically next run since they weren't cached.",
     );
   }
