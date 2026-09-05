@@ -419,7 +419,12 @@ export function CloseIcon({ className }: { className?: string }) {
 /** Favorite marker on RouteListScreen's rows - solid+filled when
  * `filled`, a faint outline otherwise (caller controls both fill and
  * outline color via `className`'s text color, same as every other
- * icon here). */
+ * icon here). Built from two cubic-bezier lobes that are true mirror
+ * images of each other around x=12 (every coordinate pair checked by
+ * hand) - an earlier hand-tuned path here wasn't actually symmetric
+ * (its left and right lobes used unrelated control points) and its
+ * closing curve didn't even return to its own start point, both of
+ * which only showed up as a visible lopsided bump once filled solid. */
 export function HeartIcon({
   filled,
   className,
@@ -438,7 +443,7 @@ export function HeartIcon({
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M12 20.5s-7-4.35-9.5-8.8C1 8.4 2.4 5 5.7 4.5c2-.3 3.7.7 4.8 2.3.3.4.9.4 1.2 0 1.1-1.6 2.8-2.6 4.8-2.3C19.6 5 21 8.4 19.5 11.7c-2.5 4.45-7.5 8.8-7.5 8.8z" />
+      <path d="M12 21C12 21 4 13.5 4 8.5C4 5.42 6.42 3 9.5 3C11.24 3 12 4 12 4C12 4 12.76 3 14.5 3C17.58 3 20 5.42 20 8.5C20 13.5 12 21 12 21Z" />
     </svg>
   );
 }
