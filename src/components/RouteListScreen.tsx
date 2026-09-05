@@ -213,7 +213,10 @@ export function RouteListScreen({
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
       <Logo size="large" />
-      <h1 className="font-heading text-2xl font-black tracking-tight">Routes</h1>
+      <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+        {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
+        {adminMode ? "Editing Routes" : "Routes"}
+      </h1>
 
       <div className="flex w-full max-w-md shrink-0 items-center gap-2">
         <div className="relative min-w-0 flex-1">
@@ -278,7 +281,11 @@ export function RouteListScreen({
         </div>
       </div>
 
-      <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
+      <div
+        className={`flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border text-left ${
+          adminMode ? "border-2 border-red-400" : "border-zinc-300"
+        }`}
+      >
         <div className="grid grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-stretch gap-x-3 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
           <SortableHeader
             label="#"
