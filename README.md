@@ -2164,3 +2164,32 @@ so far.
   `distance` already had, now applied to `durationMinutes` too, both
   meant to be corrected on the backend once real routing data exists
   rather than typed in by hand up front.
+- **schools.csv corrected against the district's own real directory.**
+  The 36-school roster above was compiled from web search, not RCS's
+  own site (blocked from this sandbox); handed the district's real
+  published list (school/phone/fax/address/grade/principal, one row
+  per school) to check it against, two entries turned out wrong -
+  "Erma Siegel Elementary School" doesn't exist on the real list at
+  all (dropped), and "Hobgood Elementary School" is a Murfreesboro
+  City Schools campus, a different district entirely (also dropped) -
+  and 16 real RCS schools were missing outright (Blackman High School
+  among them, plus a Poplar Hill *Elementary* distinct from the Poplar
+  Hill Middle already in the sheet, and a cluster of Smyrna-area
+  schools). Now 50 schools, all sourced from the real list, with two
+  small address fixes along the way (Homer Pittard Campus School's own
+  zip, Kittrell Elementary's road type). Three non-standard campuses
+  (two alternative schools, one virtual) are deliberately still left
+  out, same as before - not real zoned campuses a bus route serves.
+  Eagleville School (K-12) and Simon Springs Community School (1-8)
+  don't fit `SchoolLevel`'s three real values cleanly; both went in as
+  `elementary` as the closest fit rather than being left out.
+
+  The real list also spells the district's own name "LaVergne," not
+  "Lavergne" - this app's own real route data (`route-master-list.csv`,
+  every `120-*.csv` steps file, `schools.csv` itself, and one script
+  that hardcoded the old spelling) all used "Lavergne" throughout, so
+  the rename touches every one of those, not just the schools sheet -
+  an inconsistent rename would have broken the exact-name matching
+  that ties a real route to its own school's address/level. "LaVergne
+  Lake Elementary" also gained the trailing "School" its official name
+  actually has, matching every other school entry's own naming.

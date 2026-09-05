@@ -1,8 +1,8 @@
 route_id	route_number	bus_number	am_pm	school_type	school_name	start_time	end_time	stop_count	rider_count	status
-	125	125	PM	EL	Lavergne Lake Elementary	15:30:00	16:00	11	53	published
-	120	120	AM	EL	Lavergne Lake Elementary	6:30:00	6:45:00			published
-	120	120	AM	MS	Lavergne Middle School	7:00:00	7:25:00			published
-	120	120	AM	HS	Lavergne High School	7:35:00	7:56:00			published
-	120	120	PM	EL	Lavergne Lake Elementary	14:30:00	14:57:00			published
-	120	120	PM	MS	Lavergne Middle School	15:02:00	15:25:06			published
-	120	120	PM	HS	Lavergne High School	15:45:00				draft
+	125	125	PM	EL	LaVergne Lake Elementary School	15:30:00	16:00	11	53	published
+	120	120	AM	EL	LaVergne Lake Elementary School	6:30:00	6:45:00			published
+	120	120	AM	MS	LaVergne Middle School	7:00:00	7:25:00			published
+	120	120	AM	HS	LaVergne High School	7:35:00	7:56:00			published
+	120	120	PM	EL	LaVergne Lake Elementary School	14:30:00	14:57:00			published
+	120	120	PM	MS	LaVergne Middle School	15:02:00	15:25:06			published
+	120	120	PM	HS	LaVergne High School	15:45:00				draft

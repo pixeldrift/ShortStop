@@ -156,7 +156,7 @@ export function useRouteStepper(route: Route) {
   // own utterance rather than joined into one string, so there's an
   // audible pause between them instead of one run-on sentence.
   //
-  // The route-number/school preamble ("Starting route 125 from Lavergne
+  // The route-number/school preamble ("Starting route 125 from LaVergne
   // Lake Elementary.") is now the *entire* depot-phase announcement,
   // rather than being prepended to step 0's own announcement - since
   // depot is its own phase, it gets its own turn to speak instead of

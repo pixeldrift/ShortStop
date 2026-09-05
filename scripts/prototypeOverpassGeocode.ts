@@ -77,7 +77,7 @@ async function main() {
   const csvText = readFileSync(ROUTE_CSV_PATH, "utf8");
   const rows = parseRouteCsvRows(csvText);
   const schoolAddresses = parseSchoolsCsv(readFileSync(SCHOOLS_CSV_PATH, "utf8"));
-  const schoolAddress = schoolAddresses["Lavergne Lake Elementary"]?.address;
+  const schoolAddress = schoolAddresses["LaVergne Lake Elementary School"]?.address;
   const waypoints = deriveWaypoints(rows, schoolAddress);
 
   const locationContext = extractCityState(schoolAddress);
