@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { Logo } from "./Logo";
 import {
@@ -285,23 +285,24 @@ export function RouteListScreen({
           adminMode ? "border-2 border-red-400" : "border-zinc-300"
         }`}
       >
-        <div className="grid grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-          <SortableHeader
-            label="#"
-            field="routeNumber"
-            align="center"
-            sortField={sortField}
-            sortDir={sortDir}
-            onSort={toggleSort}
-          />
-          <SortableHeader
-            label="AM/PM"
-            field="tripType"
-            align="center"
-            sortField={sortField}
-            sortDir={sortDir}
-            onSort={toggleSort}
-          />
+        <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-1.5 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+          <div className="flex items-center">
+            <SortableHeader
+              label="#"
+              field="routeNumber"
+              sortField={sortField}
+              sortDir={sortDir}
+              onSort={toggleSort}
+            />
+            <SortableHeader
+              label="AM/PM"
+              field="tripType"
+              tight
+              sortField={sortField}
+              sortDir={sortDir}
+              onSort={toggleSort}
+            />
+          </div>
           <SortableHeader
             label="School"
             field="schoolName"
@@ -328,23 +329,25 @@ export function RouteListScreen({
                 <button
                   type="button"
                   onClick={() => handleRowClick(route)}
-                  className="grid w-full grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left active:bg-zinc-100"
+                  className="grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-2 text-left active:bg-zinc-100"
                 >
-                  <span className="text-center font-heading text-lg leading-none font-black">
-                    #{route.routeNumber}
-                  </span>
-                  <div className="flex items-center justify-center gap-0.5 text-blue-500">
+                  <div className="flex items-center gap-1.5">
                     <span className="font-heading text-lg leading-none font-black">
-                      {route.tripType === "pickup" ? "AM" : "PM"}
+                      #{route.routeNumber}
                     </span>
-                    {route.tripType === "pickup" ? (
-                      <SunriseIcon className="h-3.5 w-3.5" />
-                    ) : (
-                      <SunIcon className="h-3.5 w-3.5" />
-                    )}
+                    <div className="flex items-center gap-0.5 text-blue-500">
+                      <span className="font-heading text-lg leading-none font-black">
+                        {route.tripType === "pickup" ? "AM" : "PM"}
+                      </span>
+                      {route.tripType === "pickup" ? (
+                        <SunriseIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <SunIcon className="h-3.5 w-3.5" />
+                      )}
+                    </div>
                   </div>
                   <span className="min-w-0">
-                    <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
+                    <SchoolNameLabel name={route.schoolName} />
                     {isAdminOnly && (
                       <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                         {route.status}
@@ -490,18 +493,55 @@ export function RouteListScreen({
   );
 }
 
+/** A school name, single-line and non-wrapping - a long name used to
+ * wrap "School" onto its own line (line-clamp-2), which read as an
+ * orphaned word more than a real second line of content. Measures its
+ * own rendered width against its available column width instead: if
+ * the full name doesn't fit, it drops a trailing " School" (the only
+ * word actually worth shortening away - "Elementary"/"Middle"/"High"
+ * all carry real information "School" alone repeats) and re-measures
+ * on resize; a name that's still too long even without that word (or
+ * one that never had it) just truncates normally, browser ellipsis and
+ * all - there's no further clever shortening beyond the one word this
+ * app's own real school names, see schools.csv, prompted this for. */
+function SchoolNameLabel({ name }: { name: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [dropSchoolWord, setDropSchoolWord] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !/ School$/.test(name)) {
+      setDropSchoolWord(false);
+      return;
+    }
+    const checkFit = () => setDropSchoolWord(el.scrollWidth > el.clientWidth);
+    checkFit();
+    const observer = new ResizeObserver(checkFit);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [name]);
+
+  return (
+    <span ref={ref} className="block truncate leading-snug text-zinc-700">
+      {dropSchoolWord ? name.replace(/ School$/, "") : name}
+    </span>
+  );
+}
+
 /** One clickable, sortable column header - label plus the traditional
  * stacked up/down carets (SortIcon), which always render but only show
  * the active direction solid once this is the column being sorted by.
- * `align="right"` (the Start column, matching its right-aligned data
- * below) and `align="center"` (the #/AM-PM columns, matching their
- * centered data below) both keep label-then-icon order, just moving
- * where that pair sits within the column rather than mirroring the
- * icon in front of the label. */
+ * `align="right"` keeps the Start column's label-then-icon order
+ * matching its own right-aligned data below. `tight` is for the AM/PM
+ * header specifically - it sits right beside "#" in one shared column
+ * now (see the header row above), not its own separately-centered
+ * track, so it needs a much smaller leading gap than the normal `pl-3`
+ * every other header uses between columns. */
 function SortableHeader({
   label,
   field,
   align = "left",
+  tight = false,
   sortField,
   sortDir,
   onSort,
@@ -509,6 +549,7 @@ function SortableHeader({
   label: string;
   field: SortField;
   align?: "left" | "center" | "right";
+  tight?: boolean;
   sortField: SortField;
   sortDir: SortDir;
   onSort: (field: SortField) => void;
@@ -519,7 +560,7 @@ function SortableHeader({
     <button
       type="button"
       onClick={() => onSort(field)}
-      className={`flex items-center gap-1 bg-transparent pl-3 first:pl-0 ${justify} ${
+      className={`flex items-center gap-1 bg-transparent ${tight ? "pl-1.5" : "pl-3 first:pl-0"} ${justify} ${
         active ? "text-zinc-700" : ""
       }`}
     >
