@@ -1683,6 +1683,30 @@ explicit `Accept: application/json`), same string Nominatim already
 uses - not optional in practice for either service, whatever the HTTP
 spec says 406 is supposed to mean.
 
+Second run, same fix: **5 of 20 real crossroads resolved to exactly one
+node**, 1 came back ambiguous (2 shared nodes - `pickNearest` correctly
+picked the one closer to the previous stop), 4 were transient
+infrastructure failures (429/504 from hitting the public
+`overpass-api.de` instance too fast, back-to-back with no pacing - not
+a verdict on the method, just a "needs rate-limiting before this is
+more than a prototype" finding), and the other 10 came back "no shared
+node in the search box." That last bucket isn't evenly spread: 7 of
+those 10 are every single query naming "Bill Stewart Rd" - one road,
+consistently, regardless of which cross street it's paired with. Every
+other road name (Rock Springs Rd, Old Nashville Hwy, Sam Ridley Pkwy,
+Holland Ridge Dr, Judge Mason Way, Carmen Way) resolved fine at least
+once, including one pair queried twice landing on the exact same
+coordinates both times (36.0441259, -86.5478848 for Carmen Way &
+Holland Ridge Dr) - a real consistency check a text-search geocoder
+has no equivalent of. That pattern points at a name mismatch (this
+project already found one real one - "Lavergne" vs. "La Vergne" - so a
+paper-route-sheet abbreviation not matching what OSM's `name` tag
+actually says for that specific road is a believable next culprit),
+not a flaw in the Overpass approach itself. "Sam Ridley Pkwy & Ramp
+toward Murfreesboro" coming back empty is expected, not a miss - "Ramp
+toward Murfreesboro" is the paper sheet's own description of an
+unnamed highway ramp, not a real road name to look up.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
@@ -1691,13 +1715,18 @@ spec says 406 is supposed to mean.
   Nothing geocoding-related can actually run for real until this
   exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
   confirm the OpenRouteService switch works without needing a CSV edit
-- Once `ORS_API_KEY` exists as a repository secret (bullet above),
-  run the `prototype-overpass.yml` workflow (Actions tab ->
-  "Prototype - Overpass intersection lookup" -> Run workflow) and see
-  how many of route 125's real crossroads actually resolve to one node
-  - see "Maps, part nine" above. If it beats what's live today, wire it
-  into `geocode.ts` as a real provider (intersections through Overpass,
-  plain addresses still through ORS) instead of a standalone script
+- The Overpass prototype (see "Maps, part nine" above) resolved 5/20
+  of route 125's real crossroads cleanly on its first working run -
+  worth digging into before deciding whether to wire it in for real:
+  figure out why every "Bill Stewart Rd" query specifically comes back
+  empty (7 of the 10 "no match" results - likely a name mismatch
+  between the paper sheet and OSM's own `name` tag, same kind of issue
+  as the Lavergne/La Vergne school-address one), and add pacing between
+  Overpass calls (4 of 20 hit 429/504 from having none at all - not a
+  resolution failure, just too fast for the public instance). If the
+  hit rate holds up after both fixes, wire it into `geocode.ts` as a
+  real provider (intersections through Overpass, plain addresses still
+  through ORS) instead of a standalone script
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual
