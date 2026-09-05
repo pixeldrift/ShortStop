@@ -6,16 +6,19 @@ import { HeartIcon, SearchIcon, SortIcon, SunIcon, SunriseIcon, TriangleIcon } f
 import { parseTimeToMinutes } from "@/lib/time";
 import type { Route } from "@/lib/types";
 
-type SortField = "routeNumber" | "schoolName" | "departureTime";
+type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
 type SortDir = "asc" | "desc";
 
 // One comparator per sortable header - routeNumber compares numerically
 // (route numbers sort as text otherwise: "120" would land after "20"),
-// departureTime goes through parseTimeToMinutes rather than comparing
-// the displayed "3:30 PM" strings directly, since those don't sort into
-// chronological order as text either.
+// tripType ranks "pickup" (AM) before "dropoff" (PM) rather than
+// relying on string comparison to happen to agree, departureTime goes
+// through parseTimeToMinutes rather than comparing the displayed
+// "3:30 PM" strings directly, since those don't sort into chronological
+// order as text either.
 const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
   routeNumber: (a, b) => Number(a.routeNumber) - Number(b.routeNumber),
+  tripType: (a, b) => (a.tripType === b.tripType ? 0 : a.tripType === "pickup" ? -1 : 1),
   schoolName: (a, b) => a.schoolName.localeCompare(b.schoolName),
   departureTime: (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
 };
@@ -176,10 +179,19 @@ export function RouteListScreen({
       </div>
 
       <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
-        <div className="grid grid-cols-[3rem_1fr_4.25rem_1.25rem] items-stretch gap-x-3 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+        <div className="grid grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-stretch gap-x-3 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
           <SortableHeader
             label="#"
             field="routeNumber"
+            align="center"
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={toggleSort}
+          />
+          <SortableHeader
+            label="AM/PM"
+            field="tripType"
+            align="center"
             sortField={sortField}
             sortDir={sortDir}
             onSort={toggleSort}
@@ -207,22 +219,20 @@ export function RouteListScreen({
               key={route.id}
               type="button"
               onClick={() => onSelect(route)}
-              className="grid w-full grid-cols-[3rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
+              className="grid w-full grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
             >
-              <div className="flex flex-col items-center gap-0">
+              <span className="text-center font-heading text-lg leading-none font-black">
+                #{route.routeNumber}
+              </span>
+              <div className="flex items-center justify-center gap-0.5 text-blue-500">
                 <span className="font-heading text-lg leading-none font-black">
-                  #{route.routeNumber}
+                  {route.tripType === "pickup" ? "AM" : "PM"}
                 </span>
-                <div className="flex items-center gap-0.5 text-blue-500">
-                  <span className="font-heading text-lg leading-none font-black">
-                    {route.tripType === "pickup" ? "AM" : "PM"}
-                  </span>
-                  {route.tripType === "pickup" ? (
-                    <SunriseIcon className="h-3.5 w-3.5" />
-                  ) : (
-                    <SunIcon className="h-3.5 w-3.5" />
-                  )}
-                </div>
+                {route.tripType === "pickup" ? (
+                  <SunriseIcon className="h-3.5 w-3.5" />
+                ) : (
+                  <SunIcon className="h-3.5 w-3.5" />
+                )}
               </div>
               <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
               <span className="text-right text-sm font-semibold text-zinc-500">
@@ -252,9 +262,10 @@ export function RouteListScreen({
  * stacked up/down carets (SortIcon), which always render but only show
  * the active direction solid once this is the column being sorted by.
  * `align="right"` (the Start column, matching its right-aligned data
- * below) keeps label-then-icon order but pushes the pair to the
- * column's right edge, rather than mirroring the icon in front of the
- * label. */
+ * below) and `align="center"` (the #/AM-PM columns, matching their
+ * centered data below) both keep label-then-icon order, just moving
+ * where that pair sits within the column rather than mirroring the
+ * icon in front of the label. */
 function SortableHeader({
   label,
   field,
@@ -265,19 +276,20 @@ function SortableHeader({
 }: {
   label: string;
   field: SortField;
-  align?: "left" | "right";
+  align?: "left" | "center" | "right";
   sortField: SortField;
   sortDir: SortDir;
   onSort: (field: SortField) => void;
 }) {
   const active = sortField === field;
+  const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "";
   return (
     <button
       type="button"
       onClick={() => onSort(field)}
-      className={`flex items-center gap-1 bg-transparent pl-3 first:pl-0 ${
-        align === "right" ? "justify-end" : ""
-      } ${active ? "text-zinc-700" : ""}`}
+      className={`flex items-center gap-1 bg-transparent pl-3 first:pl-0 ${justify} ${
+        active ? "text-zinc-700" : ""
+      }`}
     >
       <span>{label}</span>
       <SortIcon direction={active ? sortDir : "none"} className="h-2.5 w-2.5 shrink-0" />
