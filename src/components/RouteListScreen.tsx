@@ -448,6 +448,13 @@ export function RouteListScreen({
         )}
       </div>
 
+      <a
+        href="mailto:nathan@pizar.net"
+        className="shrink-0 text-xs text-zinc-400 active:text-zinc-600"
+      >
+        © 2026 Nathan D. B. Pizar
+      </a>
+
       {confirmRequest && (
         <ConfirmModal
           title={
