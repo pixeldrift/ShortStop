@@ -3,13 +3,13 @@ time,action,from_at,onto_at,rider_count,side,notes
 ,Left,Rock Springs Rd,Old Nashville Hwy,,,
 ,Right,Old Nashville Hwy,Sam Ridley Pkwy,,,
 ,Right,Sam Ridley Pkwy,Ramp toward Murfreesboro,,,
-,Right,Ramp toward Murfreesboro,Fergus Rd,,,Fergus Rd becomes Bill Stewart Rd
-,Stop,Bill Stewart Rd,Hidden Forest Ln,5,Right,
-,Stop,Bill Stewart Rd,Red Bud Ln,3,Right,
-,Stop,Bill Stewart Rd,Ruth Ln,3,Right,Wheelchair user requires assistance
-,Stop,Bill Stewart Rd,Drennan Ln,2,Left,
-,Stop,Bill Stewart Rd,Frontier Ln,3,Right,
-,Stop,Bill Stewart Rd,Riverwood Ln,2,Left,
+,Right,Ramp toward Murfreesboro,Fergus Rd,,,Fergus Rd becomes Bill Stewart Blvd
+,Stop,Bill Stewart Blvd,Hidden Forest Ln,5,Right,
+,Stop,Bill Stewart Blvd,Red Bud Ln,3,Right,
+,Stop,Bill Stewart Blvd,Ruth Ln,3,Right,Wheelchair user requires assistance
+,Stop,Bill Stewart Blvd,Drennan Ln,2,Left,
+,Stop,Bill Stewart Blvd,Frontier Ln,3,Right,
+,Stop,Bill Stewart Blvd,Riverwood Ln,2,Left,
 ,Left,Riverwood Ln,,,,
 ,Left,Holland Ridge Dr,,,,
 ,Left,Judge Mason Way,,,,
@@ -20,4 +20,4 @@ time,action,from_at,onto_at,rider_count,side,notes
 ,Left,Lake Forest Dr,,,,
 ,Stop,216 Lake Forest Dr,,6,Right,
 ,Stop,Lake Forest Dr,Travis Ln,10,Right,
-,Stop,Bill Stewart Rd,Lake Forest Dr,5,Left,
+,Stop,Bill Stewart Blvd,Lake Forest Dr,5,Left,

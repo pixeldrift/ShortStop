@@ -169,7 +169,7 @@ real road there), so "Lavergne" is very likely what was actually meant.
 
 `notes` is spoken and shown on screen the same way as a turn's - two
 stops carry a placeholder note as an example of what this field is for:
-Bill Stewart Rd & Ruth Ln has "Wheelchair user requires assistance",
+Bill Stewart Blvd & Ruth Ln has "Wheelchair user requires assistance",
 Judge Mason & Carmen Way has "Rider waits inside for safety until bus
 arrives". A stop's note is spoken last, after the rider-count part of
 its announcement (`parseRouteCsv.ts`), and shown on screen right below
@@ -1698,14 +1698,16 @@ Holland Ridge Dr, Judge Mason Way, Carmen Way) resolved fine at least
 once, including one pair queried twice landing on the exact same
 coordinates both times (36.0441259, -86.5478848 for Carmen Way &
 Holland Ridge Dr) - a real consistency check a text-search geocoder
-has no equivalent of. That pattern points at a name mismatch (this
-project already found one real one - "Lavergne" vs. "La Vergne" - so a
-paper-route-sheet abbreviation not matching what OSM's `name` tag
-actually says for that specific road is a believable next culprit),
-not a flaw in the Overpass approach itself. "Sam Ridley Pkwy & Ramp
-toward Murfreesboro" coming back empty is expected, not a miss - "Ramp
-toward Murfreesboro" is the paper sheet's own description of an
-unnamed highway ramp, not a real road name to look up.
+has no equivalent of. That pattern pointed at a name mismatch, same
+kind of issue as "Lavergne" vs. "La Vergne" for the school address -
+confirmed: it's "Bill Stewart **Blvd**," not "Rd." `125-PM-EL.csv` had
+it wrong in all 8 of its own occurrences (7 stops plus the "Fergus Rd
+becomes Bill Stewart Rd" note), corrected now - not a flaw in the
+Overpass approach, a bad name in the source data it was querying with.
+"Sam Ridley Pkwy & Ramp toward Murfreesboro" coming back empty is
+expected, not a miss - "Ramp toward Murfreesboro" is the paper sheet's
+own description of an unnamed highway ramp, not a real road name to
+look up.
 
 ### Next steps
 
@@ -1716,16 +1718,15 @@ unnamed highway ramp, not a real road name to look up.
   exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
   confirm the OpenRouteService switch works without needing a CSV edit
 - The Overpass prototype (see "Maps, part nine" above) resolved 5/20
-  of route 125's real crossroads cleanly on its first working run -
-  worth digging into before deciding whether to wire it in for real:
-  figure out why every "Bill Stewart Rd" query specifically comes back
-  empty (7 of the 10 "no match" results - likely a name mismatch
-  between the paper sheet and OSM's own `name` tag, same kind of issue
-  as the Lavergne/La Vergne school-address one), and add pacing between
-  Overpass calls (4 of 20 hit 429/504 from having none at all - not a
-  resolution failure, just too fast for the public instance). If the
-  hit rate holds up after both fixes, wire it into `geocode.ts` as a
-  real provider (intersections through Overpass, plain addresses still
+  of route 125's real crossroads cleanly on its first working run - the
+  "Bill Stewart Rd" name mismatch behind 7 of the 10 misses is now
+  fixed (it's "Bill Stewart Blvd" - corrected in `125-PM-EL.csv`), but
+  that's a data fix, not a code one, so the actual hit rate needs a
+  re-run to confirm. Also still needs pacing between Overpass calls (4
+  of 20 hit 429/504 from having none at all - not a resolution failure,
+  just too fast for the public instance) before the hit rate means much.
+  If it holds up after both, wire it into `geocode.ts` as a real
+  provider (intersections through Overpass, plain addresses still
   through ORS) instead of a standalone script
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
