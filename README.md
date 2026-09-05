@@ -1608,6 +1608,56 @@ stop on the route, so `route-125-waypoints.json` needs a fresh
 change triggers that automatically once `ORS_API_KEY` is set as a
 repository secret (still outstanding - see Next steps).
 
+### Maps, part nine: prototyping intersection lookups against the real OSM road graph, not a general geocoder
+
+The standing problem: every waypoint (`deriveWaypoints.ts`) is either a
+literal address or a "Road A & Road B" crossroads, but the active
+geocoder (ORS/Pelias's `/geocode/search`, see `geocode.ts`) resolves
+both the same way - free text sent to a general-purpose search index.
+Fine for a real address; a real intersection lookup it isn't, so a
+cross-street query is really just hoping the text search happens to
+land on the right point. Asked whether anchoring to the school's known
+address and resolving stops one at a time in sequence would help, or
+whether there's a better approach.
+
+`scripts/prototypeOverpassGeocode.ts` is the answer, as a prototype
+against `125-PM-EL.csv` - not wired into the app or
+`scripts/geocodeRoute.ts` itself. Rather than text search, it asks
+OpenStreetMap's Overpass API a structured graph question for each
+crossroads: find a node that's a member of both roads' ways (the
+standard `node(w.a)(w.b)` street-intersection recipe), inside a
+bounding box. Road names get the same abbreviation expansion
+`speakRoadNames` already does for speech ("Rd" -> "Road") since OSM's
+own `name` tags are spelled out in full, matched case-insensitively so
+capitalization doesn't matter either.
+
+Where "start from a known address" actually turned out to matter:
+not resolving stops one at a time in sequence (each intersection query
+is still independent, order doesn't matter) - it's what the *search
+box* is centered on. The school's own address is still geocoded once,
+normally (a real address, ORS handles it fine), and that point plus a
+fixed radius (~4-5 miles - route 125 is 8.4 miles round trip) becomes
+the bounding box every Overpass query is scoped to, so a same-named
+road elsewhere in the metro area can't produce a wrong match. Sequence
+does earn a place, but only as a tie-breaker: `pickNearest` picks the
+closest candidate to wherever the route was last resolved to, for the
+rare case Overpass returns more than one shared node (two roads
+legitimately crossing twice, or a road split across multiple OSM ways
+that each touch the other one).
+
+Verified the query-building and response-parsing logic against route
+125's real data with a hand-fabricated Overpass response (single-node,
+zero-node, and multi-node cases) - all correct, including the
+abbreviation expansion showing up in the actual query text sent for
+"Rock Springs Rd & Old Nashville Hwy". What's *not* verified: real
+coordinates. This sandbox's network egress policy blocks
+`overpass-api.de` outright (confirmed the same "gateway answered 403 to
+CONNECT" way `tile.openstreetmap.org`/Nominatim/ORS already are - see
+"Maps, part four") - the same policy also currently blocks the ORS call
+this prototype needs first, to geocode the school address itself. Needs
+running somewhere with real network access (locally, or a CI job) to
+see whether it actually resolves better than what's live today.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
@@ -1616,6 +1666,12 @@ repository secret (still outstanding - see Next steps).
   Nothing geocoding-related can actually run for real until this
   exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
   confirm the OpenRouteService switch works without needing a CSV edit
+- Run `scripts/prototypeOverpassGeocode.ts` somewhere with real network
+  access (see "Maps, part nine" above) against route 125's real
+  crossroads and see how many actually resolve to one node - if it
+  beats what's live today, wire it into `geocode.ts` as a real
+  provider (intersections through Overpass, plain addresses still
+  through ORS) instead of a standalone script
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual
