@@ -163,14 +163,14 @@ export function RouteListScreen({
                   #{route.routeNumber}
                 </span>
                 <div className="flex items-center gap-0.5 text-blue-500">
+                  <span className="font-heading text-lg leading-none font-black">
+                    {route.tripType === "pickup" ? "AM" : "PM"}
+                  </span>
                   {route.tripType === "pickup" ? (
                     <SunriseIcon className="h-3.5 w-3.5" />
                   ) : (
                     <SunIcon className="h-3.5 w-3.5" />
                   )}
-                  <span className="text-xs leading-none font-bold">
-                    {route.tripType === "pickup" ? "AM" : "PM"}
-                  </span>
                 </div>
               </div>
               <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
