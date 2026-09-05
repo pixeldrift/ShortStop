@@ -1718,10 +1718,12 @@ clearly doesn't tolerate back-to-back calls with no pacing - a real
 finding on its own, not a resolution problem), and 1 - Red Bud Ln -
 came back with no shared node. Zero-for-eight to four-for-five
 (excluding the rate-limited ones) confirms the diagnosis: the name was
-the whole problem for this road, not the method. Red Bud Ln might be a
-second, smaller name mismatch ("Redbud" as one word, maybe) - worth a
-look, but it's one data point, nowhere near the 8-for-8 pattern that
-flagged Bill Stewart in the first place.
+the whole problem for this road, not the method.
+
+Red Bud Ln turned out to be the same class of mistake, just smaller -
+confirmed against a real map: it's "Redbud Ln," one word, not "Red
+Bud" as two. Fixed in `125-PM-EL.csv` alongside Bill Stewart. Not
+re-run yet (see Next steps).
 
 ### Next steps
 
@@ -1738,11 +1740,10 @@ flagged Bill Stewart in the first place.
   calls (3 more this time, on top of the first run's 4). Add real
   pacing (a delay between calls, and/or retrying a 429/504 once instead
   of counting it as a miss) before the hit rate on the full route means
-  anything solid. Also worth a look: "Bill Stewart Blvd & Red Bud Ln"
-  still comes back with no shared node - possibly a second, smaller
-  name mismatch, but only one data point so far, not the clear pattern
-  Bill Stewart's own mismatch was. Once pacing's in and the full route
-  gets a clean re-run, decide whether to wire this into `geocode.ts` as
+  anything solid. "Bill Stewart Blvd & Red Bud Ln" is fixed too -
+  Redbud is one word, confirmed against a real map, corrected in
+  `125-PM-EL.csv` - but not re-run yet. Once pacing's in and the full
+  route gets a clean re-run, decide whether to wire this into `geocode.ts` as
   a real provider (intersections through Overpass, plain addresses
   still through ORS) instead of a standalone script
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
