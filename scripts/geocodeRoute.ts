@@ -159,19 +159,36 @@ async function geocodeRoute(
     }
 
     // From here, waypoint.kind === "intersection" - needs the school's
-    // own anchor point (for Overpass's search box), computed lazily
-    // the first time one is actually needed.
+    // own anchor point (for Overpass's search box), computed lazily the
+    // first time one is actually needed. Reuses whatever's already in
+    // `cache` under the school address's own key first - a route whose
+    // school-parking-lot stop resolves to this same address (see
+    // isGenericPlaceholder, deriveWaypoints.ts) already geocoded it
+    // moments earlier in this very loop, and re-querying ORS with the
+    // exact same text back-to-back isn't just wasteful, it's what
+    // actually happened here: a live run came back 403 Forbidden on
+    // that literal repeat, not a wording problem or a rate limit this
+    // pacing hadn't already covered. Only a genuine cache miss spends a
+    // real network call, and its result is written into `cache` under
+    // the address's own key too, so a route whose school address never
+    // otherwise appears as a waypoint still only ever geocodes it once,
+    // this run or any future one.
     if (!anchor) {
-      const anchorEntry = await geocodeQuery(
-        { stepId: -1, kind: "address", text: schoolAddress },
-        locationContext,
-        apiKey,
-      );
-      await sleep(RATE_LIMIT_MS);
-      if (anchorEntry.status !== "ok") {
-        throw new Error(`Couldn't geocode the school address itself: ${anchorEntry.message}`);
+      const schoolAddressQuery: WaypointQuery = { stepId: -1, kind: "address", text: schoolAddress };
+      const schoolAddressKey = waypointCacheKey(schoolAddressQuery);
+      const cachedAnchor = cache[schoolAddressKey];
+
+      if (cachedAnchor?.status === "ok") {
+        anchor = { lat: cachedAnchor.lat, lon: cachedAnchor.lon };
+      } else {
+        const anchorEntry = await geocodeQuery(schoolAddressQuery, locationContext, apiKey);
+        await sleep(RATE_LIMIT_MS);
+        if (anchorEntry.status !== "ok") {
+          throw new Error(`Couldn't geocode the school address itself: ${anchorEntry.message}`);
+        }
+        cache[schoolAddressKey] = anchorEntry;
+        anchor = { lat: anchorEntry.lat, lon: anchorEntry.lon };
       }
-      anchor = { lat: anchorEntry.lat, lon: anchorEntry.lon };
       lastResolved = lastResolved ?? anchor;
     }
 
