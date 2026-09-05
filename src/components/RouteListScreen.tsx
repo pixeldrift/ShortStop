@@ -144,7 +144,7 @@ export function RouteListScreen({
       </div>
 
       <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
-        <div className="grid grid-cols-[2.25rem_1fr_4.25rem_1.25rem] gap-x-3 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+        <div className="grid grid-cols-[3rem_1fr_4.25rem_1.25rem] gap-x-3 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
           <span>#</span>
           <span>School</span>
           <span className="text-right">Start</span>
@@ -156,15 +156,20 @@ export function RouteListScreen({
               key={route.id}
               type="button"
               onClick={() => onSelect(route)}
-              className="grid w-full grid-cols-[2.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
+              className="grid w-full grid-cols-[3rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
             >
               <div className="flex flex-col items-center gap-0.5">
                 <span className="font-heading text-lg font-black">{route.routeNumber}</span>
-                {route.tripType === "pickup" ? (
-                  <SunriseIcon className="h-3.5 w-3.5 text-blue-500" />
-                ) : (
-                  <SunIcon className="h-3.5 w-3.5 text-blue-500" />
-                )}
+                <div className="flex items-center gap-0.5 text-blue-500">
+                  {route.tripType === "pickup" ? (
+                    <SunriseIcon className="h-3.5 w-3.5" />
+                  ) : (
+                    <SunIcon className="h-3.5 w-3.5" />
+                  )}
+                  <span className="text-[0.65rem] leading-none font-bold">
+                    {route.tripType === "pickup" ? "AM" : "PM"}
+                  </span>
+                </div>
               </div>
               <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
               <span className="text-right text-sm font-semibold text-zinc-500">
