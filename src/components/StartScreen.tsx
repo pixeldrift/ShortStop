@@ -80,21 +80,17 @@ export function StartScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <div className="flex flex-col items-center">
-          <h1 className="font-heading text-4xl font-black tracking-tight">
-            Route {route.routeNumber}
-          </h1>
-          <div className="flex items-center gap-1 text-blue-500">
+        <h1 className="font-heading flex items-center gap-2 text-4xl font-black tracking-tight">
+          Route {route.routeNumber}
+          <span className="flex items-center gap-1 text-lg text-blue-500">
+            {route.tripType === "pickup" ? "AM" : "PM"}
             {route.tripType === "pickup" ? (
               <SunriseIcon className="h-4 w-4" />
             ) : (
               <SunIcon className="h-4 w-4" />
             )}
-            <span className="text-sm font-bold">
-              {route.tripType === "pickup" ? "AM" : "PM"}
-            </span>
-          </div>
-        </div>
+          </span>
+        </h1>
       </div>
 
       <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">

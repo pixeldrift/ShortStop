@@ -43,15 +43,17 @@ export function TopBar({
         <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
           Route
         </p>
-        <p className="font-heading -mt-1 text-3xl font-black tracking-tight">#{routeNumber}</p>
-        <div className="-mt-0.5 flex items-center justify-center gap-0.5 text-blue-500">
-          {tripType === "pickup" ? (
-            <SunriseIcon className="h-3 w-3" />
-          ) : (
-            <SunIcon className="h-3 w-3" />
-          )}
-          <span className="text-[10px] font-bold">{tripType === "pickup" ? "AM" : "PM"}</span>
-        </div>
+        <p className="font-heading -mt-1 flex items-center justify-center gap-1 text-3xl font-black tracking-tight">
+          #{routeNumber}
+          <span className="flex items-center gap-0.5 text-xs text-blue-500">
+            {tripType === "pickup" ? "AM" : "PM"}
+            {tripType === "pickup" ? (
+              <SunriseIcon className="h-3 w-3" />
+            ) : (
+              <SunIcon className="h-3 w-3" />
+            )}
+          </span>
+        </p>
         {/* Same destination/confirmation as the logo (onLogoClick) - a
             second, labeled way to reach it for anyone who wouldn't
             think to tap the logo itself. */}
