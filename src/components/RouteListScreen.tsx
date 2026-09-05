@@ -174,15 +174,14 @@ export function RouteListScreen({
     });
   }, [routes, query, view, sortField, sortDir, adminMode]);
 
-  // In admin mode, tapping a draft real route's row goes straight to
-  // editing it instead of the normal trip flow - it isn't running, so
-  // there's nothing useful to "start." A published route (or a demo
-  // one) always opens normally, even while in admin mode - only the
-  // per-row action buttons below (visible in admin mode) manage
-  // status/deletion for those.
+  // In admin mode, tapping any real route's row (its heart-icon slot
+  // is a pencil then, see below) goes straight to editing it, whatever
+  // its status - published or draft, there's always something to
+  // review or fix. A demo route never has real data behind it to edit
+  // at all, so its row keeps opening normally (and keeps showing the
+  // heart, not a pencil) even while in admin mode.
   function handleRowClick(route: Route) {
-    const isAdminOnly = route.status !== "published" && route.status !== "demo";
-    if (adminMode && isAdminOnly) onEditRoute(route);
+    if (adminMode && route.status !== "demo") onEditRoute(route);
     else onSelect(route);
   }
 
@@ -286,7 +285,7 @@ export function RouteListScreen({
           adminMode ? "border-2 border-red-400" : "border-zinc-300"
         }`}
       >
-        <div className="grid grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-stretch gap-x-3 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+        <div className="grid grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
           <SortableHeader
             label="#"
             field="routeNumber"
@@ -329,7 +328,7 @@ export function RouteListScreen({
                 <button
                   type="button"
                   onClick={() => handleRowClick(route)}
-                  className="grid w-full grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
+                  className="grid w-full grid-cols-[3rem_3.25rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left active:bg-zinc-100"
                 >
                   <span className="text-center font-heading text-lg leading-none font-black">
                     #{route.routeNumber}
@@ -355,12 +354,16 @@ export function RouteListScreen({
                   <span className="text-right text-sm font-semibold text-zinc-500">
                     {route.departureTime}
                   </span>
-                  <HeartIcon
-                    filled={route.isFavorite}
-                    className={`h-4 w-4 justify-self-end ${
-                      route.isFavorite ? "text-blue-600" : "text-zinc-300"
-                    }`}
-                  />
+                  {adminMode && !isDemo ? (
+                    <EditIcon className="h-4 w-4 justify-self-end text-zinc-400" />
+                  ) : (
+                    <HeartIcon
+                      filled={route.isFavorite}
+                      className={`h-4 w-4 justify-self-end ${
+                        route.isFavorite ? "text-blue-600" : "text-zinc-300"
+                      }`}
+                    />
+                  )}
                 </button>
 
                 {/* Admin-only quick actions - each one a confirm-modal
@@ -373,7 +376,7 @@ export function RouteListScreen({
                     isn't offered at all, it has to be unpublished
                     first. */}
                 {adminMode && !isDemo && (
-                  <div className="-mt-1 flex items-center gap-2 px-4 pb-2">
+                  <div className="-mt-1 flex items-center gap-2 px-2 pb-2">
                     {route.status === "published" ? (
                       <button
                         type="button"
@@ -409,7 +412,7 @@ export function RouteListScreen({
           })}
 
           {filtered.length === 0 && (
-            <p className="px-4 py-6 text-center text-sm text-zinc-500">
+            <p className="px-2 py-6 text-center text-sm text-zinc-500">
               {query ? <>No routes match &ldquo;{query}&rdquo;.</> : "No routes match the selected filters."}
             </p>
           )}
