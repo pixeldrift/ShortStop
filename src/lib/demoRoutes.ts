@@ -98,11 +98,13 @@ function randomDepartureTime(rng: () => number): string {
  * Fabricates filler routes for the route-list screen, so its scrolling
  * (and now search filtering) can actually be exercised - there's only
  * one real route (route-125.csv) right now. Each one reuses the real
- * route's turn-by-turn steps under fabricated display metadata, the
- * same "not real, just a placeholder" spirit as the "Demo only
- * placeholder, not actual map" label elsewhere in the app - so tapping
- * one still leads to a working trip-summary/step flow instead of a
- * dead end.
+ * route's turn-by-turn steps under fabricated display metadata, marked
+ * `status: "demo"` (see RouteStatus in types.ts) so the list can tell
+ * them apart from real district data at a glance - the same "not real,
+ * just a placeholder" spirit as the "Demo only placeholder, not actual
+ * map" label elsewhere in the app, just formalized as a real field
+ * instead of only a visual convention. Tapping one still leads to a
+ * working trip-summary/step flow instead of a dead end.
  */
 export function buildDemoRoutes(base: Route, count: number): Route[] {
   const rng = mulberry32(42);
@@ -115,10 +117,12 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
     } while (usedNumbers.has(routeNumber));
     usedNumbers.add(routeNumber);
 
-    // Its own draw, deliberately independent of routeNumber - a bus
-    // number that happens to equal its route's own number reads as a
-    // data bug, not a coincidence (see route-125-meta.csv's real fix
-    // for the same thing). Only re-rolls against a collision with its
+    // Its own draw, deliberately independent of routeNumber - real
+    // routes' bus number *is* their route number (see
+    // route-125-meta.csv and Route.id's own doc comment in types.ts),
+    // so a demo route deliberately keeping them mismatched is now one
+    // more signal (alongside status: "demo" below) that it's fake, not
+    // real district data. Only re-rolls against a collision with its
     // *own* route's number - unlike routeNumber, bus numbers aren't
     // expected to be unique across routes (a district reuses buses).
     let busNumber: string;
@@ -128,16 +132,23 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
 
     const school = `${pick(rng, NAME_PREFIXES)} ${pick(rng, NAME_SUFFIXES)}`;
     const tripLabel = pick(rng, TRIP_LABELS);
+    const tripType = tripLabel === "Morning Pickup" ? "pickup" : "dropoff";
 
     return {
       ...base,
+      // Same `${routeNumber}-${tripType}` convention as the real
+      // route (see Route.id's doc comment in types.ts) - routeNumber
+      // alone is already unique across every demo route (usedNumbers,
+      // above), so this doesn't need its own collision check.
+      id: `${routeNumber}-${tripType}`,
+      status: "demo",
       routeNumber,
       name: `${school} — ${tripLabel}`,
       schoolName: school,
       driverName: `${pick(rng, DRIVER_FIRST)} ${pick(rng, DRIVER_LAST)}`,
       busNumber,
       departureTime: randomDepartureTime(rng),
-      tripType: tripLabel === "Morning Pickup" ? "pickup" : "dropoff",
+      tripType,
       distance: `${(4 + rng() * 12).toFixed(1)} mi`,
       durationMinutes: 15 + Math.floor(rng() * 35),
       isFavorite: false,

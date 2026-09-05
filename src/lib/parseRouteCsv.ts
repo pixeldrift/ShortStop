@@ -1,9 +1,11 @@
 import { deriveWaypoints } from "./deriveWaypoints";
 import { speakRoadNames } from "./speech";
-import type { NavigationStep, Route, TripType, TurnDirection } from "./types";
+import type { NavigationStep, Route, RouteStatus, TripType, TurnDirection } from "./types";
 import { waypointCacheKey } from "./waypointCache";
 
 export interface RouteMeta {
+  id: string;
+  status: RouteStatus;
   name: string;
   routeNumber: string;
   driverName: string;

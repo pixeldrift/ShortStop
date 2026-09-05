@@ -51,15 +51,16 @@ export function RouteListScreen({
 
     if (view !== "favorites") return matching;
 
-    // Route 125 - the one real route (every other favorite is a
-    // fabricated demo route with a higher number - see
-    // demoRoutes.ts) - always reads first here, purely for demo
-    // legibility. A stable sort (Array.prototype.sort is stable in
-    // every modern engine) means everything else keeps its existing
-    // (departure-time) order.
-    return [...matching].sort((a, b) =>
-      a.routeNumber === "125" ? -1 : b.routeNumber === "125" ? 1 : 0,
-    );
+    // Real routes (status !== "demo") always read first here, purely
+    // for demo legibility - every fabricated filler route (see
+    // demoRoutes.ts) sorts after them. A stable sort
+    // (Array.prototype.sort is stable in every modern engine) means
+    // everything else keeps its existing (departure-time) order.
+    return [...matching].sort((a, b) => {
+      const aReal = a.status !== "demo";
+      const bReal = b.status !== "demo";
+      return aReal === bReal ? 0 : aReal ? -1 : 1;
+    });
   }, [routes, query, view]);
 
   return (
@@ -140,7 +141,7 @@ export function RouteListScreen({
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map((route) => (
             <button
-              key={route.routeNumber}
+              key={route.id}
               type="button"
               onClick={() => onSelect(route)}
               className="grid w-full grid-cols-[2.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"

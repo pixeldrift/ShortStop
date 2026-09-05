@@ -1,6 +1,12 @@
 export type StepKind = "depart" | "turn" | "stop" | "arrive";
 export type TurnDirection = "left" | "right";
 export type TripType = "pickup" | "dropoff";
+/** "Demo" marks the fabricated filler routes (demoRoutes.ts) that pad
+ * out the route list - never a real district route, whatever its
+ * other fields claim. "Active"/"inactive" are both real data,
+ * distinguished by whether the route is currently run - a route
+ * doesn't stop being real just because the district retired it. */
+export type RouteStatus = "active" | "inactive" | "demo";
 
 export interface NavigationStep {
   id: number;
@@ -35,6 +41,17 @@ export interface NavigationStep {
 }
 
 export interface Route {
+  /** The true unique identifier - routeNumber turns out to just be the
+   * bus's own number (see busNumber), and a district reuses a bus
+   * across multiple distinct paths (AM pickup vs. PM dropoff, and a
+   * separate run - its own CSV, its own turn-by-turn - per school
+   * level it serves), so routeNumber alone can't tell two routes
+   * apart. Convention for now: `${routeNumber}-${tripType}`, unique as
+   * long as a bus doesn't run two same-trip-type routes; extend with
+   * schoolName (or a dedicated school-level field) if that ever
+   * actually happens once more real routes exist. */
+  id: string;
+  status: RouteStatus;
   name: string;
   routeNumber: string;
   driverName: string;
