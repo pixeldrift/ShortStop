@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
-import { HeartIcon, SearchIcon, TriangleIcon } from "./icons";
+import { HeartIcon, SearchIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
 import type { Route } from "@/lib/types";
 
 /** What the View dropdown filters to - "all"/"favorites" aren't
@@ -146,7 +146,7 @@ export function RouteListScreen({
       <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
         <div className="grid grid-cols-[2.25rem_1fr_4.25rem_1.25rem] gap-x-3 border-b border-zinc-300 bg-zinc-100 px-4 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
           <span>#</span>
-          <span>Name</span>
+          <span>School</span>
           <span className="text-right">Start</span>
           <span />
         </div>
@@ -158,7 +158,14 @@ export function RouteListScreen({
               onClick={() => onSelect(route)}
               className="grid w-full grid-cols-[2.25rem_1fr_4.25rem_1.25rem] items-center gap-x-3 px-4 py-3 text-left active:bg-zinc-100"
             >
-              <span className="font-heading text-lg font-black">{route.routeNumber}</span>
+              <div className="flex flex-col items-center gap-0.5">
+                <span className="font-heading text-lg font-black">{route.routeNumber}</span>
+                {route.tripType === "pickup" ? (
+                  <SunriseIcon className="h-3.5 w-3.5 text-blue-500" />
+                ) : (
+                  <SunIcon className="h-3.5 w-3.5 text-blue-500" />
+                )}
+              </div>
               <span className="line-clamp-2 leading-snug text-zinc-700">{route.schoolName}</span>
               <span className="text-right text-sm font-semibold text-zinc-500">
                 {route.departureTime}

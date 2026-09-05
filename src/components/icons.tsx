@@ -185,6 +185,52 @@ export function SearchIcon({ className }: { className?: string }) {
   );
 }
 
+/** Half-sun-on-a-horizon with rays above only (no rays below the
+ * horizon, since the sun hasn't risen yet there) - used on
+ * RouteListScreen's rows to mark a "pickup" (AM) route, paired with
+ * SunIcon for "dropoff" (PM) ones. */
+export function SunriseIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 3v4" />
+      <path d="M4.9 9.9l1.4 1.4M19.1 9.9l-1.4 1.4" />
+      <path d="M7 17a5 5 0 0 1 10 0" />
+      <path d="M2 17h20" />
+      <path d="M5 21h14" />
+    </svg>
+  );
+}
+
+/** Full sun, rays all the way around - used on RouteListScreen's rows
+ * to mark a "dropoff" (PM) route, paired with SunriseIcon for
+ * "pickup" (AM) ones. */
+export function SunIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </svg>
+  );
+}
+
 /** Favorite marker on RouteListScreen's rows - solid+filled when
  * `filled`, a faint outline otherwise (caller controls both fill and
  * outline color via `className`'s text color, same as every other

@@ -1,4 +1,4 @@
-import type { Route, SchoolLevel } from "./types";
+import type { Route, SchoolLevel, TripType } from "./types";
 
 const NAME_PREFIXES = [
   "Oakwood",
@@ -97,8 +97,14 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-function randomDepartureTime(rng: () => number): string {
-  const hour24 = 6 + Math.floor(rng() * 11); // 6:00 AM - 4:55 PM
+// Windows loosely matching the real routes' actual times (6:30-7:56 AM
+// pickup, 2:30-3:45 PM dropoff) - keeps a demo row's departureTime
+// consistent with its own tripType, so RouteListScreen's AM/PM icon
+// (SunriseIcon for pickup, SunIcon for dropoff) never contradicts the
+// time printed right next to it.
+function randomDepartureTime(rng: () => number, tripType: TripType): string {
+  const [minHour, maxHour] = tripType === "pickup" ? [6, 8] : [14, 16];
+  const hour24 = minHour + Math.floor(rng() * (maxHour - minHour + 1));
   const minute = Math.floor(rng() * 12) * 5;
   const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
   const period = hour24 >= 12 ? "PM" : "AM";
@@ -165,7 +171,7 @@ export function buildDemoRoutes(realRoutes: Route[], count: number): Route[] {
       schoolLevel,
       driverName: `${pick(rng, DRIVER_FIRST)} ${pick(rng, DRIVER_LAST)}`,
       busNumber,
-      departureTime: randomDepartureTime(rng),
+      departureTime: randomDepartureTime(rng, tripType),
       tripType,
       distance: `${(4 + rng() * 12).toFixed(1)} mi`,
       durationMinutes: 15 + Math.floor(rng() * 35),
