@@ -1593,16 +1593,20 @@ looked up via NCES's public school directory (the federal Common Core
 of Data), cross-checked against several independent real-estate/school
 listing sites, not guessed.
 
-**Worth a look:** that same search turned up a real address for
-Lavergne Lake Elementary - 201 Davids Way, La Vergne, TN 37086 (also
-NCES, also cross-checked) - that doesn't match the "1425 Lake Forest
-Dr, Smyrna, TN 37167" this app has treated as real, verified data since
-early on (originally from `route-125-meta.csv`). "Davids Way" is also a
-street name that appears repeatedly in `125-PM-EL.csv`'s own stop data,
-which fits a school actually located there better than it fits Lake
-Forest Dr. Left as-is in `schools.csv` rather than changed unasked -
-only Middle/High were missing an address, Elementary already had one -
-but this is worth confirming and likely correcting.
+That same search also turned up a different address for Lavergne Lake
+Elementary - 201 Davids Way, La Vergne, TN 37086 (also NCES, also
+cross-checked) - than the "1425 Lake Forest Dr, Smyrna, TN 37167" this
+app had treated as real, verified data since early on (originally from
+`route-125-meta.csv`), with no record of where that one actually came
+from. Confirmed with the district and corrected in `schools.csv` -
+"Davids Way" showing up repeatedly in `125-PM-EL.csv`'s own stop data
+was the tell that something was off with the old one. Changing
+`schoolAddress` changes what `deriveWaypoints` produces for every
+stop on the route, so `route-125-waypoints.json` needs a fresh
+`npm run geocode` run - the `geocode-route.yml` workflow now watches
+`schools.csv` too (previously only `125-PM-EL.csv`), so pushing this
+change triggers that automatically once `ORS_API_KEY` is set as a
+repository secret (still outstanding - see Next steps).
 
 ### Next steps
 
@@ -1628,12 +1632,13 @@ but this is worth confirming and likely correcting.
   above) - once the rest of its stop data arrives, flip it to `active`
   in `route-master-list.csv` and add its entry to `page.tsx`'s
   `ROUTE_STEPS_CSV_PATHS`
-- Confirm whether Lavergne Lake Elementary's `schools.csv` address
-  (1425 Lake Forest Dr, Smyrna, TN 37167) should actually be 201 Davids
-  Way, La Vergne, TN 37086 - see "Route data: real school addresses"
-  above. If so, update `schools.csv` and re-run `npm run geocode` (a
-  different `schoolAddress` changes what `deriveWaypoints` produces for
-  every stop, so the waypoint cache needs refreshing too)
+- Lavergne Lake Elementary's address is corrected in `schools.csv`
+  (201 Davids Way, not the old 1425 Lake Forest Dr - see "Route data:
+  real school addresses" above), but `route-125-waypoints.json` hasn't
+  actually been regenerated against it yet - blocked on the same
+  missing `ORS_API_KEY` as the bullet above. Once that's in place,
+  either wait for `geocode-route.yml` to pick up this change or run
+  `npm run geocode` by hand
 - Pinch-zoom on a very long route would help the progress bar - right
   now the fixed 48px-per-step spacing just makes the track (and the
   auto-scrolling) longer rather than ever shrinking markers down to fit
