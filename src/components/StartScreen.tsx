@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Logo } from "./Logo";
-import { BackArrowIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
+import { BackArrowIcon, MapPinIcon, SunIcon, SunriseIcon, TriangleIcon } from "./icons";
 import type { Route } from "@/lib/types";
 
 // Not currently rendered (see StartScreen below) - kept ready to
@@ -95,6 +95,10 @@ export function StartScreen({
 
       <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">
         <p className="text-lg leading-tight text-zinc-500">{route.name}</p>
+        <p className="mt-1 flex items-center justify-center gap-1 text-sm text-zinc-500">
+          <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+          {route.schoolAddress}
+        </p>
 
         <div className="mt-4 grid grid-cols-4 gap-2">
           <StatTile value={distanceValue} label="miles" />

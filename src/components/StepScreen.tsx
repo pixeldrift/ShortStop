@@ -7,6 +7,7 @@ import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
 import {
   CheckCircleIcon,
+  MapPinIcon,
   PauseIcon,
   PersonSolidIcon,
   RoundedTriangleIcon,
@@ -480,8 +481,6 @@ function RiderCheckInBox({
  * shows in place of any actual turn/stop, so step 0's own directions
  * only appear once "Start" is tapped. */
 function DepotContent({ route }: { route: Route }) {
-  const preposition = route.tripType === "dropoff" ? "from" : "to";
-
   return (
     <>
       <Image
@@ -494,8 +493,9 @@ function DepotContent({ route }: { route: Route }) {
       <h1 className="font-heading text-[clamp(1.5rem,5vh,2.75rem)] font-black tracking-tight">
         Ready to Depart
       </h1>
-      <p className="text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">
-        Route {route.routeNumber} {preposition} {route.schoolName}
+      <p className="flex items-center gap-1 text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">
+        <MapPinIcon className="h-[0.9em] w-[0.9em] shrink-0 text-blue-500" />
+        {route.schoolAddress}
       </p>
     </>
   );
