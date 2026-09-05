@@ -27,17 +27,19 @@ export interface RouteMeta {
   isFavorite: boolean;
 }
 
-function parseCsvLine(line: string): string[] {
-  // This dataset has no quoted or comma-containing fields, so a plain
-  // split is enough - swap for a real CSV parser if that changes.
-  return line.split(",").map((cell) => cell.trim());
+function splitRow(line: string, delimiter: string): string[] {
+  // Neither dataset has quoted or delimiter-containing fields, so a
+  // plain split is enough - swap for a real CSV parser if that changes.
+  return line.split(delimiter).map((cell) => cell.trim());
 }
 
-/** One route-125.csv data row, split into its named columns but not yet
- * turned into a NavigationStep - the shared starting point for both
+/** One route steps-sheet data row, split into its named columns but not
+ * yet turned into a NavigationStep - the shared starting point for both
  * parseRouteCsv (below) and deriveWaypoints.ts, which needs fromAt/
  * ontoAt kept apart rather than already folded into a single display
- * string. */
+ * string. `side` comes through "" for a sheet whose schema has no such
+ * column at all (route-120's steps sheets), same as it already does for
+ * a row that just leaves the column blank. */
 export interface RawRouteRow {
   action: string;
   fromAt: string;
@@ -47,15 +49,33 @@ export interface RawRouteRow {
   notes: string;
 }
 
-/** Splits route-125.csv's data rows (header row dropped) into their
- * named columns, with no further interpretation. */
+/** Splits a route steps sheet's data rows (header row dropped) into
+ * their named columns, with no further interpretation. Column order and
+ * delimiter are read from the header rather than assumed, so this
+ * handles both route-125.csv's comma-separated schema
+ * (time,action,from_at,onto_at,rider_count,side,notes - time always
+ * blank) and route-120's tab-separated one
+ * (time,action,from_at,onto_at,rider_count,notes - time populated, no
+ * side column). `time` isn't parsed into anything on either sheet -
+ * NavigationStep has no per-step time field (yet). */
 export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
-  const [, ...rows] = csvText.trim().split(/\r?\n/); // drop header row
+  const [headerLine, ...rows] = csvText.trim().split(/\r?\n/);
+  const delimiter = headerLine.includes("\t") ? "\t" : ",";
+  const headers = splitRow(headerLine, delimiter);
+
   return rows
     .filter((line) => line.trim().length > 0)
     .map((line) => {
-      const [, action, fromAt, ontoAt, riderCount, side, notes] = parseCsvLine(line);
-      return { action, fromAt, ontoAt, riderCount, side, notes };
+      const values = splitRow(line, delimiter);
+      const row = Object.fromEntries(headers.map((header, i) => [header, values[i] ?? ""]));
+      return {
+        action: row.action ?? "",
+        fromAt: row.from_at ?? "",
+        ontoAt: row.onto_at ?? "",
+        riderCount: row.rider_count ?? "",
+        side: row.side ?? "",
+        notes: row.notes ?? "",
+      };
     });
 }
 

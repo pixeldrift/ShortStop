@@ -6,20 +6,53 @@ import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
 import { buildDemoRoutes } from "@/lib/demoRoutes";
 import { parseRouteCsv } from "@/lib/parseRouteCsv";
-import { parseRouteMetaCsv } from "@/lib/parseRouteMetaCsv";
-import { PLACEHOLDER_META } from "@/lib/placeholderMeta";
+import type { RouteMeta } from "@/lib/parseRouteCsv";
+import { parseRouteMasterList } from "@/lib/parseRouteMasterList";
+import {
+  FAVORITE_ROUTE_IDS,
+  PLACEHOLDER_DISTANCE,
+  PLACEHOLDER_DRIVER_NAME,
+  SCHOOL_ADDRESSES,
+} from "@/lib/placeholderMeta";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
 import type { Route } from "@/lib/types";
 
-// How many fabricated routes to add to the real one, purely so the
+// How many fabricated routes to add to the real ones, purely so the
 // route-list screen has enough rows to actually demonstrate scrolling
 // and search filtering - see demoRoutes.ts.
 const DEMO_ROUTE_COUNT = 24;
 
+// Where each master-list row's own turn-by-turn steps sheet lives,
+// keyed by the same `${routeNumber}-${tripType}-${schoolLevel}` id the
+// master list generates/carries (see Route.id's doc comment in
+// types.ts). Deliberately only covers routes a real steps sheet exists
+// for - 120-dropoff-middle/120-dropoff-high are "active" candidates
+// with no entry here yet (their sheets came in visibly incomplete, so
+// the master list marks them "inactive" instead - see
+// route-master-list.csv), and any future "active" row with no entry
+// here is skipped rather than crashing (see the `.filter` below).
+const ROUTE_STEPS_CSV_PATHS: Record<string, string> = {
+  "125-dropoff-elementary": "/data/route-125.csv",
+  "120-pickup-elementary": "/data/route-120-pickup-elementary.csv",
+  "120-pickup-middle": "/data/route-120-pickup-middle.csv",
+  "120-pickup-high": "/data/route-120-pickup-high.csv",
+  "120-dropoff-elementary": "/data/route-120-dropoff-elementary.csv",
+};
+
+async function fetchText(path: string): Promise<string> {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${path}`);
+  return res.text();
+}
+
 export default function Home() {
-  const [route, setRoute] = useState<Route | null>(null);
+  // null while the master list + every active route's steps sheet are
+  // still loading; an empty array is a real (if unexpected) "loaded but
+  // nothing came back" result, kept distinct from still-loading so the
+  // spinner doesn't hang forever on that edge case.
+  const [realRoutes, setRealRoutes] = useState<Route[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Which route (if any) is selected for the trip-summary/step flow -
   // null means we're on the route-list home screen. Cleared back to
@@ -28,34 +61,55 @@ export default function Home() {
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/data/route-125.csv").then((res) => {
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        return res.text();
-      }),
-      fetch("/data/route-125-meta.csv").then((res) => {
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        return res.text();
-      }),
-    ])
-      .then(([stepsCsv, metaCsv]) => {
-        const meta = { ...parseRouteMetaCsv(metaCsv), ...PLACEHOLDER_META };
-        setRoute(parseRouteCsv(stepsCsv, meta));
+    fetchText("/data/route-master-list.csv")
+      .then(async (masterListCsv) => {
+        const activeRows = parseRouteMasterList(masterListCsv).filter(
+          (row) => row.status === "active",
+        );
+
+        const built = await Promise.all(
+          activeRows.map(async (row) => {
+            const stepsPath = ROUTE_STEPS_CSV_PATHS[row.id];
+            if (!stepsPath) return null;
+
+            // An "active" row with no computable duration (blank
+            // end_time) means the master list is claiming this route
+            // is fully run without actually recording when it ends -
+            // a data problem worth surfacing rather than silently
+            // showing a fake "0 min" trip.
+            if (row.durationMinutes == null) {
+              console.warn(`Active route ${row.id} has no end_time in the master list - skipped`);
+              return null;
+            }
+
+            const stepsCsv = await fetchText(stepsPath);
+            const meta: RouteMeta = {
+              ...row,
+              durationMinutes: row.durationMinutes,
+              driverName: PLACEHOLDER_DRIVER_NAME,
+              schoolAddress: SCHOOL_ADDRESSES[row.schoolName] ?? SCHOOL_ADDRESSES["Lavergne Lake Elementary"],
+              distance: PLACEHOLDER_DISTANCE,
+              isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
+            };
+            return parseRouteCsv(stepsCsv, meta);
+          }),
+        );
+
+        setRealRoutes(built.filter((r): r is Route => r !== null));
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
 
-  // Only one real route exists right now (see ROUTE_META above) -
   // buildDemoRoutes fabricates the rest purely so the list has enough
   // rows to demonstrate scrolling/search. Computed once per fetched
-  // route (not on every render) via useMemo, so the list doesn't
-  // reshuffle each time the user navigates back to it.
+  // batch of real routes (not on every render) via useMemo, so the
+  // list doesn't reshuffle each time the user navigates back to it.
   const routes = useMemo(() => {
-    if (!route) return [];
-    return [route, ...buildDemoRoutes(route, DEMO_ROUTE_COUNT)].sort(
+    if (!realRoutes || realRoutes.length === 0) return realRoutes ?? [];
+    return [...realRoutes, ...buildDemoRoutes(realRoutes, DEMO_ROUTE_COUNT)].sort(
       (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
     );
-  }, [route]);
+  }, [realRoutes]);
 
   if (error) {
     return (
@@ -65,7 +119,7 @@ export default function Home() {
     );
   }
 
-  if (!route) {
+  if (!realRoutes) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-zinc-500">
         Loading route…

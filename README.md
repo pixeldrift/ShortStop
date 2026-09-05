@@ -56,7 +56,7 @@ src/
   lib/
     types.ts             Route / NavigationStep types
     parseRouteCsv.ts     Steps CSV → Route parsing (see below)
-    parseRouteMetaCsv.ts CSV → the route-level metadata fields (see below)
+    parseRouteMasterList.ts Master list → route-level metadata, one row per route (see below)
     useRouteStepper.ts   State + all input wiring, incl. pause (see below)
     useRiderRoster.ts    Per-stop rider check-in state (see below)
     useFitLines.ts        Shrink text to fit N lines (see below)
@@ -66,7 +66,7 @@ src/
     deriveWaypoints.ts     CSV row -> geocodable address/intersection (see below)
     geocode.ts              Swappable geocoding providers (ORS active, see below)
     waypointCache.ts         Cache key + entry types shared with scripts/geocodeRoute.ts
-    placeholderMeta.ts     Shared driverName/schoolAddress/distance placeholders
+    placeholderMeta.ts     Shared driverName/distance placeholders + per-school addresses
     silence.ts           A tiny silent audio loop (see below)
 scripts/
   geocodeRoute.ts        `npm run geocode` - refreshes route-125-waypoints.json (see below)
@@ -74,7 +74,13 @@ scripts/
 public/
   manifest.json          PWA manifest
   data/route-125.csv           Bus 125's turn-by-turn steps
-  data/route-125-meta.csv      Bus 125's route-level metadata (see below)
+  data/route-120-pickup-elementary.csv   Bus 120's AM Elementary run steps
+  data/route-120-pickup-middle.csv       Bus 120's AM Middle run steps
+  data/route-120-pickup-high.csv         Bus 120's AM High run steps
+  data/route-120-dropoff-elementary.csv  Bus 120's PM Elementary run steps
+  data/route-120-dropoff-middle.csv      Bus 120's PM Middle run steps (incomplete, status: inactive)
+  data/route-120-dropoff-high.csv        Bus 120's PM High run steps (incomplete, status: inactive)
+  data/route-master-list.csv   Route-level metadata for every real route (see below)
   data/route-125-waypoints.json  Geocoding cache, generated - see "Maps, part two" below
   assets/
     logo.png              ShortStop wordmark
@@ -1489,6 +1495,70 @@ with zero console errors.
 Still no route line between stops - next step, on request, once
 markers themselves are confirmed working.
 
+### Route data: the master list, and Bus 120's six routes
+
+`route-125-meta.csv` is gone, replaced by `public/data/route-master-list.csv`
+- one tab-separated sheet covering every real route instead of one file
+per route. New columns: `am_pm` (AM/PM, maps to `tripType`), `school_type`
+(EL/MS/HS, maps to `schoolLevel`), and `status` (active/inactive/demo,
+per real district data now distinguishing itself from the fabricated
+filler routes - see `RouteStatus` in `types.ts`). `route_id` comes
+through blank on every real row so far; `parseRouteMasterList.ts`
+generates it with the same `${routeNumber}-${tripType}-${schoolLevel}`
+convention `Route.id` has always documented, same as `demoRoutes.ts`
+already did for the fabricated ones. `parseRouteMetaCsv.ts` is gone too
+- its 24-hour time parsing (now handling `H:MM:SS`, not just the old
+sheet's `H:MM`) moved into shared `time.ts` helpers
+(`parse24HourTimeToMinutes`, `format24HourAsAmPm`,
+`durationBetween24HourTimes`) that `parseRouteMasterList.ts` uses as
+well, rather than duplicating it.
+
+It turns out Bus 120 runs the same six-way split every other real bus
+apparently will: AM pickup and PM dropoff, crossed with elementary/
+middle/high school, each its own real path with its own steps sheet
+(`route-120-pickup-elementary.csv` through `route-120-dropoff-high.csv`)
+- exactly the scenario `Route.id`'s convention was written for, now
+confirmed against real data instead of just demo filler. `parseRouteCsv.ts`'s
+row parser (`parseRouteCsvRows`) had to become header-driven rather
+than assuming fixed comma-separated columns: Bus 120's sheets are
+tab-separated, have a populated `time` column (still not parsed into
+anything - `NavigationStep` has no per-step time field) instead of
+route-125.csv's always-blank one, and drop the `side` column entirely
+rather than leaving it blank. `page.tsx` now fetches the master list,
+builds a real `Route` for every `active`-status row that has a steps
+sheet, and feeds all of them into `buildDemoRoutes` (which now reserves
+every real route's number, not just one, and picks its filler-content
+template from the first real route rather than assuming there's only
+ever one).
+
+Two of Bus 120's six routes (`120-dropoff-middle`, `120-dropoff-high`)
+came in with visibly incomplete steps data - stated directly for the
+first ("I'm missing some stop info"), and independently confirmed for
+the second (it cuts off six rows in, mid-neighborhood, versus its AM
+counterpart's eighteen). Both are marked `status: "inactive"` in the
+master list rather than wired into the app - asked whether the missing
+half of `120-dropoff-middle` could just be inferred by reversing its AM
+counterpart, and declined: turn directions and which side of the road a
+stop is on don't mirror simply from a route run the other way (one-way
+streets, and pickup order that isn't just dropoff order backwards), and
+this is real "active"-status data a driver could actually use, not demo
+filler - worth being honestly incomplete rather than quietly wrong.
+Their steps sheets are still saved to `public/data/` as sent, in case
+the rest of the data comes in later.
+
+`schoolAddress` now varies by school instead of one hardcoded value -
+`placeholderMeta.ts`'s `SCHOOL_ADDRESSES` keys it by `schoolName`.
+Lavergne Lake Elementary keeps its real address; Middle and High don't
+have one yet, so they get an honestly-labeled non-address ("Address not
+yet provided, Smyrna, TN 37167") that still ends in a real city/state so
+`extractCityState` has something to geocode stops against once
+addresses do exist. `driverName`/`distance` stay flat placeholders
+regardless of route, same "Otto Mann" spirit as before - not
+per-route fabrications, just the same "don't have this yet" stand-in
+everywhere. Only route 125 defaults to a Favorite; the new real routes
+default to not-favorited like demo routes do, absent any real signal
+for which routes a driver actually favorites.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
@@ -1503,17 +1573,30 @@ markers themselves are confirmed working.
   current time, once real stop-time estimates exist (depends on the
   `time` column above and, eventually, real routing/traffic data) - lets
   a driver see at a glance whether they're running ahead or behind
-- `driverName: "Otto Mann"`, `distance: "8.4 mi"`, and
-  `durationMinutes: 28` in `page.tsx` are all placeholders, not real
-  data - swap them in once there's an actual driver/routing source
+- `driverName: "Otto Mann"` and `distance: "8.4 mi"` (`placeholderMeta.ts`)
+  are still placeholders on every route, not real data - swap them in
+  once there's an actual driver/routing source. `durationMinutes` no
+  longer needs one for any `active` route - the master list's
+  `start_time`/`end_time` cover that now
+- Two of Bus 120's six routes (`120-dropoff-middle`, `120-dropoff-high`)
+  are sitting on `status: "inactive"` because their steps sheets came in
+  incomplete (see "Route data: the master list" above) - once the rest
+  of their stop data arrives, flip them to `active` in
+  `route-master-list.csv` and add their entries to `page.tsx`'s
+  `ROUTE_STEPS_CSV_PATHS`
+- Middle and High School don't have a real `schoolAddress` yet
+  (`placeholderMeta.ts`'s `SCHOOL_ADDRESSES` has an honest placeholder
+  for both) - needed before geocoding their stops for real
 - Pinch-zoom on a very long route would help the progress bar - right
   now the fixed 48px-per-step spacing just makes the track (and the
   auto-scrolling) longer rather than ever shrinking markers down to fit
   more of the route in view at once (tap-a-step and drag-to-scrub are
   both in now - see "Maps, part seven" below)
 - Move route data into the doc's actual data model
-  (District/School/Route/RouteStop/etc.) instead of a flat CSV, once
-  there's more than one route
+  (District/School/Route/RouteStop/etc.) instead of a flat CSV per route
+  plus a master-list sheet gluing them together - there's more than one
+  real route now (see "Route data: the master list" above), which is
+  exactly the condition this was waiting on
 - The map now shows the driver's own live position (see "Maps, part
   seven" below), but still has no route line or stop markers drawn on
   it - those still need the geocoded waypoint cache actually wired in

@@ -107,19 +107,22 @@ function randomDepartureTime(rng: () => number): string {
 
 /**
  * Fabricates filler routes for the route-list screen, so its scrolling
- * (and now search filtering) can actually be exercised - there's only
- * one real route (route-125.csv) right now. Each one reuses the real
- * route's turn-by-turn steps under fabricated display metadata, marked
- * `status: "demo"` (see RouteStatus in types.ts) so the list can tell
- * them apart from real district data at a glance - the same "not real,
- * just a placeholder" spirit as the "Demo only placeholder, not actual
- * map" label elsewhere in the app, just formalized as a real field
- * instead of only a visual convention. Tapping one still leads to a
- * working trip-summary/step flow instead of a dead end.
+ * (and now search filtering) can actually be exercised - there are only
+ * a handful of real routes (the master list, see parseRouteMasterList.ts)
+ * right now. Each one reuses one real route's turn-by-turn steps
+ * (`realRoutes[0]`, arbitrarily - they're fake either way) under
+ * fabricated display metadata, marked `status: "demo"` (see RouteStatus
+ * in types.ts) so the list can tell them apart from real district data
+ * at a glance - the same "not real, just a placeholder" spirit as the
+ * "Demo only placeholder, not actual map" label elsewhere in the app,
+ * just formalized as a real field instead of only a visual convention.
+ * Tapping one still leads to a working trip-summary/step flow instead
+ * of a dead end.
  */
-export function buildDemoRoutes(base: Route, count: number): Route[] {
+export function buildDemoRoutes(realRoutes: Route[], count: number): Route[] {
+  const base = realRoutes[0];
   const rng = mulberry32(42);
-  const usedNumbers = new Set([base.routeNumber]);
+  const usedNumbers = new Set(realRoutes.map((r) => r.routeNumber));
 
   const routes: Route[] = Array.from({ length: count }, () => {
     let routeNumber: string;
@@ -130,8 +133,9 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
 
     // Its own draw, deliberately independent of routeNumber - real
     // routes' bus number *is* their route number (see
-    // route-125-meta.csv and Route.id's own doc comment in types.ts),
-    // so a demo route deliberately keeping them mismatched is now one
+    // route-master-list.csv and Route.id's own doc comment in
+    // types.ts), so a demo route deliberately keeping them mismatched
+    // is now one
     // more signal (alongside status: "demo" below) that it's fake, not
     // real district data. Only re-rolls against a collision with its
     // *own* route's number - unlike routeNumber, bus numbers aren't
@@ -169,11 +173,13 @@ export function buildDemoRoutes(base: Route, count: number): Route[] {
     };
   });
 
-  // Only routes numbered higher than the real one are eligible - so
-  // that one always sorts/reads first among favorites, "125" being the
-  // lowest of the bunch, purely for demo legibility (see
-  // RouteListScreen's Favorites view, which pins it first).
-  const eligible = routes.filter((r) => Number(r.routeNumber) > Number(base.routeNumber));
+  // Only routes numbered higher than every real one are eligible - kept
+  // as an extra guardrail against a demo route number ever undercutting
+  // a real one, on top of RouteListScreen's own Favorites sort (which
+  // already pins every real, non-"demo"-status route ahead of every
+  // demo one regardless of number).
+  const maxRealRouteNumber = Math.max(...realRoutes.map((r) => Number(r.routeNumber)));
+  const eligible = routes.filter((r) => Number(r.routeNumber) > maxRealRouteNumber);
   const favoriteNumbers = new Set(
     pickRandomSubset(rng, eligible, FAVORITE_DEMO_COUNT).map((r) => r.routeNumber),
   );

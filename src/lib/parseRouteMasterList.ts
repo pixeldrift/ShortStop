@@ -42,11 +42,11 @@ export type MasterListRoute = Omit<
  * for its fabricated routes: `${schoolName} — ${tripLabel}`.
  *
  * stop_count/rider_count are columns here too, but aren't parsed into
- * anything - same reasoning as parseRouteMetaCsv.ts: the app already
- * derives both, live, from each route's own steps CSV (parseRouteCsv),
- * which stays correct if a stop is ever added or removed there -
- * re-deriving the same numbers from this sheet's own copy would just be
- * a second source that could drift out of sync with it.
+ * anything - the app already derives both, live, from each route's own
+ * steps CSV (parseRouteCsv), which stays correct if a stop is ever
+ * added or removed there - re-deriving the same numbers from this
+ * sheet's own copy would just be a second source that could drift out
+ * of sync with it.
  */
 export function parseRouteMasterList(csvText: string): MasterListRoute[] {
   const [headerLine, ...dataLines] = csvText.trim().split(/\r?\n/);

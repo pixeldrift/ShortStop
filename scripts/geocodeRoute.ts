@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { deriveWaypoints } from "../src/lib/deriveWaypoints";
 import { extractCityState, geocodeQuery } from "../src/lib/geocode";
 import { parseRouteCsvRows } from "../src/lib/parseRouteCsv";
-import { PLACEHOLDER_META } from "../src/lib/placeholderMeta";
+import { SCHOOL_ADDRESSES } from "../src/lib/placeholderMeta";
 import { waypointCacheKey } from "../src/lib/waypointCache";
 import type { WaypointCache } from "../src/lib/waypointCache";
 
@@ -80,7 +80,7 @@ async function main() {
 
   const csvText = readFileSync(ROUTE_CSV_PATH, "utf8");
   const rows = parseRouteCsvRows(csvText);
-  const schoolAddress = PLACEHOLDER_META.schoolAddress;
+  const schoolAddress = SCHOOL_ADDRESSES["Lavergne Lake Elementary"];
   const waypoints = deriveWaypoints(rows, schoolAddress);
 
   const locationContext = extractCityState(schoolAddress);
