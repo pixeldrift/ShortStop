@@ -93,8 +93,15 @@ export const geocodeViaOpenRouteService: GeocodeProvider = async (
 
   const res = await fetchImpl(url);
   if (!res.ok) {
+    // ORS's own error body (when there is one) usually says *why* -
+    // "quota exceeded," "rate limit," an invalid key - which a bare
+    // status/statusText doesn't distinguish, and every one of those
+    // needs a different fix. Best-effort only: a body read failure here
+    // shouldn't hide the real HTTP error behind a second, unrelated one.
+    const detail = await res.text().catch(() => "");
     throw new Error(
-      `OpenRouteService geocoding returned ${res.status} ${res.statusText} for "${source}"`,
+      `OpenRouteService geocoding returned ${res.status} ${res.statusText} for "${source}"` +
+        (detail ? ` - ${detail}` : ""),
     );
   }
 
