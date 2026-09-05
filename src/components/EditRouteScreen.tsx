@@ -24,19 +24,19 @@ import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import type { GeocodableQuery } from "@/lib/geocode";
 import { stepsCsvBaseName } from "@/lib/parseRouteMasterList";
 import { parseRouteImport, rowsToCsvText, unresolvedRequiredFields } from "@/lib/parseRouteImport";
-import { PLACEHOLDER_DISTANCE, PLACEHOLDER_DRIVER_NAME } from "@/lib/placeholderMeta";
+import {
+  PLACEHOLDER_DISTANCE,
+  PLACEHOLDER_DRIVER_NAME,
+  PLACEHOLDER_DURATION_MINUTES,
+  SCHOOL_ADDRESS_NOT_YET_PROVIDED,
+} from "@/lib/placeholderMeta";
+import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import { resolutionCounts, summarizeRouteResolution } from "@/lib/routeResolutionStatus";
 import type { RowResolutionStatus } from "@/lib/routeResolutionStatus";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { GeocodeResponseBody } from "@/app/api/geocode/route";
-
-const SCHOOL_LEVEL_OPTIONS: { value: SchoolLevel; label: string }[] = [
-  { value: "elementary", label: "Elementary" },
-  { value: "middle", label: "Middle School" },
-  { value: "high", label: "High School" },
-];
 
 // Short on purpose - this box starts small (see the textarea's own
 // className below) and only grows with real content, so a long
@@ -382,7 +382,7 @@ export function EditRouteScreen({
   route,
   rawStepsText,
   initialWaypointCache,
-  schoolAddresses,
+  schools,
   onCancel,
   onSave,
 }: {
@@ -401,10 +401,11 @@ export function EditRouteScreen({
    * (see page.tsx's adminWaypointCaches). Undefined for `mode: "add"`
    * and for a route that's never had one fetched. */
   initialWaypointCache?: WaypointCache;
-  /** School name -> address, from schools.csv - offered as a one-click
-   * fill-in for the school address field rather than auto-overwriting
-   * whatever the admin already typed. */
-  schoolAddresses: Record<string, string>;
+  /** School name -> address/level, from schools.csv - the school
+   * picker below (`schoolOptions`) is built from this table's own keys
+   * rather than free text, so a route's address and level are always
+   * looked up here instead of typed or picked separately by an admin. */
+  schools: Record<string, SchoolInfo>;
   onCancel: () => void;
   /** `rawStepsText` here is always the *current* content - `mode:
    * "add"`'s pasted/uploaded text as-is, or `mode: "edit"`'s edited row
@@ -420,16 +421,42 @@ export function EditRouteScreen({
 }) {
   const [routeNumber, setRouteNumber] = useState(route?.routeNumber ?? "");
   const [busNumber, setBusNumber] = useState(route?.busNumber ?? "");
+  // School address and level are never typed or picked separately -
+  // both are looked up from `schools` (schools.csv) by whichever name
+  // is selected here, below. Real address/level data belongs in that
+  // one table, not duplicated into every route that references it.
   const [schoolName, setSchoolName] = useState(route?.schoolName ?? "");
-  const [schoolAddress, setSchoolAddress] = useState(route?.schoolAddress ?? "");
-  const [schoolLevel, setSchoolLevel] = useState<SchoolLevel>(route?.schoolLevel ?? "elementary");
+  const schoolInfo: SchoolInfo | undefined = schools[schoolName];
+  // A route already being edited whose school isn't in `schools` yet
+  // (see schoolOptions below) keeps its own already-known address/
+  // level instead of falling back to the generic placeholder/default -
+  // picking a *different* school from the dropdown always overrides
+  // this with that school's own real table entry.
+  const isOriginalUnmatchedSchool = route != null && route.schoolName === schoolName && !schoolInfo;
+  const schoolAddress =
+    schoolInfo?.address ?? (isOriginalUnmatchedSchool ? route.schoolAddress : SCHOOL_ADDRESS_NOT_YET_PROVIDED);
+  const schoolLevel: SchoolLevel =
+    schoolInfo?.schoolLevel ?? (isOriginalUnmatchedSchool ? route.schoolLevel : "elementary");
+  // Whether `schoolAddress` above is a real, geocodable address rather
+  // than the generic "not yet provided" placeholder it falls back to
+  // when nothing's selected - unlike that state-backed field before
+  // this pass, `schoolAddress` is never actually blank anymore, so
+  // gating on this instead of `schoolAddress.trim()` is what still
+  // keeps waypoints/canPublish from treating an unselected school as
+  // ready.
+  const hasRealSchoolAddress = Boolean(schoolInfo) || isOriginalUnmatchedSchool;
+  // Every known school, plus - only if it wouldn't otherwise be a real
+  // option - whatever school this route already had, so re-opening an
+  // existing route never silently drops or blanks out a school
+  // schools.csv doesn't have a row for yet.
+  const schoolOptions = useMemo(() => {
+    const names = Object.keys(schools).sort((a, b) => a.localeCompare(b));
+    if (schoolName && !schools[schoolName]) names.push(schoolName);
+    return names;
+  }, [schools, schoolName]);
   const [tripType, setTripType] = useState<TripType>(route?.tripType ?? "pickup");
   const [departureTime, setDepartureTime] = useState(route?.departureTime ?? "");
-  const [durationMinutes, setDurationMinutes] = useState(
-    route?.durationMinutes != null ? String(route.durationMinutes) : "",
-  );
   const [driverName, setDriverName] = useState(route?.driverName ?? PLACEHOLDER_DRIVER_NAME);
-  const [distance, setDistance] = useState(route?.distance ?? PLACEHOLDER_DISTANCE);
   // mode "add" only - the paste/upload box. mode "edit" never reads
   // this again after its own one-time seed below; it's the structured
   // `rows` state that's authoritative from then on.
@@ -544,9 +571,9 @@ export function EditRouteScreen({
     [rows],
   );
   const waypoints = useMemo(() => {
-    if (mode !== "edit" || hasIncompleteRow || !schoolAddress || rows.length === 0) return [];
+    if (mode !== "edit" || hasIncompleteRow || !hasRealSchoolAddress || rows.length === 0) return [];
     return deriveWaypoints(rows, schoolAddress);
-  }, [mode, rows, hasIncompleteRow, schoolAddress]);
+  }, [mode, rows, hasIncompleteRow, hasRealSchoolAddress, schoolAddress]);
   const resolutionRows = useMemo(
     () => summarizeRouteResolution(waypoints, cache),
     [waypoints, cache],
@@ -556,7 +583,7 @@ export function EditRouteScreen({
     mode === "edit" &&
     !hasIncompleteRow &&
     rows.length > 0 &&
-    schoolAddress.trim().length > 0 &&
+    hasRealSchoolAddress &&
     counts.unresolved === 0;
   // The readiness check only ever gates *publishing* - unpublishing an
   // already-published route (one that's live despite having unresolved
@@ -564,8 +591,6 @@ export function EditRouteScreen({
   // against it) is always allowed, no warning needed for that
   // direction.
   const canToggleStatus = status === "published" || canPublish;
-
-  const knownSchoolAddress = schoolAddresses[schoolName];
 
   // Opens row `index`'s full editor - always switches straight to it
   // even if a different row's editor is already open (that row's own
@@ -724,8 +749,12 @@ export function EditRouteScreen({
       schoolAddress,
       schoolLevel,
       tripType,
-      distance,
-      durationMinutes: Number(durationMinutes) || 0,
+      // Real mileage/timing needs actual routing calculation, not an
+      // admin's own guess - these stay flat placeholders here the same
+      // way they already do for every route loaded from the master
+      // list (see page.tsx), filled in for real on the backend later.
+      distance: route?.distance ?? PLACEHOLDER_DISTANCE,
+      durationMinutes: route?.durationMinutes ?? PLACEHOLDER_DURATION_MINUTES,
       isFavorite: route?.isFavorite ?? false,
     };
   }
@@ -809,57 +838,31 @@ export function EditRouteScreen({
               <option value="dropoff">PM Drop Off</option>
             </select>
           </Field>
-          <Field label="School level">
+          {/* School level and address are never picked or typed
+              separately - both come from whichever school is chosen
+              here, looked up in `schools` (schools.csv). */}
+          <Field label="School">
             <select
               className={inputClass}
-              value={schoolLevel}
-              onChange={(e) => setSchoolLevel(e.target.value as SchoolLevel)}
+              value={schoolName}
+              onChange={(e) => setSchoolName(e.target.value)}
             >
-              {SCHOOL_LEVEL_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
+              <option value="">Select a school</option>
+              {schoolOptions.map((name) => (
+                <option key={name} value={name}>
+                  {name}
                 </option>
               ))}
             </select>
           </Field>
         </div>
 
-        <div className="mt-3">
-          <Field label="School name">
-            <input
-              className={inputClass}
-              value={schoolName}
-              onChange={(e) => setSchoolName(e.target.value)}
-              placeholder="Lavergne Lake Elementary"
-              list="known-schools"
-            />
-            <datalist id="known-schools">
-              {Object.keys(schoolAddresses).map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
-          </Field>
-        </div>
-
-        <div className="mt-3">
-          <Field label="School address">
-            <input
-              className={inputClass}
-              value={schoolAddress}
-              onChange={(e) => setSchoolAddress(e.target.value)}
-              placeholder="201 Davids Way, La Vergne, TN 37086"
-            />
-          </Field>
-          {knownSchoolAddress && knownSchoolAddress !== schoolAddress && (
-            <button
-              type="button"
-              onClick={() => setSchoolAddress(knownSchoolAddress)}
-              className="mt-1 text-xs font-semibold text-blue-600 underline"
-            >
-              Use address on file: {knownSchoolAddress}
-            </button>
-          )}
-        </div>
+        {schoolName && (
+          <p className="mt-2 flex items-center gap-1 text-xs text-zinc-500">
+            <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+            {schoolAddress}
+          </p>
+        )}
 
         <div className="mt-3 grid grid-cols-2 gap-3">
           <Field label="Departure time">
@@ -870,23 +873,8 @@ export function EditRouteScreen({
               placeholder="6:30 AM"
             />
           </Field>
-          <Field label="Duration (minutes)">
-            <input
-              className={inputClass}
-              value={durationMinutes}
-              onChange={(e) => setDurationMinutes(e.target.value)}
-              placeholder="25"
-              inputMode="numeric"
-            />
-          </Field>
-        </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-3">
           <Field label="Driver">
             <input className={inputClass} value={driverName} onChange={(e) => setDriverName(e.target.value)} />
-          </Field>
-          <Field label="Distance">
-            <input className={inputClass} value={distance} onChange={(e) => setDistance(e.target.value)} />
           </Field>
         </div>
       </div>

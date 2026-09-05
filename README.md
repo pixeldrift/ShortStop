@@ -100,7 +100,8 @@ public/
   data/120-PM-MS.csv           Bus 120's PM Middle run steps
   data/120-PM-HS.csv           Bus 120's PM High run steps (incomplete, status: draft)
   data/route-master-list.csv   Route-level metadata for every real route (see below)
-  data/schools.csv             School name → address, one row per school (see below)
+  data/schools.csv             School name -> address + level, one row per school (see below;
+                                  a compiled roster of real Rutherford County Schools campuses)
   data/125-PM-EL-waypoints.json  Bus 125's geocoding cache, generated - see "Maps, part two"/
                                   "part ten" below (one such sidecar per published route, named
                                   to match its own steps CSV - not listed individually here)
@@ -2118,3 +2119,48 @@ so far.
   edit - canceling that specific row removes it outright instead of
   leaving a blank one behind, tracked via a `newlyAddedIndex` alongside
   `expandedIndex`/`draftRow`.
+- **A real schools.csv, and Duration/Distance dropped from the form.**
+  `schools.csv` grew from 3 rows (Lavergne's own three schools) to a
+  36-school roster of Rutherford County Schools' real elementary,
+  middle, and high campuses - name, address, and a new `school_level`
+  column, compiled from public sources (district/school sites, NCES,
+  and other school-directory listings turned up via search) rather
+  than from RCS's own directory page directly, since this sandbox's own
+  network policy blocks fetching it (and Wikipedia, and NCES's site)
+  outright. Treat it the way this project already treats its other
+  real-but-imperfect data: solid for the schools it covers, but not
+  claimed as literally every RCS school or a business address a
+  district could contest to the digit - a real address database would
+  come from an actual district roster or GIS export, not a web search.
+  `parseSchoolsCsv.ts` now returns `Record<string, SchoolInfo>`
+  (`{ address, schoolLevel }`) instead of a bare address string, and
+  drops any row whose `school_level` isn't one of the app's own three
+  real values rather than guessing.
+
+  EditRouteScreen's own School field is a real `<select>` now, built
+  from that table's own names (`schoolOptions`) - not a free-text input
+  with a datalist of suggestions. Picking a school looks up its address
+  and level from the table directly; both stopped being separate
+  fields entirely (no more "School address" or "School level" inputs,
+  and no more "Use address on file" button now that there's nothing
+  else for an address to disagree with). A resolved address shows as a
+  small read-only line under the dropdown, for confirmation, never as
+  something typed. An already-real route whose own school genuinely
+  isn't in this table yet (shouldn't happen for any of this app's own
+  real routes today, all three of which are in it) keeps its own
+  already-known address/level instead of silently falling back to the
+  generic "not yet provided" placeholder or resetting to Elementary -
+  picking a *different* school from the dropdown always defers to that
+  school's own real table entry after that.
+
+  **Duration (minutes) and Distance are gone from the form too** -
+  both need actual routing/distance calculation, not an admin's own
+  guess, so they're no longer something this screen asks for at all.
+  Saving a route now always uses its own already-known values if it's
+  an existing route with real ones (route 125's real duration from the
+  master list, say), or `PLACEHOLDER_DISTANCE`/
+  `PLACEHOLDER_DURATION_MINUTES` (placeholderMeta.ts) for a brand-new
+  one - the same "flat placeholder until real data exists" treatment
+  `distance` already had, now applied to `durationMinutes` too, both
+  meant to be corrected on the backend once real routing data exists
+  rather than typed in by hand up front.

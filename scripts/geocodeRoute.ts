@@ -276,7 +276,7 @@ async function main() {
       continue;
     }
 
-    const schoolAddress = schoolAddresses[route.schoolName];
+    const schoolAddress = schoolAddresses[route.schoolName]?.address;
     if (!schoolAddress) {
       console.log(`Skipping ${baseName} (${route.id}) - no address on file for "${route.schoolName}" in schools.csv.\n`);
       continue;

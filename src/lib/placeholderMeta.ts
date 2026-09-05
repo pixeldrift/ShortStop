@@ -1,12 +1,19 @@
 // The RouteMeta fields neither the master route list nor schools.csv
-// cover (driverName, distance, isFavorite) - real mileage/driver-roster
-// data doesn't exist for any route yet, so driverName/distance stay
-// flat placeholders regardless of which route they're merged into (not
-// per-route fabrications - the same "we don't have this yet" stand-in
-// everywhere, same spirit as "Otto Mann" always having been a
-// placeholder name even for route 125's real, "published" data).
+// cover (driverName, distance, durationMinutes, isFavorite) - real
+// mileage/timing data doesn't exist for any route yet (it needs actual
+// routing/distance calculation, not something an admin should be
+// typing in when creating a route - see EditRouteScreen.tsx), so
+// distance/durationMinutes stay flat placeholders regardless of which
+// route they're merged into, the same "we don't have this yet"
+// stand-in everywhere, same spirit as "Otto Mann" always having been a
+// placeholder name even for route 125's real, "published" data.
+// driverName is the one exception among these four - a real per-route
+// driver name is exactly the kind of thing an admin creating a route
+// *should* type in, so it stays an editable field there even though it
+// also starts out on this same placeholder.
 export const PLACEHOLDER_DRIVER_NAME = "Otto Mann";
 export const PLACEHOLDER_DISTANCE = "8.4 mi";
+export const PLACEHOLDER_DURATION_MINUTES = 25;
 
 // Fallback for a school schools.csv doesn't have a row for yet (a
 // future real route naming a school not yet in the sheet) - not a

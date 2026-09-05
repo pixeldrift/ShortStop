@@ -10,6 +10,7 @@ import { parseRouteCsv } from "@/lib/parseRouteCsv";
 import type { RouteMeta } from "@/lib/parseRouteCsv";
 import { parseRouteMasterList } from "@/lib/parseRouteMasterList";
 import { parseSchoolsCsv } from "@/lib/parseSchoolsCsv";
+import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import {
   FAVORITE_ROUTE_IDS,
   PLACEHOLDER_DISTANCE,
@@ -77,7 +78,7 @@ export default function Home() {
   // parsed Route itself - EditRouteScreen needs the raw text to
   // pre-fill its textarea, not just the already-derived NavigationSteps.
   const [rawStepsById, setRawStepsById] = useState<Record<string, string>>({});
-  const [schoolAddresses, setSchoolAddresses] = useState<Record<string, string>>({});
+  const [schools, setSchools] = useState<Record<string, SchoolInfo>>({});
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "list" });
 
@@ -114,8 +115,8 @@ export default function Home() {
     Promise.all([fetchText("/data/route-master-list.csv"), fetchText("/data/schools.csv")])
       .then(async ([masterListCsv, schoolsCsv]) => {
         const allRows = parseRouteMasterList(masterListCsv);
-        const addresses = parseSchoolsCsv(schoolsCsv);
-        setSchoolAddresses(addresses);
+        const schoolsTable = parseSchoolsCsv(schoolsCsv);
+        setSchools(schoolsTable);
 
         const built = await Promise.all(
           allRows.map(async (row) => {
@@ -136,7 +137,7 @@ export default function Home() {
               ...row,
               durationMinutes: row.durationMinutes,
               driverName: PLACEHOLDER_DRIVER_NAME,
-              schoolAddress: addresses[row.schoolName] ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
+              schoolAddress: schoolsTable[row.schoolName]?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
               distance: PLACEHOLDER_DISTANCE,
               isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
             };
@@ -224,7 +225,7 @@ export default function Home() {
         mode="add"
         route={null}
         rawStepsText=""
-        schoolAddresses={schoolAddresses}
+        schools={schools}
         onCancel={() => setScreen({ kind: "list" })}
         onSave={handleSaveRoute}
       />
@@ -240,7 +241,7 @@ export default function Home() {
         route={screen.route}
         rawStepsText={rawStepsText}
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
-        schoolAddresses={schoolAddresses}
+        schools={schools}
         onCancel={() => setScreen({ kind: "list" })}
         onSave={handleSaveRoute}
       />
