@@ -44,7 +44,12 @@ export function ConfirmModal({
         <h2 className="font-heading text-xl font-black tracking-tight">{title}</h2>
         {message && <p className="mt-2 text-sm text-zinc-500">{message}</p>}
 
-        <div className="mt-4 flex gap-3">
+        {/* Destructive (delete) reads leftmost, same rule this app
+            already applies everywhere else a delete button sits next
+            to a safe one - away from where a thumb instinctively taps
+            the "main" action, not toward it. Publish/unpublish keep
+            the ordinary Cancel-then-confirm reading order. */}
+        <div className={`mt-4 flex gap-3 ${destructive ? "flex-row-reverse" : ""}`}>
           <button
             type="button"
             onClick={onCancel}
