@@ -1709,6 +1709,20 @@ expected, not a miss - "Ramp toward Murfreesboro" is the paper sheet's
 own description of an unnamed highway ramp, not a real road name to
 look up.
 
+Re-ran just the 8 "Bill Stewart Blvd" intersections after the fix
+(`PROTOTYPE_FILTER=Bill Stewart` - see below): **4 resolved cleanly**
+(Hidden Forest Ln -> 36.0406636, -86.5404985; Ruth Ln -> 36.0442348,
+-86.5400776; Drennan Ln -> 36.0450625, -86.5398457; Lake Forest Dr ->
+36.0395056, -86.5406313), 3 hit 429/504 again (this public instance
+clearly doesn't tolerate back-to-back calls with no pacing - a real
+finding on its own, not a resolution problem), and 1 - Red Bud Ln -
+came back with no shared node. Zero-for-eight to four-for-five
+(excluding the rate-limited ones) confirms the diagnosis: the name was
+the whole problem for this road, not the method. Red Bud Ln might be a
+second, smaller name mismatch ("Redbud" as one word, maybe) - worth a
+look, but it's one data point, nowhere near the 8-for-8 pattern that
+flagged Bill Stewart in the first place.
+
 ### Next steps
 
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
@@ -1717,21 +1731,20 @@ look up.
   Nothing geocoding-related can actually run for real until this
   exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
   confirm the OpenRouteService switch works without needing a CSV edit
-- The Overpass prototype (see "Maps, part nine" above) resolved 5/20
-  of route 125's real crossroads cleanly on its first working run - the
-  "Bill Stewart Rd" name mismatch behind 8 of the 10 misses is now
-  fixed (it's "Bill Stewart Blvd" - corrected in `125-PM-EL.csv`), but
-  that's a data fix, not a code one, so the actual hit rate needs a
-  re-run to confirm. `prototype-overpass.yml` now takes an optional
-  `filter` input to re-test just the intersections naming one road
-  (e.g. "Bill Stewart") instead of spending calls re-confirming ones
-  already known to resolve or not. Also still needs pacing between
-  Overpass calls (4 of 20 hit 429/504 from having none at all - not a
-  resolution failure,
-  just too fast for the public instance) before the hit rate means much.
-  If it holds up after both, wire it into `geocode.ts` as a real
-  provider (intersections through Overpass, plain addresses still
-  through ORS) instead of a standalone script
+- The Overpass prototype (see "Maps, part nine" above) went from 0/8 to
+  4/5 (excluding rate-limited attempts) on the "Bill Stewart Blvd"
+  intersections once its name was fixed - confirms the diagnosis, but
+  every run so far still hits 429/504 from having zero pacing between
+  calls (3 more this time, on top of the first run's 4). Add real
+  pacing (a delay between calls, and/or retrying a 429/504 once instead
+  of counting it as a miss) before the hit rate on the full route means
+  anything solid. Also worth a look: "Bill Stewart Blvd & Red Bud Ln"
+  still comes back with no shared node - possibly a second, smaller
+  name mismatch, but only one data point so far, not the clear pattern
+  Bill Stewart's own mismatch was. Once pacing's in and the full route
+  gets a clean re-run, decide whether to wire this into `geocode.ts` as
+  a real provider (intersections through Overpass, plain addresses
+  still through ORS) instead of a standalone script
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual
