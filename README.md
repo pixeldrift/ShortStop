@@ -3031,3 +3031,50 @@ so far.
   NoSQL/proprietary-shaped, given this app's own data (a route, its
   steps, a handful of resolved coordinates) is naturally relational,
   not document-shaped.
+
+## A real progress bar for the batch fetch
+
+  "Fetch Missing"/"Re-fetch All" used to send their whole list in one
+  request and show a single indefinite spinner ("Fetching…") until the
+  entire batch resolved - no way to tell whether it was working through
+  a long list or had genuinely hung, which is exactly what got asked
+  about.
+
+  The fix meant changing *where* the batch is driven from: the client
+  now loops one query at a time against `/api/geocode` (paced by the
+  same `SINGLE_FETCH_COOLDOWN_MS` the single-row cooldown already
+  uses), instead of sending the whole list in one request for the
+  server to resolve internally. That's the only way to get a real
+  per-item update between each actual network response without
+  building server-side streaming (Server-Sent-Events/WebSocket) for
+  what's still an admin-only tool - not attempted, on the same "far
+  simpler" reasoning this endpoint's own doc comment already gave for
+  not doing that up front.
+
+  Since every request is genuinely one query now, `/api/geocode` lost
+  its array-batch branch entirely - `resolveWaypoint.ts`'s
+  `fetchLocationList` (server-side batch looping/pacing) is gone along
+  with it, since nothing calls it anymore; `fetchOneLocation` is the
+  one path every admin action goes through. `GeocodeResponseBody` also
+  dropped its `results` array for a single `result`, since a response
+  to a one-query request holding an array of exactly one entry was
+  vestigial. `cache`/`schoolAnchor` both update after every item lands,
+  not just at the very end, so a batch that fails partway through
+  keeps whatever it already resolved instead of losing it with the
+  rest.
+
+  The Fetch Coordinates modal shows a `batchProgress` state
+  (`{completed, total, currentLabel}`) as a real progress bar plus
+  "Fetching N of M…" and the exact address/intersection currently
+  in flight - genuinely answering "is it stuck," since the count and
+  label visibly advance between real responses instead of one spinner
+  looking identical whether it's on item 1 or frozen.
+
+  Verified in the browser: watched a live "Re-fetch All" run against
+  route 125's own 20 geocodable rows - the bar and label correctly
+  advanced through the school address, then into the first
+  intersection query - and, since resolving that one's own search
+  anchor hit this sandbox's usual network block, correctly handed off
+  to the existing friendly-error UI (the same "Oops, could not look up
+  coordinates" + View Error, not a new failure mode) rather than
+  leaving a stuck-looking bar behind.

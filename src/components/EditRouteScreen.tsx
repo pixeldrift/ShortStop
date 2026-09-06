@@ -43,7 +43,7 @@ import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import { resolutionCounts, summarizeRouteResolution } from "@/lib/routeResolutionStatus";
 import type { RouteResolutionCounts, RowResolutionStatus } from "@/lib/routeResolutionStatus";
 import { waypointCacheKey } from "@/lib/waypointCache";
-import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
+import type { WaypointCache } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { GeocodeResponseBody } from "@/app/api/geocode/route";
 
@@ -70,11 +70,28 @@ class GeocodeApiError extends Error {
   }
 }
 
-/** The single-row "Fetch" button's own cooldown, after any one fetch
- * finishes - same value as /api/geocode's own RATE_LIMIT_MS, so a
- * manual click and a batch call pace themselves the same courteous
- * amount against a free-tier account either way. */
+/** The single-row "Fetch" button's own cooldown after any one fetch
+ * finishes, and the pause `runFetchAll` below waits *between* each
+ * query in a batch - one shared value so a manual click and a batch
+ * call pace themselves the same courteous amount against a free-tier
+ * account either way (this used to be a separate RATE_LIMIT_MS the
+ * server paced internally in one request; see runFetchAll's own doc
+ * for why that moved to the client). */
 const SINGLE_FETCH_COOLDOWN_MS = 1100;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** `runFetchAll`'s own live status - which query it's currently on,
+ * out of how many, so the Fetch Coordinates modal can show real
+ * progress instead of one indefinite spinner across the whole batch
+ * (see its own doc for why "was it stuck?" needed an actual answer). */
+interface BatchProgress {
+  completed: number;
+  total: number;
+  currentLabel: string;
+}
 
 // Short on purpose - this box starts small (see the textarea's own
 // className below) and only grows with real content, so a long
@@ -655,6 +672,7 @@ function FetchCoordinatesModal({
   counts,
   quota,
   fetchRunning,
+  batchProgress,
   fetchError,
   onFetchMissing,
   onRefetchAll,
@@ -664,6 +682,7 @@ function FetchCoordinatesModal({
   counts: RouteResolutionCounts;
   quota: ApiQuota | null;
   fetchRunning: boolean;
+  batchProgress: BatchProgress | null;
   fetchError: FetchErrorInfo | null;
   onFetchMissing: () => void;
   onRefetchAll: () => void;
@@ -716,13 +735,28 @@ function FetchCoordinatesModal({
 
         {/* Reserves its own height whether or not there's anything to
             show, so the buttons below don't jump up and down as a
-            fetch starts/finishes. */}
-        <div className="mt-4 flex min-h-[1.25rem] items-center justify-center gap-1.5 text-center">
-          {fetchRunning ? (
-            <p className="flex items-center gap-1.5 text-sm font-semibold text-zinc-600">
-              <SpinnerIcon className="h-4 w-4 animate-spin" />
-              Fetching…
-            </p>
+            fetch starts/finishes. batchProgress (not just fetchRunning)
+            gates the bar itself - real per-item progress, not a single
+            indefinite spinner across the whole batch, is the whole
+            point: an admin watching the count and label advance can
+            tell it's genuinely working through the list, versus a
+            plain spinner that looks identical whether it's on query 1
+            or stuck dead. */}
+        <div className="mt-4 flex min-h-[1.25rem] flex-col items-center justify-center gap-1.5 text-center">
+          {fetchRunning && batchProgress ? (
+            <>
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-zinc-600">
+                <SpinnerIcon className="h-4 w-4 animate-spin" />
+                Fetching {Math.min(batchProgress.completed + 1, batchProgress.total)} of {batchProgress.total}…
+              </p>
+              <p className="max-w-full truncate text-xs text-zinc-400">{batchProgress.currentLabel}</p>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
+                <div
+                  className="h-full rounded-full bg-blue-600 transition-[width]"
+                  style={{ width: `${(batchProgress.completed / batchProgress.total) * 100}%` }}
+                />
+              </div>
+            </>
           ) : (
             fetchError && (
               <p className="flex items-center gap-1.5 text-sm text-red-600">
@@ -977,6 +1011,7 @@ export function EditRouteScreen({
   // since nothing here is looping on its own to pace.
   const [singleFetchCoolingDown, setSingleFetchCoolingDown] = useState(false);
   const [fetchAllRunning, setFetchAllRunning] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [fetchError, setFetchError] = useState<FetchErrorInfo | null>(null);
   const [showFetchModal, setShowFetchModal] = useState(false);
   // OpenRouteService's own account-wide rate limit, if the last batch
@@ -1145,12 +1180,12 @@ export function EditRouteScreen({
     reader.readAsText(file);
   }
 
-  async function callGeocodeApi(queries: GeocodableQuery[]): Promise<GeocodeResponseBody> {
+  async function callGeocodeApi(query: GeocodableQuery): Promise<GeocodeResponseBody> {
     const res = await fetch("/api/geocode", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: queries,
+        query,
         schoolAddress,
         anchor: schoolAnchor ?? undefined,
       }),
@@ -1166,14 +1201,11 @@ export function EditRouteScreen({
     setSingleFetchCoolingDown(true);
     setFetchingStepIds((prev) => new Set(prev).add(waypoint.stepId));
     try {
-      const data = await callGeocodeApi([waypoint]);
+      const data = await callGeocodeApi(waypoint);
       if (data.anchor) setSchoolAnchor(data.anchor);
       if (data.quota) setQuota(data.quota);
-      const entry: WaypointCacheEntry | null = data.results[0];
-      if (entry) {
-        const key = waypointCacheKey(waypoint);
-        setCache((prev) => ({ ...prev, [key]: entry }));
-      }
+      const key = waypointCacheKey(waypoint);
+      setCache((prev) => ({ ...prev, [key]: data.result }));
     } catch (err) {
       setFetchError({
         message: err instanceof Error ? err.message : String(err),
@@ -1190,25 +1222,42 @@ export function EditRouteScreen({
   }
 
   // Shared by both Fetch Coordinates modal buttons below - they only
-  // differ in which waypoints they decide are worth spending a call on.
+  // differ in which waypoints they decide are worth spending a call
+  // on. Loops one query at a time against the single-query endpoint
+  // (rather than sending the whole list in one request, which is what
+  // this used to do) specifically so batchProgress can update after
+  // every real response - a single request-response round trip for
+  // the whole batch has no way to show "3 of 12" partway through, or
+  // to distinguish "still working" from "actually stuck," short of
+  // building real server-side streaming for what's still an
+  // admin-only tool (see /api/geocode's own doc on that tradeoff).
+  // `cache`/`schoolAnchor` both update after each item lands too, so a
+  // batch that fails partway through still keeps whatever it already
+  // resolved rather than losing it with the rest.
   async function runFetchAll(toFetch: GeocodableQuery[]) {
     if (toFetch.length === 0) return;
 
     setFetchError(null);
     setFetchAllRunning(true);
     setFetchingStepIds(new Set(toFetch.map((w) => w.stepId)));
+    setBatchProgress({ completed: 0, total: toFetch.length, currentLabel: waypointLabel(toFetch[0]) });
     try {
-      const data = await callGeocodeApi(toFetch);
-      if (data.anchor) setSchoolAnchor(data.anchor);
-      if (data.quota) setQuota(data.quota);
-      setCache((prev) => {
-        const next = { ...prev };
-        toFetch.forEach((w, i) => {
-          const entry = data.results[i];
-          if (entry) next[waypointCacheKey(w)] = entry;
+      for (const [index, waypoint] of toFetch.entries()) {
+        setBatchProgress({ completed: index, total: toFetch.length, currentLabel: waypointLabel(waypoint) });
+        if (index > 0) await sleep(SINGLE_FETCH_COOLDOWN_MS);
+
+        const data = await callGeocodeApi(waypoint);
+        if (data.anchor) setSchoolAnchor(data.anchor);
+        if (data.quota) setQuota(data.quota);
+        const key = waypointCacheKey(waypoint);
+        setCache((prev) => ({ ...prev, [key]: data.result }));
+        setFetchingStepIds((prev) => {
+          const next = new Set(prev);
+          next.delete(waypoint.stepId);
+          return next;
         });
-        return next;
-      });
+      }
+      setBatchProgress((prev) => (prev ? { ...prev, completed: toFetch.length } : prev));
     } catch (err) {
       setFetchError({
         message: err instanceof Error ? err.message : String(err),
@@ -1217,6 +1266,7 @@ export function EditRouteScreen({
     } finally {
       setFetchAllRunning(false);
       setFetchingStepIds(new Set());
+      setBatchProgress(null);
     }
   }
 
@@ -1602,6 +1652,7 @@ export function EditRouteScreen({
           counts={counts}
           quota={quota}
           fetchRunning={fetchAllRunning}
+          batchProgress={batchProgress}
           fetchError={fetchError}
           onFetchMissing={fetchMissingLocations}
           onRefetchAll={refetchAllLocations}

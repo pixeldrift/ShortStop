@@ -4,10 +4,6 @@ import { boundingBoxAround, OverpassHttpError, pickNearest, resolveIntersection 
 import type { BoundingBox } from "./overpassGeocode";
 import type { WaypointCacheEntry } from "./waypointCache";
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 /** `geocodeQuery` only ever throws for a genuinely unexpected failure
  * now (a network exception, a malformed JSON body) - a real HTTP-level
  * error (403/429/5xx) returns a normal error entry directly (see
@@ -36,17 +32,18 @@ async function safeGeocodeQuery(
 /**
  * `lookupCoordinates` at the bottom is the one real implementation of
  * "turn an address or cross-street intersection into a lat/lon" -
- * everything else in this module (`resolveSchoolAnchor`,
- * `resolveGeocodableQuery`, both shared between scripts/geocodeRoute.ts
- * - the batch CLI/CI pipeline - and src/app/api/geocode/route.ts - the
- * Add/Edit Route screen's on-demand "Fetch Location"/"Fetch All
- * Locations" buttons) is a thin wrapper around it that adds the
- * batch-pipeline bookkeeping (`anchor`/`near` carried across many
- * calls, an already-known API key threaded through rather than re-read
- * per call) those two callers need. Reach for `lookupCoordinates`
- * itself directly for a standalone lookup that doesn't need any of
- * that; reach for the batch wrappers when resolving a whole route's
- * worth of queries in one pass.
+ * everything else in this module is a thin wrapper around it.
+ * `resolveGeocodableQuery`/`resolveSchoolAnchor` add the batch-pipeline
+ * bookkeeping (`anchor`/`near` carried across many calls, an
+ * already-known API key threaded through rather than re-read per
+ * call) scripts/geocodeRoute.ts's own CLI/CI pipeline needs;
+ * `fetchOneLocation` is the plainer single-query version
+ * src/app/api/geocode/route.ts uses for EditRouteScreen.tsx's admin
+ * actions - one query per request always, even for "Fetch Missing"/
+ * "Re-fetch All" (see runFetchAll's own doc in EditRouteScreen.tsx for
+ * why that loops client-side instead of sending a whole batch in one
+ * request). Reach for `lookupCoordinates` itself directly for a
+ * standalone lookup that doesn't need any of that.
  */
 
 /** The bounding-box half-width (in degrees) `lookupCoordinates` and
@@ -216,10 +213,9 @@ interface AdminFetchContext {
 }
 
 /** Lazily resolves the school's own address as an intersection query's
- * search anchor - shared by fetchOneLocation/fetchLocationList below,
- * both of which need the exact same "do we already have one, and if
- * not, go get it" logic. A plain address query never needs this at
- * all (returns `ctx.anchor` untouched, even if null). */
+ * search anchor - fetchOneLocation below's own "do we already have
+ * one, and if not, go get it" logic. A plain address query never
+ * needs this at all (returns `ctx.anchor` untouched, even if null). */
 async function ensureAnchor(
   query: GeocodableQuery,
   ctx: AdminFetchContext,
@@ -240,12 +236,15 @@ async function ensureAnchor(
   return point;
 }
 
-/** Resolves exactly one geocodable query - EditRouteScreen.tsx's "Fetch
- * Location" (single-row) button's own logic, calling `lookupCoordinates`
- * directly rather than going through the batch-oriented
- * `resolveGeocodableQuery` below (which this no longer needs - a single
- * query has no `near` point to carry across other calls, since there
- * are none). */
+/** Resolves exactly one geocodable query - EditRouteScreen.tsx's own
+ * "Fetch Location"/"Fetch Missing"/"Re-fetch All" buttons all funnel
+ * through this same single-query call now (the batch buttons loop it
+ * client-side, one request at a time, so their own progress bar can
+ * update between each real response - see runFetchAll's own doc) -
+ * calling `lookupCoordinates` directly rather than going through the
+ * batch-oriented `resolveGeocodableQuery` below (which this no longer
+ * needs - a single query has no `near` point to carry across other
+ * calls, since there are none). */
 export async function fetchOneLocation(
   query: GeocodableQuery,
   ctx: AdminFetchContext,
@@ -264,52 +263,12 @@ export async function fetchOneLocation(
   return { entry, anchor };
 }
 
-/** Resolves a whole list of geocodable queries in order, tracking a
- * shared anchor/near point across the batch (same idea as
- * scripts/geocodeRoute.ts's own pipeline) - EditRouteScreen.tsx's
- * "Fetch Missing"/"Re-fetch All" buttons' own logic, calling
- * `lookupCoordinates` directly for each query rather than through
- * `resolveGeocodableQuery`. `rateLimitMs` is the pause this function
- * waits *between* queries in the list - callers still own whether
- * pacing is needed at all (see this module's own top doc). */
-export async function fetchLocationList(
-  queries: GeocodableQuery[],
-  ctx: AdminFetchContext & { rateLimitMs: number },
-): Promise<
-  | { anchor: { lat: number; lon: number } | null; results: WaypointCacheEntry[] }
-  | { error: string; raw?: string }
-> {
-  let anchor = ctx.anchor;
-  let lastResolved = anchor;
-  const results: WaypointCacheEntry[] = [];
-
-  for (const [index, query] of queries.entries()) {
-    if (index > 0) await sleep(ctx.rateLimitMs);
-
-    const resolvedAnchor = await ensureAnchor(query, { ...ctx, anchor });
-    if (resolvedAnchor && "error" in resolvedAnchor) return resolvedAnchor;
-    if (resolvedAnchor && !anchor) await sleep(ctx.rateLimitMs);
-    anchor = resolvedAnchor;
-    lastResolved = lastResolved ?? anchor;
-
-    const entry = await lookupCoordinates(query, ctx.locationContext, {
-      apiKey: ctx.apiKey,
-      anchor: anchor ?? undefined,
-      near: lastResolved ?? undefined,
-    });
-    if (entry.status === "ok") lastResolved = { lat: entry.lat, lon: entry.lon };
-    results.push(entry);
-  }
-
-  return { anchor, results };
-}
-
 /** Resolves any one geocodable (address or intersection) query,
  * dispatching to ORS or the Overpass helper above (via
  * `lookupCoordinates`) as appropriate - the single entry point
  * scripts/geocodeRoute.ts's own batch pipeline loops over (see
- * fetchOneLocation/fetchLocationList above for the same idea, tailored
- * to EditRouteScreen.tsx's admin actions instead). `anchor`/`near` are
+ * fetchOneLocation above for the same idea, tailored to
+ * EditRouteScreen.tsx's admin actions instead). `anchor`/`near` are
  * only used (and only need to be non-null) for an intersection query;
  * pass whatever the caller already has for `near` (falls back to
  * `anchor` itself, e.g. on the very first intersection resolved). */
