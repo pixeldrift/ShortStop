@@ -440,6 +440,30 @@ export function SunIcon({ className }: { className?: string }) {
   );
 }
 
+/** A network-style globe - a plain circle, an equator line, and one
+ * meridian curve, the way "the web" gets drawn rather than a physical
+ * classroom globe (no stand, no tilt, no continents) - used on
+ * EditRouteScreen's "Fetch All Locations" button, which reaches out to
+ * a real geocoding service. */
+export function GlobeIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20Z" />
+    </svg>
+  );
+}
+
 /** A plain X - used to close a modal (AllStopsModal, StartScreen). */
 export function CloseIcon({ className }: { className?: string }) {
   return (

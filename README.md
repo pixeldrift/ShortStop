@@ -2415,3 +2415,31 @@ so far.
   logo's own "are you sure you want to end this route?" confirm (that
   gate exists for a route actually in progress; depot never is), same
   un-confirmed exit the logo itself takes once a route's arrived.
+- **Edit Route: collapsible section headers, a shared side-of-road
+  convention with "View All Stops," and a trimmed-down Stops header.**
+  A new `CollapsibleSection` wraps the Route Details card and the
+  Stops/Turns card each in their own titled, foldable header - a
+  chevron that twirls from pointing right to pointing down as it opens
+  (same direction RouteListScreen's own View dropdown caret already
+  uses), starting open on both. "Show turns" also defaults on here now
+  (`ToggleSwitch`'s own doc comment updated to note StartScreen and
+  EditRouteScreen deliberately disagree on this default) - reviewing a
+  route for editing is exactly when seeing every turn in its real place
+  matters most.
+
+  `StepRowView`'s own side-of-road indicator moved from a plain
+  `(Right)` tacked onto the location text to `Stop 1 (on right ▶)`
+  right after the stop number, styled with the same
+  `RoundedTriangleIcon` `StartScreen`'s "View All Stops" already uses
+  for this - one convention for "which side is this stop on," not two
+  that happened to disagree on both wording and placement.
+
+  The old "N resolved, N need attention, N skipped" stats line under
+  "Stops" is gone (the per-row resolution icons already say this at a
+  glance, once turns are showing by default there was less room being
+  spent well on a second summary of the same thing) - "Show turns" and
+  "Fetch All Locations" now share that one row instead, both pushed to
+  the right, and "Fetch All Locations" gained a new `GlobeIcon` (a
+  plain circle with an equator line and one meridian curve - a network/
+  web globe, not a classroom one with a stand) since it's a real call
+  out to a geocoding service, not just a local computation.

@@ -11,11 +11,14 @@ import {
   EditIcon,
   EyeIcon,
   EyeOffIcon,
+  GlobeIcon,
   MapPinIcon,
   PersonSolidIcon,
   RightArrowIcon,
+  RoundedTriangleIcon,
   SaveIcon,
   TrashIcon,
+  TriangleIcon,
   TurnArrow,
   UploadIcon,
   WarningIcon,
@@ -65,6 +68,41 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className={labelClass}>{label}</span>
       {children}
     </label>
+  );
+}
+
+/** A titled card that can fold its own body away - wraps the Route
+ * Details and Stops/Turns cards below, each getting its own header
+ * (replacing what used to be a plain label inside the card) with a
+ * chevron that twirls from pointing right to pointing down as it
+ * opens, same direction convention RouteListScreen's own View dropdown
+ * caret already uses. Starts open - collapsing is for a long route
+ * review where one card is already done and just in the way, not the
+ * default first look at either. */
+function CollapsibleSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="w-full max-w-md">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-1.5 px-1 pb-1.5"
+      >
+        <TriangleIcon
+          direction="right"
+          className={`h-2.5 w-2.5 shrink-0 text-zinc-400 transition-transform ${open ? "rotate-90" : ""}`}
+        />
+        <span className={labelClass}>{title}</span>
+      </button>
+      {open && children}
+    </div>
   );
 }
 
@@ -127,6 +165,16 @@ function StepRowView({
               <>
                 <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
                 Stop {stopNumber}
+                {row.side && (
+                  <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
+                    (on {row.side.toLowerCase()}
+                    <RoundedTriangleIcon
+                      direction={row.side.toLowerCase() === "left" ? "left" : "right"}
+                      className="h-3 w-3"
+                    />
+                    )
+                  </span>
+                )}
               </>
             ) : (
               <>
@@ -143,14 +191,7 @@ function StepRowView({
           )}
         </div>
         <p className="truncate text-zinc-700">
-          {subheading ? (
-            <>
-              {subheading}
-              {row.side ? ` (${row.side})` : ""}
-            </>
-          ) : (
-            <span className="text-zinc-400 italic">No location yet</span>
-          )}
+          {subheading || <span className="text-zinc-400 italic">No location yet</span>}
         </p>
         {row.notes && <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>}
         {status && (
@@ -548,7 +589,10 @@ export function EditRouteScreen({
   // edited structurally (add/remove/change a row) from here on, never
   // re-derived from text again.
   const [rows, setRows] = useState<RawRouteRow[]>(() => parseRouteImport(rawStepsText).rows);
-  const [showTurns, setShowTurns] = useState(false);
+  // Defaults to on here (unlike StartScreen's own "View All Stops",
+  // which defaults to stops-only) - reviewing a route for editing is
+  // exactly when seeing every turn in its real place matters most.
+  const [showTurns, setShowTurns] = useState(true);
   // Which row (an index into `rows`) currently has its full editor
   // open, if any - only ever one at a time, matching how this screen's
   // own editing actually happens ("tweak a few details, or add one new
@@ -892,215 +936,210 @@ export function EditRouteScreen({
         <span className="w-10" />
       </div>
 
-      <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Route number">
-            <input
-              className={inputClass}
-              value={routeNumber}
-              onChange={(e) => setRouteNumber(e.target.value)}
-              placeholder="125"
-            />
-          </Field>
-          <Field label="Bus number">
-            <input
-              className={inputClass}
-              value={busNumber}
-              onChange={(e) => setBusNumber(e.target.value)}
-              placeholder="125"
-            />
-          </Field>
-          {/* School level and address are never picked or typed
-              separately - both come from whichever school is chosen
-              here, looked up in `schools` (schools.csv). */}
-          <Field label="School">
-            <select
-              className={inputClass}
-              value={schoolName}
-              onChange={(e) => setSchoolName(e.target.value)}
-            >
-              <option value="">Select a school</option>
-              {schoolOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Trip">
-            <select
-              className={inputClass}
-              value={tripType}
-              onChange={(e) => setTripType(e.target.value as TripType)}
-            >
-              <option value="pickup">AM Pickup</option>
-              <option value="dropoff">PM Drop Off</option>
-            </select>
-          </Field>
-        </div>
-
-        {schoolName && (
-          <p className="mt-2 flex items-center gap-1 text-xs text-zinc-500">
-            <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
-            {schoolAddress}
-          </p>
-        )}
-
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <Field label="Departure time">
-            <input
-              className={inputClass}
-              value={departureTime}
-              onChange={(e) => setDepartureTime(e.target.value)}
-              placeholder="6:30 AM"
-            />
-          </Field>
-          <Field label="Driver">
-            <input className={inputClass} value={driverName} onChange={(e) => setDriverName(e.target.value)} />
-          </Field>
-        </div>
-      </div>
-
-      {mode === "add" ? (
+      <CollapsibleSection title="Route Details">
         <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
-          <span className={labelClass}>Stops</span>
-
-          <div className="mt-1 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-500 bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
-            >
-              <UploadIcon className="h-3.5 w-3.5" />
-              Upload File
-            </button>
-            <span className="text-xs text-zinc-400">CSV or TSV</span>
-            <button
-              type="button"
-              onClick={() => setShowFormatModal(true)}
-              className="text-xs font-semibold text-blue-600 underline underline-offset-2"
-            >
-              Details
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
-              onChange={handleFileChosen}
-              className="hidden"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Route number">
+              <input
+                className={inputClass}
+                value={routeNumber}
+                onChange={(e) => setRouteNumber(e.target.value)}
+                placeholder="125"
+              />
+            </Field>
+            <Field label="Bus number">
+              <input
+                className={inputClass}
+                value={busNumber}
+                onChange={(e) => setBusNumber(e.target.value)}
+                placeholder="125"
+              />
+            </Field>
+            {/* School level and address are never picked or typed
+                separately - both come from whichever school is chosen
+                here, looked up in `schools` (schools.csv). */}
+            <Field label="School">
+              <select
+                className={inputClass}
+                value={schoolName}
+                onChange={(e) => setSchoolName(e.target.value)}
+              >
+                <option value="">Select a school</option>
+                {schoolOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Trip">
+              <select
+                className={inputClass}
+                value={tripType}
+                onChange={(e) => setTripType(e.target.value as TripType)}
+              >
+                <option value="pickup">AM Pickup</option>
+                <option value="dropoff">PM Drop Off</option>
+              </select>
+            </Field>
           </div>
 
-          <p className="mt-3 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-            Or paste manually
-          </p>
-          {/* Starts small (min-h below) and grows with its own content
-              (the height effect above) rather than scrolling internally -
-              an uploaded file's text expands it the same way typing
-              would, since this is meant to read as secondary either way,
-              not a large form field of its own. */}
-          <textarea
-            ref={stepsTextareaRef}
-            className={`${inputClass} mt-1 min-h-[3.5rem] resize-none overflow-hidden font-mono text-sm`}
-            value={stepsText}
-            onChange={(e) => setStepsText(e.target.value)}
-            placeholder={STEPS_PLACEHOLDER}
-          />
+          {schoolName && (
+            <p className="mt-2 flex items-center gap-1 text-xs text-zinc-500">
+              <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+              {schoolAddress}
+            </p>
+          )}
 
-          {missingRequired.length > 0 && (
-            <p className="mt-2 text-xs text-amber-600">
-              Couldn&apos;t find a column for: {missingRequired.join(", ")} - stops won&apos;t come
-              through until that&apos;s fixed, but the route can still be saved as a draft.
-            </p>
-          )}
-          {parseResult.headerless && parseResult.rows.length > 0 && (
-            <p className="mt-2 text-xs text-zinc-500">
-              No column header recognized - read as a plain list ({parseResult.rows.length} row
-              {parseResult.rows.length === 1 ? "" : "s"}).
-            </p>
-          )}
-          {parseResult.unmatchedSourceHeaders.length > 0 && (
-            <p className="mt-2 text-xs text-zinc-500">
-              Ignored column{parseResult.unmatchedSourceHeaders.length === 1 ? "" : "s"}:{" "}
-              {parseResult.unmatchedSourceHeaders.join(", ")}
-            </p>
-          )}
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <Field label="Departure time">
+              <input
+                className={inputClass}
+                value={departureTime}
+                onChange={(e) => setDepartureTime(e.target.value)}
+                placeholder="6:30 AM"
+              />
+            </Field>
+            <Field label="Driver">
+              <input className={inputClass} value={driverName} onChange={(e) => setDriverName(e.target.value)} />
+            </Field>
+          </div>
         </div>
-      ) : (
-        <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
-          <div className="flex items-center justify-between gap-2">
-            <span className={labelClass}>Stops</span>
-            <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
-          </div>
+      </CollapsibleSection>
 
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-zinc-700">
-              {counts.resolved} resolved, {counts.unresolved} need attention, {counts.skipped}{" "}
-              skipped ({counts.total} total)
+      <CollapsibleSection title="Stops and Turns">
+        {mode === "add" ? (
+          <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-500 bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+              >
+                <UploadIcon className="h-3.5 w-3.5" />
+                Upload File
+              </button>
+              <span className="text-xs text-zinc-400">CSV or TSV</span>
+              <button
+                type="button"
+                onClick={() => setShowFormatModal(true)}
+                className="text-xs font-semibold text-blue-600 underline underline-offset-2"
+              >
+                Details
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+                onChange={handleFileChosen}
+                className="hidden"
+              />
+            </div>
+
+            <p className="mt-3 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+              Or paste manually
             </p>
-            <button
-              type="button"
-              onClick={fetchAllLocations}
-              disabled={fetchAllRunning || counts.unresolved === 0}
-              className="btn-glossy shrink-0 rounded-lg border border-zinc-500 bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900 disabled:opacity-50"
-            >
-              {fetchAllRunning ? "Fetching…" : "Fetch All Locations"}
-            </button>
+            {/* Starts small (min-h below) and grows with its own content
+                (the height effect above) rather than scrolling internally -
+                an uploaded file's text expands it the same way typing
+                would, since this is meant to read as secondary either way,
+                not a large form field of its own. */}
+            <textarea
+              ref={stepsTextareaRef}
+              className={`${inputClass} mt-1 min-h-[3.5rem] resize-none overflow-hidden font-mono text-sm`}
+              value={stepsText}
+              onChange={(e) => setStepsText(e.target.value)}
+              placeholder={STEPS_PLACEHOLDER}
+            />
+
+            {missingRequired.length > 0 && (
+              <p className="mt-2 text-xs text-amber-600">
+                Couldn&apos;t find a column for: {missingRequired.join(", ")} - stops won&apos;t come
+                through until that&apos;s fixed, but the route can still be saved as a draft.
+              </p>
+            )}
+            {parseResult.headerless && parseResult.rows.length > 0 && (
+              <p className="mt-2 text-xs text-zinc-500">
+                No column header recognized - read as a plain list ({parseResult.rows.length} row
+                {parseResult.rows.length === 1 ? "" : "s"}).
+              </p>
+            )}
+            {parseResult.unmatchedSourceHeaders.length > 0 && (
+              <p className="mt-2 text-xs text-zinc-500">
+                Ignored column{parseResult.unmatchedSourceHeaders.length === 1 ? "" : "s"}:{" "}
+                {parseResult.unmatchedSourceHeaders.join(", ")}
+              </p>
+            )}
           </div>
-          {hasIncompleteRow && (
-            <p className="mt-1 text-xs text-red-600">
-              Every stop needs at least a type and a location before locations can be checked.
-            </p>
-          )}
-          {fetchError && <p className="mt-1 text-xs text-red-600">{fetchError}</p>}
+        ) : (
+          <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
+            <div className="flex items-center justify-end gap-3">
+              <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
+              <button
+                type="button"
+                onClick={fetchAllLocations}
+                disabled={fetchAllRunning || counts.unresolved === 0}
+                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-500 bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900 disabled:opacity-50"
+              >
+                <GlobeIcon className="h-3.5 w-3.5" />
+                {fetchAllRunning ? "Fetching…" : "Fetch All Locations"}
+              </button>
+            </div>
+            {hasIncompleteRow && (
+              <p className="mt-1 text-xs text-red-600">
+                Every stop needs at least a type and a location before locations can be checked.
+              </p>
+            )}
+            {fetchError && <p className="mt-1 text-xs text-red-600">{fetchError}</p>}
 
-          <div className="mt-1 max-h-96 overflow-y-auto">
-            {visibleRowIndices.map((index) => {
-              const row = rows[index];
-              const isStop = row.action.toLowerCase() === "stop";
-              const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
-              const waypoint = waypoints[index];
+            <div className="mt-1 max-h-96 overflow-y-auto">
+              {visibleRowIndices.map((index) => {
+                const row = rows[index];
+                const isStop = row.action.toLowerCase() === "stop";
+                const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
+                const waypoint = waypoints[index];
 
-              if (expandedIndex === index && draftRow) {
+                if (expandedIndex === index && draftRow) {
+                  return (
+                    <StepRowEditor
+                      key={index}
+                      row={draftRow}
+                      stopNumber={stopNumber}
+                      waypoint={waypoint}
+                      status={waypoint ? resolutionRows[index] : undefined}
+                      fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
+                      onChange={handleDraftChange}
+                      onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
+                      onCancel={handleCancelRow}
+                      onDelete={() => handleDeleteRow(index)}
+                      onUpdate={handleUpdateRow}
+                    />
+                  );
+                }
                 return (
-                  <StepRowEditor
+                  <StepRowView
                     key={index}
-                    row={draftRow}
+                    row={row}
                     stopNumber={stopNumber}
-                    waypoint={waypoint}
                     status={waypoint ? resolutionRows[index] : undefined}
-                    fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
-                    onChange={handleDraftChange}
-                    onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
-                    onCancel={handleCancelRow}
-                    onDelete={() => handleDeleteRow(index)}
-                    onUpdate={handleUpdateRow}
+                    locked={expandedIndex !== null}
+                    onEdit={() => openRowEditor(index)}
                   />
                 );
-              }
-              return (
-                <StepRowView
-                  key={index}
-                  row={row}
-                  stopNumber={stopNumber}
-                  status={waypoint ? resolutionRows[index] : undefined}
-                  locked={expandedIndex !== null}
-                  onEdit={() => openRowEditor(index)}
-                />
-              );
-            })}
-          </div>
+              })}
+            </div>
 
-          <button
-            type="button"
-            onClick={addRow}
-            disabled={expandedIndex !== null}
-            className="btn-glossy font-heading mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900 disabled:opacity-50"
-          >
-            Add Step
-          </button>
-        </div>
-      )}
+            <button
+              type="button"
+              onClick={addRow}
+              disabled={expandedIndex !== null}
+              className="btn-glossy font-heading mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900 disabled:opacity-50"
+            >
+              Add Step
+            </button>
+          </div>
+        )}
+      </CollapsibleSection>
 
       {message && <p className="text-sm text-zinc-500">{message}</p>}
 

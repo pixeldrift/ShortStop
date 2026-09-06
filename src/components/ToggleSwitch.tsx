@@ -2,9 +2,11 @@
 
 /**
  * A small labeled on/off switch - used for "View All Stops"'s and
- * EditRouteScreen's own stop editor's shared "show turns" toggle (both
- * default to stops-only; flipping this interleaves turn steps back in,
- * in their real route order).
+ * EditRouteScreen's own stop editor's shared "show turns" toggle
+ * (flipping this interleaves turn steps back in, in their real route
+ * order). StartScreen's own modal defaults this off (stops-only);
+ * EditRouteScreen defaults it on, since reviewing a route for editing
+ * is exactly when seeing every turn matters most.
  */
 export function ToggleSwitch({
   checked,
