@@ -9,8 +9,8 @@ time,action,from_at,onto_at,rider_count,side,notes
 ,Stop,Bill Stewart Blvd,Ruth Ln,3,Right,Wheelchair user requires assistance
 ,Stop,Bill Stewart Blvd,Drennan Ln,2,Left,
 ,Stop,Bill Stewart Blvd,Frontier Ln,3,Right,
-,Stop,Bill Stewart Blvd,Riverwood Ln,2,Left,
-,Left,Riverwood Ln,,,,
+,Stop,Bill Stewart Blvd,Riverwood Dr,2,Left,
+,Left,Riverwood Dr,,,,
 ,Left,Holland Ridge Dr,,,,
 ,Left,Judge Mason Way,,,,
 ,Stop,Judge Mason Way,Carmen Way,5,Left,Rider waits inside for safety until bus arrives

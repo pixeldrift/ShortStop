@@ -3078,3 +3078,33 @@ so far.
   to the existing friendly-error UI (the same "Oops, could not look up
   coordinates" + View Error, not a new failure mode) rather than
   leaving a stuck-looking bar behind.
+
+## Route 125's own real "no shared node" - a road name typo, not a derivation bug
+
+  Confirmed via the live deployment's own "View Error" text (working
+  exactly as designed - this is precisely the debugging it was built
+  for): route 125's "Bill Stewart Blvd & Riverwood Ln" stop, and the
+  turn right after it onto the same road, both came back "No shared
+  node found in the search box" - the real road is Riverwood *Dr*, not
+  Ln. Fixed directly in `public/data/125-PM-EL.csv` (both rows -
+  `deriveWaypoints.ts` derives the turn's own intersection from the
+  same road name the stop just used, so a typo in one always breaks
+  both together).
+
+  Raised alongside a question about whether a turn with only one named
+  road ("Left, Riverwood Dr", no cross street given) actually derives
+  its intersection from "whatever road the bus was already on" the way
+  it should, rather than needing both roads spelled out - it already
+  does, and already did before this fix. `deriveWaypoints.ts`'s own
+  "current road" tracking (see its own doc comment) is exactly this:
+  a turn row with no explicit `onto_at` derives against the *previous*
+  row's own road (whatever the bus was just traveling on, tracked
+  across rows in order), not a bare, unpaired road name. Traced
+  through this exact route's own rows to confirm rather than taking
+  the design doc's word for it: the stop resolves to "Bill Stewart
+  Blvd & Riverwood Dr", the very next turn (naming only "Riverwood Dr")
+  resolves to that *same* intersection, and the turn after that
+  ("Holland Ridge Dr") correctly picks up from there as "Riverwood Dr &
+  Holland Ridge Dr" - each one genuinely deriving from the road the bus
+  was just on, never a manufactured pair. The Riverwood failure was
+  real bad data, not a gap in this logic.
