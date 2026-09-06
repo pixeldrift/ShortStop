@@ -2407,3 +2407,11 @@ so far.
   StepScreen's own step-to-step roll, aren't part of this (`screenKey`
   only changes on an actual list/add/edit/trip screen change, not
   `useRouteStepper`'s own internal `started` flip).
+- **The footer's own Back button on "Ready to Depart" is "Routes" now,
+  not disabled.** There's no previous step to go back to at the "depot"
+  phase, but there's also nothing lost yet (no steps run, no riders
+  checked in) - so rather than a dead, grayed-out button, it becomes
+  another way straight back to the route list. Deliberately skips the
+  logo's own "are you sure you want to end this route?" confirm (that
+  gate exists for a route actually in progress; depot never is), same
+  un-confirmed exit the logo itself takes once a route's arrived.

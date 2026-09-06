@@ -225,14 +225,22 @@ export function StepScreen({
           className="flex w-full max-w-md shrink-0 items-center gap-3 self-center px-4 pt-0 pb-3"
           onClick={(e) => e.stopPropagation()}
         >
+          {/* At "depot" there's no previous step to go back to - rather
+              than just disabling this button there, it becomes another
+              way back to the route list instead (the same, un-confirmed
+              exit the logo takes once arrived - nothing's actually
+              happened yet at depot, no steps or check-ins to lose, so
+              this skips handleLogoClick's own "are you sure" gate
+              rather than reusing it). */}
           <button
             type="button"
-            onClick={onBack}
-            disabled={phase === "depot" || paused}
-            aria-label="Back"
+            onClick={phase === "depot" ? onLogoClick : onBack}
+            disabled={paused}
+            aria-label={phase === "depot" ? "Routes" : "Back"}
             className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-lg font-semibold text-zinc-900 disabled:opacity-40"
           >
-            <TriangleIcon direction="left" className="h-6 w-6" /> Back
+            <TriangleIcon direction="left" className="h-6 w-6" />
+            {phase === "depot" ? "Routes" : "Back"}
           </button>
 
           <button
