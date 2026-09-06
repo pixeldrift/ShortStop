@@ -2443,3 +2443,23 @@ so far.
   plain circle with an equator line and one meridian curve - a network/
   web globe, not a classroom one with a stand) since it's a real call
   out to a geocoding service, not just a local computation.
+- **Edit Route's turn rows say which way now, and "&" reads as "onto"
+  for a turn (a stop keeps "&").** `StepRowView`'s turn heading was just
+  "Turn" - now "Turn Left"/"Turn Right", matching what `parseRouteCsv.ts`
+  already computes for the live turn-by-turn screens (`heading: "TURN
+  LEFT"`), just title case here instead of all-caps. The from/onto pair
+  itself now reads as the actual maneuver ("Main St **onto** Oak Ave")
+  for a turn instead of borrowing a stop's own intersection-joiner
+  wording ("Main St & Oak Ave") it never was one. Both connector words -
+  "&" for a stop, "onto" for a turn - are their own smaller, gray,
+  italic span now too, set apart from the road names on either side
+  instead of reading as though they were part of one.
+
+  **"Add Step" is no longer just a button at the very bottom.** A new
+  `AddStepButton` - a small "+" circle on a dashed line - appears before
+  the first row and after every row below it, so a new stop or turn can
+  be dropped in anywhere along the route's real order, not only
+  appended past the last one. `addRow` takes the insertion index now
+  instead of always assuming `rows.length`; each row's own `border-b`
+  divider is gone in favor of the dashed line the new button already
+  draws, since stacking both there read as two competing separators.

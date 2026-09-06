@@ -14,6 +14,7 @@ import {
   GlobeIcon,
   MapPinIcon,
   PersonSolidIcon,
+  PlusIcon,
   RightArrowIcon,
   RoundedTriangleIcon,
   SaveIcon,
@@ -154,10 +155,23 @@ function StepRowView({
 }) {
   const isStop = stopNumber !== null;
   const direction = row.action.toLowerCase() === "left" ? "left" : "right";
-  const subheading = row.ontoAt ? `${row.fromAt} & ${row.ontoAt}` : row.fromAt;
+  // A stop's own from/onto pair reads as an intersection ("Main St &
+  // Oak Ave"); a turn's reads as the maneuver itself ("Main St onto
+  // Oak Ave") - same shape, different connector word, both set apart
+  // from the road names themselves (smaller, gray, italic) so neither
+  // reads as though it were part of a name.
+  const connector = isStop ? "&" : "onto";
+  const subheading = row.ontoAt ? (
+    <>
+      {row.fromAt} <span className="text-sm font-normal text-zinc-400 italic">{connector}</span>{" "}
+      {row.ontoAt}
+    </>
+  ) : (
+    row.fromAt || null
+  );
 
   return (
-    <div className="flex items-start gap-2 border-b border-zinc-200 py-3 text-left last:border-b-0">
+    <div className="flex items-start gap-2 py-2 text-left">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-heading flex items-center gap-1.5 text-base font-black">
@@ -179,7 +193,7 @@ function StepRowView({
             ) : (
               <>
                 <TurnArrow direction={direction} className="h-4 w-4 shrink-0" />
-                Turn
+                Turn {direction === "left" ? "Left" : "Right"}
               </>
             )}
           </span>
@@ -260,7 +274,7 @@ function StepRowEditor({
   const isStop = stopNumber !== null;
 
   return (
-    <div className="border-b border-zinc-200 py-3 text-left last:border-b-0">
+    <div className="py-2 text-left">
       <div className="mt-2 grid grid-cols-2 gap-2">
         <select
           className={inputClass}
@@ -370,6 +384,29 @@ function StepRowEditor({
           Update
         </button>
       </div>
+    </div>
+  );
+}
+
+/** A slim "insert a step here" control - shown before the first row
+ * and after every row below (not just once at the bottom), so a new
+ * stop or turn can be dropped in anywhere along the route's real
+ * order, not only appended past the last one. Disabled while a
+ * different row's own editor is open, same as every other action here
+ * that would move rows out from under it. */
+function AddStepButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+  return (
+    <div className="relative flex items-center justify-center py-1">
+      <div className="absolute inset-x-0 border-t border-dashed border-zinc-200" />
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label="Add step here"
+        className="btn-glossy relative z-10 flex h-6 w-6 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900 disabled:opacity-30"
+      >
+        <PlusIcon className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -762,14 +799,22 @@ export function EditRouteScreen({
     }
     if (newlyAddedIndex === index) setNewlyAddedIndex(null);
   }
-  // Appends a blank row and opens it for editing immediately - a new
-  // stop or turn always needs its details filled in right away, so
-  // there's no point leaving it collapsed first. See handleCancelRow
-  // above for what backing out of this specific row does differently
-  // from canceling an edit to one that already existed.
-  function addRow() {
-    const index = rows.length;
-    setRows((prev) => [...prev, { ...BLANK_ROW }]);
+  // Inserts a blank row at `index` (`rows.length` appends, same as the
+  // old always-at-the-end behavior this replaces) and opens it for
+  // editing immediately - a new stop or turn always needs its details
+  // filled in right away, so there's no point leaving it collapsed
+  // first. Only ever called while nothing else is expanded (every
+  // "Add Step" control below is disabled otherwise), so inserting
+  // partway through never has to shift an already-open row's own index
+  // out from under it. See handleCancelRow above for what backing out
+  // of this specific row does differently from canceling an edit to
+  // one that already existed.
+  function addRow(index: number) {
+    setRows((prev) => {
+      const next = [...prev];
+      next.splice(index, 0, { ...BLANK_ROW });
+      return next;
+    });
     setExpandedIndex(index);
     setDraftRow({ ...BLANK_ROW });
     setNewlyAddedIndex(index);
@@ -1092,51 +1137,47 @@ export function EditRouteScreen({
             )}
             {fetchError && <p className="mt-1 text-xs text-red-600">{fetchError}</p>}
 
+            {/* An "Add Step" control before the first row and after
+                every row, not just once at the bottom - a new stop or
+                turn can be dropped in anywhere along the route's real
+                order this way, not only appended past the last one. */}
             <div className="mt-1 max-h-96 overflow-y-auto">
+              <AddStepButton onClick={() => addRow(0)} disabled={expandedIndex !== null} />
               {visibleRowIndices.map((index) => {
                 const row = rows[index];
                 const isStop = row.action.toLowerCase() === "stop";
                 const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
                 const waypoint = waypoints[index];
 
-                if (expandedIndex === index && draftRow) {
-                  return (
-                    <StepRowEditor
-                      key={index}
-                      row={draftRow}
-                      stopNumber={stopNumber}
-                      waypoint={waypoint}
-                      status={waypoint ? resolutionRows[index] : undefined}
-                      fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
-                      onChange={handleDraftChange}
-                      onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
-                      onCancel={handleCancelRow}
-                      onDelete={() => handleDeleteRow(index)}
-                      onUpdate={handleUpdateRow}
-                    />
-                  );
-                }
                 return (
-                  <StepRowView
-                    key={index}
-                    row={row}
-                    stopNumber={stopNumber}
-                    status={waypoint ? resolutionRows[index] : undefined}
-                    locked={expandedIndex !== null}
-                    onEdit={() => openRowEditor(index)}
-                  />
+                  <div key={index}>
+                    {expandedIndex === index && draftRow ? (
+                      <StepRowEditor
+                        row={draftRow}
+                        stopNumber={stopNumber}
+                        waypoint={waypoint}
+                        status={waypoint ? resolutionRows[index] : undefined}
+                        fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
+                        onChange={handleDraftChange}
+                        onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
+                        onCancel={handleCancelRow}
+                        onDelete={() => handleDeleteRow(index)}
+                        onUpdate={handleUpdateRow}
+                      />
+                    ) : (
+                      <StepRowView
+                        row={row}
+                        stopNumber={stopNumber}
+                        status={waypoint ? resolutionRows[index] : undefined}
+                        locked={expandedIndex !== null}
+                        onEdit={() => openRowEditor(index)}
+                      />
+                    )}
+                    <AddStepButton onClick={() => addRow(index + 1)} disabled={expandedIndex !== null} />
+                  </div>
                 );
               })}
             </div>
-
-            <button
-              type="button"
-              onClick={addRow}
-              disabled={expandedIndex !== null}
-              className="btn-glossy font-heading mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900 disabled:opacity-50"
-            >
-              Add Step
-            </button>
           </div>
         )}
       </CollapsibleSection>
