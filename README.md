@@ -2347,3 +2347,23 @@ so far.
   before, so a turn sign read visibly smaller than its neighboring stop
   pins along the same track instead of the two kinds of marker reading
   as one consistent set.
+- **Route list header, actually aligned with its own rows this time,
+  every label centered, and a heart icon on the last column.** A
+  screenshot with the real mismatch marked in pink showed the header's
+  own divider lines landing noticeably off from where each row's own
+  #/AM-PM, School, and Start content actually falls - two independently
+  laid-out 4-column grids (the header's own, and each row's outer grid
+  wrapping its own inner 3-column button) computing their shared "1fr"
+  School-column width by slightly different paths turned out not to be
+  the reliable guarantee of matching boundaries it looked like on paper.
+  Fixed by literally reusing the row's own structure instead of
+  parallel-but-hopefully-equal math: the header's #/School/Start group
+  is now its own `col-span-3` grid using the exact same
+  `grid-cols-[5.75rem_1fr_4.25rem]` template (and gap) each row's own
+  button already uses, so their column edges are the same computation,
+  not just numbers that were supposed to agree. Every header label
+  reads centered in its own cell now too (`align="center"` on all four,
+  regardless of how that column's data aligns below - Start's data
+  stays right-aligned), and the last column - previously a bare empty
+  `<span />` - gets an outline `HeartIcon`, labeling what that column
+  actually is the same way every other header labels its own.

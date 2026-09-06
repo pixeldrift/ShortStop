@@ -341,48 +341,63 @@ export function RouteListScreen({
         }`}
       >
         <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-          {/* A fixed-width grid, not a flex row - matches roughly where
-              "#763"/"AM" actually land in the much larger, bigger-font
-              row content below (see the row's own #/AM-PM cell), so
-              "AM/PM" doesn't read as hugging "#" off to the left of
-              where its own column actually is. `fill` on "#" makes its
+          {/* The #/School/Start group is its own col-span-3 grid using
+              the exact same grid-cols-[5.75rem_1fr_4.25rem] template
+              (and gap) as each row's own button below, rather than
+              three independent columns of this outer 4-col grid - that
+              guarantees their boundaries are computed identically, not
+              just hopefully-equal, so the divide lines here land
+              exactly on the row content's own column edges instead of
+              drifting off to the side of them. `fill` on "#" makes its
               whole 2.75rem-wide cell the tap target, not just the
               "#"-glyph-plus-icon sliver a plain inline button would be. */}
-          <div className="grid h-full grid-cols-[2.75rem_1fr] items-stretch gap-x-1">
+          <div className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-stretch gap-x-1 divide-x divide-zinc-200">
+            <div className="grid h-full grid-cols-[2.75rem_1fr] items-stretch gap-x-1">
+              <SortableHeader
+                label="#"
+                field="routeNumber"
+                align="center"
+                fill
+                padded={false}
+                sortField={sortField}
+                sortDir={sortDir}
+                onSort={toggleSort}
+              />
+              <SortableHeader
+                label="AM/PM"
+                field="tripType"
+                align="center"
+                padded={false}
+                sortField={sortField}
+                sortDir={sortDir}
+                onSort={toggleSort}
+              />
+            </div>
             <SortableHeader
-              label="#"
-              field="routeNumber"
-              fill
+              label="School"
+              field="schoolName"
+              align="center"
               padded={false}
               sortField={sortField}
               sortDir={sortDir}
               onSort={toggleSort}
             />
             <SortableHeader
-              label="AM/PM"
-              field="tripType"
+              label="Start"
+              field="departureTime"
+              align="center"
               padded={false}
               sortField={sortField}
               sortDir={sortDir}
               onSort={toggleSort}
             />
           </div>
-          <SortableHeader
-            label="School"
-            field="schoolName"
-            sortField={sortField}
-            sortDir={sortDir}
-            onSort={toggleSort}
-          />
-          <SortableHeader
-            label="Start"
-            field="departureTime"
-            align="right"
-            sortField={sortField}
-            sortDir={sortDir}
-            onSort={toggleSort}
-          />
-          <span />
+          {/* Matches the row's own last-column icon slot (the favorite
+              heart, or a pencil in admin mode) - an outline heart, never
+              filled/sortable itself, just labeling what that column is. */}
+          <span className="flex items-center justify-center">
+            <HeartIcon className="h-4 w-4 text-zinc-400" />
+          </span>
         </div>
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map((route) => {
@@ -645,8 +660,9 @@ function SchoolNameLabel({ name }: { name: string }) {
 /** One clickable, sortable column header - label plus the traditional
  * stacked up/down carets (SortIcon), which always render but only show
  * the active direction solid once this is the column being sorted by.
- * `align="right"` keeps the Start column's label-then-icon order
- * matching its own right-aligned data below. */
+ * Every header here is `align="center"` - labels read centered in
+ * their own cell regardless of how that column's own data below is
+ * aligned (Start's data is right-aligned, say). */
 function SortableHeader({
   label,
   field,
@@ -661,10 +677,10 @@ function SortableHeader({
   field: SortField;
   align?: "left" | "center" | "right";
   /** This header's own leading gutter (pl-3, none if it's the first in
-   * its row) - on by default. Off for the "#"/"AM-PM" pair, which sit
-   * in their own fixed-width grid track instead (see the header row
-   * above) and get their spacing from that grid's own gap, not a
-   * per-button padding. */
+   * its row) - on by default, off for every header in the route list's
+   * own header row (see above), which get their spacing from their
+   * shared grid's own gap and centered text instead of a per-button
+   * padding. */
   padded?: boolean;
   /** Fills its whole grid cell instead of shrinking to its own label+
    * icon width - used for "#", whose tiny label alone would otherwise
