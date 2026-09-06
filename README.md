@@ -1848,18 +1848,15 @@ so far.
   once `ORS_API_KEY` exists (bullet above) - everything so far has only
   been checked via the standalone prototype/type-checking, not a real
   end-to-end `npm run geocode` against live network access
-- **Consider Geoapify + MapLibre GL instead of the current CARTO raster
-  tiles + Leaflet setup**, raised once CARTO's own free basemap tiles
-  turned out to need a real account/key too (see the entry on that,
-  above). Geoapify covers tiles, geocoding, *and* routing under one key
-  - real appeal if/once actual driving-direction lines get drawn on the
-  map, since that'd otherwise be a third provider on top of ORS and
-  CARTO. The real cost: MapLibre GL is a genuinely different rendering
-  approach (WebGL vector tiles) from Leaflet's raster/DOM tiles, so
-  this is a rewrite of `RouteMap.tsx`'s marker/popup logic, not a
-  config swap - worth doing once routing is an actual near-term goal,
-  not simply to fix a gated tile provider a same-provider key already
-  fixes
+- **Geoapify + MapLibre GL migration - in progress** on the
+  `geoapify-maplibre-tiles` branch (see "Maps, part thirteen"):
+  `RouteMap.tsx` itself is rewritten and typechecks/lints clean, but
+  still needs a real `NEXT_PUBLIC_GEOAPIFY_API_KEY` verified against
+  live network access (this sandbox can't reach Geoapify's domain at
+  all, same as CARTO/ORS/Nominatim before it) before merging to
+  `development`. Once actual driving-direction lines get drawn on the
+  map, Geoapify's tiles+geocoding+routing-under-one-key also means one
+  fewer provider than ORS+CARTO combined
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual
@@ -2693,4 +2690,47 @@ so far.
   bus icon and step content forward across several steps in a row, and
   the ordinary full-screen navigations (List -> Route Info -> back)
   still animate exactly as before.
-  the device's location.
+
+## Maps, part thirteen - Geoapify + MapLibre GL
+
+  Started on the roadmap item raised back in "Maps, part eight"
+  (Geoapify's tiles+geocoding+routing-under-one-key appeal once real
+  driving-direction lines get drawn) - on its own branch
+  (`geoapify-maplibre-tiles`), not `development`, since this is a
+  genuine rewrite rather than a config swap and isn't proven out yet.
+
+  `RouteMap.tsx` now renders Geoapify's hosted vector style
+  (`https://maps.geoapify.com/v1/styles/osm-bright/style.json?apiKey=…`)
+  through MapLibre GL JS instead of CARTO's raster tiles through
+  Leaflet - `leaflet`/`@types/leaflet` are gone from package.json
+  entirely, replaced by `maplibre-gl`. The stop pins and the "you are
+  here" dot are the same HTML-string markup as before, just handed to
+  `maplibregl.Marker({ element })` (a real DOM node) instead of
+  Leaflet's `L.divIcon` (an HTML string) - `anchor: "bottom"`/`"center"`
+  replaces manually matching Leaflet's pixel `iconAnchor` offsets.
+  `map.fitBounds()` and the zoom control (`NavigationControl`, compass
+  hidden - this map never rotates) both carry over with the same
+  intent as the Leaflet version. One easy-to-miss gotcha ported
+  everywhere coordinates are built: MapLibre (like GeoJSON) takes
+  `[longitude, latitude]`, the opposite order from Leaflet's
+  `[latitude, longitude]` this file used before.
+
+  Unlike CARTO's old anonymous tier, Geoapify has no keyless fallback
+  at all - every request needs a real key, so `RouteMap` now renders an
+  explicit "Map unavailable - NEXT_PUBLIC_GEOAPIFY_API_KEY isn't set"
+  message (plain React conditional, not an imperative DOM patch) rather
+  than pointing MapLibre at a style URL guaranteed to fail auth. Same
+  "never fake a working feature" reasoning as this app's demo-route
+  labeling elsewhere.
+
+  This sandbox still has no network path to Geoapify's own domain
+  (confirmed the same way as CARTO/ORS/Nominatim earlier - blocked at
+  the egress proxy), so the style JSON itself has never actually loaded
+  here. Verified everything short of that: typecheck/lint clean,
+  the placeholder message renders correctly with no key configured,
+  and - with a fake key set, so MapLibre genuinely attempts the
+  request - `Map`/`NavigationControl` initialize without throwing, the
+  console shows the *expected* network failure (not a crash), and the
+  rest of the driving screen (Start/Next, the progress bar) keeps
+  working exactly as before. A real key on a machine with real internet
+  is still the way to confirm actual tiles render.

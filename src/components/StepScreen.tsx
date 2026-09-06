@@ -113,14 +113,14 @@ export function StepScreen({
           guarantee and shrink-if-crazy-long fallback - see StopContent/
           TurnContent below - rather than by the map yielding space. */}
       <div className="relative h-[calc(30vh-20px)] w-full shrink-0 overflow-hidden landscape:h-[calc(100%-20px)] landscape:w-[42%]">
-        {/* z-0 gives Leaflet's own internal panes/controls (tile pane,
-            zoom control, attribution - several of which carry their own
-            explicit, fairly high z-index, e.g. the zoom control's 1000) a
+        {/* z-0 gives MapLibre's own internal canvas/controls (its
+            NavigationControl, attribution - both absolutely positioned
+            within the map container, with their own stacking order) a
             stacking context of their own to escalate within. Without it,
             since neither this div nor its parent set a z-index, those
-            panes escape to the nearest ancestor stacking context and can
-            paint above the roster popup below despite being earlier in
-            the DOM.
+            controls escape to the nearest ancestor stacking context and
+            can paint above the roster popup below despite being earlier
+            in the DOM.
 
             The map itself is drawn 20px taller than this container
             (h-[calc(100%+20px)], pinned to the top) rather than filling

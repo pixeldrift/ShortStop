@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import "leaflet/dist/leaflet.css";
-import type { Map as LeafletMap, Marker } from "leaflet";
+import "maplibre-gl/dist/maplibre-gl.css";
+import type { LngLatLike, Map as MapLibreMap, Marker } from "maplibre-gl";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 /** One "stop" step's marker: waypointKey looks it up in the route's own
@@ -18,32 +18,31 @@ export type StopMarker = { waypointKey: string; number: number };
 // real, route-derived center (or bounds) instead. Not tied to any
 // specific address in the route data - just a general "somewhere in
 // town" starting view.
-const LA_VERGNE_CENTER: [number, number] = [36.0134, -86.5581];
+//
+// [longitude, latitude] order, not [latitude, longitude] - MapLibre (like
+// GeoJSON) always takes lng first. This is the opposite of Leaflet's
+// [lat, lng] convention this file used before the Geoapify/MapLibre GL
+// migration (see README, "Maps" sections) - every coordinate pair below
+// follows this same lng-first order now.
+const LA_VERGNE_CENTER: [number, number] = [-86.5581, 36.0134];
 const DEFAULT_ZOOM = 13;
 
-// CARTO's free Voyager basemap rather than tile.openstreetmap.org
-// directly: same OSM data underneath (styled to look close to the
-// standard OSM look), but it actually serves a `{r}` (@2x) retina
-// tile variant - openstreetmap.org's own tile server doesn't, so
-// `detectRetina` below would be a no-op against it and every tile
-// would render soft/blurry on any retina display. This used to need no
-// API key at all for this volume of use - CARTO has since started
-// gating anonymous access (tiles come back watermarked "API KEY
-// REQUIRED" instead of failing outright, easy to miss until someone
-// actually looks at the map), so a real `NEXT_PUBLIC_CARTO_API_KEY` is
-// appended as CARTO's own documented `api_key` query param whenever
-// one is configured. `NEXT_PUBLIC_` (not server-only, unlike
-// ORS_API_KEY) because Leaflet fetches these tiles directly from the
-// browser, never through a server route of this app's own - same
-// public-but-domain/rate-limited model any map tile provider's own
-// client-side key uses, not a secret that needs hiding.
-const TILE_URL = process.env.NEXT_PUBLIC_CARTO_API_KEY
-  ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${process.env.NEXT_PUBLIC_CARTO_API_KEY}`
-  : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-const TILE_SUBDOMAINS = "abcd";
-const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
-  '&copy; <a href="https://carto.com/attributions">CARTO</a>';
+// Geoapify's own hosted vector style JSON - MapLibre GL renders these
+// directly (WebGL vector tiles, one style document describing every
+// layer/paint rule) rather than Leaflet's raster {z}/{x}/{y} PNG tiles
+// from the old CARTO setup. "osm-bright" is Geoapify's general-purpose
+// default (clean, roughly comparable to the old CARTO Voyager look) -
+// Geoapify offers several other named styles (osm-carto, positron,
+// dark-matter, toner, klokantech-basic...) at this same
+// /v1/styles/{name}/style.json path, see README "Maps" sections for how
+// to swap it. Unlike CARTO's old anonymous tier, Geoapify has *no*
+// keyless fallback at all - every request needs a real key - so this is
+// `null` (not just an unwatermarked URL) when none is configured, and
+// the component below skips initializing a map entirely rather than
+// pointing MapLibre at a style URL that's guaranteed to fail auth.
+const GEOAPIFY_STYLE_URL = process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY
+  ? `https://maps.geoapify.com/v1/styles/osm-bright/style.json?apiKey=${process.env.NEXT_PUBLIC_GEOAPIFY_API_KEY}`
+  : null;
 
 // A standard "you are here" dot - Tailwind classes work here same as
 // anywhere else in the app (this HTML string still gets scanned for
@@ -69,15 +68,25 @@ function stopMarkerHtml(stopNumber: number): string {
   );
 }
 
+// MapLibre's Marker takes a real DOM element (unlike Leaflet's divIcon,
+// which took an HTML string directly) - wraps the same markup strings
+// above in a plain container element it can hand over.
+function elementFromHtml(html: string): HTMLDivElement {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = html;
+  return wrapper;
+}
+
 /**
- * A real, pannable/zoomable OpenStreetMap tile map - replaces the
- * static "Demo only placeholder, not actual map" JPEG that used to sit
- * in this spot. Centers on La Vergne, TN with a live position dot and a
- * numbered pin per stop wherever the geocoded waypoint cache actually
- * has one (empty right now - see the `stops` prop doc below) - no route
- * line drawn between them yet (see README, "Maps" sections).
+ * A real, pannable/zoomable vector tile map (Geoapify's hosted style,
+ * rendered via MapLibre GL) - replaces the static "Demo only placeholder,
+ * not actual map" JPEG that used to sit in this spot. Centers on La
+ * Vergne, TN with a live position dot and a numbered pin per stop
+ * wherever the geocoded waypoint cache actually has one (empty right
+ * now - see the `stops` prop doc below) - no route line drawn between
+ * them yet (see README, "Maps" sections).
  *
- * `leaflet` is imported dynamically inside the effect, not at module
+ * `maplibre-gl` is imported dynamically inside the effect, not at module
  * top level - the package touches `window` as soon as it's evaluated,
  * which would run during Next's server-side render pass for this
  * "use client" component's initial HTML (client components still get
@@ -113,9 +122,9 @@ export function RouteMap({
   // Read inside the mount effect's async callback below rather than
   // added as that effect's own dependency - `stops` is a fresh array
   // every render, and re-running the whole effect on every change
-  // would tear down and rebuild the entire map (tile layer,
-  // geolocation watch included) just to redraw pins that don't
-  // actually change mid-trip.
+  // would tear down and rebuild the entire map (style load, geolocation
+  // watch included) just to redraw pins that don't actually change
+  // mid-trip.
   const stopsRef = useRef(stops);
   useEffect(() => {
     stopsRef.current = stops;
@@ -131,24 +140,27 @@ export function RouteMap({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    // No key, no map - see GEOAPIFY_STYLE_URL's own doc above, and the
+    // early return in this component's own render below.
+    if (!container || !GEOAPIFY_STYLE_URL) return;
 
-    let map: LeafletMap | undefined;
+    let map: MapLibreMap | undefined;
     let cancelled = false;
     let watchId: number | undefined;
 
-    void import("leaflet").then((L) => {
+    void import("maplibre-gl").then((maplibregl) => {
       // The effect's cleanup can fire before this promise resolves
       // (e.g. React StrictMode's dev-only mount/unmount/remount) -
       // bail rather than initializing a map nothing will ever clean up.
       if (cancelled) return;
-      map = L.map(container, { center: LA_VERGNE_CENTER, zoom: DEFAULT_ZOOM });
-      L.tileLayer(TILE_URL, {
-        maxZoom: 20,
-        subdomains: TILE_SUBDOMAINS,
-        attribution: TILE_ATTRIBUTION,
-        detectRetina: true,
-      }).addTo(map);
+      const mapInstance = new maplibregl.Map({
+        container,
+        style: GEOAPIFY_STYLE_URL,
+        center: LA_VERGNE_CENTER,
+        zoom: DEFAULT_ZOOM,
+      });
+      mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
+      map = mapInstance;
 
       // A 404 (the common case right now - see the `stops` prop doc
       // above) resolves to {} rather than rejecting, same as any other
@@ -160,30 +172,26 @@ export function RouteMap({
         .catch(() => ({}) as WaypointCache)
         .then((cache) => {
           if (cancelled || !map) return;
-          const pinLatLngs: [number, number][] = [];
+          const pinLngLats: LngLatLike[] = [];
           for (const stop of stopsRef.current) {
             const entry = cache[stop.waypointKey];
             if (!entry || entry.status !== "ok") continue;
-            const latLng: [number, number] = [entry.lat, entry.lon];
-            pinLatLngs.push(latLng);
-            L.marker(latLng, {
-              icon: L.divIcon({
-                className: "",
-                html: stopMarkerHtml(stop.number),
-                iconSize: [28, 44],
-                iconAnchor: [14, 44],
-              }),
-              interactive: false,
-            }).addTo(map);
+            const lngLat: LngLatLike = [entry.lon, entry.lat];
+            pinLngLats.push(lngLat);
+            new maplibregl.Marker({ element: elementFromHtml(stopMarkerHtml(stop.number)), anchor: "bottom" })
+              .setLngLat(lngLat)
+              .addTo(map);
           }
           // Once the route's own stops are geocoded, they're a far more
           // useful default view than the fixed La Vergne town-center
           // placeholder above (or the driver's own live position,
-          // deliberately left out of this - see recenteredOnFirstFix's
-          // removal below) - frame the whole route, not wherever the bus
+          // deliberately left out of this - see the geolocation watch
+          // below) - frame the whole route, not wherever the bus
           // happens to be sitting when the map first mounts.
-          if (pinLatLngs.length > 0) {
-            map.fitBounds(L.latLngBounds(pinLatLngs), { padding: [40, 40], maxZoom: 16 });
+          if (pinLngLats.length > 0) {
+            const bounds = new maplibregl.LngLatBounds();
+            for (const lngLat of pinLngLats) bounds.extend(lngLat);
+            map.fitBounds(bounds, { padding: 40, maxZoom: 16 });
           }
         });
 
@@ -193,29 +201,23 @@ export function RouteMap({
       // moment the bus pulls away. No permission-denied UI here beyond
       // the console warning: the app is still fully usable via the
       // turn-by-turn steps without it, same as if the browser/device
-      // simply doesn't have a GPS fix yet.
+      // simply doesn't have a GPS fix yet. No one-time recenter onto it
+      // either (see the fitBounds framing above) - only setLngLat, so
+      // it tracks live without fighting the route's own framing.
       if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
 
-      const locationIcon = L.divIcon({
-        className: "",
-        html: LOCATION_DOT_HTML,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-      });
       let locationMarker: Marker | undefined;
 
       watchId = navigator.geolocation.watchPosition(
         (position) => {
           if (cancelled || !map) return;
-          const latLng: [number, number] = [position.coords.latitude, position.coords.longitude];
+          const lngLat: LngLatLike = [position.coords.longitude, position.coords.latitude];
           if (!locationMarker) {
-            locationMarker = L.marker(latLng, {
-              icon: locationIcon,
-              zIndexOffset: 1000,
-              interactive: false,
-            }).addTo(map);
+            locationMarker = new maplibregl.Marker({ element: elementFromHtml(LOCATION_DOT_HTML), anchor: "center" })
+              .setLngLat(lngLat)
+              .addTo(map);
           } else {
-            locationMarker.setLatLng(latLng);
+            locationMarker.setLngLat(lngLat);
           }
         },
         (error) => {
@@ -231,6 +233,19 @@ export function RouteMap({
       map?.remove();
     };
   }, []);
+
+  // Left as plain text (the container's own background shows through)
+  // rather than silently drawing nothing over a placeholder graphic -
+  // same "never fake a working feature" ethos as this app's demo-route
+  // labeling elsewhere; a missing env var should read as missing, not
+  // as a blank box that could be mistaken for "no waypoints yet".
+  if (!GEOAPIFY_STYLE_URL) {
+    return (
+      <div className={`${className ?? ""} flex items-center justify-center p-4 text-center text-xs text-zinc-500`}>
+        Map unavailable - NEXT_PUBLIC_GEOAPIFY_API_KEY isn&apos;t set
+      </div>
+    );
+  }
 
   return <div ref={containerRef} className={className} />;
 }
