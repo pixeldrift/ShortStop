@@ -2373,3 +2373,9 @@ so far.
   that and the original `h-5`, still legibly bigger without competing
   with the track for weight. The stop pin's own tiny number shrank to
   `text-[0.5rem]` alongside it, still readable at the smaller pin size.
+- **The route list header's own heart icon lines up with the row
+  hearts now** - it was centered generically in its column
+  (`flex items-center justify-center`) rather than positioned the same
+  way the row's own heart/pencil button is (`justify-self-end p-1`), so
+  the two only shared a column, not an actual horizontal position.
+  Matching that same positioning exactly fixes it.

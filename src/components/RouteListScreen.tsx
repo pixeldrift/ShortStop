@@ -393,9 +393,12 @@ export function RouteListScreen({
             />
           </div>
           {/* Matches the row's own last-column icon slot (the favorite
-              heart, or a pencil in admin mode) - an outline heart, never
+              heart, or a pencil in admin mode) - same `justify-self-end
+              p-1` positioning as that button below, not just centered
+              in the column generically, so this actually lines up with
+              it instead of merely sitting in the same column. Never
               filled/sortable itself, just labeling what that column is. */}
-          <span className="flex items-center justify-center">
+          <span className="justify-self-end p-1">
             <HeartIcon className="h-4 w-4 text-zinc-400" />
           </span>
         </div>
