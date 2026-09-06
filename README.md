@@ -3165,3 +3165,50 @@ so far.
   generic HTTP-failure case here, never a real empty-result response -
   confirmed live in the browser only that the new `reason` text
   renders in the row without any wiring/runtime error.
+
+## Next steps: a real database, not CSVs
+
+  Every one of this app's admin actions (editing a route, publishing
+  it, fetching coordinates) only ever writes into page.tsx's own
+  session-only React state - there's nowhere real to persist any of
+  it, since Vercel's own deployment can't write back to its own
+  filesystem. Today that gap is papered over by a GitHub Actions
+  workflow (geocode-route.yml) committing refreshed waypoint JSON back
+  to the repo on its own - functional, but a round-trip (fetch, wait
+  for CI, pull) rather than a real save.
+
+  Decided: Postgres, via Vercel's own Neon-backed integration - a real
+  relational engine for data that's genuinely relational (routes have
+  many steps, steps and schools are looked up by id), and Neon's own
+  HTTP-native driver (`@neondatabase/serverless`, already added to
+  package.json) is what actually matters for a serverless deployment -
+  it sends queries over plain HTTPS rather than holding a raw TCP
+  socket open, which a burst of serverless function invocations would
+  otherwise exhaust fast.
+
+  Schema (derived from today's CSVs, not yet written as a real
+  migration): `schools` (from schools.csv), `routes` (from
+  route-master-list.csv, keyed by the existing
+  `${routeNumber}-${tripType}-${schoolLevel}` id), `route_steps` (each
+  route's own turn-by-turn sheet), and a `waypoint_cache` table keyed
+  by the same content-addressed `waypointCacheKey` scheme already in
+  use - deliberately global rather than per-route, so two different
+  routes sharing a real intersection stop paying for two redundant
+  geocoder lookups.
+
+  Once this lands, `EditRouteScreen`'s save/delete/publish actions and
+  `/api/geocode` write straight to these tables instead of into
+  session-only state - `geocode-route.yml`'s own commit-back dance
+  becomes unnecessary and gets retired (or repurposed as an optional
+  stale-cache-refresh cron).
+
+  Blocked for now on this sandbox's own network egress policy, which
+  denied `@neondatabase/serverless`'s own HTTPS calls to Neon's API
+  host with a 403 ("Host not in allowlist") even after widening the
+  account's network egress capability - a fresh session/environment is
+  the next thing to try, since this one's policy was almost certainly
+  fixed at its own creation rather than live-updatable. Once a session
+  can actually reach Neon, next is: write the real migration, a
+  one-time import script (reusing parseSchoolsCsv/
+  parseRouteMasterList/parseRouteCsvRows as its read side), then wire
+  every write path above to it.
