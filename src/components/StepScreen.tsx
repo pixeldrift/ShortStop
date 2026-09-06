@@ -14,7 +14,6 @@ import {
   TriangleIcon,
   TurnArrow,
 } from "./icons";
-import { stepsCsvBaseName } from "@/lib/parseRouteMasterList";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
@@ -78,11 +77,11 @@ export function StepScreen({
       .filter((s) => s.kind === "stop")
       .map((s) => ({ waypointKey: s.waypointKey, number: ++stopCount }));
   }, [route]);
-  // This route's own sidecar waypoint cache - computed from the same
-  // routeNumber/tripType/schoolLevel naming convention its steps CSV
-  // itself uses (see stepsCsvBaseName, parseRouteMasterList.ts), so
-  // RouteMap doesn't need a separate per-route lookup table to find it.
-  const waypointsUrl = useMemo(() => `/data/${stepsCsvBaseName(route)}-waypoints.json`, [route]);
+  // The geocode cache, shared across every route now that it lives in
+  // Postgres (see src/app/api/waypoints) rather than split into a
+  // sidecar file per route - RouteMap looks its own stops up from this
+  // by key regardless, so a shared URL is a drop-in replacement.
+  const waypointsUrl = "/api/waypoints";
   // Guards the logo's exit-to-home tap, not the footer "End" button -
   // "End" only ever appears once the route is already finished
   // (arrived phase), so there's nothing left to lose by confirming it.

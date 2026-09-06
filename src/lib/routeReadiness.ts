@@ -1,4 +1,3 @@
-import { stepsCsvBaseName } from "./parseRouteMasterList";
 import type { Route } from "./types";
 import type { WaypointCache } from "./waypointCache";
 
@@ -22,13 +21,14 @@ export function isRouteFullyResolved(route: Route, cache: WaypointCache): boolea
   });
 }
 
-/** Fetches a route's own committed sidecar waypoint cache (the one
- * scripts/geocodeRoute.ts writes for real) - a 404 (nothing geocoded
- * yet) resolves to an empty cache, same convention RouteMap.tsx and
- * EditRouteScreen.tsx already use for this exact fetch. */
-export async function fetchCommittedWaypointCache(route: Route): Promise<WaypointCache> {
-  const baseName = stepsCsvBaseName(route);
-  return fetch(`/data/${baseName}-waypoints.json`)
+/** Fetches the geocode cache from Postgres (see src/app/api/waypoints)
+ * - a fetch failure resolves to an empty cache, same convention
+ * RouteMap.tsx and EditRouteScreen.tsx already use for this. No longer
+ * takes a `route` - the cache is shared across every route now rather
+ * than split into a sidecar file per route, so there's no per-route
+ * identity left to fetch by. */
+export async function fetchCommittedWaypointCache(): Promise<WaypointCache> {
+  return fetch("/api/waypoints")
     .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
     .catch(() => ({}) as WaypointCache);
 }

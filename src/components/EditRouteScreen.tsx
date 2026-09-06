@@ -31,7 +31,6 @@ import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import { deriveWaypoints } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
-import { stepsCsvBaseName } from "@/lib/parseRouteMasterList";
 import { parseRouteImport, rowsToCsvText, unresolvedRequiredFields } from "@/lib/parseRouteImport";
 import {
   PLACEHOLDER_DISTANCE,
@@ -43,7 +42,7 @@ import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import { resolutionCounts, summarizeRouteResolution } from "@/lib/routeResolutionStatus";
 import type { RouteResolutionCounts, RowResolutionStatus } from "@/lib/routeResolutionStatus";
 import { waypointCacheKey } from "@/lib/waypointCache";
-import type { WaypointCache } from "@/lib/waypointCache";
+import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { GeocodeResponseBody } from "@/app/api/geocode/route";
 
@@ -676,7 +675,6 @@ function FetchCoordinatesModal({
   fetchError,
   onFetchMissing,
   onRefetchAll,
-  onDownload,
   onClose,
 }: {
   counts: RouteResolutionCounts;
@@ -686,7 +684,6 @@ function FetchCoordinatesModal({
   fetchError: FetchErrorInfo | null;
   onFetchMissing: () => void;
   onRefetchAll: () => void;
-  onDownload: () => void;
   onClose: () => void;
 }) {
   const [showErrorDetail, setShowErrorDetail] = useState(false);
@@ -799,20 +796,6 @@ function FetchCoordinatesModal({
             Fetch Missing
           </button>
         </div>
-
-        {/* A stopgap until there's a real place to persist this (see
-            README) - hands the resolved coordinates over as a file
-            shaped exactly like the real committed sidecar cache, ready
-            to pass along and drop straight into public/data/. */}
-        <button
-          type="button"
-          onClick={onDownload}
-          disabled={counts.resolved === 0}
-          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold text-zinc-500 underline underline-offset-2 disabled:opacity-40 disabled:no-underline"
-        >
-          <SaveIcon className="h-4 w-4" />
-          Download Coordinates
-        </button>
       </div>
     </div>
   );
@@ -1019,31 +1002,20 @@ export function EditRouteScreen({
   // own getLastKnownOrsQuota doc comment for why this isn't guaranteed.
   const [quota, setQuota] = useState<ApiQuota | null>(null);
 
-  // Whatever's already geocoded for this exact route number/trip/level
-  // combination, if anything - a real route's committed sidecar cache
-  // once one exists, or nothing at all for a brand-new one (a 404
-  // resolves to an empty cache, same as RouteMap.tsx's own fetch).
+  // Whatever's already geocoded, if anything - the shared Postgres
+  // cache (src/app/api/waypoints), covering every route at once now
+  // that it's no longer split into a sidecar file per route. That also
+  // means, unlike the old per-route file fetch, this doesn't need to
+  // re-run if the admin edits routeNumber/tripType/schoolLevel mid-edit
+  // (changing which route this actually is) - the same one fetch
+  // already has whatever that new identity's own stops would look up.
   useEffect(() => {
     // initialWaypointCache already seeded `cache` above (see its
-    // useState initializer), so there's no fetch to do for the route
-    // this screen originally opened for. Accepted simplification: if
-    // the admin then edits routeNumber/tripType/schoolLevel mid-edit
-    // (changing which route this actually is), this still won't fetch
-    // that new identity's own cache until a fresh mount (e.g. saving
-    // and reopening) - a narrow, rare enough case not to add a second
-    // piece of ref-tracked state for.
+    // useState initializer), so there's no fetch to do on mount here.
     if (initialWaypointCache) return;
 
     let cancelled = false;
-    // No route number yet - nothing to look up. Left as whatever cache
-    // was already loaded rather than reset here (a direct setState
-    // inside an effect body, not a subscription callback) - harmless,
-    // since an empty route number can't be saved anyway (see
-    // buildMeta), so a stale cache value never affects a real save.
-    if (!routeNumber) return;
-
-    const baseName = stepsCsvBaseName({ routeNumber, tripType, schoolLevel });
-    fetch(`/data/${baseName}-waypoints.json`)
+    fetch("/api/waypoints")
       .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
       .catch(() => ({}) as WaypointCache)
       .then((data) => {
@@ -1052,7 +1024,7 @@ export function EditRouteScreen({
     return () => {
       cancelled = true;
     };
-  }, [routeNumber, tripType, schoolLevel, initialWaypointCache]);
+  }, [initialWaypointCache]);
 
   // mode "add" only - the paste box starts small (its own min-height,
   // see the textarea's className below) and grows with its content
@@ -1195,6 +1167,22 @@ export function EditRouteScreen({
     return data as GeocodeResponseBody;
   }
 
+  // Real persistence for a resolved coordinate - the shared Postgres
+  // cache (src/app/api/waypoints), not just this session's own `cache`
+  // state. Best-effort: a failed write here doesn't interrupt the
+  // fetch flow (the coordinate is still shown/usable this session
+  // either way, from `cache`) or get surfaced as a fetch error, since
+  // it isn't one - it'll simply need re-fetching (and re-persisting)
+  // next time, same as a coordinate that was never geocoded at all.
+  function persistWaypoint(key: string, entry: WaypointCacheEntry) {
+    if (entry.status !== "ok") return;
+    fetch("/api/waypoints", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, entry }),
+    }).catch((err) => console.warn(`Couldn't persist waypoint "${key}":`, err));
+  }
+
   async function fetchLocation(waypoint: GeocodableQuery) {
     if (singleFetchCoolingDown) return; // the button's own disabled state should already prevent this
     setFetchError(null);
@@ -1206,6 +1194,7 @@ export function EditRouteScreen({
       if (data.quota) setQuota(data.quota);
       const key = waypointCacheKey(waypoint);
       setCache((prev) => ({ ...prev, [key]: data.result }));
+      persistWaypoint(key, data.result);
     } catch (err) {
       setFetchError({
         message: err instanceof Error ? err.message : String(err),
@@ -1251,6 +1240,7 @@ export function EditRouteScreen({
         if (data.quota) setQuota(data.quota);
         const key = waypointCacheKey(waypoint);
         setCache((prev) => ({ ...prev, [key]: data.result }));
+        persistWaypoint(key, data.result);
         setFetchingStepIds((prev) => {
           const next = new Set(prev);
           next.delete(waypoint.stepId);
@@ -1285,35 +1275,6 @@ export function EditRouteScreen({
   // suspects a previously-resolved coordinate is actually wrong.
   function refetchAllLocations() {
     return runFetchAll(waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable"));
-  }
-
-  // A stopgap until there's somewhere real to persist this (see
-  // README - the whole admin flow is session-only in-memory right
-  // now): saves the exact same shape a real `npm run geocode` run
-  // would - only "ok" entries, only ones this route's current CSV
-  // still references (mirroring geocodeRoute.ts's own pruning, so a
-  // row edited away mid-session doesn't leave an orphaned entry in the
-  // download) - named to match its real sidecar file exactly, so it
-  // can be handed over and dropped straight into public/data/ with no
-  // renaming.
-  function downloadCacheFile() {
-    const currentKeys = new Set(
-      waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable").map(waypointCacheKey),
-    );
-    const toSave: WaypointCache = {};
-    for (const key of currentKeys) {
-      const entry = cache[key];
-      if (entry?.status === "ok") toSave[key] = entry;
-    }
-
-    const baseName = stepsCsvBaseName({ routeNumber, tripType, schoolLevel });
-    const blob = new Blob([JSON.stringify(toSave, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${baseName}-waypoints.json`;
-    link.click();
-    URL.revokeObjectURL(url);
   }
 
   // The only real requirement to save at all - a route number is what
@@ -1656,7 +1617,6 @@ export function EditRouteScreen({
           fetchError={fetchError}
           onFetchMissing={fetchMissingLocations}
           onRefetchAll={refetchAllLocations}
-          onDownload={downloadCacheFile}
           onClose={() => setShowFetchModal(false)}
         />
       )}
