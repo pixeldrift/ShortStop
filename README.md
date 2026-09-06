@@ -2367,3 +2367,9 @@ so far.
   stays right-aligned), and the last column - previously a bare empty
   `<span />` - gets an outline `HeartIcon`, labeling what that column
   actually is the same way every other header labels its own.
+- **RouteProgressBar's turn signs/stop pins dialed back to `h-6`** - the
+  `h-7` matching pass right before this made both feel heavier than the
+  road itself once seen next to it; `h-6` splits the difference between
+  that and the original `h-5`, still legibly bigger without competing
+  with the track for weight. The stop pin's own tiny number shrank to
+  `text-[0.5rem]` alongside it, still readable at the smaller pin size.

@@ -233,14 +233,14 @@ export function RouteProgressBar({
                     alt=""
                     width={350}
                     height={548}
-                    className="h-7 w-auto drop-shadow-sm"
+                    className="h-6 w-auto drop-shadow-sm"
                   />
-                  <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[0.55rem] leading-none font-black text-red-700">
+                  <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[0.5rem] leading-none font-black text-red-700">
                     {stopNumbers[index]}
                   </span>
                 </div>
               ) : (
-                step.direction && <TurnArrow direction={step.direction} className="h-7 w-7" />
+                step.direction && <TurnArrow direction={step.direction} className="h-6 w-6" />
               )}
             </div>
           );
