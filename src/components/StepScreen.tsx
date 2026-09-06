@@ -386,7 +386,7 @@ function StopContent({
           <RoundedTriangleIcon
             direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
             className={
-              "absolute top-[31%] h-[clamp(1.6rem,5vh,3rem)] w-[clamp(0.8rem,2.5vh,1.5rem)] -translate-y-1/2 text-[#d54e48] " +
+              "absolute top-[31%] h-[clamp(2.1rem,6.5vh,4rem)] w-[clamp(1.05rem,3.25vh,2rem)] -translate-y-1/2 text-[#d54e48] " +
               (step.sideOfRoad.toLowerCase() === "left" ? "right-full mr-1.5" : "left-full ml-1.5")
             }
           />
@@ -500,6 +500,10 @@ function DepotContent({ route }: { route: Route }) {
       <h1 className="font-heading text-[clamp(1.5rem,5vh,2.75rem)] font-black tracking-tight">
         Ready to Depart
       </h1>
+      <p className="text-[clamp(0.875rem,2.5vh,1.25rem)] font-semibold text-zinc-700">
+        {route.tripType === "pickup" ? "To " : "From "}
+        {route.schoolName}
+      </p>
       <p className="flex items-center gap-1 text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">
         <MapPinIcon className="h-[0.9em] w-[0.9em] shrink-0 text-blue-500" />
         {route.schoolAddress}

@@ -100,6 +100,14 @@ export function RouteProgressBar({
   const total = steps.length;
   const trackWidth = Math.max(pixelFor(total - 1), 1);
 
+  // Each stop marker's own number, matching StepContent's big pin (the
+  // same route.steps order, 1-based, turns excluded) - null for a turn
+  // step, which has no number of its own to show.
+  const stopNumbers = useMemo(() => {
+    let count = 0;
+    return steps.map((s) => (s.kind === "stop" ? ++count : null));
+  }, [steps]);
+
   // The bus needs to land exactly where the *current* step reads on
   // screen - which, now that markers are evenly re-spaced (see
   // markerPixelFor above) rather than sitting on the raw pixelFor grid,
@@ -219,13 +227,18 @@ export function RouteProgressBar({
               style={{ left: markerPixelFor(index, total, trackWidth) }}
             >
               {step.kind === "stop" ? (
-                <Image
-                  src="/assets/pin.png"
-                  alt=""
-                  width={350}
-                  height={548}
-                  className="h-5 w-auto drop-shadow-sm"
-                />
+                <div className="relative">
+                  <Image
+                    src="/assets/pin.png"
+                    alt=""
+                    width={350}
+                    height={548}
+                    className="h-7 w-auto drop-shadow-sm"
+                  />
+                  <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[0.55rem] leading-none font-black text-red-700">
+                    {stopNumbers[index]}
+                  </span>
+                </div>
               ) : (
                 step.direction && <TurnArrow direction={step.direction} className="h-5 w-5" />
               )}

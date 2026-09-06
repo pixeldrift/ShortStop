@@ -43,14 +43,14 @@ export function TopBar({
         <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
           Route
         </p>
-        <p className="font-heading -mt-1 flex items-center justify-center gap-1 text-3xl font-black tracking-tight">
+        <p className="font-heading -mt-1 flex items-center justify-center gap-1.5 text-3xl font-black tracking-tight">
           #{routeNumber}
-          <span className="flex items-center gap-0.5 text-xs text-blue-500">
+          <span className="flex items-center gap-1 text-3xl text-blue-500">
             {tripType === "pickup" ? "AM" : "PM"}
             {tripType === "pickup" ? (
-              <SunriseIcon className="h-3 w-3" />
+              <SunriseIcon className="h-6 w-6" />
             ) : (
-              <SunIcon className="h-3 w-3" />
+              <SunIcon className="h-6 w-6" />
             )}
           </span>
         </p>

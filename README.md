@@ -2303,3 +2303,35 @@ so far.
   turn per line, or delimited fields with headers" - since the fuller
   explanation lives in that same modal instead of being crammed into
   the placeholder text itself.
+- **Route list header alignment, bigger edit-mode buttons, bigger nav
+  accents, and a "to/from school" line on Ready to Depart.**
+
+  The route list's "#"/"AM-PM" header pair sat noticeably left of
+  where those values actually land in the much bigger, bolder row text
+  below - a plain flex row sized to the header's own tiny label+icon
+  text, unrelated to the wider `text-lg font-black` "#763"/"AM" it was
+  meant to sit above. It's a small fixed-width grid now
+  (`grid-cols-[2.75rem_1fr]`) chosen to land closer to where the row
+  content actually falls, and "#"'s own header button fills its whole
+  cell (`fill` prop on `SortableHeader`) rather than being just a
+  cramped sliver of tappable text hugging the row's left edge.
+
+  RouteListScreen's own bottom controls ("Edit Mode"/"Exit Edit Mode,"
+  "New Route") are full-width now, split evenly between the two once
+  both show - the same `flex-1`/`py-3`/`text-lg` treatment as
+  StepScreen's own Back/Next footer buttons, not a small chip-sized
+  pair tucked under the list.
+
+  On the trip screens: the "AM"/"PM" text next to the route number at
+  the top of `TopBar.tsx` now matches the route number's own `text-3xl`
+  size (was a small `text-xs` afterthought next to a big bold number);
+  the side-of-road arrow beside `StepScreen.tsx`'s big stop pin is
+  noticeably bigger (`RoundedTriangleIcon`, roughly 30% larger on both
+  axes); and each stop pin along `RouteProgressBar.tsx`'s own track
+  gets a tiny number now too, the same stop-numbering `StepContent`'s
+  big pin already shows, made legible by bumping the small pins from
+  `h-5` to `h-7` first. `DepotContent`'s "Ready to Depart" also gains a
+  line just above the school address - "To {school}" for an AM pickup,
+  "From {school}" for a PM dropoff - matching which direction the trip
+  is actually running instead of leaving that implicit in the address
+  alone.

@@ -341,10 +341,19 @@ export function RouteListScreen({
         }`}
       >
         <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-          <div className="flex items-center">
+          {/* A fixed-width grid, not a flex row - matches roughly where
+              "#763"/"AM" actually land in the much larger, bigger-font
+              row content below (see the row's own #/AM-PM cell), so
+              "AM/PM" doesn't read as hugging "#" off to the left of
+              where its own column actually is. `fill` on "#" makes its
+              whole 2.75rem-wide cell the tap target, not just the
+              "#"-glyph-plus-icon sliver a plain inline button would be. */}
+          <div className="grid h-full grid-cols-[2.75rem_1fr] items-stretch gap-x-1">
             <SortableHeader
               label="#"
               field="routeNumber"
+              fill
+              padded={false}
               sortField={sortField}
               sortDir={sortDir}
               onSort={toggleSort}
@@ -352,7 +361,7 @@ export function RouteListScreen({
             <SortableHeader
               label="AM/PM"
               field="tripType"
-              tight
+              padded={false}
               sortField={sortField}
               sortDir={sortDir}
               onSort={toggleSort}
@@ -502,35 +511,33 @@ export function RouteListScreen({
         </div>
       </div>
 
-      {/* Small and unobtrusive on purpose - a district-admin tool, not
-          a primary driver action, tucked below the list rather than up
-          with Search/View. "New Route" only appears once already in
-          edit mode - there's no direct route to it from the normal
-          (non-admin) list. Same `btn-glossy` shaded-button look every
-          other button in the app uses (bevel/shine/shadow, not a flat
-          tinted chip) rather than a plain text-with-icon link; exiting
-          is deliberately the gray/neutral one of the pair, entering
-          and adding a route are both the blue "forward" action. */}
-      <div ref={controlsRef} className="flex shrink-0 items-center gap-4">
+      {/* Full-width, split evenly between the two once both show - the
+          same large, prominent `btn-glossy` treatment as StepScreen's
+          own Back/Next footer buttons (flex-1 each, py-3, text-lg),
+          not a small text-with-icon link tucked below the list. Exiting
+          is deliberately the gray/neutral button of the pair, entering
+          and adding a route are both the blue "forward" action - "New
+          Route" only appears once already in edit mode, so a lone
+          "Edit Mode" toggle (not in edit mode yet) just takes the full
+          row on its own. */}
+      <div ref={controlsRef} className="flex w-full max-w-md shrink-0 items-center gap-3">
         <button
           type="button"
           onClick={onToggleAdminMode}
-          className={`btn-glossy flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${
-            adminMode
-              ? "border border-zinc-500 bg-zinc-300 text-zinc-900"
-              : "bg-blue-600 text-white"
+          className={`btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-lg font-semibold ${
+            adminMode ? "border border-zinc-500 bg-zinc-300 text-zinc-900" : "bg-blue-600 text-white"
           }`}
         >
-          <EditIcon className="h-3 w-3" />
+          <EditIcon className="h-5 w-5" />
           {adminMode ? "Exit Edit Mode" : "Edit Mode"}
         </button>
         {adminMode && (
           <button
             type="button"
             onClick={onAddRoute}
-            className="btn-glossy flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
           >
-            <PlusIcon className="h-3 w-3" />
+            <PlusIcon className="h-5 w-5" />
             New Route
           </button>
         )}
@@ -630,16 +637,13 @@ function SchoolNameLabel({ name }: { name: string }) {
  * stacked up/down carets (SortIcon), which always render but only show
  * the active direction solid once this is the column being sorted by.
  * `align="right"` keeps the Start column's label-then-icon order
- * matching its own right-aligned data below. `tight` is for the AM/PM
- * header specifically - it sits right beside "#" in one shared column
- * now (see the header row above), not its own separately-centered
- * track, so it needs a much smaller leading gap than the normal `pl-3`
- * every other header uses between columns. */
+ * matching its own right-aligned data below. */
 function SortableHeader({
   label,
   field,
   align = "left",
-  tight = false,
+  padded = true,
+  fill = false,
   sortField,
   sortDir,
   onSort,
@@ -647,7 +651,16 @@ function SortableHeader({
   label: string;
   field: SortField;
   align?: "left" | "center" | "right";
-  tight?: boolean;
+  /** This header's own leading gutter (pl-3, none if it's the first in
+   * its row) - on by default. Off for the "#"/"AM-PM" pair, which sit
+   * in their own fixed-width grid track instead (see the header row
+   * above) and get their spacing from that grid's own gap, not a
+   * per-button padding. */
+  padded?: boolean;
+  /** Fills its whole grid cell instead of shrinking to its own label+
+   * icon width - used for "#", whose tiny label alone would otherwise
+   * be a cramped tap target hugging the row's left edge. */
+  fill?: boolean;
   sortField: SortField;
   sortDir: SortDir;
   onSort: (field: SortField) => void;
@@ -658,9 +671,9 @@ function SortableHeader({
     <button
       type="button"
       onClick={() => onSort(field)}
-      className={`flex items-center gap-1 bg-transparent ${tight ? "pl-1.5" : "pl-3 first:pl-0"} ${justify} ${
-        active ? "text-zinc-700" : ""
-      }`}
+      className={`flex items-center gap-1 bg-transparent ${fill ? "h-full w-full" : ""} ${
+        padded ? "pl-3 first:pl-0" : ""
+      } ${justify} ${active ? "text-zinc-700" : ""}`}
     >
       <span>{label}</span>
       <SortIcon direction={active ? sortDir : "none"} className="h-2.5 w-2.5 shrink-0" />
