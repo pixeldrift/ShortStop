@@ -2906,3 +2906,37 @@ so far.
   "Host not in allowlist: api.openrouteservice.org..." text in the
   monospaced block below it - no more of this app's own sentence
   bleeding into what's supposed to be a direct quote.
+
+## A shared cooldown for the single "Fetch" button
+
+  Raised alongside a question about whether the batch-only pacing
+  from a couple entries back was really the whole story: it wasn't.
+  `runFetchAll` (the Fetch Coordinates modal's own two buttons) paces
+  itself, but the single-row "Fetch" button never did - and only one
+  row's editor is ever expanded at a time, but Cancel closes it
+  without waiting for its own in-flight fetch to finish, so a fast
+  admin could cancel, open a *different* row, and fire a second real
+  ORS/Overpass call back to back with zero pacing between them.
+
+  Added `singleFetchCoolingDown` - a state flag set the instant any
+  single fetch *starts* (not once it resolves) and held for
+  `SINGLE_FETCH_COOLDOWN_MS` (1100ms, the same value `/api/geocode`'s
+  own `RATE_LIMIT_MS` already paces a batch by) after it finishes
+  either way. It's global, not per-row, so it blocks whichever row's
+  editor happens to be open next, not just the one that was actually
+  clicked. `StepRowEditor`'s Fetch button now takes `fetching` (this
+  row's own in-flight state, still driving the "Fetching…" label) and
+  a separate `fetchLocked` (driving `disabled`) so the button reads
+  "Fetch" - not "Fetching…" - while it's merely cooling down after an
+  already-finished request, not still working on one. Explicitly "slow,
+  then block," per how this was asked for, rather than a soft debounce
+  that just delays the next click without actually disabling anything -
+  every provider used here is a free tier, worth erring toward too
+  cautious.
+
+  Verified in the browser: clicking Fetch immediately disables the
+  button and shows "Fetching…"; once the (network-blocked, in this
+  sandbox) request resolves, the label reverts to "Fetch" but the
+  button stays disabled through the rest of the ~1.1s cooldown window,
+  confirmed by polling both the label and the disabled state every
+  150ms; it re-enables right on schedule afterward.

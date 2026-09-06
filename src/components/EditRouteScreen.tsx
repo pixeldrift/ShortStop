@@ -70,6 +70,12 @@ class GeocodeApiError extends Error {
   }
 }
 
+/** The single-row "Fetch" button's own cooldown, after any one fetch
+ * finishes - same value as /api/geocode's own RATE_LIMIT_MS, so a
+ * manual click and a batch call pace themselves the same courteous
+ * amount against a free-tier account either way. */
+const SINGLE_FETCH_COOLDOWN_MS = 1100;
+
 // Short on purpose - this box starts small (see the textarea's own
 // className below) and only grows with real content, so a long
 // multi-example placeholder would just get clipped rather than
@@ -274,6 +280,7 @@ function StepRowEditor({
   waypoint,
   status,
   fetching,
+  fetchLocked,
   onChange,
   onFetch,
   onCancel,
@@ -288,7 +295,14 @@ function StepRowEditor({
    * draft only takes effect once Update commits it. */
   waypoint: WaypointQuery | undefined;
   status: RowResolutionStatus | undefined;
+  /** This row's own request is actually in flight right now - drives
+   * the button's "Fetching…" label specifically. */
   fetching: boolean;
+  /** True for `fetching` above *or* for the shared cooldown afterward
+   * (see EditRouteScreen's own singleFetchCoolingDown) - drives the
+   * button's disabled state, separately from its label, so it reads
+   * "Fetch" (not "Fetching…") while merely cooling down. */
+  fetchLocked: boolean;
   onChange: (patch: Partial<RawRouteRow>) => void;
   onFetch: () => void;
   onCancel: () => void;
@@ -387,7 +401,7 @@ function StepRowEditor({
             <button
               type="button"
               onClick={onFetch}
-              disabled={fetching}
+              disabled={fetchLocked}
               className="shrink-0 rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50"
             >
               {fetching ? "Fetching…" : "Fetch"}
@@ -934,6 +948,18 @@ export function EditRouteScreen({
   // 403 in production).
   const [schoolAnchor, setSchoolAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [fetchingStepIds, setFetchingStepIds] = useState<ReadonlySet<number>>(new Set());
+  // Blocks *every* single-row "Fetch" button, not just whichever row
+  // was just fetched - only one row can be expanded/edited at a time,
+  // but Cancel closes the editor without waiting for its own in-flight
+  // fetch to finish, so a fast admin could otherwise cancel, open a
+  // different row, and fire a second real ORS/Overpass call with zero
+  // pacing between them. Set the moment a single fetch starts (not
+  // just once it resolves) and held for SINGLE_FETCH_COOLDOWN_MS after
+  // it finishes either way - "slow, then block," the same free-tier
+  // courtesy runFetchAll's own RATE_LIMIT_MS already pays a batch, just
+  // enforced by disabling the button instead of an internal sleep,
+  // since nothing here is looping on its own to pace.
+  const [singleFetchCoolingDown, setSingleFetchCoolingDown] = useState(false);
   const [fetchAllRunning, setFetchAllRunning] = useState(false);
   const [fetchError, setFetchError] = useState<FetchErrorInfo | null>(null);
   const [showFetchModal, setShowFetchModal] = useState(false);
@@ -1119,7 +1145,9 @@ export function EditRouteScreen({
   }
 
   async function fetchLocation(waypoint: GeocodableQuery) {
+    if (singleFetchCoolingDown) return; // the button's own disabled state should already prevent this
     setFetchError(null);
+    setSingleFetchCoolingDown(true);
     setFetchingStepIds((prev) => new Set(prev).add(waypoint.stepId));
     try {
       const data = await callGeocodeApi([waypoint]);
@@ -1141,6 +1169,7 @@ export function EditRouteScreen({
         next.delete(waypoint.stepId);
         return next;
       });
+      window.setTimeout(() => setSingleFetchCoolingDown(false), SINGLE_FETCH_COOLDOWN_MS);
     }
   }
 
@@ -1452,6 +1481,7 @@ export function EditRouteScreen({
                         waypoint={waypoint}
                         status={waypoint ? resolutionRows[index] : undefined}
                         fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
+                        fetchLocked={singleFetchCoolingDown}
                         onChange={handleDraftChange}
                         onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
                         onCancel={handleCancelRow}
