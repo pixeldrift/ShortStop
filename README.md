@@ -2581,3 +2581,38 @@ so far.
   Route" - forward - and true->false via "Exit Route" ending a route -
   backward - so no separate state is needed to track which way a given
   flip went).
+
+## Maps, part ten
+
+  Wanted to actually see pins on the map without waiting on a real
+  geocode run - this sandbox has no network path to any geocoding
+  service at all (`curl` to Nominatim, OpenRouteService, and the CARTO
+  tile CDN all fail the same way, `CONNECT tunnel failed, response
+  403`), so nothing here can call ORS or Overpass directly.
+
+  Route 125's PM/EL sheet (LaVergne Lake Elementary) already had real
+  answers sitting unused, though: the "Maps, part nine" prototype run
+  above resolved several of its stop intersections against Overpass
+  over real network access (via GitHub Actions, not this sandbox), and
+  documented the exact coordinates in prose - but that workflow has no
+  commit step by design, so the results only ever lived in a job
+  summary and an expiring artifact, never in `public/data/`.
+
+  Added `public/data/125-PM-EL-waypoints.json` by hand, keyed exactly
+  per `waypointCacheKey()`'s `intersection:${roadA} & ${roadB}` format,
+  using those same six already-resolved coordinates matched back
+  against 125-PM-EL.csv's current stop rows (Bill Stewart Blvd &
+  Hidden Forest Ln/Redbud Ln/Ruth Ln/Drennan Ln/Lake Forest Dr, and
+  Carmen Way & Holland Ridge Dr). These are real resolved coordinates,
+  not placeholders - reusing them here beats fabricating anything
+  that would look real, per how this app already treats demo data
+  everywhere else. Confirmed in the browser: the sidecar fetches 200
+  from `RouteMap.tsx`, and all six show up as Leaflet markers on the
+  route's driving screen (tiles themselves stayed gray - that's the
+  CARTO CDN block above, unrelated to the markers, which are plain DOM
+  elements once the JSON loads).
+
+  A real `npm run geocode` run (from a machine with actual internet
+  and the ORS key) would still be the way to fill in every other
+  route's stops properly - this is just enough to see real pins
+  moving on a real map tonight.

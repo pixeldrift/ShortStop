@@ -1,0 +1,50 @@
+{
+  "intersection:Bill Stewart Blvd & Hidden Forest Ln": {
+    "status": "ok",
+    "lat": 36.0406636,
+    "lon": -86.5404985,
+    "displayName": "Bill Stewart Blvd & Hidden Forest Ln",
+    "source": "Bill Stewart Blvd and Hidden Forest Ln, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Bill Stewart Blvd & Redbud Ln": {
+    "status": "ok",
+    "lat": 36.0434458,
+    "lon": -86.540132,
+    "displayName": "Bill Stewart Blvd & Redbud Ln",
+    "source": "Bill Stewart Blvd and Redbud Ln, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Bill Stewart Blvd & Ruth Ln": {
+    "status": "ok",
+    "lat": 36.0442348,
+    "lon": -86.5400776,
+    "displayName": "Bill Stewart Blvd & Ruth Ln",
+    "source": "Bill Stewart Blvd and Ruth Ln, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Bill Stewart Blvd & Drennan Ln": {
+    "status": "ok",
+    "lat": 36.0450625,
+    "lon": -86.5398457,
+    "displayName": "Bill Stewart Blvd & Drennan Ln",
+    "source": "Bill Stewart Blvd and Drennan Ln, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Carmen Way & Holland Ridge Dr": {
+    "status": "ok",
+    "lat": 36.0441259,
+    "lon": -86.5478848,
+    "displayName": "Carmen Way & Holland Ridge Dr",
+    "source": "Carmen Way and Holland Ridge Dr, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Bill Stewart Blvd & Lake Forest Dr": {
+    "status": "ok",
+    "lat": 36.0395056,
+    "lon": -86.5406313,
+    "displayName": "Bill Stewart Blvd & Lake Forest Dr",
+    "source": "Bill Stewart Blvd and Lake Forest Dr, La Vergne, TN",
+    "provider": "overpass"
+  }
+}
