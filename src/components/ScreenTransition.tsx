@@ -19,7 +19,7 @@ interface TransitionState {
  * fully off to one side while the incoming one slides in from the
  * other, both absolutely positioned over this element's own bounds so
  * neither affects its size mid-transition. `direction` says which way:
- * "forward" (out to the left, in from the right) for every dive deeper
+ * "forward" (out to the right, in from the left) for every dive deeper
  * into the app from the route list (Add Route, Edit Route, a selected
  * route's own trip flow), "backward" (the reverse) for every Cancel/
  * Back that returns to wherever that dive started from - set by the

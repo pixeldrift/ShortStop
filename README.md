@@ -2545,3 +2545,12 @@ so far.
   line. Unverified against a real key (none available to test with
   here) - CARTO's documented `api_key` param is the best-effort
   implementation, worth confirming once a real free CARTO key exists.
+- **Screen-transition direction was backwards from the intended
+  read.** "Forward" (diving into Add Route/Edit Route/a trip from the
+  list) now slides the outgoing screen off to the *right* while the
+  incoming one enters from the *left*; "backward" (Cancel/Back
+  returning to the list) is the reverse - swapped from the previous
+  entry's own (wrong) direction. Just the four keyframes' own
+  `translateX` values in `globals.css` swapped between the
+  forward/backward pairs - `ScreenTransition.tsx` itself, and every
+  call site's own `"forward"`/`"backward"` choice, needed no change.
