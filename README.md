@@ -3250,3 +3250,70 @@ so far.
   `@prisma/adapter-pg`) rather than a bare connection string on the
   Prisma schema itself - a Prisma 7 change, not a project choice; see
   `prisma/schema.prisma`'s and `prisma7.config.ts`'s own doc comments.
+
+## Reconciling `development` after the Postgres migration landed on `main`
+
+  The Postgres/Prisma migration above happened in a separate session
+  (a genuinely fresh one, started specifically because this sandbox's
+  own network egress policy was blocking Neon - see the account-wide
+  "Allow network egress" capability) that branched off `main`, not
+  `development`, and its PR merged straight into `main`. That left the
+  two real branches meaningfully diverged: `main` had Postgres but not
+  yet the Geoapify/MapLibre tiles or the smart "not found" error work
+  `development` already carried; `development` had neither the schema
+  nor the new API routes. Reconciled by merging `origin/main` into
+  `development` directly (conflicts only where both sides had genuinely
+  touched the same lines - `.env.local.example`, `package.json`,
+  `README.md`, and two purely-additive lines in
+  `EditRouteScreen.tsx`'s fetch handlers) rather than re-doing either
+  side's work, keeping this project's own "development gets
+  everything, main gets a deliberately-curated subset" rule intact.
+  `@neondatabase/serverless` (this session's own now-abandoned attempt
+  at reaching Neon before the network policy widened) came out along
+  with it, since the real migration went with `@prisma/adapter-pg`
+  instead and nothing in the app ever imported the former.
+
+  Full typecheck/lint/production-build all came back clean after the
+  merge - one real merge casualty found and fixed: `EditRouteScreen.tsx`
+  lost its own `WaypointCacheEntry` type import somewhere in the
+  auto-merge (`persistWaypoint`'s own parameter type), caught by `tsc`
+  rather than silently passing. Not verified live in a browser, though
+  - this session's own network policy predates the account-wide
+  widening (policy is fixed when a session starts, not live-updatable),
+  so it still can't reach Postgres itself the way the app now needs to
+  on every load; a session created *after* the widening (like the one
+  that did this migration) is what proved this actually works end to
+  end.
+
+## A CSV download button, for a route's own stops and for the route list
+
+  Two small `DownloadIcon` buttons, fixed to the same bottom-right
+  corner on every screen that shows one (StartScreen, EditRouteScreen,
+  and RouteListScreen) - a district admin asked for a quick way to pull
+  data back out of the app as a spreadsheet, not just put it in.
+
+  `src/lib/exportCsv.ts` is the shared piece both draw from:
+  `routeStepsToCsv` walks a `Route`'s own `steps` in order (stops and
+  turns alike) and joins each one against whatever this session's own
+  waypoint cache already knows for it (the same `step.waypointKey`
+  lookup routeReadiness.ts/StepScreen.tsx already do to place a pin),
+  so the export's `lat`/`lon`/`status` columns reflect real, already-
+  resolved coordinates rather than triggering any new geocoding of its
+  own; `routeListToCsv` is one row per real route (fabricated demo rows
+  filtered out) with the same summary stats (stop count, rider count)
+  the list screen itself already computes. `downloadCsv` is the actual
+  browser mechanics (`Blob` + a throwaway `<a download>` click) both
+  reuse, unchanged from the "Download Coordinates" stopgap this app
+  used to have before real persistence existed (see above) - the same
+  trick, now used for a real feature instead of a workaround.
+
+  StartScreen fetches the shared waypoint cache itself on mount (it
+  never held one before) purely to fill in the export's coordinate
+  columns; EditRouteScreen already had a live `cache` in state, so its
+  button exports the screen's own *current, unsaved* edits (a live
+  `exportableRoute` snapshot rebuilt from `rows` via the same
+  `buildRouteFromRows` Save itself uses) rather than only what was last
+  saved. Not verified live in the browser, same standing limitation as
+  the migration reconciliation above - this session still can't reach
+  the Postgres-backed API routes the app now loads its route data
+  from.
