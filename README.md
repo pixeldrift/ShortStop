@@ -2732,3 +2732,42 @@ so far.
   first, then Overpass); the same query with an anchor already in hand
   skips straight to Overpass; and a missing `ORS_API_KEY` comes back as
   a plain `{ error }` rather than throwing.
+
+## lookupCoordinates becomes the one real implementation
+
+  Asked next: keep the batch pipeline's own anchor/near tracking, but
+  have it actually call `lookupCoordinates` under the hood instead of
+  the two living as separate, parallel paths to the same providers.
+
+  Flipped the dependency `lookupCoordinates` had on `resolveGeocodableQuery`
+  (it called that for the intersection case) the other way around -
+  `lookupCoordinates` now owns the real dispatch logic directly
+  (address via `geocodeQuery`, intersection via the Overpass helper),
+  and `resolveGeocodableQuery`/`resolveSchoolAnchor` are now thin
+  wrappers that call it, translating their batch context (`ctx.anchor`/
+  `ctx.near`/an already-known `apiKey`) into `lookupCoordinates`'s own
+  `LookupContext` instead of duplicating any provider logic. Both of
+  scripts/geocodeRoute.ts and src/app/api/geocode/route.ts needed zero
+  changes - their calls to the batch wrappers keep the exact same
+  signatures.
+
+  `lookupCoordinates` also switched its return type from a small custom
+  `{lat, lon, displayName, provider} | {error}` shape to the existing
+  `WaypointCacheEntry` itself - the batch wrappers need `source` (they
+  log it on failure) and a real `WaypointCacheEntry` on success anyway,
+  so returning anything else just meant translating back and forth for
+  no reason. `LookupContext.apiKey` is optional (falls back to
+  `process.env.ORS_API_KEY` for a standalone caller with nothing to
+  pass) so the batch wrappers can hand in their own already-loaded key
+  explicitly rather than this function re-reading the environment a
+  second time per query.
+
+  Verified: `resolveSchoolAnchor` and `resolveGeocodableQuery` both
+  produce identical results routed through `lookupCoordinates` as they
+  did calling the providers directly; a batch call that already has an
+  anchor makes exactly one Overpass call (no redundant auto-anchor
+  lookup - that path is only for a caller with nothing at all); and
+  `resolveGeocodableQuery`'s own "an intersection query needs a
+  non-null anchor" guard still throws exactly as before, since that
+  invariant is enforced in the wrapper itself, not silently papered over
+  by `lookupCoordinates`'s own auto-anchor fallback.
