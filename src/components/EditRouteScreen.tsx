@@ -394,7 +394,7 @@ function StepRowEditor({
             <ResolutionIcon status={status.status} className="h-4 w-4 shrink-0" />
             {status.status === "unresolved" && status.detail ? (
               <span className="flex min-w-0 items-center gap-1 text-zinc-500">
-                <span className="truncate">Oops, could not look up coordinates.</span>
+                <span className="truncate">{status.reason}</span>
                 <button
                   type="button"
                   onClick={() => setShowErrorDetail(true)}

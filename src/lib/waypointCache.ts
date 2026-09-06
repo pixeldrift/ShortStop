@@ -19,10 +19,19 @@ import type { WaypointQuery } from "./deriveWaypoints";
  * got back from ORS/Overpass, present only when there was a real
  * request to quote from - never fabricated, never present for a purely
  * internal miss (an empty result set, no shared node) that never
- * involved a failing HTTP response at all. */
+ * involved a failing HTTP response at all.
+ *
+ * `notFound` is true only for that specific "queried fine, found
+ * nothing" case (a real response, zero results/no shared node) - never
+ * for a config problem, a network failure, or a real HTTP error, all
+ * of which mean something entirely different went wrong. Callers that
+ * want to guess *which* part of a query is bad (see
+ * routeResolutionStatus.ts) need this distinction: only a genuine
+ * not-found is worth that guess at all - guessing over a 403 or a
+ * missing API key would just be wrong. */
 export type WaypointCacheEntry =
   | { status: "ok"; lat: number; lon: number; displayName: string; source: string; provider: string }
-  | { status: "error"; message: string; raw?: string; source: string; provider: string };
+  | { status: "error"; message: string; notFound?: boolean; raw?: string; source: string; provider: string };
 
 /** public/data/route-125-waypoints.json's shape: every entry keyed by
  * waypointCacheKey(query) below. In practice only ever holds "ok"
