@@ -2342,3 +2342,8 @@ so far.
   that should compete with them for attention on the screen every
   driver actually lands on. Once tapped, the now-revealed "Exit Edit
   Mode"/"New Route" pair stay full-width and split evenly, unchanged.
+- **RouteProgressBar's turn signs now match the stop pins' own height**
+  (`h-7`, both, was `h-5` for turns) - the two were sized independently
+  before, so a turn sign read visibly smaller than its neighboring stop
+  pins along the same track instead of the two kinds of marker reading
+  as one consistent set.

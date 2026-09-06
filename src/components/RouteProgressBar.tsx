@@ -240,7 +240,7 @@ export function RouteProgressBar({
                   </span>
                 </div>
               ) : (
-                step.direction && <TurnArrow direction={step.direction} className="h-5 w-5" />
+                step.direction && <TurnArrow direction={step.direction} className="h-7 w-7" />
               )}
             </div>
           );
