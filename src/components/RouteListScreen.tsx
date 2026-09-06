@@ -12,7 +12,6 @@ import {
   EyeOffIcon,
   HeartIcon,
   PlusIcon,
-  SchoolIcon,
   SearchIcon,
   SortIcon,
   SunIcon,
@@ -124,7 +123,7 @@ export function RouteListScreen({
    * passes this (back to SchoolListScreen); the top-level route list
    * has nowhere "back" to go, so it omits both this and `title`. */
   onBack?: () => void;
-  /** Renders the "View all Schools" corner button (bottom-left) when
+  /** Renders the "Schools" link (under the table, left-aligned) when
    * given - only the top-level route list passes this; the
    * school-scoped reuse above already knows which school it's showing
    * routes for, so re-offering a jump to the schools list from inside
@@ -597,16 +596,50 @@ export function RouteListScreen({
         </div>
       </div>
 
-      {/* The Home Screen's own entry point (adminMode off) stays the
-          small `btn-glossy` chip this used to be everywhere - a
-          district-admin tool, not something that needs to compete with
-          Search/View for attention. Once actually in edit mode, though,
-          both controls become full-width and split evenly, the same
-          large treatment as StepScreen's own Back/Next footer buttons
-          (flex-1 each, py-3, text-lg) - exiting is deliberately the
-          gray/neutral button of the pair, adding a route is the blue
-          "forward" action. */}
-      {adminMode ? (
+      {/* Schools (left) and, outside admin mode, Edit Routes (right)
+          share one row directly under the table - admin mode has no
+          "Edit Routes" counterpart here (its own Exit Edit Mode/New
+          Route row follows below instead, same as always), so Schools
+          sits alone, still left-aligned, in that case. */}
+      {(onViewSchools || !adminMode) && (
+        <div
+          ref={adminMode ? undefined : controlsRef}
+          className="flex w-full max-w-md shrink-0 items-center justify-between"
+        >
+          {onViewSchools ? (
+            <button
+              type="button"
+              onClick={onViewSchools}
+              className="text-sm font-semibold text-blue-600 active:text-blue-800"
+            >
+              Schools
+            </button>
+          ) : (
+            <span />
+          )}
+          {/* The Home Screen's own entry point (adminMode off) stays the
+              small `btn-glossy` chip this used to be everywhere - a
+              district-admin tool, not something that needs to compete
+              with Search/View for attention. */}
+          {!adminMode && (
+            <button
+              type="button"
+              onClick={onToggleAdminMode}
+              className="btn-glossy flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              <EditIcon className="h-3 w-3" />
+              Edit Routes
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Once actually in edit mode, both controls become full-width
+          and split evenly, the same large treatment as StepScreen's own
+          Back/Next footer buttons (flex-1 each, py-3, text-lg) -
+          exiting is deliberately the gray/neutral button of the pair,
+          adding a route is the blue "forward" action. */}
+      {adminMode && (
         <div ref={controlsRef} className="flex w-full max-w-md shrink-0 items-center gap-3">
           <button
             type="button"
@@ -623,17 +656,6 @@ export function RouteListScreen({
           >
             <PlusIcon className="h-5 w-5" />
             New Route
-          </button>
-        </div>
-      ) : (
-        <div ref={controlsRef} className="flex shrink-0 items-center">
-          <button
-            type="button"
-            onClick={onToggleAdminMode}
-            className="btn-glossy flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
-          >
-            <EditIcon className="h-3 w-3" />
-            Edit Routes
           </button>
         </div>
       )}
@@ -695,17 +717,6 @@ export function RouteListScreen({
           className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
         >
           <DownloadIcon className="h-4 w-4" />
-        </button>
-      )}
-
-      {onViewSchools && (
-        <button
-          type="button"
-          onClick={onViewSchools}
-          className="fixed bottom-4 left-4 z-10 flex items-center gap-1.5 text-sm font-semibold text-zinc-500 active:text-zinc-700"
-        >
-          <SchoolIcon className="h-4 w-4" />
-          View all Schools
         </button>
       )}
     </div>
