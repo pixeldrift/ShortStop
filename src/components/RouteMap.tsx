@@ -160,10 +160,13 @@ export function RouteMap({
         .catch(() => ({}) as WaypointCache)
         .then((cache) => {
           if (cancelled || !map) return;
+          const pinLatLngs: [number, number][] = [];
           for (const stop of stopsRef.current) {
             const entry = cache[stop.waypointKey];
             if (!entry || entry.status !== "ok") continue;
-            L.marker([entry.lat, entry.lon], {
+            const latLng: [number, number] = [entry.lat, entry.lon];
+            pinLatLngs.push(latLng);
+            L.marker(latLng, {
               icon: L.divIcon({
                 className: "",
                 html: stopMarkerHtml(stop.number),
@@ -172,6 +175,15 @@ export function RouteMap({
               }),
               interactive: false,
             }).addTo(map);
+          }
+          // Once the route's own stops are geocoded, they're a far more
+          // useful default view than the fixed La Vergne town-center
+          // placeholder above (or the driver's own live position,
+          // deliberately left out of this - see recenteredOnFirstFix's
+          // removal below) - frame the whole route, not wherever the bus
+          // happens to be sitting when the map first mounts.
+          if (pinLatLngs.length > 0) {
+            map.fitBounds(L.latLngBounds(pinLatLngs), { padding: [40, 40], maxZoom: 16 });
           }
         });
 
@@ -191,11 +203,6 @@ export function RouteMap({
         iconAnchor: [8, 8],
       });
       let locationMarker: Marker | undefined;
-      // Recenters the map once, on the first fix, so the driver doesn't
-      // have to hunt for the dot on load - but never again after that,
-      // so later updates don't fight a driver who's since panned/zoomed
-      // to look elsewhere on the route.
-      let recenteredOnFirstFix = false;
 
       watchId = navigator.geolocation.watchPosition(
         (position) => {
@@ -209,10 +216,6 @@ export function RouteMap({
             }).addTo(map);
           } else {
             locationMarker.setLatLng(latLng);
-          }
-          if (!recenteredOnFirstFix) {
-            recenteredOnFirstFix = true;
-            map.setView(latLng, map.getZoom());
           }
         },
         (error) => {

@@ -2616,3 +2616,30 @@ so far.
   and the ORS key) would still be the way to fill in every other
   route's stops properly - this is just enough to see real pins
   moving on a real map tonight.
+
+## Maps, part eleven
+
+  Once those pins existed, the map's own default view stopped making
+  sense: it opened on the fixed La Vergne town-center placeholder
+  (`LA_VERGNE_CENTER`), then - the moment the browser's first GPS fix
+  came in - recentered on the driver's own live position instead
+  (`recenteredOnFirstFix` in `RouteMap.tsx`). Neither one is actually
+  where the interesting thing on the map is; the route's own stops are.
+
+  `RouteMap.tsx` now collects every stop's resolved lat/lon while
+  placing its markers, and once the fetch resolves, calls
+  `map.fitBounds()` over all of them (padded, capped at zoom 16) -
+  framing the whole route on load rather than a fixed placeholder
+  point or wherever the bus happens to be sitting when the map first
+  mounts. The live position dot is unaffected - it still appears and
+  tracks the driver in real time via `watchPosition` - only the
+  one-time `setView` that used to snap the view to it on the first fix
+  is gone, so it no longer fights the route framing above. A route
+  with no resolved stops yet (every other real route right now) just
+  falls back to the original La Vergne placeholder center, unchanged.
+
+  Verified in the browser with a simulated GPS fix over 50 miles from
+  route 125's actual stops: all six stop pins land within the visible
+  map area on load, and the simulated position marker sits far outside
+  the frame, confirming the view follows the route's own stops, not
+  the device's location.
