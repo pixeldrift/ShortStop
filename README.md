@@ -3196,12 +3196,18 @@ so far.
   confirmed live in the browser only that the new `reason` text
   renders in the row without any wiring/runtime error.
 
-## A CSV download button, for a route's own stops and for the route list
+## A CSV download button, scoped to admin/edit contexts only
 
   Two small `DownloadIcon` buttons, fixed to the same bottom-right
-  corner on every screen that shows one (StartScreen, EditRouteScreen,
-  and RouteListScreen) - a district admin asked for a quick way to pull
-  data back out of the app as a spreadsheet, not just put it in.
+  corner - a district admin asked for a quick way to pull data back out
+  of the app as a spreadsheet, not just put it in. Deliberately kept
+  off StartScreen (every driver's own daily pre-trip screen, not an
+  admin tool) after an initial pass put one there too - this is scoped
+  to the two actually-admin contexts instead: RouteListScreen's own
+  "Edit Mode" (the button only renders once `adminMode` is on, same
+  gate as its per-row publish/unpublish/delete controls), and
+  EditRouteScreen (already admin-only by definition, no separate gate
+  needed).
 
   `src/lib/exportCsv.ts` is the shared piece both draw from:
   `routeStepsToCsv` walks a `Route`'s own `steps` in order (stops and
@@ -3218,10 +3224,8 @@ so far.
   used to have before real persistence existed (see above) - the same
   trick, now used for a real feature instead of a workaround.
 
-  StartScreen fetches the shared waypoint cache itself on mount (it
-  never held one before) purely to fill in the export's coordinate
-  columns; EditRouteScreen already had a live `cache` in state, so its
-  button exports the screen's own *current, unsaved* edits (a live
+  EditRouteScreen already had a live `cache` in state, so its button
+  exports the screen's own *current, unsaved* edits (a live
   `exportableRoute` snapshot rebuilt from `rows` via the same
   `buildRouteFromRows` Save itself uses) rather than only what was last
   saved. Not verified live in the browser, same standing limitation as
