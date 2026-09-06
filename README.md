@@ -2526,3 +2526,22 @@ so far.
   render ever commits) - the very first paint that shows the new screen
   already has the old one captured alongside it, both animating in the
   same frame, edge-to-edge, exactly as intended the first time.
+- **The map's own "API KEY REQUIRED" watermark is CARTO's, not ORS's -
+  a real, separate account and key.** Easy to conflate: adding
+  `ORS_API_KEY` to Vercel fixes geocoding, not this - the map tiles
+  (`RouteMap.tsx`) come from CARTO's `basemaps.cartocdn.com`, a
+  completely different service that's evidently started gating what
+  used to be truly anonymous access (this file's own comment said "No
+  API key needed for this volume of use" when it was written - no
+  longer accurate). `TILE_URL` now appends CARTO's own documented
+  `api_key` query param whenever a real `NEXT_PUBLIC_CARTO_API_KEY` is
+  configured, falling back to the exact same unmodified URL when it
+  isn't (so nothing changes for anyone who hasn't set one yet).
+  `NEXT_PUBLIC_` deliberately, not server-only like `ORS_API_KEY` -
+  Leaflet fetches these tiles straight from the browser, never through
+  a route of this app's own, so there's no server boundary to keep this
+  key behind in the first place; same public-but-rate-limited model any
+  client-side map tile key uses. `.env.local.example` documents the new
+  line. Unverified against a real key (none available to test with
+  here) - CARTO's documented `api_key` param is the best-effort
+  implementation, worth confirming once a real free CARTO key exists.

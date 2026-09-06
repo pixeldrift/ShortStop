@@ -26,9 +26,20 @@ const DEFAULT_ZOOM = 13;
 // standard OSM look), but it actually serves a `{r}` (@2x) retina
 // tile variant - openstreetmap.org's own tile server doesn't, so
 // `detectRetina` below would be a no-op against it and every tile
-// would render soft/blurry on any retina display. No API key needed
-// for this volume of use.
-const TILE_URL = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+// would render soft/blurry on any retina display. This used to need no
+// API key at all for this volume of use - CARTO has since started
+// gating anonymous access (tiles come back watermarked "API KEY
+// REQUIRED" instead of failing outright, easy to miss until someone
+// actually looks at the map), so a real `NEXT_PUBLIC_CARTO_API_KEY` is
+// appended as CARTO's own documented `api_key` query param whenever
+// one is configured. `NEXT_PUBLIC_` (not server-only, unlike
+// ORS_API_KEY) because Leaflet fetches these tiles directly from the
+// browser, never through a server route of this app's own - same
+// public-but-domain/rate-limited model any map tile provider's own
+// client-side key uses, not a secret that needs hiding.
+const TILE_URL = process.env.NEXT_PUBLIC_CARTO_API_KEY
+  ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${process.env.NEXT_PUBLIC_CARTO_API_KEY}`
+  : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
 const TILE_SUBDOMAINS = "abcd";
 const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
