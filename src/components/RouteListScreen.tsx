@@ -64,6 +64,18 @@ const VIEW_OPTIONS: { value: ViewFilter; label: string }[] = [
   { value: "favorites", label: "Favorites" },
 ];
 
+/** Whether a route currently reads as published - a real route's own
+ * `status` says so directly; a demo route's `status` is always literally
+ * "demo" (never actually changed, see page.tsx's own demoHiddenIds doc
+ * comment), so its published/unpublished state lives in that separate
+ * overlay instead. Shared by the search/filter pass and the row
+ * rendering below so both agree on what "published" means for either
+ * kind of route. */
+function isRoutePublished(route: Route, demoHiddenIds: ReadonlySet<string>): boolean {
+  if (route.status === "demo") return !demoHiddenIds.has(route.id);
+  return route.status === "published";
+}
+
 /**
  * The app's home screen: a scrollable table of routes (# / Name /
  * Start / favorite heart), filterable by a search box and a View
@@ -86,6 +98,7 @@ export function RouteListScreen({
   onSetRouteStatus,
   onDeleteRoute,
   onToggleFavorite,
+  demoHiddenIds,
 }: {
   routes: Route[];
   /** Reveals draft real routes below, dimmed, and turns on the
@@ -118,6 +131,13 @@ export function RouteListScreen({
    * main click (handleRowClick), which navigates/edits instead; see the
    * row rendering below for how the heart gets its own tap target. */
   onToggleFavorite: (route: Route) => void;
+  /** Which fabricated demo routes are "unpublished" this session (see
+   * page.tsx) - a demo route's own `status` always stays literally
+   * "demo" (every real/fake distinction elsewhere depends on that), so
+   * this is the only place that knows one's been toggled off; combined
+   * with `route.status` via isRoutePublished below wherever a row needs
+   * to know whether it currently reads as published. */
+  demoHiddenIds: ReadonlySet<string>;
 }) {
   const [query, setQuery] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
@@ -174,11 +194,11 @@ export function RouteListScreen({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matching = routes.filter((route) => {
-      // A real (non-"demo") route that isn't "published" only ever
+      // A route that doesn't currently read as published only ever
       // shows up in admin mode - a normal driver never needs to see a
-      // route nobody's actually running.
-      const isAdminOnly = route.status !== "published" && route.status !== "demo";
-      if (isAdminOnly && !adminMode) return false;
+      // route nobody's actually running, whether it's a real draft or
+      // a demo row toggled unpublished this session.
+      if (!isRoutePublished(route, demoHiddenIds) && !adminMode) return false;
 
       const matchesQuery =
         !q || route.name.toLowerCase().includes(q) || route.routeNumber.includes(q);
@@ -207,7 +227,7 @@ export function RouteListScreen({
       const result = compare(a, b);
       return sortDir === "asc" ? result : -result;
     });
-  }, [routes, query, view, sortField, sortDir, adminMode]);
+  }, [routes, query, view, sortField, sortDir, adminMode, demoHiddenIds]);
 
   // In admin mode, tapping any real route's row (its heart-icon slot
   // is a pencil then, see below) goes straight to editing it, whatever
@@ -228,8 +248,16 @@ export function RouteListScreen({
   // route that isn't ready skips the confirm modal entirely and goes
   // straight to the edit screen instead, where the real warning UI
   // (and the Fetch/Fetch All buttons that actually fix this) already
-  // lives - no separate warning needed here.
+  // lives - no separate warning needed here. A demo route has no real
+  // committed sidecar file of its own to check (it's fabricated, and
+  // never opens the edit screen at all - see handleRowClick above), so
+  // it skips the readiness check entirely and always goes straight to
+  // the confirm modal.
   async function handlePublishClick(route: Route) {
+    if (route.status === "demo") {
+      setConfirmRequest({ type: "publish", route });
+      return;
+    }
     setCheckingRouteId(route.id);
     try {
       const committed = await fetchCommittedWaypointCache(route);
@@ -359,7 +387,8 @@ export function RouteListScreen({
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map((route) => {
             const isDemo = route.status === "demo";
-            const isAdminOnly = !isDemo && route.status !== "published";
+            const isPublished = isRoutePublished(route, demoHiddenIds);
+            const isAdminOnly = !isPublished;
             return (
               <div key={route.id}>
                 <div
@@ -390,8 +419,13 @@ export function RouteListScreen({
                     <span className="min-w-0 pl-3">
                       <SchoolNameLabel name={route.schoolName} />
                       {isAdminOnly && (
+                        // Always "draft" here, whether this is a real
+                        // draft route or a demo one toggled unpublished
+                        // this session (see isRoutePublished) - reaching
+                        // this branch at all already means "not
+                        // currently published," the same thing for both.
                         <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-                          {route.status}
+                          draft
                         </span>
                       )}
                     </span>
@@ -416,18 +450,18 @@ export function RouteListScreen({
                   )}
                 </div>
 
-                {/* Admin-only quick actions - each one a confirm-modal
-                    request, never fired directly from here, so a
-                    stray tap can't silently flip a route live or
-                    delete one. Delete (the destructive one) always
-                    reads leftmost. Every real (non-demo) route gets
-                    Unpublish once published; a draft one gets Delete
-                    and Publish instead - deleting a published route
-                    isn't offered at all, it has to be unpublished
-                    first. */}
-                {adminMode && !isDemo && (
+                {/* Admin-only quick actions - shown for every route,
+                    demo included, not just real ones - each one a
+                    confirm-modal request, never fired directly from
+                    here, so a stray tap can't silently flip a route
+                    live or delete one. Delete (the destructive one)
+                    always reads leftmost. Every route gets Unpublish
+                    once published; an unpublished one gets Delete and
+                    Publish instead - deleting a published route isn't
+                    offered at all, it has to be unpublished first. */}
+                {adminMode && (
                   <div className="-mt-1 flex items-center gap-2 px-2 pb-2">
-                    {route.status === "published" ? (
+                    {isPublished ? (
                       <button
                         type="button"
                         onClick={() => setConfirmRequest({ type: "unpublish", route })}

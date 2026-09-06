@@ -112,6 +112,16 @@ export default function Home() {
   // below recomputes). Same session-only honesty as everything else
   // here - nothing about a favorite is written back anywhere real.
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({});
+  // A fabricated demo route's own Publish/Unpublish toggle - never
+  // written into `adminRoutes`/`route.status` itself, since every piece
+  // of "is this route fake" logic elsewhere (favorites' own real-first
+  // sort, RouteListScreen's row click, buildDemoRoutes regenerating the
+  // exact same fabricated routes every render) depends on `status`
+  // staying literally "demo" forever. This is purely a display-time
+  // overlay (RouteListScreen derives `isPublished` from it) - a demo
+  // route's id living here means "treat it as unpublished this
+  // session," nothing about the route object itself ever changes.
+  const [demoHiddenIds, setDemoHiddenIds] = useState<ReadonlySet<string>>(new Set());
   // Toggled by RouteListScreen's own "Edit Mode" link, or turned on
   // unconditionally by a route's "Edit Route" link on StartScreen -
   // reveals draft real routes on the list, dimmed, and the per-row
@@ -180,11 +190,16 @@ export default function Home() {
     if (!effectiveRealRoutes || effectiveRealRoutes.length === 0) return effectiveRealRoutes ?? [];
     const combined = [...effectiveRealRoutes, ...buildDemoRoutes(effectiveRealRoutes, DEMO_ROUTE_COUNT)];
     return combined
+      // Real deletions are already gone via effectiveRealRoutes above -
+      // this second pass is what actually removes a deleted *demo* row,
+      // since buildDemoRoutes fabricates the same ones fresh every time
+      // (deterministically, so this doesn't reshuffle anything else).
+      .filter((route) => !deletedRouteIds.has(route.id))
       .map((route) =>
         route.id in favoriteOverrides ? { ...route, isFavorite: favoriteOverrides[route.id] } : route,
       )
       .sort((a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime));
-  }, [effectiveRealRoutes, favoriteOverrides]);
+  }, [effectiveRealRoutes, favoriteOverrides, deletedRouteIds]);
 
   function handleToggleFavorite(route: Route) {
     setFavoriteOverrides((prev) => ({ ...prev, [route.id]: !route.isFavorite }));
@@ -197,7 +212,19 @@ export default function Home() {
     setScreen({ kind: "edit-route", route });
   }
 
+  // A demo route's own "status" is a fixed identity marker, not a real
+  // lifecycle value (see demoHiddenIds above) - publishing/unpublishing
+  // one only ever toggles that separate overlay, never adminRoutes.
   function handleSetRouteStatus(route: Route, status: RouteStatus) {
+    if (route.status === "demo") {
+      setDemoHiddenIds((prev) => {
+        const next = new Set(prev);
+        if (status === "published") next.delete(route.id);
+        else next.add(route.id);
+        return next;
+      });
+      return;
+    }
     setAdminRoutes((prev) => ({ ...prev, [route.id]: { ...route, status } }));
   }
 
@@ -287,6 +314,7 @@ export default function Home() {
       onSetRouteStatus={handleSetRouteStatus}
       onDeleteRoute={handleDeleteRoute}
       onToggleFavorite={handleToggleFavorite}
+      demoHiddenIds={demoHiddenIds}
     />
   );
 }

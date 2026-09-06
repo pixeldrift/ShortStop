@@ -2225,3 +2225,25 @@ so far.
   otherwise double-fire or fight their own navigation), and steps aside
   entirely while a confirm modal is open so canceling or confirming an
   action isn't interrupted by also exiting admin mode underneath it.
+- **Delete/Publish/Unpublish now work on demo rows too, not just real
+  routes.** Every quick action used to be gated on `!isDemo`, so the 24
+  fabricated filler rows (versus 7 real ones) never got them at all -
+  in practice, admin mode looked broken on most of the list. Demo rows
+  are fully actionable now, using the same session-only overlay pattern
+  as favorites rather than touching `route.status` itself - every
+  "is this route fake" check elsewhere (favorites' own real-first sort,
+  `handleRowClick`'s edit routing, `buildDemoRoutes` regenerating the
+  exact same fabricated routes every render) depends on that field
+  staying literally `"demo"` forever, so page.tsx's new `demoHiddenIds`
+  overlay tracks "unpublished this session" entirely separately - a new
+  `isRoutePublished(route, demoHiddenIds)` helper (RouteListScreen.tsx)
+  is what both the search/filter pass and the row rendering now check
+  instead of reading `route.status` directly, so a real route and a
+  demo one agree on what "published" means without either needing to
+  know how the other one's state is actually stored. Deleting a demo
+  row reuses the existing `deletedRouteIds` overlay unchanged (just
+  extended to filter the full real+demo list, not only real routes);
+  Delete/Publish are still admin-only, driver-facing screens are
+  unaffected. Editing (the pencil icon, row-click-to-edit) stays
+  real-routes-only - a demo route has no real steps data behind it to
+  meaningfully edit.
