@@ -2379,3 +2379,7 @@ so far.
   way the row's own heart/pencil button is (`justify-self-end p-1`), so
   the two only shared a column, not an actual horizontal position.
   Matching that same positioning exactly fixes it.
+- **That same header icon switches to a pencil in admin mode too,**
+  matching what the column actually holds there - a heart-shaped label
+  over a column full of pencils read as labeling the wrong thing once
+  edit mode was on.
