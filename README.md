@@ -3195,3 +3195,36 @@ so far.
   generic HTTP-failure case here, never a real empty-result response -
   confirmed live in the browser only that the new `reason` text
   renders in the row without any wiring/runtime error.
+
+## A CSV download button, for a route's own stops and for the route list
+
+  Two small `DownloadIcon` buttons, fixed to the same bottom-right
+  corner on every screen that shows one (StartScreen, EditRouteScreen,
+  and RouteListScreen) - a district admin asked for a quick way to pull
+  data back out of the app as a spreadsheet, not just put it in.
+
+  `src/lib/exportCsv.ts` is the shared piece both draw from:
+  `routeStepsToCsv` walks a `Route`'s own `steps` in order (stops and
+  turns alike) and joins each one against whatever this session's own
+  waypoint cache already knows for it (the same `step.waypointKey`
+  lookup routeReadiness.ts/StepScreen.tsx already do to place a pin),
+  so the export's `lat`/`lon`/`status` columns reflect real, already-
+  resolved coordinates rather than triggering any new geocoding of its
+  own; `routeListToCsv` is one row per real route (fabricated demo rows
+  filtered out) with the same summary stats (stop count, rider count)
+  the list screen itself already computes. `downloadCsv` is the actual
+  browser mechanics (`Blob` + a throwaway `<a download>` click) both
+  reuse, unchanged from the "Download Coordinates" stopgap this app
+  used to have before real persistence existed (see above) - the same
+  trick, now used for a real feature instead of a workaround.
+
+  StartScreen fetches the shared waypoint cache itself on mount (it
+  never held one before) purely to fill in the export's coordinate
+  columns; EditRouteScreen already had a live `cache` in state, so its
+  button exports the screen's own *current, unsaved* edits (a live
+  `exportableRoute` snapshot rebuilt from `rows` via the same
+  `buildRouteFromRows` Save itself uses) rather than only what was last
+  saved. Not verified live in the browser, same standing limitation as
+  the migration reconciliation above - this session still can't reach
+  the Postgres-backed API routes the app now loads its route data
+  from.

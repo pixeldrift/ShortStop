@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { Logo } from "./Logo";
 import { ToggleSwitch } from "./ToggleSwitch";
@@ -8,6 +8,7 @@ import {
   BackArrowIcon,
   CheckCircleIcon,
   CloseIcon,
+  DownloadIcon,
   EditIcon,
   EyeIcon,
   EyeOffIcon,
@@ -30,6 +31,7 @@ import { buildRouteFromRows } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import { deriveWaypoints } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
+import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
 import { parseRouteImport, rowsToCsvText, unresolvedRequiredFields } from "@/lib/parseRouteImport";
 import {
@@ -1277,19 +1279,15 @@ export function EditRouteScreen({
     return runFetchAll(waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable"));
   }
 
-  // The only real requirement to save at all - a route number is what
-  // gives a draft its own identity (see `id` below), and everything
-  // else (school, stops, whether they're geocoded) can genuinely be
-  // filled in later. This deliberately lets a stub with nothing but a
-  // route number get saved - readiness for anything past that is
-  // Publish's own concern (canPublish above), not Save's.
-  function buildMeta(nextStatus: RouteStatus): RouteMeta | null {
-    if (!routeNumber.trim()) {
-      setMessage("Route number is required.");
-      return null;
-    }
-
-    return {
+  // Every field a RouteMeta needs, straight off this screen's own
+  // current form state - shared by handleSave (building the route to
+  // actually persist) and exportableRoute below (a live snapshot for
+  // the download button, independent of whether it's been saved yet).
+  // useCallback rather than a plain function so exportableRoute's own
+  // useMemo can depend on it without recomputing on every unrelated
+  // render.
+  const buildMetaFields = useCallback(
+    (nextStatus: RouteStatus): RouteMeta => ({
       id: `${routeNumber}-${tripType}-${schoolLevel}`,
       status: nextStatus,
       name: `${schoolName} — ${tripType === "pickup" ? "Morning Pickup" : "Afternoon Drop Off"}`,
@@ -1308,18 +1306,44 @@ export function EditRouteScreen({
       distance: route?.distance ?? PLACEHOLDER_DISTANCE,
       durationMinutes: route?.durationMinutes ?? PLACEHOLDER_DURATION_MINUTES,
       isFavorite: route?.isFavorite ?? false,
-    };
-  }
+    }),
+    [routeNumber, tripType, schoolLevel, schoolName, schoolAddress, departureTime, driverName, busNumber, route],
+  );
 
   function handleSave(nextStatus: RouteStatus = status) {
-    const meta = buildMeta(nextStatus);
-    if (!meta) return;
+    // The only real requirement to save at all - a route number is
+    // what gives a draft its own identity (see `id` above), and
+    // everything else (school, stops, whether they're geocoded) can
+    // genuinely be filled in later. This deliberately lets a stub with
+    // nothing but a route number get saved - readiness for anything
+    // past that is Publish's own concern (canPublish above), not
+    // Save's.
+    if (!routeNumber.trim()) {
+      setMessage("Route number is required.");
+      return;
+    }
     const currentRows = mode === "add" ? parseResult.rows : rows;
-    const built = buildRouteFromRows(currentRows, meta);
+    const built = buildRouteFromRows(currentRows, buildMetaFields(nextStatus));
     const textToPersist = mode === "add" ? stepsText : rowsToCsvText(rows);
     setStatus(nextStatus);
     setMessage("Saved.");
     onSave(built, textToPersist, cache);
+  }
+
+  // A live snapshot of the route as currently edited (not just as last
+  // saved) for the download button below - null while there's nothing
+  // meaningful to export yet (same "route number required" floor
+  // Save itself has), so the button can just hide instead of exporting
+  // an unidentifiable route.
+  const exportableRoute = useMemo(() => {
+    if (!routeNumber.trim()) return null;
+    const currentRows = mode === "add" ? parseResult.rows : rows;
+    return buildRouteFromRows(currentRows, buildMetaFields(status));
+  }, [routeNumber, mode, parseResult.rows, rows, status, buildMetaFields]);
+
+  function handleDownloadCsv() {
+    if (!exportableRoute) return;
+    downloadCsv(`${exportableRoute.id}-stops.csv`, routeStepsToCsv(exportableRoute, cache));
   }
 
   function handleToggleStatus() {
@@ -1619,6 +1643,17 @@ export function EditRouteScreen({
           onRefetchAll={refetchAllLocations}
           onClose={() => setShowFetchModal(false)}
         />
+      )}
+
+      {exportableRoute && (
+        <button
+          type="button"
+          onClick={handleDownloadCsv}
+          aria-label="Download this route's stops and turns as a CSV"
+          className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
+        >
+          <DownloadIcon className="h-4 w-4" />
+        </button>
       )}
     </div>
   );

@@ -333,6 +333,27 @@ export function UploadIcon({ className }: { className?: string }) {
   );
 }
 
+/** UploadIcon's own tray, arrow flipped to point down into it instead
+ * of up out of it - "download this as a CSV" buttons (StartScreen,
+ * EditRouteScreen, RouteListScreen). */
+export function DownloadIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 18 V18.5 A1.5 1.5 0 0 0 5.5 20 H18.5 A1.5 1.5 0 0 0 20 18.5 V18" />
+      <path d="M12 4.5 V15 M7.5 10.5 L12 15 L16.5 10.5" />
+    </svg>
+  );
+}
+
 /** An open eye - "Publish" (a route becomes visible to drivers), paired
  * with EyeOffIcon below for "Unpublish" the same way TrashIcon/EditIcon
  * pair up for delete/edit elsewhere in this list. */
