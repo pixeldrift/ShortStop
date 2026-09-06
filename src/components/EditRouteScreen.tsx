@@ -7,6 +7,7 @@ import { ToggleSwitch } from "./ToggleSwitch";
 import {
   BackArrowIcon,
   CheckCircleIcon,
+  CloseIcon,
   EditIcon,
   EyeIcon,
   EyeOffIcon,
@@ -50,8 +51,7 @@ import type { GeocodeResponseBody } from "@/app/api/geocode/route";
 // as before - parseRouteImport.ts does the real work - it's just not
 // spelled out here anymore now that Upload File, above, is the
 // primary path and this is the secondary one.
-const STEPS_PLACEHOLDER =
-  "One stop per line, or action,from_at,onto_at,rider_count,side,notes - only the location is ever required.";
+const STEPS_PLACEHOLDER = "One stop or turn per line, or delimited fields with headers.";
 
 const BLANK_ROW: RawRouteRow = { action: "Stop", fromAt: "", ontoAt: "", riderCount: "", side: "", notes: "" };
 
@@ -333,6 +333,82 @@ function StepRowEditor({
   );
 }
 
+/** The paste box's own quick reference - what column headers this
+ * screen's import (parseRouteImport.ts) recognizes and a few example
+ * rows, so a pasted/uploaded sheet's shape doesn't have to be guessed
+ * at. Same modal shell as StartScreen's AllStopsModal (full-screen dim,
+ * centered card, backdrop tap or the corner X to close). */
+function StopsFormatModal({ onClose }: { onClose: () => void }) {
+  const exampleRows: string[][] = [
+    ["Stop", "Main St & Oak Ave", "", "3", "Right", ""],
+    ["Left", "Main St", "Elm St", "", "", ""],
+    ["Stop", "123 Maple Dr", "", "1", "Left", "Ring doorbell"],
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl bg-[var(--background)] shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
+          <h2 className="font-heading text-xl font-black tracking-tight">Stops Format</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-5 text-left">
+          <p className="text-sm text-zinc-600">
+            Only <code className="font-mono text-xs">action</code> and{" "}
+            <code className="font-mono text-xs">from_at</code> are required - every other column
+            can be left blank.
+          </p>
+          <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
+            <table className="w-full min-w-[32rem] border-collapse text-xs">
+              <thead>
+                <tr className="bg-zinc-100 text-zinc-500 uppercase">
+                  {["action", "from_at", "onto_at", "rider_count", "side", "notes"].map((header) => (
+                    <th
+                      key={header}
+                      className="border-b border-zinc-200 px-2 py-1.5 text-left font-semibold"
+                    >
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {exampleRows.map((row, i) => (
+                  <tr key={i} className="odd:bg-white even:bg-zinc-50">
+                    {row.map((cell, j) => (
+                      <td key={j} className="px-2 py-1.5 text-zinc-700">
+                        {cell || <span className="text-zinc-300">-</span>}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-sm text-zinc-600">
+            No header row works too - one stop or turn per line, same as the paste box&apos;s own
+            placeholder shows.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The admin-only Add Route / Edit Route screen - reached via
  * RouteListScreen's "Edit Mode" toggle (a new route, or clicking a
@@ -498,6 +574,9 @@ export function EditRouteScreen({
   // reaches the effect below.
   const [cache, setCache] = useState<WaypointCache>(() => initialWaypointCache ?? {});
   const [message, setMessage] = useState<string | null>(null);
+  // mode "add" only - the paste box's own "Details" link, see
+  // StopsFormatModal above.
+  const [showFormatModal, setShowFormatModal] = useState(false);
 
   // The school's own geocoded point, once known - reused across every
   // "Fetch"/"Fetch All" call in this edit session instead of
@@ -895,9 +974,14 @@ export function EditRouteScreen({
               <UploadIcon className="h-3.5 w-3.5" />
               Upload File
             </button>
-            <span className="text-xs text-zinc-400">
-              CSV or TSV, one file at a time - multiple files (one route each) is on the roadmap
-            </span>
+            <span className="text-xs text-zinc-400">CSV or TSV</span>
+            <button
+              type="button"
+              onClick={() => setShowFormatModal(true)}
+              className="text-xs font-semibold text-blue-600 underline underline-offset-2"
+            >
+              Details
+            </button>
             <input
               ref={fileInputRef}
               type="file"
@@ -1062,6 +1146,8 @@ export function EditRouteScreen({
             </div>
           ))}
       </div>
+
+      {showFormatModal && <StopsFormatModal onClose={() => setShowFormatModal(false)} />}
     </div>
   );
 }

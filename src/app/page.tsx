@@ -206,6 +206,18 @@ export default function Home() {
   }
 
   function handleSaveRoute(route: Route, rawStepsText: string, waypointCache: WaypointCache) {
+    // A demo route (see demoRoutes.ts) is fabricated filler, not a real
+    // entity of its own - folding it into adminRoutes here would merge
+    // it into effectiveRealRoutes below (double-counting it, since
+    // buildDemoRoutes keeps generating its own fresh 24 regardless) and
+    // could even reshuffle every other demo row's own generated number
+    // (buildDemoRoutes' routeNumber draws depend on which numbers are
+    // already taken). Its edit screen is for review only - nothing
+    // typed or saved there actually persists.
+    if (route.status === "demo") {
+      setScreen({ kind: "list" });
+      return;
+    }
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
     setAdminRawStepsById((prev) => ({ ...prev, [route.id]: rawStepsText }));
     setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
@@ -274,7 +286,15 @@ export default function Home() {
   }
 
   if (screen.kind === "edit-route") {
-    const rawStepsText = adminRawStepsById[screen.route.id] ?? rawStepsById[screen.route.id] ?? "";
+    // A demo route (see demoRoutes.ts) never has its own real committed
+    // steps sheet - it borrows realRoutes[0]'s exact steps as its base,
+    // so its edit screen borrows that same route's raw CSV text too,
+    // rather than opening to a stops list that looks empty next to the
+    // (borrowed) steps it already shows when actually run as a trip.
+    const rawStepsText =
+      adminRawStepsById[screen.route.id] ??
+      rawStepsById[screen.route.id] ??
+      (screen.route.status === "demo" ? (rawStepsById[realRoutes[0]?.id ?? ""] ?? "") : "");
     return (
       <EditRouteScreen
         key={`edit-${screen.route.id}`}

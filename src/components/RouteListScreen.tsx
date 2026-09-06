@@ -115,21 +115,23 @@ export function RouteListScreen({
    * session is recognized as ready here too. */
   adminWaypointCaches: Record<string, WaypointCache>;
   onToggleAdminMode: () => void;
-  /** Normal navigation - the trip-summary/step flow. Used for every
-   * route when not in admin mode, and for published/demo routes even
-   * while in admin mode (only a draft route's row opens straight into
-   * editing instead - see handleRowClick below). */
+  /** Normal navigation - the trip-summary/step flow. Every row's own
+   * main tap target, whether or not admin mode is on - editing has its
+   * own separate pencil button now (see the row rendering below), so
+   * this never redirects to it itself. */
   onSelect: (route: Route) => void;
-  /** Opens EditRouteScreen directly for this route - admin mode only,
-   * draft routes only (see handleRowClick), or a draft route that
-   * isn't actually ready to publish yet (see handlePublishClick). */
+  /** Opens EditRouteScreen directly for this route - fired by the
+   * row's own pencil button in admin mode (every route, demo included),
+   * or by a "Publish" attempt that turns out not to be ready yet (see
+   * handlePublishClick). */
   onEditRoute: (route: Route) => void;
   onAddRoute: () => void;
   onSetRouteStatus: (route: Route, status: RouteStatus) => void;
   onDeleteRoute: (route: Route) => void;
   /** Toggles a route's own favorite heart - independent of the row's
-   * main click (handleRowClick), which navigates/edits instead; see the
-   * row rendering below for how the heart gets its own tap target. */
+   * main click (onSelect), which only ever navigates; see the row
+   * rendering below for how the heart gets its own tap target (a
+   * pencil takes its place there instead, in admin mode). */
   onToggleFavorite: (route: Route) => void;
   /** Which fabricated demo routes are "unpublished" this session (see
    * page.tsx) - a demo route's own `status` always stays literally
@@ -228,17 +230,6 @@ export function RouteListScreen({
       return sortDir === "asc" ? result : -result;
     });
   }, [routes, query, view, sortField, sortDir, adminMode, demoHiddenIds]);
-
-  // In admin mode, tapping any real route's row (its heart-icon slot
-  // is a pencil then, see below) goes straight to editing it, whatever
-  // its status - published or draft, there's always something to
-  // review or fix. A demo route never has real data behind it to edit
-  // at all, so its row keeps opening normally (and keeps showing the
-  // heart, not a pencil) even while in admin mode.
-  function handleRowClick(route: Route) {
-    if (adminMode && route.status !== "demo") onEditRoute(route);
-    else onSelect(route);
-  }
 
   // "Publish" never just flips the status - the same "every geocodable
   // stop has to actually resolve first" rule EditRouteScreen.tsx
@@ -346,7 +337,7 @@ export function RouteListScreen({
       <div
         ref={boxRef}
         className={`flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border text-left ${
-          adminMode ? "border-2 border-red-400" : "border-zinc-300"
+          adminMode ? "border-2 border-dashed border-blue-400" : "border-zinc-300"
         }`}
       >
         <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
@@ -386,7 +377,6 @@ export function RouteListScreen({
         </div>
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map((route) => {
-            const isDemo = route.status === "demo";
             const isPublished = isRoutePublished(route, demoHiddenIds);
             const isAdminOnly = !isPublished;
             return (
@@ -398,7 +388,7 @@ export function RouteListScreen({
                 >
                   <button
                     type="button"
-                    onClick={() => handleRowClick(route)}
+                    onClick={() => onSelect(route)}
                     className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-center gap-x-1 text-left active:bg-zinc-100"
                   >
                     <div className="flex items-center gap-1.5">
@@ -433,8 +423,15 @@ export function RouteListScreen({
                       {route.departureTime}
                     </span>
                   </button>
-                  {adminMode && !isDemo ? (
-                    <EditIcon className="h-4 w-4 justify-self-end text-zinc-400" />
+                  {adminMode ? (
+                    <button
+                      type="button"
+                      onClick={() => onEditRoute(route)}
+                      aria-label={`Edit route ${route.routeNumber}`}
+                      className="justify-self-end p-1 text-blue-600 active:opacity-70"
+                    >
+                      <EditIcon className="h-4 w-4" />
+                    </button>
                   ) : (
                     <button
                       type="button"
@@ -509,12 +506,20 @@ export function RouteListScreen({
           a primary driver action, tucked below the list rather than up
           with Search/View. "New Route" only appears once already in
           edit mode - there's no direct route to it from the normal
-          (non-admin) list. */}
+          (non-admin) list. Full button chrome on both (not plain text
+          links) so they read as real actions next to the dashed-blue
+          admin box above; exiting is deliberately the gray/neutral one
+          of the pair, entering and adding a route are both the blue
+          "forward" action. */}
       <div ref={controlsRef} className="flex shrink-0 items-center gap-4">
         <button
           type="button"
           onClick={onToggleAdminMode}
-          className="flex items-center gap-1 text-xs font-medium text-blue-600 active:text-blue-800"
+          className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+            adminMode
+              ? "border-zinc-300 bg-zinc-100 text-zinc-600 active:bg-zinc-200"
+              : "border-blue-300 bg-blue-50 text-blue-600 active:bg-blue-100"
+          }`}
         >
           <EditIcon className="h-3 w-3" />
           {adminMode ? "Exit Edit Mode" : "Edit Mode"}
@@ -523,7 +528,7 @@ export function RouteListScreen({
           <button
             type="button"
             onClick={onAddRoute}
-            className="flex items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
+            className="flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-600 active:bg-blue-100"
           >
             <PlusIcon className="h-3 w-3" />
             New Route

@@ -466,7 +466,10 @@ export function CloseIcon({ className }: { className?: string }) {
  * hand) - an earlier hand-tuned path here wasn't actually symmetric
  * (its left and right lobes used unrelated control points) and its
  * closing curve didn't even return to its own start point, both of
- * which only showed up as a visible lopsided bump once filled solid. */
+ * which only showed up as a visible lopsided bump once filled solid.
+ * A follow-up pass that fixed the symmetry also flattened the top
+ * notch too much - this one keeps the full, round lobes but with a
+ * single clean point at the bottom, merged and centered on x=12. */
 export function HeartIcon({
   filled,
   className,
@@ -485,7 +488,7 @@ export function HeartIcon({
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <path d="M12 21C12 21 4 13.5 4 8.5C4 5.42 6.42 3 9.5 3C11.24 3 12 4 12 4C12 4 12.76 3 14.5 3C17.58 3 20 5.42 20 8.5C20 13.5 12 21 12 21Z" />
+      <path d="M12 21C12 21 3 14 3 9C3 6 5.5 3 8 3C9.8 3 12 4.5 12 6C12 4.5 14.2 3 16 3C18.5 3 21 6 21 9C21 14 12 21 12 21Z" />
     </svg>
   );
 }

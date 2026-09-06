@@ -2247,3 +2247,56 @@ so far.
   unaffected. Editing (the pencil icon, row-click-to-edit) stays
   real-routes-only - a demo route has no real steps data behind it to
   meaningfully edit.
+- **HeartIcon reshaped again, editing opens for every row now (demo
+  included), edit-mode's bottom controls and box border restyled, and
+  the Add Route paste box got a format-reference modal.**
+
+  A second look at `HeartIcon`'s path (icons.tsx) - the previous fix
+  made both lobes genuinely mirror-symmetric, but in doing so also
+  flattened the top notch and pulled the lobes in too close, reading as
+  "almost flat on top" instead of a full heart shape. Re-shaped with
+  wider-set lobes and a deeper top notch (still built by mirroring one
+  canonical side's coordinates, not hand-tuning both independently, so
+  the earlier lopsided bug can't reappear) while keeping the bottom
+  point genuinely merged and centered on x=12, the one thing the very
+  first version got wrong.
+
+  Editing is no longer real-routes-only - every row's own tap target
+  (the heart-icon slot) becomes a blue pencil button in admin mode now,
+  demo rows included, and tapping it always opens `EditRouteScreen`
+  directly for that route; the row's own main button now just navigates
+  (`onSelect`) whether or not admin mode is on, since the pencil is the
+  one dedicated edit entry point. A demo route has no real committed
+  steps sheet of its own to edit, so page.tsx's `edit-route` screen now
+  falls back to `realRoutes[0]`'s own raw steps text for one (the same
+  route every demo row's steps are already borrowed from via
+  `buildDemoRoutes`), rather than opening to a stops list that looks
+  empty next to the borrowed steps that route already shows when
+  actually run. Saving a demo route's edits is still a no-op back to
+  the list, deliberately - folding one into `adminRoutes` would merge
+  it into `effectiveRealRoutes`, double-counting it (since
+  `buildDemoRoutes` keeps generating its own fresh 24 regardless) and
+  could even reshuffle every other demo row's own generated number
+  (`buildDemoRoutes`' `routeNumber` draws depend on which numbers are
+  already taken) - its edit screen is for review only.
+
+  Edit mode's own bottom controls ("Edit Mode"/"Exit Edit Mode," "New
+  Route") are full buttons now instead of plain text-with-icon links -
+  visible border/background/padding, matching every other button in the
+  app. Entering edit mode and "New Route" both read blue (the two
+  "forward" actions); exiting reads gray/neutral instead. The admin-mode
+  box border itself switched from a solid red to a dashed blue, less
+  "warning," more "you're in a distinct editing mode."
+
+  The Add Route paste box's helper text next to "Upload File" dropped
+  its "one file at a time - multiple files is on the roadmap" aside
+  (now just "CSV or TSV") and gained a "Details" link beside it that
+  opens a new `StopsFormatModal`, styled like StartScreen's own
+  `AllStopsModal` - a small reference table showing the column headers
+  `parseRouteImport.ts` actually recognizes
+  (`action`/`from_at`/`onto_at`/`rider_count`/`side`/`notes`) alongside
+  a few example rows, plus a note that a header-less plain list works
+  too. The textarea's own placeholder is shorter now too - "One stop or
+  turn per line, or delimited fields with headers" - since the fuller
+  explanation lives in that same modal instead of being crammed into
+  the placeholder text itself.
