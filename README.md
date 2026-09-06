@@ -2771,3 +2771,48 @@ so far.
   non-null anchor" guard still throws exactly as before, since that
   invariant is enforced in the wrapper itself, not silently papered over
   by `lookupCoordinates`'s own auto-anchor fallback.
+
+## Two admin functions, not one generic loop
+
+  Reframed around how an admin actually uses this: EditRouteScreen has
+  two distinct actions, not one loop sometimes run once - a single
+  row's own "Fetch" button, and the Fetch Coordinates modal's "Fetch
+  Missing"/"Re-fetch All" (always a list, one or many rows). The old
+  `/api/geocode` route handled both by normalizing everything to an
+  array and running one loop either way.
+
+  Added `fetchOneLocation`/`fetchLocationList` to resolveWaypoint.ts -
+  one query in, one entry out for the single-row case; a list in, a
+  list out (tracking a shared anchor/near point across it, same idea as
+  the CLI pipeline) for the batch case - both calling `lookupCoordinates`
+  directly rather than through `resolveGeocodableQuery`, which
+  scripts/geocodeRoute.ts's own pipeline keeps using unchanged. The
+  route handler now branches on `Array.isArray(body.query)` and calls
+  whichever one actually matches the request, instead of always
+  wrapping a single query in a one-element array first. Also dropped
+  `WaypointQuery`'s "unresolvable" kind from the request/response
+  types entirely - both client call sites already filter those out
+  before ever reaching this endpoint (`GeocodableQuery[]` end to end),
+  so the server-side branch handling them was dead code.
+
+  Writing a real test for the "school address itself fails to geocode"
+  path (not something anyone had actually exercised before) surfaced a
+  genuine pre-existing bug: `geocodeQuery` throws on a real HTTP-level
+  failure (ORS returning a 403, say) rather than returning an error
+  entry, and nothing wrapping it ever caught that - a real ORS outage
+  would have crashed the whole request as an uncaught exception instead
+  of the friendly `{error: "Couldn't geocode the school address
+  itself..."}` response the code was clearly written to produce.
+  Fixed once, in `lookupCoordinates` itself (`safeGeocodeQuery`, a
+  small try/catch wrapper) now that everything actually funnels through
+  there - exactly the kind of bug this whole consolidation was for.
+
+  Verified against a stand-in `fetch`: a single address query, a single
+  intersection query with and without an anchor already known, and a
+  three-query mixed batch all resolve correctly (the batch anchors
+  exactly once, reusing it for every later intersection); and the
+  newly-fixed failure path returns a clean `{error}` instead of
+  throwing. Then confirmed live in the browser (this sandbox's own
+  network block substituting for a real ORS outage): both the
+  single-row "Fetch" button and the modal's "Fetch Missing" now show
+  that exact friendly error message inline instead of crashing.

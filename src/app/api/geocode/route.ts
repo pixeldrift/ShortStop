@@ -1,20 +1,21 @@
 import { NextResponse } from "next/server";
-import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { extractCityState, getLastKnownOrsQuota } from "@/lib/geocode";
 import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
-import { DEFAULT_SEARCH_RADIUS_DEG, resolveGeocodableQuery, resolveSchoolAnchor } from "@/lib/resolveWaypoint";
+import { fetchLocationList, fetchOneLocation } from "@/lib/resolveWaypoint";
 import type { WaypointCacheEntry } from "@/lib/waypointCache";
 
 /**
  * Server-side endpoint behind EditRouteScreen.tsx's "Fetch Location"
- * (one row) and "Fetch All Locations" (every unresolved row) buttons -
- * a route handler, not a client-side call, specifically so
- * `ORS_API_KEY` stays a server-only environment variable and is never
- * shipped to the browser. Resolves each query the same way
- * scripts/geocodeRoute.ts does for the batch pipeline (see
- * resolveWaypoint.ts, shared by both) - ORS for a plain address,
- * Overpass for an intersection, anchored on the school's own address
- * for the search box.
+ * (one row), "Fetch Missing", and "Re-fetch All" buttons - a route
+ * handler, not a client-side call, specifically so `ORS_API_KEY` stays
+ * a server-only environment variable and is never shipped to the
+ * browser. Resolves each query the same way scripts/geocodeRoute.ts
+ * does for the batch pipeline (see resolveWaypoint.ts) - ORS for a
+ * plain address, Overpass for an intersection, anchored on the
+ * school's own address for the search box - just via
+ * resolveWaypoint.ts's own admin-facing pair,
+ * fetchOneLocation/fetchLocationList, rather than the CLI script's own
+ * resolveGeocodableQuery.
  *
  * Deliberately synchronous/one-shot: the whole batch resolves before
  * this responds, no incremental per-row streaming - acceptable for the
@@ -25,13 +26,13 @@ import type { WaypointCacheEntry } from "@/lib/waypointCache";
 
 const RATE_LIMIT_MS = 1100;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 interface GeocodeRequestBody {
-  /** One query, or a batch - always normalized to an array below. */
-  query: WaypointQuery | WaypointQuery[];
+  /** One query, or a batch - every query here is always geocodable
+   * (see fetchLocation/runFetchAll, EditRouteScreen.tsx): an
+   * "unresolvable" WaypointQuery (deriveWaypoints.ts) is filtered out
+   * client-side before it ever reaches this endpoint, so this doesn't
+   * need to handle - or even accept - that kind at all. */
+  query: GeocodableQuery | GeocodableQuery[];
   schoolAddress: string;
   /** The school's own already-known anchor point, if the caller has
    * one from an earlier call this session - skips re-geocoding the
@@ -44,12 +45,10 @@ export interface GeocodeResponseBody {
    * here) - callers should cache this and pass it back on their next
    * request rather than making this endpoint re-geocode the school
    * address every time. Null if no query in the batch needed one
-   * (every query was a plain address, or all were unresolvable). */
+   * (every query was a plain address). */
   anchor: { lat: number; lon: number } | null;
-  /** Parallel to the request's own query array - null for an
-   * "unresolvable" query (nothing to look up at all, see
-   * deriveWaypoints.ts), an entry otherwise. */
-  results: (WaypointCacheEntry | null)[];
+  /** Parallel to the request's own query array. */
+  results: WaypointCacheEntry[];
   /** OpenRouteService's own account-wide rate limit, if this batch made
    * at least one real ORS request and it happened to report one (see
    * geocode.ts's own getLastKnownOrsQuota) - null otherwise, including
@@ -74,7 +73,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const queries: WaypointQuery[] = Array.isArray(body.query) ? body.query : [body.query];
   const schoolAddress = body.schoolAddress?.trim();
   if (!schoolAddress) {
     return NextResponse.json({ error: "schoolAddress is required." }, { status: 400 });
@@ -87,47 +85,31 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  let anchor = body.anchor ?? null;
-  let lastResolved = anchor;
-  const results: (WaypointCacheEntry | null)[] = [];
+  const anchor = body.anchor ?? null;
+  const adminCtx = { schoolAddress, locationContext, apiKey, anchor };
 
-  for (const [index, query] of queries.entries()) {
-    if (query.kind === "unresolvable") {
-      results.push(null);
-      continue;
-    }
-    if (index > 0) await sleep(RATE_LIMIT_MS);
-
-    const geocodable = query as GeocodableQuery;
-
-    if (geocodable.kind === "intersection" && !anchor) {
-      const { entry: anchorEntry, point } = await resolveSchoolAnchor(schoolAddress, locationContext, apiKey);
-      if (!point) {
-        return NextResponse.json(
-          {
-            error: `Couldn't geocode the school address itself: ${
-              anchorEntry.status === "error" ? anchorEntry.message : "unknown error"
-            }`,
-          },
-          { status: 502 },
-        );
-      }
-      anchor = point;
-      lastResolved = lastResolved ?? anchor;
-      await sleep(RATE_LIMIT_MS);
-    }
-
-    const { entry, resolvedPoint } = await resolveGeocodableQuery(geocodable, {
-      locationContext,
-      apiKey,
-      anchor,
-      near: lastResolved,
-      searchRadiusDeg: DEFAULT_SEARCH_RADIUS_DEG,
-    });
-    if (resolvedPoint) lastResolved = resolvedPoint;
-    results.push(entry);
+  // A single query (the "Fetch Location" button) and a list (either
+  // Fetch Coordinates modal button) are genuinely different requests,
+  // not the same loop run once vs. many times - fetchOneLocation has
+  // no `near` point to carry anywhere, and fetchLocationList's pacing
+  // between calls would be pure overhead for exactly one.
+  if (!Array.isArray(body.query)) {
+    const result = await fetchOneLocation(body.query, adminCtx);
+    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 502 });
+    const responseBody: GeocodeResponseBody = {
+      anchor: result.anchor,
+      results: [result.entry],
+      quota: getLastKnownOrsQuota(),
+    };
+    return NextResponse.json(responseBody);
   }
 
-  const responseBody: GeocodeResponseBody = { anchor, results, quota: getLastKnownOrsQuota() };
+  const result = await fetchLocationList(body.query, { ...adminCtx, rateLimitMs: RATE_LIMIT_MS });
+  if ("error" in result) return NextResponse.json({ error: result.error }, { status: 502 });
+  const responseBody: GeocodeResponseBody = {
+    anchor: result.anchor,
+    results: result.results,
+    quota: getLastKnownOrsQuota(),
+  };
   return NextResponse.json(responseBody);
 }
