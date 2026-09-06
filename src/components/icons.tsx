@@ -550,23 +550,55 @@ export function HeartIcon({
   );
 }
 
-/** A graduation cap - "View all Schools" (RouteListScreen), and the
- * Schools list itself. A flat diamond cap over a curved head-band, with
- * a small tassel bead hanging off the right point - the standard
- * "school" glyph shorthand rather than a literal schoolhouse building. */
+/** A literal schoolhouse - a peaked roof with a bit of eave overhang
+ * past the walls, a small round window in the gable, a center door,
+ * and a ground line wider than the building itself. Used for the
+ * Schools heading (SchoolListScreen) and RouteListScreen's own
+ * "Schools" link. */
 export function SchoolIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <path fill="currentColor" d="M12 3 22 8 12 13 2 8Z" />
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M6 10.2V15c0 1.66 2.69 3 6 3s6-1.34 6-3v-4.8"
-      />
-      <path fill="currentColor" d="M19 9v5.5a1 1 0 1 0 2 0V9l-1-.5-1 .5Z" />
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 10 12 3 20 10" />
+      <circle cx="12" cy="7" r="0.8" fill="currentColor" stroke="none" />
+      <line x1="5" y1="10" x2="5" y2="20" />
+      <line x1="19" y1="10" x2="19" y2="20" />
+      <path d="M10 20v-6h4v6" />
+      <line x1="2" y1="20" x2="22" y2="20" />
+    </svg>
+  );
+}
+
+/** A folded paper map - a zigzag-edged outline (its corners rounded off
+ * rather than left knife-sharp, via strokeLinejoin below) with a
+ * dotted route line crossing it. Used for the Routes heading
+ * (RouteListScreen). */
+export function RouteIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 8 9 3 14 8 21 3 21 16 15 21 9 16 3 21Z" />
+      <path d="M7 12 11 15 14 11 18 14" />
+      <circle cx="7" cy="12" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="11" cy="15" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="14" cy="11" r="1.3" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="14" r="1.3" fill="currentColor" stroke="none" />
     </svg>
   );
 }

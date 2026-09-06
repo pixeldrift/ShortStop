@@ -12,6 +12,7 @@ import {
   EyeOffIcon,
   HeartIcon,
   PlusIcon,
+  RouteIcon,
   SearchIcon,
   SortIcon,
   SunIcon,
@@ -317,7 +318,11 @@ export function RouteListScreen({
         </div>
       ) : (
         <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-          {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
+          {adminMode ? (
+            <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+          ) : (
+            !title && <RouteIcon className="h-5 w-5 shrink-0 text-blue-600" />
+          )}
           {title ?? (adminMode ? "Edit Routes" : "Routes")}
         </h1>
       )}

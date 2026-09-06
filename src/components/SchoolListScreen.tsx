@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
-import { BackArrowIcon, CloseIcon, MapPinIcon, SearchIcon } from "./icons";
+import { BackArrowIcon, CloseIcon, MapPinIcon, SchoolIcon, SearchIcon } from "./icons";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import type { Route } from "@/lib/types";
 
@@ -89,7 +89,10 @@ export function SchoolListScreen({
           <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
             Rutherford County
           </span>
-          <h1 className="font-heading text-2xl font-black tracking-tight">Schools</h1>
+          <h1 className="font-heading flex items-center justify-center gap-2 text-2xl font-black tracking-tight">
+            <SchoolIcon className="h-5 w-5 shrink-0 text-blue-600" />
+            Schools
+          </h1>
         </div>
         <span className="h-10 w-10 shrink-0" aria-hidden="true" />
       </div>
