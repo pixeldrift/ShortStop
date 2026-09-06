@@ -4,39 +4,65 @@ import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
 import { BackArrowIcon, CloseIcon, MapPinIcon, SearchIcon } from "./icons";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
-import type { SchoolLevel } from "@/lib/types";
+import type { Route } from "@/lib/types";
 
-const LEVEL_LABEL: Record<SchoolLevel, string> = {
-  elementary: "Elementary",
-  middle: "Middle",
-  high: "High",
-};
+/** The city out of a school's own "<street>, <city>, TN <zip>" address
+ * (schools.csv/Postgres' `School` table - every real school's address
+ * follows this exact three-part shape today) - its own table column,
+ * rather than making a reader parse it back out of the full address
+ * line under the school's name. */
+function cityFromAddress(address: string): string {
+  return address.split(",")[1]?.trim() ?? "";
+}
 
 /**
- * Companion screen to RouteListScreen, reached via its "View all
- * Schools" button - every real district school (schools.csv/Postgres'
- * `School` table, via the same `schools` lookup page.tsx already loads
- * for EditRouteScreen's own school picker), searchable by name, sorted
- * alphabetically. Tapping a row hands its name up to `onSelectSchool`,
- * which page.tsx uses to open a school-scoped RouteListScreen (see its
- * own `school-routes` screen kind) - this screen itself only ever
- * shows school details, never route data.
+ * Companion screen to RouteListScreen, reached via its "Schools" link -
+ * every real district school (schools.csv/Postgres' `School` table, via
+ * the same `schools` lookup page.tsx already loads for EditRouteScreen's
+ * own school picker), searchable by name or city, sorted alphabetically
+ * by name. Tapping a row hands its name up to `onSelectSchool`, which
+ * page.tsx uses to open a school-scoped RouteListScreen (see its own
+ * `school-routes` screen kind) - this screen itself only ever shows
+ * school details, never route data beyond each one's own route count.
+ *
+ * Every real school here is a Rutherford County one today (see the
+ * small district label above the heading) - schoolLevel isn't shown
+ * anymore (an admin picking a school by name/city doesn't need it
+ * repeated here too, and it's still enforced everywhere it actually
+ * matters - EditRouteScreen's own school picker, routing logic), but
+ * stays on `SchoolInfo` itself for that.
  */
 export function SchoolListScreen({
   schools,
+  routes,
   onSelectSchool,
   onBack,
 }: {
   schools: Record<string, SchoolInfo>;
+  /** Every route (real and demo) - only used to count how many serve
+   * each school (a demo route's own fabricated school name never
+   * matches a real one, so it never inflates a real school's count). */
+  routes: Route[];
   onSelectSchool: (schoolName: string) => void;
   onBack: () => void;
 }) {
   const [query, setQuery] = useState("");
 
+  const routeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const route of routes) {
+      counts[route.schoolName] = (counts[route.schoolName] ?? 0) + 1;
+    }
+    return counts;
+  }, [routes]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return Object.entries(schools)
-      .filter(([name]) => !q || name.toLowerCase().includes(q))
+      .filter(
+        ([name, info]) =>
+          !q || name.toLowerCase().includes(q) || cityFromAddress(info.address).toLowerCase().includes(q),
+      )
       .sort(([a], [b]) => a.localeCompare(b));
   }, [schools, query]);
 
@@ -53,7 +79,18 @@ export function SchoolListScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1 className="font-heading text-2xl font-black tracking-tight">Schools</h1>
+        <div>
+          {/* Hardcoded for now - every real school here is a Rutherford
+              County one. Its own small line above "Schools" rather than
+              folded into the heading itself so a future multi-district
+              version has an obvious place to swap in whichever
+              district is actually selected, without restyling the
+              heading around it. */}
+          <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            Rutherford County
+          </span>
+          <h1 className="font-heading text-2xl font-black tracking-tight">Schools</h1>
+        </div>
         <span className="h-10 w-10 shrink-0" aria-hidden="true" />
       </div>
 
@@ -80,13 +117,18 @@ export function SchoolListScreen({
       </div>
 
       <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
+        <div className="grid grid-cols-[1fr_7rem_3.5rem] items-center gap-x-2 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-3 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+          <span>School</span>
+          <span className="pl-2 text-center">City</span>
+          <span className="pl-2 text-center">Routes</span>
+        </div>
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map(([name, info]) => (
             <button
               key={name}
               type="button"
               onClick={() => onSelectSchool(name)}
-              className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left active:bg-zinc-100"
+              className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-2 px-3 py-3 text-left active:bg-zinc-100"
             >
               <div className="min-w-0">
                 <span className="block truncate text-sm font-semibold text-zinc-900">{name}</span>
@@ -95,8 +137,11 @@ export function SchoolListScreen({
                   <span className="truncate">{info.address}</span>
                 </span>
               </div>
-              <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-                {LEVEL_LABEL[info.schoolLevel]}
+              <span className="truncate pl-2 text-center text-sm text-zinc-600">
+                {cityFromAddress(info.address)}
+              </span>
+              <span className="pl-2 text-center text-sm font-semibold text-zinc-700">
+                {routeCounts[name] ?? 0}
               </span>
             </button>
           ))}
