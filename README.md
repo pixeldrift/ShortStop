@@ -2940,3 +2940,39 @@ so far.
   button stays disabled through the rest of the ~1.1s cooldown window,
   confirmed by polling both the label and the disabled state every
   150ms; it re-enables right on schedule afterward.
+
+## A stopgap: downloading the resolved coordinates
+
+  Raised alongside the real fix this is all working toward - a real
+  hosted database, chosen for being free and easy to migrate later
+  rather than committed to now - but that's a decision to make
+  deliberately, not bolt on mid-session. In the meantime: a way to get
+  a route's freshly-fetched coordinates out of this session's own
+  browser memory at all, since right now they never leave it (see
+  "session-only for now" a few entries back).
+
+  Added a "Download Coordinates" button to the Fetch Coordinates modal
+  (disabled until at least one row is actually resolved) that builds a
+  JSON file client-side - `Blob` + a throwaway `<a download>` click, no
+  server round trip needed - and hands it straight to the browser's
+  own download flow. It's not a raw dump of whatever this session
+  happens to hold: only "ok" entries, and only ones the route's
+  *current* CSV still actually references (the same pruning
+  scripts/geocodeRoute.ts's own real pipeline already does), named
+  `{routeNumber}-{trip}-{level}-waypoints.json` - byte-for-byte the
+  same shape as the real committed sidecar file, so it can be handed
+  over and dropped straight into `public/data/` with no relabeling.
+
+  Verified in the browser against route 125's own already-resolved
+  stops: the button downloads as `125-PM-EL-waypoints.json` and its
+  contents are identical in shape and content to the real committed
+  file already in the repo.
+
+  Database options worth actually weighing, once that decision is
+  ready to make: Vercel Postgres or Neon (same underlying service,
+  generous free tier, standard Postgres - the most portable choice for
+  "easy to migrate later," and Vercel Postgres sets up from the exact
+  dashboard this app already deploys through) over something
+  NoSQL/proprietary-shaped, given this app's own data (a route, its
+  steps, a handful of resolved coordinates) is naturally relational,
+  not document-shaped.

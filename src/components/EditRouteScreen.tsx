@@ -658,6 +658,7 @@ function FetchCoordinatesModal({
   fetchError,
   onFetchMissing,
   onRefetchAll,
+  onDownload,
   onClose,
 }: {
   counts: RouteResolutionCounts;
@@ -666,6 +667,7 @@ function FetchCoordinatesModal({
   fetchError: FetchErrorInfo | null;
   onFetchMissing: () => void;
   onRefetchAll: () => void;
+  onDownload: () => void;
   onClose: () => void;
 }) {
   const [showErrorDetail, setShowErrorDetail] = useState(false);
@@ -763,6 +765,20 @@ function FetchCoordinatesModal({
             Fetch Missing
           </button>
         </div>
+
+        {/* A stopgap until there's a real place to persist this (see
+            README) - hands the resolved coordinates over as a file
+            shaped exactly like the real committed sidecar cache, ready
+            to pass along and drop straight into public/data/. */}
+        <button
+          type="button"
+          onClick={onDownload}
+          disabled={counts.resolved === 0}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold text-zinc-500 underline underline-offset-2 disabled:opacity-40 disabled:no-underline"
+        >
+          <SaveIcon className="h-4 w-4" />
+          Download Coordinates
+        </button>
       </div>
     </div>
   );
@@ -1221,6 +1237,35 @@ export function EditRouteScreen({
     return runFetchAll(waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable"));
   }
 
+  // A stopgap until there's somewhere real to persist this (see
+  // README - the whole admin flow is session-only in-memory right
+  // now): saves the exact same shape a real `npm run geocode` run
+  // would - only "ok" entries, only ones this route's current CSV
+  // still references (mirroring geocodeRoute.ts's own pruning, so a
+  // row edited away mid-session doesn't leave an orphaned entry in the
+  // download) - named to match its real sidecar file exactly, so it
+  // can be handed over and dropped straight into public/data/ with no
+  // renaming.
+  function downloadCacheFile() {
+    const currentKeys = new Set(
+      waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable").map(waypointCacheKey),
+    );
+    const toSave: WaypointCache = {};
+    for (const key of currentKeys) {
+      const entry = cache[key];
+      if (entry?.status === "ok") toSave[key] = entry;
+    }
+
+    const baseName = stepsCsvBaseName({ routeNumber, tripType, schoolLevel });
+    const blob = new Blob([JSON.stringify(toSave, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${baseName}-waypoints.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   // The only real requirement to save at all - a route number is what
   // gives a draft its own identity (see `id` below), and everything
   // else (school, stops, whether they're geocoded) can genuinely be
@@ -1560,6 +1605,7 @@ export function EditRouteScreen({
           fetchError={fetchError}
           onFetchMissing={fetchMissingLocations}
           onRefetchAll={refetchAllLocations}
+          onDownload={downloadCacheFile}
           onClose={() => setShowFetchModal(false)}
         />
       )}
