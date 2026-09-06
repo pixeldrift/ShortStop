@@ -2693,4 +2693,42 @@ so far.
   bus icon and step content forward across several steps in a row, and
   the ordinary full-screen navigations (List -> Route Info -> back)
   still animate exactly as before.
-  the device's location.
+
+## A plain `lookupCoordinates` entry point
+
+  Asked whether a "swap the geocoding provider" abstraction was worth
+  building - turned out most of it already existed. `geocode.ts`'s
+  `GeocodeProvider` type already lets `geocodeQuery` (the one name every
+  caller uses) point at ORS or Nominatim with a one-line change, and
+  `resolveWaypoint.ts`'s `resolveGeocodableQuery` already dispatches an
+  address query to ORS and an intersection query to Overpass - the
+  actual ask ("one function, address or intersection in, lat/lon out,
+  don't care which service") was already the shape of this app's
+  geocoding layer, just not exposed as a single small function anyone
+  could reach for.
+
+  Added `lookupCoordinates(query, locationContext, anchor?)` to
+  `resolveWaypoint.ts` - the plain version of the same dispatch, for a
+  standalone caller that just wants a coordinate: no `apiKey` (reads
+  `ORS_API_KEY` from the server environment itself), no `near`/pacing
+  bookkeeping (that's still `resolveGeocodableQuery`'s job for a whole
+  route's worth of queries in one batch), just
+  `{ kind: "address", text }` or `{ kind: "intersection", roadA, roadB
+  }` in, `{ lat, lon, displayName, provider }` (or `{ error }`) out. An
+  intersection query still needs a rough point to search near - Overpass
+  searches a bounding box, not the whole planet - so this resolves one
+  itself (geocoding `locationContext` as a plain address) when the
+  caller doesn't already have one to pass in as `anchor`.
+
+  Also pulled the `0.06`-degree search radius out of
+  src/app/api/geocode/route.ts's own local constant into
+  `resolveWaypoint.ts`'s exported `DEFAULT_SEARCH_RADIUS_DEG`, so the
+  route handler and this new function search the same box instead of
+  two independently-maintained magic numbers.
+
+  Verified with a stand-in `fetch` (this sandbox still can't reach ORS
+  or Overpass for real): a plain address query resolves in one call: an
+  intersection query with no anchor makes exactly two (locationContext
+  first, then Overpass); the same query with an anchor already in hand
+  skips straight to Overpass; and a missing `ORS_API_KEY` comes back as
+  a plain `{ error }` rather than throwing.

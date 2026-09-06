@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { extractCityState, getLastKnownOrsQuota } from "@/lib/geocode";
 import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
-import { resolveGeocodableQuery, resolveSchoolAnchor } from "@/lib/resolveWaypoint";
+import { DEFAULT_SEARCH_RADIUS_DEG, resolveGeocodableQuery, resolveSchoolAnchor } from "@/lib/resolveWaypoint";
 import type { WaypointCacheEntry } from "@/lib/waypointCache";
 
 /**
@@ -23,7 +23,6 @@ import type { WaypointCacheEntry } from "@/lib/waypointCache";
  * admin-only tool.
  */
 
-const SEARCH_RADIUS_DEG = 0.06;
 const RATE_LIMIT_MS = 1100;
 
 function sleep(ms: number): Promise<void> {
@@ -123,7 +122,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       apiKey,
       anchor,
       near: lastResolved,
-      searchRadiusDeg: SEARCH_RADIUS_DEG,
+      searchRadiusDeg: DEFAULT_SEARCH_RADIUS_DEG,
     });
     if (resolvedPoint) lastResolved = resolvedPoint;
     results.push(entry);
