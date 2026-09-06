@@ -12,6 +12,16 @@ import type { WaypointCache } from "@/lib/waypointCache";
  * for the same stop. */
 export type StopMarker = { waypointKey: string; number: number };
 
+/** One "turn" step's marker - waypointKey looks it up the same way a
+ * StopMarker does, `label` is "<preceding stop's number>.<turn's own
+ * position since that stop>" (StepScreen.tsx derives this): the turns
+ * before the route's first stop count as stop 0, so its first turn
+ * reads "0.1", and the third turn after stop 5 reads "5.3". Route 125's
+ * own steps sheet is the only one with real turn-by-turn data today
+ * (every 120 route sheet is stops only) - this only ever renders
+ * something there, but nothing here is specific to that route. */
+export type TurnMarker = { waypointKey: string; label: string };
+
 // La Vergne, TN's approximate town center - a placeholder anchor until
 // the route's own geocoded waypoints (deriveWaypoints.ts, and each
 // route's own sidecar cache file - see waypointsUrl below) give this a
@@ -69,13 +79,27 @@ function stopMarkerHtml(stopNumber: number): string {
   );
 }
 
+// A plain dot rather than a pin (unlike stopMarkerHtml above) - a turn
+// isn't "at" a building or curb the way a stop is, just a point along
+// the road, so it doesn't need a pin's downward-pointing anchor.
+function turnMarkerHtml(label: string): string {
+  return (
+    '<div class="font-heading flex h-6 w-6 items-center justify-center rounded-full ' +
+    'border-2 border-black bg-yellow-400 text-[10px] font-black text-black shadow-sm">' +
+    label +
+    "</div>"
+  );
+}
+
 /**
  * A real, pannable/zoomable OpenStreetMap tile map - replaces the
  * static "Demo only placeholder, not actual map" JPEG that used to sit
- * in this spot. Centers on La Vergne, TN with a live position dot and a
- * numbered pin per stop wherever the geocoded waypoint cache actually
- * has one (empty right now - see the `stops` prop doc below) - no route
- * line drawn between them yet (see README, "Maps" sections).
+ * in this spot. Centers on La Vergne, TN with a live position dot, a
+ * numbered pin per stop, and a small numbered dot per turn (routes with
+ * real turn-by-turn data - see `turns`' own doc comment), wherever the
+ * geocode cache actually has an entry for it (see the `stops`/`turns`
+ * prop docs below) - no route line drawn between them yet (see README,
+ * "Maps" sections).
  *
  * `leaflet` is imported dynamically inside the effect, not at module
  * top level - the package touches `window` as soon as it's evaluated,
@@ -89,37 +113,43 @@ function stopMarkerHtml(stopNumber: number): string {
 export function RouteMap({
   className,
   stops = [],
+  turns = [],
   waypointsUrl,
 }: {
   className?: string;
-  /** A pin per stop, at whatever position this route's own sidecar
-   * waypoint cache (waypointsUrl below) has for it - stops with no
-   * cache entry (the whole cache is empty until a real
-   * ORS_API_KEY-backed `npm run geocode` run populates it - see
-   * README, "Maps" sections) are silently skipped rather than placed
-   * anywhere approximate. */
+  /** A pin per stop, at whatever position the geocode cache
+   * (waypointsUrl below) has for it - stops with no cache entry (a
+   * route nothing has geocoded yet - see README, "Maps" sections) are
+   * silently skipped rather than placed anywhere approximate. */
   stops?: StopMarker[];
-  /** This route's own sidecar cache file, e.g.
-   * "/data/125-PM-EL-waypoints.json" - one per real route (see
-   * scripts/geocodeRoute.ts), computed by the caller from the same
-   * routeNumber/tripType/schoolLevel-based naming convention its steps
-   * CSV itself uses (see stepsCsvBaseName, parseRouteMasterList.ts). A
-   * demo (fabricated) route's computed URL simply won't exist - a 404
-   * resolves to an empty cache below, same as a real route whose
-   * geocode run hasn't populated one yet. */
+  /** A small dot per turn, same skip-if-ungeocoded rule as `stops` -
+   * empty for every 120 route today (their steps sheets are stops
+   * only), populated for 125's (see TurnMarker's own doc comment for
+   * the label scheme). */
+  turns?: TurnMarker[];
+  /** The geocode cache endpoint (src/app/api/waypoints) - shared across
+   * every route now that it's backed by Postgres rather than split into
+   * a sidecar file per route, so this is the same URL regardless of
+   * which route is showing. A cache miss for a given `stops`/`turns`
+   * entry (nothing's geocoded it yet) is simply skipped, same as a
+   * fetch failure resolving to an empty cache below. */
   waypointsUrl: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Read inside the mount effect's async callback below rather than
-  // added as that effect's own dependency - `stops` is a fresh array
-  // every render, and re-running the whole effect on every change
-  // would tear down and rebuild the entire map (tile layer,
+  // added as that effect's own dependency - `stops`/`turns` are fresh
+  // arrays every render, and re-running the whole effect on every
+  // change would tear down and rebuild the entire map (tile layer,
   // geolocation watch included) just to redraw pins that don't
   // actually change mid-trip.
   const stopsRef = useRef(stops);
   useEffect(() => {
     stopsRef.current = stops;
   }, [stops]);
+  const turnsRef = useRef(turns);
+  useEffect(() => {
+    turnsRef.current = turns;
+  }, [turns]);
   // Same reasoning as stopsRef above - read once inside the mount
   // effect rather than re-running the whole effect if it ever changed
   // (it doesn't, mid-trip: StepScreen computes it once from `route`,
@@ -172,6 +202,21 @@ export function RouteMap({
                 html: stopMarkerHtml(stop.number),
                 iconSize: [28, 44],
                 iconAnchor: [14, 44],
+              }),
+              interactive: false,
+            }).addTo(map);
+          }
+          for (const turn of turnsRef.current) {
+            const entry = cache[turn.waypointKey];
+            if (!entry || entry.status !== "ok") continue;
+            const latLng: [number, number] = [entry.lat, entry.lon];
+            pinLatLngs.push(latLng);
+            L.marker(latLng, {
+              icon: L.divIcon({
+                className: "",
+                html: turnMarkerHtml(turn.label),
+                iconSize: [24, 24],
+                iconAnchor: [12, 12],
               }),
               interactive: false,
             }).addTo(map);

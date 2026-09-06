@@ -1,7 +1,7 @@
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { RouteMap } from "./RouteMap";
-import type { StopMarker } from "./RouteMap";
+import type { StopMarker, TurnMarker } from "./RouteMap";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
@@ -77,6 +77,27 @@ export function StepScreen({
       .filter((s) => s.kind === "stop")
       .map((s) => ({ waypointKey: s.waypointKey, number: ++stopCount }));
   }, [route]);
+  // Every turn's own "<preceding stop>.<turn count since that stop>"
+  // label - the turns before the route's first stop count as stop 0
+  // (so its first turn reads "0.1"), and the count resets to 1 right
+  // after each stop (so the third turn after stop 5 reads "5.3").
+  // Empty for a stops-only steps sheet (every 120 route today) - there
+  // are simply no "turn" kind steps to map over.
+  const turnMarkers = useMemo<TurnMarker[]>(() => {
+    let stopCount = 0;
+    let turnCount = 0;
+    const markers: TurnMarker[] = [];
+    for (const step of route.steps) {
+      if (step.kind === "stop") {
+        stopCount += 1;
+        turnCount = 0;
+      } else if (step.kind === "turn") {
+        turnCount += 1;
+        markers.push({ waypointKey: step.waypointKey, label: `${stopCount}.${turnCount}` });
+      }
+    }
+    return markers;
+  }, [route]);
   // The geocode cache, shared across every route now that it lives in
   // Postgres (see src/app/api/waypoints) rather than split into a
   // sidecar file per route - RouteMap looks its own stops up from this
@@ -131,6 +152,7 @@ export function StepScreen({
         <RouteMap
           className="absolute inset-x-0 top-0 z-0 h-[calc(100%+20px)]"
           stops={stopMarkers}
+          turns={turnMarkers}
           waypointsUrl={waypointsUrl}
         />
 
