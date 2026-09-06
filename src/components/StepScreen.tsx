@@ -64,9 +64,17 @@ export function StepScreen({
   // the depot/arrived virtual states never show the roster card, even if
   // route.steps[0] or the last step happens to be a stop.
   const isStop = phase === "step" && step.kind === "stop";
+  // Set by the roster card's own "OK" (closes the card without also
+  // advancing to the next stop - see RiderCheckInBox's onClose below).
+  // Keyed by step id rather than a plain boolean so it resets itself the
+  // moment the driver actually moves to a different step, without a
+  // separate effect to clear it - this step's own id simply stops
+  // matching once `step` changes.
+  const [dismissedStepId, setDismissedStepId] = useState<number | null>(null);
   // Held off until the stop's own announcement has finished speaking, so
   // the check-in card doesn't pop up over top of still-playing audio.
-  const showRoster = !paused && isStop && roster.length > 0 && announcementDone;
+  const showRoster =
+    !paused && isStop && roster.length > 0 && announcementDone && dismissedStepId !== step.id;
   // Memoized against `route` (unchanged for the whole trip) rather
   // than recomputed every render - RouteMap only reads this once per
   // mount (see its own stopsRef note), but a fresh array reference
@@ -170,7 +178,7 @@ export function StepScreen({
                   roster={roster}
                   onRiderTap={onRiderTap}
                   onAddRider={onAddRider}
-                  onAdvance={onAdvance}
+                  onClose={() => setDismissedStepId(step.id)}
                 />
               </div>
             </div>
@@ -466,12 +474,14 @@ function RiderCheckInBox({
   roster,
   onRiderTap,
   onAddRider,
-  onAdvance,
+  onClose,
 }: {
   roster: boolean[];
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
-  onAdvance: () => void;
+  /** Dismisses the card - the driver still has to tap the step content
+   * itself (or Next) to actually advance, same as any other step. */
+  onClose: () => void;
 }) {
   // The map is a fixed size (doesn't condense to make room - see
   // StepScreen above), so a route with a lot of expected riders can
@@ -510,27 +520,25 @@ function RiderCheckInBox({
             </span>
           </button>
         ))}
+      </div>
 
+      <div className="flex w-full items-center justify-between gap-2">
         <button
           type="button"
           onClick={onAddRider}
-          aria-label="Add additional rider"
-          className="flex flex-col items-center"
+          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-900"
         >
-          <span className="flex h-[calc(2.75rem*var(--fit-scale,1))] w-[calc(2.75rem*var(--fit-scale,1))] items-center justify-center rounded-full border-2 border-blue-600 bg-zinc-100 text-[calc(1.5rem*var(--fit-scale,1))] leading-none font-bold text-zinc-400">
-            +
-          </span>
+          + Add Rider
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="btn-glossy font-heading flex items-center justify-center rounded-xl bg-blue-600 px-6 py-2 text-sm font-semibold text-white"
+        >
+          OK
         </button>
       </div>
-
-      <button
-        type="button"
-        onClick={onAdvance}
-        aria-label="Continue route"
-        className="btn-glossy font-heading flex items-center justify-center rounded-xl bg-blue-600 px-6 py-2 text-sm font-semibold text-white"
-      >
-        OK
-      </button>
     </div>
   );
 }
