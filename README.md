@@ -2863,3 +2863,46 @@ so far.
   differently anywhere else. `whitespace-pre-wrap break-words` keeps a
   long message wrapping inside the modal's width rather than forcing it
   wider or scrolling sideways.
+
+  Second follow-up, and the actual bug in the first one: "the return
+  value" was supposed to mean ORS/Overpass's own literal response
+  text, not this app's own composed explanation - and the single
+  `message` string being monospaced was *always* our own sentence
+  ("OpenRouteService geocoding returned 403 Forbidden for...",
+  sometimes a second layer wrapping that, "Couldn't geocode the school
+  address itself: ..."), never the actual HTTP response body. There
+  was nothing wrong with the styling - the thing being styled was the
+  wrong text.
+
+  `WaypointCacheEntry`'s error variant now carries `raw` alongside its
+  existing `message` - `message` stays this app's own explanation
+  (unchanged, still normal prose), `raw` is the literal response body
+  a real HTTP request actually got back, only ever present when there
+  was a real request to quote from at all (never fabricated for a
+  purely internal miss like "no shared node found," which has nothing
+  external to show). Threaded through every layer that used to blend
+  the two into one string: `geocodeViaOpenRouteService`'s `!res.ok`
+  branch now returns its raw body separately instead of throwing a
+  combined message (`safeGeocodeQuery`'s catch is now purely a safety
+  net for a truly unexpected failure, with nothing raw to attach);
+  Overpass's own give-up throw carries its response body on a new
+  `OverpassHttpError.raw`; `lookupCoordinates`'s auto-anchor failure
+  and `ensureAnchor`'s school-address failure both stopped re-embedding
+  a nested message once a real `raw` exists to show instead (still
+  falling back to embedding it when there's genuinely no raw to lean
+  on, e.g. a plain "no result found"); `fetchOneLocation`/
+  `fetchLocationList`'s own `{error}` returns, the API route's error
+  response, and EditRouteScreen's own `FetchErrorInfo` (via a new
+  `GeocodeApiError` carrying `raw` across the fetch boundary, since a
+  thrown `Error` alone would have dropped it) all carry `raw` the rest
+  of the way to `ErrorDetailsModal`, which now takes `message` and
+  `raw` as two separate props - `message` as plain prose, `raw` (only
+  when present) as the monospaced "Returned:" block below it.
+
+  Verified live against this sandbox's own real 403 (the egress
+  block substituting for an actual ORS outage, same as every other
+  live check this session): the popup now shows "Couldn't geocode the
+  school address itself" as plain prose, and *only* the proxy's own
+  "Host not in allowlist: api.openrouteservice.org..." text in the
+  monospaced block below it - no more of this app's own sentence
+  bleeding into what's supposed to be a direct quote.

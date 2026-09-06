@@ -1,6 +1,6 @@
 import { geocodeQuery } from "./geocode";
 import type { GeocodableQuery } from "./geocode";
-import { boundingBoxAround, pickNearest, resolveIntersection } from "./overpassGeocode";
+import { boundingBoxAround, OverpassHttpError, pickNearest, resolveIntersection } from "./overpassGeocode";
 import type { BoundingBox } from "./overpassGeocode";
 import type { WaypointCacheEntry } from "./waypointCache";
 
@@ -8,12 +8,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** `geocodeQuery` throws on a real HTTP-level failure (a 403/429/5xx -
- * see geocode.ts's own doc on why that's worth distinguishing from "no
- * result found", which it returns rather than throws) - every caller
- * in this module needs a WaypointCacheEntry back either way, never a
- * rejected promise, so this is the one place that catch lives instead
- * of every call site repeating it. */
+/** `geocodeQuery` only ever throws for a genuinely unexpected failure
+ * now (a network exception, a malformed JSON body) - a real HTTP-level
+ * error (403/429/5xx) returns a normal error entry directly (see
+ * geocode.ts's own doc). Every caller in this module still needs a
+ * WaypointCacheEntry back either way, never a rejected promise, so
+ * this is the one place that safety-net catch lives instead of every
+ * call site repeating it. Nothing "raw" to attach here - an exception
+ * this generic was never a real HTTP response with a body to quote. */
 async function safeGeocodeQuery(
   query: GeocodableQuery,
   locationContext: string,
@@ -84,6 +86,7 @@ async function resolveIntersectionToEntry(
     return {
       status: "error",
       message: err instanceof Error ? err.message : String(err),
+      raw: err instanceof OverpassHttpError ? err.raw : undefined,
       source,
       provider: "overpass",
     };
@@ -160,9 +163,16 @@ export async function lookupCoordinates(
       apiKey,
     );
     if (roughAnchor.status !== "ok") {
+      // Only fold the anchor lookup's own message in when there's no
+      // `raw` to fall back on - once `raw` is set, the caller shows the
+      // literal provider response separately, so repeating a paraphrase
+      // of it here would just be redundant.
       return {
         status: "error",
-        message: `Couldn't resolve a search anchor for "${locationContext}": ${roughAnchor.message}`,
+        message: roughAnchor.raw
+          ? `Couldn't resolve a search anchor for "${locationContext}"`
+          : `Couldn't resolve a search anchor for "${locationContext}": ${roughAnchor.message}`,
+        raw: roughAnchor.raw,
         source,
         provider: "overpass",
       };
@@ -213,12 +223,18 @@ interface AdminFetchContext {
 async function ensureAnchor(
   query: GeocodableQuery,
   ctx: AdminFetchContext,
-): Promise<{ lat: number; lon: number } | null | { error: string }> {
+): Promise<{ lat: number; lon: number } | null | { error: string; raw?: string }> {
   if (query.kind === "address" || ctx.anchor) return ctx.anchor;
   const { entry, point } = await resolveSchoolAnchor(ctx.schoolAddress, ctx.locationContext, ctx.apiKey);
   if (!point) {
+    // Same reasoning as lookupCoordinates's own anchor-failure branch -
+    // only fold the underlying message in when there's no `raw` for the
+    // caller to show separately.
+    const detail = entry.status === "error" ? entry.message : "unknown error";
+    const raw = entry.status === "error" ? entry.raw : undefined;
     return {
-      error: `Couldn't geocode the school address itself: ${entry.status === "error" ? entry.message : "unknown error"}`,
+      error: raw ? "Couldn't geocode the school address itself" : `Couldn't geocode the school address itself: ${detail}`,
+      raw,
     };
   }
   return point;
@@ -233,7 +249,10 @@ async function ensureAnchor(
 export async function fetchOneLocation(
   query: GeocodableQuery,
   ctx: AdminFetchContext,
-): Promise<{ entry: WaypointCacheEntry; anchor: { lat: number; lon: number } | null } | { error: string }> {
+): Promise<
+  | { entry: WaypointCacheEntry; anchor: { lat: number; lon: number } | null }
+  | { error: string; raw?: string }
+> {
   const anchor = await ensureAnchor(query, ctx);
   if (anchor && "error" in anchor) return anchor;
 
@@ -256,7 +275,10 @@ export async function fetchOneLocation(
 export async function fetchLocationList(
   queries: GeocodableQuery[],
   ctx: AdminFetchContext & { rateLimitMs: number },
-): Promise<{ anchor: { lat: number; lon: number } | null; results: WaypointCacheEntry[] } | { error: string }> {
+): Promise<
+  | { anchor: { lat: number; lon: number } | null; results: WaypointCacheEntry[] }
+  | { error: string; raw?: string }
+> {
   let anchor = ctx.anchor;
   let lastResolved = anchor;
   const results: WaypointCacheEntry[] = [];

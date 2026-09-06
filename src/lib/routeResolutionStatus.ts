@@ -15,12 +15,14 @@ import { waypointCacheKey } from "./waypointCache";
 export type RowResolutionStatus =
   | { stepId: number; status: "resolved"; lat: number; lon: number; displayName: string }
   // `reason` is always the short, friendly line the main interface
-  // shows ("Not yet geocoded" or "Couldn't look up coordinates") -
-  // `detail` is the full technical message (a real geocoder's own
-  // error text) behind a "View Error" popup instead, only present once
-  // an actual lookup attempt has failed (never for a plain unattempted
-  // row, which has nothing technical to show).
-  | { stepId: number; status: "unresolved"; reason: string; detail?: string }
+  // shows ("Not yet geocoded" or "Couldn't look up coordinates").
+  // `detail`/`raw` are both behind a "View Error" popup instead, only
+  // present once an actual lookup attempt has failed (never for a
+  // plain unattempted row, which has nothing technical to show):
+  // `detail` is this app's own explanation, `raw` is the literal
+  // response body a geocoder actually returned (when there was a real
+  // HTTP response to quote at all - see WaypointCacheEntry's own doc).
+  | { stepId: number; status: "unresolved"; reason: string; detail?: string; raw?: string }
   // A row deriveWaypoints.ts flagged as "unresolvable" (a driver
   // instruction, not a real road) - never queried at all, so it's kept
   // distinct from a real miss rather than shown as one.
@@ -52,6 +54,7 @@ export function summarizeRouteResolution(
         status: "unresolved",
         reason: "Couldn't look up coordinates",
         detail: entry.message,
+        raw: entry.raw,
       };
     }
     return { stepId: waypoint.stepId, status: "unresolved", reason: "Not yet geocoded" };

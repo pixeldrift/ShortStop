@@ -125,6 +125,19 @@ export function parseIntersectionResponse(body: OverpassResponse): IntersectionR
   return { status: "ambiguous", candidates: nodes.map((n) => ({ lat: n.lat, lon: n.lon })) };
 }
 
+/** Thrown when Overpass gives up for good (a non-retryable status, or
+ * retries exhausted) - `raw` carries the literal response body
+ * Overpass sent back (when there is one), kept separate from
+ * `message` (this app's own explanatory sentence) so a caller showing
+ * both to someone can keep them visibly distinct. */
+export class OverpassHttpError extends Error {
+  raw?: string;
+  constructor(message: string, raw?: string) {
+    super(message);
+    this.raw = raw;
+  }
+}
+
 /** True for the transient failures worth one retry - a rate-limit
  * (429) or the gateway timing out waiting on an overloaded Overpass
  * instance (504) - as opposed to e.g. a 400 for a malformed query,
@@ -170,6 +183,10 @@ export async function resolveIntersection(
       continue;
     }
 
-    throw new Error(`Overpass returned ${res.status} ${res.statusText} for "${roadA}" & "${roadB}"`);
+    const detail = await res.text().catch(() => "");
+    throw new OverpassHttpError(
+      `Overpass returned ${res.status} ${res.statusText} for "${roadA}" & "${roadB}"`,
+      detail || undefined,
+    );
   }
 }

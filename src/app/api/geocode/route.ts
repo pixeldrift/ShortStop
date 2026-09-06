@@ -95,7 +95,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   // between calls would be pure overhead for exactly one.
   if (!Array.isArray(body.query)) {
     const result = await fetchOneLocation(body.query, adminCtx);
-    if ("error" in result) return NextResponse.json({ error: result.error }, { status: 502 });
+    if ("error" in result) return NextResponse.json({ error: result.error, raw: result.raw }, { status: 502 });
     const responseBody: GeocodeResponseBody = {
       anchor: result.anchor,
       results: [result.entry],
@@ -105,7 +105,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const result = await fetchLocationList(body.query, { ...adminCtx, rateLimitMs: RATE_LIMIT_MS });
-  if ("error" in result) return NextResponse.json({ error: result.error }, { status: 502 });
+  if ("error" in result) return NextResponse.json({ error: result.error, raw: result.raw }, { status: 502 });
   const responseBody: GeocodeResponseBody = {
     anchor: result.anchor,
     results: result.results,

@@ -131,11 +131,18 @@ export const geocodeViaOpenRouteService: GeocodeProvider = async (
     // status/statusText doesn't distinguish, and every one of those
     // needs a different fix. Best-effort only: a body read failure here
     // shouldn't hide the real HTTP error behind a second, unrelated one.
+    // Kept separate from `message` (this app's own explanatory
+    // sentence) as `raw` - the literal response body ORS sent back,
+    // not this app's own writing, so a caller showing both to someone
+    // can keep them visibly distinct instead of one blended string.
     const detail = await res.text().catch(() => "");
-    throw new Error(
-      `OpenRouteService geocoding returned ${res.status} ${res.statusText} for "${source}"` +
-        (detail ? ` - ${detail}` : ""),
-    );
+    return {
+      status: "error",
+      message: `OpenRouteService geocoding returned ${res.status} ${res.statusText} for "${source}"`,
+      raw: detail || undefined,
+      source,
+      provider: "openrouteservice",
+    };
   }
 
   const body = (await res.json()) as OrsGeocodeResponse;

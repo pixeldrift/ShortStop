@@ -47,6 +47,29 @@ import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { GeocodeResponseBody } from "@/app/api/geocode/route";
 
+/** A failed "Fetch"/"Fetch Missing"/"Re-fetch All" call's own error -
+ * `message` is this app's own explanation, `raw` (when there is one)
+ * is the literal response body a real ORS/Overpass request came back
+ * with, kept separate so ErrorDetailsModal can show them distinctly
+ * instead of one blended string (see /api/geocode's own GeocodeResponseBody,
+ * which carries the same split through its error response). */
+interface FetchErrorInfo {
+  message: string;
+  raw?: string;
+}
+
+/** Thrown by callGeocodeApi below on a non-ok response - carries the
+ * API's own `raw` field alongside the usual Error `message`, so a
+ * catch block can turn it into a FetchErrorInfo without losing `raw`
+ * the moment it becomes a thrown exception. */
+class GeocodeApiError extends Error {
+  raw?: string;
+  constructor(message: string, raw?: string) {
+    super(message);
+    this.raw = raw;
+  }
+}
+
 // Short on purpose - this box starts small (see the textarea's own
 // className below) and only grows with real content, so a long
 // multi-example placeholder would just get clipped rather than
@@ -374,7 +397,11 @@ function StepRowEditor({
       )}
 
       {showErrorDetail && status?.status === "unresolved" && status.detail && (
-        <ErrorDetailsModal message={status.detail} onClose={() => setShowErrorDetail(false)} />
+        <ErrorDetailsModal
+          message={status.detail}
+          raw={status.raw}
+          onClose={() => setShowErrorDetail(false)}
+        />
       )}
 
       <div className="mt-3 flex items-center gap-2">
@@ -507,26 +534,35 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * A geocoder's own raw error text ("OpenRouteService geocoding
- * returned 403 Forbidden for...", an Overpass timeout, whatever the
- * live service actually said) behind its own "View Error" popup,
- * rather than inline in the main interface where an admin is just
- * trying to review stops - the friendly line next to that button
- * ("Oops, could not look up coordinates.") is the only thing shown by
- * default; this is purely opt-in detail for troubleshooting *why*.
- * Stacks above whichever modal opened it (z-30, one above every other
- * modal in this screen's own z-20) since both call sites here - a
- * row's own status line, and the Fetch Coordinates modal - can trigger
- * this while already inside their own overlay.
+ * This app's own explanation of a failed lookup ("OpenRouteService
+ * geocoding returned 403 Forbidden for...", "No shared node found in
+ * the search box") behind its own "View Error" popup, rather than
+ * inline in the main interface where an admin is just trying to
+ * review stops - the friendly line next to that button ("Oops, could
+ * not look up coordinates.") is the only thing shown by default; this
+ * is purely opt-in detail for troubleshooting *why*. Stacks above
+ * whichever modal opened it (z-30, one above every other modal in this
+ * screen's own z-20) since both call sites here - a row's own status
+ * line, and the Fetch Coordinates modal - can trigger this while
+ * already inside their own overlay.
  *
- * `message` is set in a monospaced block on its own line, visually
- * distinct from this modal's own labels/chrome around it - it's
- * whatever a real geocoding attempt actually returned (an HTTP error's
- * status/body text, a caught exception's own message), not this app's
- * own writing, so it shouldn't read like the same prose as "Returned:"
- * above it.
+ * `raw`, when there is one, is the literal response body ORS/Overpass
+ * itself sent back - not this app's own writing at all, unlike
+ * `message` - so it's set apart in its own monospaced "Returned:"
+ * block instead of blending into the same prose. Omitted entirely
+ * when there's genuinely nothing to quote (an internal miss like "no
+ * shared node," never a real HTTP response) rather than showing an
+ * empty block.
  */
-function ErrorDetailsModal({ message, onClose }: { message: string; onClose: () => void }) {
+function ErrorDetailsModal({
+  message,
+  raw,
+  onClose,
+}: {
+  message: string;
+  raw?: string;
+  onClose: () => void;
+}) {
   return (
     <div
       className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
@@ -547,10 +583,15 @@ function ErrorDetailsModal({ message, onClose }: { message: string; onClose: () 
             <CloseIcon className="h-5 w-5" />
           </button>
         </div>
-        <p className="mt-3 text-sm text-zinc-600">Returned:</p>
-        <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-zinc-100 p-3 font-mono text-xs whitespace-pre-wrap break-words text-zinc-700">
-          {message}
-        </pre>
+        <p className="mt-3 text-sm text-zinc-600">{message}</p>
+        {raw && (
+          <>
+            <p className="mt-3 text-sm text-zinc-600">Returned:</p>
+            <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-zinc-100 p-3 font-mono text-xs whitespace-pre-wrap break-words text-zinc-700">
+              {raw}
+            </pre>
+          </>
+        )}
       </div>
     </div>
   );
@@ -608,7 +649,7 @@ function FetchCoordinatesModal({
   counts: RouteResolutionCounts;
   quota: ApiQuota | null;
   fetchRunning: boolean;
-  fetchError: string | null;
+  fetchError: FetchErrorInfo | null;
   onFetchMissing: () => void;
   onRefetchAll: () => void;
   onClose: () => void;
@@ -683,7 +724,11 @@ function FetchCoordinatesModal({
         </div>
 
         {showErrorDetail && fetchError && (
-          <ErrorDetailsModal message={fetchError} onClose={() => setShowErrorDetail(false)} />
+          <ErrorDetailsModal
+            message={fetchError.message}
+            raw={fetchError.raw}
+            onClose={() => setShowErrorDetail(false)}
+          />
         )}
 
         <div className="mt-2 flex gap-3">
@@ -890,7 +935,7 @@ export function EditRouteScreen({
   const [schoolAnchor, setSchoolAnchor] = useState<{ lat: number; lon: number } | null>(null);
   const [fetchingStepIds, setFetchingStepIds] = useState<ReadonlySet<number>>(new Set());
   const [fetchAllRunning, setFetchAllRunning] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<FetchErrorInfo | null>(null);
   const [showFetchModal, setShowFetchModal] = useState(false);
   // OpenRouteService's own account-wide rate limit, if the last batch
   // that made a real ORS call happened to report one - see geocode.ts's
@@ -1069,7 +1114,7 @@ export function EditRouteScreen({
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? `${res.status} ${res.statusText}`);
+    if (!res.ok) throw new GeocodeApiError(data.error ?? `${res.status} ${res.statusText}`, data.raw);
     return data as GeocodeResponseBody;
   }
 
@@ -1086,7 +1131,10 @@ export function EditRouteScreen({
         setCache((prev) => ({ ...prev, [key]: entry }));
       }
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : String(err));
+      setFetchError({
+        message: err instanceof Error ? err.message : String(err),
+        raw: err instanceof GeocodeApiError ? err.raw : undefined,
+      });
     } finally {
       setFetchingStepIds((prev) => {
         const next = new Set(prev);
@@ -1117,7 +1165,10 @@ export function EditRouteScreen({
         return next;
       });
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : String(err));
+      setFetchError({
+        message: err instanceof Error ? err.message : String(err),
+        raw: err instanceof GeocodeApiError ? err.raw : undefined,
+      });
     } finally {
       setFetchAllRunning(false);
       setFetchingStepIds(new Set());

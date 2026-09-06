@@ -10,10 +10,19 @@ import type { WaypointQuery } from "./deriveWaypoints";
  * get persisted to the cache file (see geocodeRoute.ts) - a failure
  * almost always means the query wording needs fixing, so leaving it out
  * of the cache means it's retried on the very next run rather than
- * staying silently failed forever. */
+ * staying silently failed forever.
+ *
+ * `message` is always this app's own explanation of what went wrong,
+ * readable on its own ("OpenRouteService geocoding returned 403
+ * Forbidden for...", "No shared node found in the search box"). `raw`
+ * is only ever the literal response body a real HTTP request actually
+ * got back from ORS/Overpass, present only when there was a real
+ * request to quote from - never fabricated, never present for a purely
+ * internal miss (an empty result set, no shared node) that never
+ * involved a failing HTTP response at all. */
 export type WaypointCacheEntry =
   | { status: "ok"; lat: number; lon: number; displayName: string; source: string; provider: string }
-  | { status: "error"; message: string; source: string; provider: string };
+  | { status: "error"; message: string; raw?: string; source: string; provider: string };
 
 /** public/data/route-125-waypoints.json's shape: every entry keyed by
  * waypointCacheKey(query) below. In practice only ever holds "ok"
