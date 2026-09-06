@@ -511,27 +511,25 @@ export function RouteListScreen({
         </div>
       </div>
 
-      {/* Full-width, split evenly between the two once both show - the
-          same large, prominent `btn-glossy` treatment as StepScreen's
-          own Back/Next footer buttons (flex-1 each, py-3, text-lg),
-          not a small text-with-icon link tucked below the list. Exiting
-          is deliberately the gray/neutral button of the pair, entering
-          and adding a route are both the blue "forward" action - "New
-          Route" only appears once already in edit mode, so a lone
-          "Edit Mode" toggle (not in edit mode yet) just takes the full
-          row on its own. */}
-      <div ref={controlsRef} className="flex w-full max-w-md shrink-0 items-center gap-3">
-        <button
-          type="button"
-          onClick={onToggleAdminMode}
-          className={`btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-lg font-semibold ${
-            adminMode ? "border border-zinc-500 bg-zinc-300 text-zinc-900" : "bg-blue-600 text-white"
-          }`}
-        >
-          <EditIcon className="h-5 w-5" />
-          {adminMode ? "Exit Edit Mode" : "Edit Mode"}
-        </button>
-        {adminMode && (
+      {/* The Home Screen's own entry point (adminMode off) stays the
+          small `btn-glossy` chip this used to be everywhere - a
+          district-admin tool, not something that needs to compete with
+          Search/View for attention. Once actually in edit mode, though,
+          both controls become full-width and split evenly, the same
+          large treatment as StepScreen's own Back/Next footer buttons
+          (flex-1 each, py-3, text-lg) - exiting is deliberately the
+          gray/neutral button of the pair, adding a route is the blue
+          "forward" action. */}
+      {adminMode ? (
+        <div ref={controlsRef} className="flex w-full max-w-md shrink-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={onToggleAdminMode}
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
+          >
+            <EditIcon className="h-5 w-5" />
+            Exit Edit Mode
+          </button>
           <button
             type="button"
             onClick={onAddRoute}
@@ -540,8 +538,19 @@ export function RouteListScreen({
             <PlusIcon className="h-5 w-5" />
             New Route
           </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div ref={controlsRef} className="flex shrink-0 items-center">
+          <button
+            type="button"
+            onClick={onToggleAdminMode}
+            className="btn-glossy flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            <EditIcon className="h-3 w-3" />
+            Edit Routes
+          </button>
+        </div>
+      )}
 
       <a
         href="mailto:nathan@pizar.net"

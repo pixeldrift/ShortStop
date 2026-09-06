@@ -2335,3 +2335,10 @@ so far.
   "From {school}" for a PM dropoff - matching which direction the trip
   is actually running instead of leaving that implicit in the address
   alone.
+- **The Home Screen's own edit-mode entry point goes back to being the
+  small chip, relabeled "Edit Routes."** Only the toggle button itself,
+  not in edit mode yet, got the full-width treatment above by mistake -
+  it's a district-admin tool tucked below Search/View, not something
+  that should compete with them for attention on the screen every
+  driver actually lands on. Once tapped, the now-revealed "Exit Edit
+  Mode"/"New Route" pair stay full-width and split evenly, unchanged.
