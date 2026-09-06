@@ -13,6 +13,7 @@ import {
   HeartIcon,
   PlusIcon,
   RouteIcon,
+  SchoolIcon,
   SearchIcon,
   SunIcon,
   SunriseIcon,
@@ -615,8 +616,9 @@ export function RouteListScreen({
             <button
               type="button"
               onClick={onViewSchools}
-              className="text-sm font-semibold text-blue-600 active:text-blue-800"
+              className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800"
             >
+              <SchoolIcon className="h-4 w-4" />
               Schools
             </button>
           ) : (

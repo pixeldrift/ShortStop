@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
-import { BackArrowIcon, CloseIcon, MapPinIcon, SchoolIcon, SearchIcon } from "./icons";
+import { BackArrowIcon, CloseIcon, MapPinIcon, RouteIcon, SchoolIcon, SearchIcon } from "./icons";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
@@ -214,6 +214,21 @@ export function SchoolListScreen({
             </p>
           )}
         </div>
+      </div>
+
+      {/* Same "Schools" link RouteListScreen puts under its own table
+          (icon + blue text, left-aligned) - here it just goes back to
+          the route list, same as the back arrow above, rather than
+          opening anything new. */}
+      <div className="flex w-full max-w-md shrink-0 items-center">
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800"
+        >
+          <RouteIcon className="h-4 w-4" />
+          Routes
+        </button>
       </div>
 
       <a
