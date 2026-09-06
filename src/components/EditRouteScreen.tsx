@@ -8,6 +8,8 @@ import {
   BackArrowIcon,
   CheckCircleIcon,
   EditIcon,
+  EyeIcon,
+  EyeOffIcon,
   MapPinIcon,
   PersonSolidIcon,
   RightArrowIcon,
@@ -1044,6 +1046,11 @@ export function EditRouteScreen({
               onClick={handleToggleStatus}
               className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
             >
+              {status === "published" ? (
+                <EyeOffIcon className="h-5 w-5" />
+              ) : (
+                <EyeIcon className="h-5 w-5" />
+              )}
               {status === "published" ? "Unpublish" : "Publish"}
             </button>
           ) : (

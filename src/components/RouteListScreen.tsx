@@ -5,6 +5,8 @@ import { ConfirmModal } from "./ConfirmModal";
 import { Logo } from "./Logo";
 import {
   EditIcon,
+  EyeIcon,
+  EyeOffIcon,
   HeartIcon,
   PlusIcon,
   SearchIcon,
@@ -359,8 +361,12 @@ export function RouteListScreen({
             const isDemo = route.status === "demo";
             const isAdminOnly = !isDemo && route.status !== "published";
             return (
-              <div key={route.id} className={isAdminOnly ? "opacity-50" : ""}>
-                <div className="grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left">
+              <div key={route.id}>
+                <div
+                  className={`grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left ${
+                    isAdminOnly ? "opacity-50" : ""
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => handleRowClick(route)}
@@ -425,8 +431,9 @@ export function RouteListScreen({
                       <button
                         type="button"
                         onClick={() => setConfirmRequest({ type: "unpublish", route })}
-                        className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
+                        className="flex items-center gap-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
                       >
+                        <EyeOffIcon className="h-3.5 w-3.5" />
                         Unpublish
                       </button>
                     ) : (
@@ -443,8 +450,9 @@ export function RouteListScreen({
                           type="button"
                           onClick={() => handlePublishClick(route)}
                           disabled={checkingRouteId === route.id}
-                          className="rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50 active:bg-zinc-100"
+                          className="flex items-center gap-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50 active:bg-zinc-100"
                         >
+                          <EyeIcon className="h-3.5 w-3.5" />
                           {checkingRouteId === route.id ? "Checking…" : "Publish"}
                         </button>
                       </>

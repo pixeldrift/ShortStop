@@ -333,6 +333,48 @@ export function UploadIcon({ className }: { className?: string }) {
   );
 }
 
+/** An open eye - "Publish" (a route becomes visible to drivers), paired
+ * with EyeOffIcon below for "Unpublish" the same way TrashIcon/EditIcon
+ * pair up for delete/edit elsewhere in this list. */
+export function EyeIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.75-7 10-7 10 7 10 7-3.75 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+/** EyeIcon with a slash through it - "Unpublish," the same visibility-
+ * off pairing a password field's own show/hide toggle uses. */
+export function EyeOffIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 12s3.75-7 10-7 10 7 10 7-3.75 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M3 3 21 21" />
+    </svg>
+  );
+}
+
 /** Magnifying glass - used inline in the route-list search box. */
 export function SearchIcon({ className }: { className?: string }) {
   return (
