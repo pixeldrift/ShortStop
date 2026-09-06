@@ -1,0 +1,32 @@
+name: Postgres migrate + seed
+
+# Manual-only: this repo's sandboxed dev environments can't reach a real
+# Postgres server directly (raw-TCP database connections aren't allowed
+# through their network policy), so applying migrations/seed data to a
+# real hosted database - Neon, Vercel Postgres, etc. - has to happen
+# from somewhere with normal network access. A GitHub Actions runner
+# has that, so this is the one-off (or one-per-schema-change) way to
+# get prisma/migrations/ and prisma/seed.ts actually applied there.
+#
+# Needs a DATABASE_URL repo secret (Settings -> Secrets and variables ->
+# Actions -> New repository secret) pointing at the real database -
+# the same value set on the Vercel project so the deployed app can
+# connect too.
+on:
+  workflow_dispatch:
+
+jobs:
+  migrate-and-seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - run: npx prisma db seed
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
