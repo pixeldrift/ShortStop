@@ -19,13 +19,14 @@ interface TransitionState {
  * fully off to one side while the incoming one slides in from the
  * other, both absolutely positioned over this element's own bounds so
  * neither affects its size mid-transition. `direction` says which way:
- * "forward" (out to the right, in from the left) for every dive deeper
- * into the app from the route list (Add Route, Edit Route, a selected
- * route's own trip flow), "backward" (the reverse) for every Cancel/
- * Back that returns to wherever that dive started from - set by the
- * caller alongside whatever setState actually changes `screenKey`
- * (page.tsx's own `navigate` helper), not inferred here from the key
- * change itself.
+ * "forward" (out to the left, in from the right) for every dive deeper
+ * into the app - List -> a route's own info screen, that screen's own
+ * "Start Route" into turn-by-turn driving, List -> Add Route/Edit
+ * Route - "backward" (the reverse) for every Cancel/Back/"Exit Route"
+ * that unwinds one of those. Set by the caller alongside whatever
+ * setState actually changes `screenKey` (page.tsx's own `navigate`
+ * helper, or RouteApp's own local `started` flip below), not inferred
+ * here from the key change itself.
  *
  * Capturing the outgoing screen has to happen *during* the same render
  * that swaps to the new one, not in a `useEffect` afterward - an effect

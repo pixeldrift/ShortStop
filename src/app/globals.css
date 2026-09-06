@@ -110,18 +110,19 @@ body {
   animation: step-exit 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 
-/* Full-screen navigation (List <-> Add Route / Edit Route / a selected
-   route's own trip flow) - a horizontal push, not the step content's
-   vertical roll above: "forward" (diving into one of those from the
-   list) slides the outgoing screen fully off to the right while the
-   incoming one slides in from the left; "backward" (Cancel/Back
-   returning to the list) is the exact reverse. Same duration/ease as
-   the step roll above so every full-motion transition in the app reads
-   as one consistent feel, just a different axis. See
+/* Full-screen navigation - every screen-to-screen dive forward (List
+   -> a route's own info screen -> "Start Route" into turn-by-turn
+   driving; also List -> Add Route/Edit Route) is one consistent push:
+   both screens move leftward together, the outgoing one continuing
+   off past the left edge while the incoming one enters from the right.
+   "backward" (Cancel/Back/"Exit Route" unwinding any of those) is the
+   exact reverse - both move rightward, incoming from the left. Same
+   duration/ease as the step roll above so every full-motion transition
+   in the app reads as one consistent feel, just a different axis. See
    ScreenTransition.tsx for which direction a given navigation uses. */
 @keyframes screen-enter-forward {
   from {
-    transform: translateX(-100%);
+    transform: translateX(100%);
   }
   to {
     transform: translateX(0);
@@ -137,7 +138,7 @@ body {
     transform: translateX(0);
   }
   to {
-    transform: translateX(100%);
+    transform: translateX(-100%);
   }
 }
 
@@ -147,7 +148,7 @@ body {
 
 @keyframes screen-enter-backward {
   from {
-    transform: translateX(100%);
+    transform: translateX(-100%);
   }
   to {
     transform: translateX(0);
@@ -163,7 +164,7 @@ body {
     transform: translateX(0);
   }
   to {
-    transform: translateX(-100%);
+    transform: translateX(100%);
   }
 }
 

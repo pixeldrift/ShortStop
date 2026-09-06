@@ -2545,12 +2545,27 @@ so far.
   line. Unverified against a real key (none available to test with
   here) - CARTO's documented `api_key` param is the best-effort
   implementation, worth confirming once a real free CARTO key exists.
-- **Screen-transition direction was backwards from the intended
-  read.** "Forward" (diving into Add Route/Edit Route/a trip from the
-  list) now slides the outgoing screen off to the *right* while the
-  incoming one enters from the *left*; "backward" (Cancel/Back
-  returning to the list) is the reverse - swapped from the previous
-  entry's own (wrong) direction. Just the four keyframes' own
-  `translateX` values in `globals.css` swapped between the
-  forward/backward pairs - `ScreenTransition.tsx` itself, and every
-  call site's own `"forward"`/`"backward"` choice, needed no change.
+- **Screen-transition direction, swapped back again - the previous
+  entry's own swap was itself the wrong direction.** Confirmed against
+  concrete screen pairs this time rather than a general description:
+  "forward" (List -> a route's own info screen, that screen's own
+  "Start Route" into turn-by-turn driving, List -> Add/Edit Route)
+  slides the outgoing screen off to the *left* while the incoming one
+  enters from the *right*; "backward" (Cancel/Back/"Exit Route"
+  unwinding any of those) is the reverse - back to this feature's
+  original direction, one swap undone. Same four `translateX` values in
+  `globals.css`, restored.
+
+  **Applied "universally" this time, per explicit request** - the
+  "Start Route"/"Exit Route" switch between a route's own info screen
+  (`StartScreen.tsx`) and the actual turn-by-turn driving screen
+  (`StepScreen.tsx`) is local state inside `page.tsx`'s own `RouteApp`
+  (`useRouteStepper`'s `started` boolean), never previously wrapped in
+  `ScreenTransition` at all - it swapped instantly while every other
+  screen change already slid. `RouteApp` now wraps that same
+  start/step switch in its own nested `ScreenTransition` instance
+  (`screenKey: started ? "step" : "start"`), with `direction` following
+  `started` directly (`started` only ever flips false->true via "Start
+  Route" - forward - and true->false via "Exit Route" ending a route -
+  backward - so no separate state is needed to track which way a given
+  flip went).

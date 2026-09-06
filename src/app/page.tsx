@@ -412,13 +412,19 @@ function RouteApp({
 
   const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
 
-  if (!started) {
-    return <StartScreen route={route} onStart={start} onBack={onBack} onEdit={onEdit} />;
-  }
-
   const expectedCount = phase === "step" ? (currentStep.studentCount ?? 0) : 0;
 
-  return (
+  // Same forward/backward push as page.tsx's own top-level screens
+  // (List <-> Add/Edit Route/trip), applied "universally" to this
+  // local start/step switch too - tapping "Start Route" always flips
+  // `started` false->true (forward), and the only way back to false is
+  // "Exit Route" (StepScreen's own "End" at the arrived phase, via
+  // endRoute/resetTrip below) - never the other way around - so the
+  // direction always follows `started` itself, no separate state
+  // needed to track which way this particular flip just went.
+  const content = !started ? (
+    <StartScreen route={route} onStart={start} onBack={onBack} onEdit={onEdit} />
+  ) : (
     <StepScreen
       route={route}
       step={currentStep}
@@ -443,5 +449,11 @@ function RouteApp({
       onRiderTap={(index) => fillTo(currentStep.id, index, expectedCount)}
       onAddRider={() => addUnexpectedRider(currentStep.id, expectedCount)}
     />
+  );
+
+  return (
+    <ScreenTransition screenKey={started ? "step" : "start"} direction={started ? "forward" : "backward"}>
+      {content}
+    </ScreenTransition>
   );
 }
