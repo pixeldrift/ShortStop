@@ -2282,11 +2282,14 @@ so far.
 
   Edit mode's own bottom controls ("Edit Mode"/"Exit Edit Mode," "New
   Route") are full buttons now instead of plain text-with-icon links -
-  visible border/background/padding, matching every other button in the
-  app. Entering edit mode and "New Route" both read blue (the two
-  "forward" actions); exiting reads gray/neutral instead. The admin-mode
-  box border itself switched from a solid red to a dashed blue, less
-  "warning," more "you're in a distinct editing mode."
+  the same `btn-glossy` shaded look (bevel/shine/shadow) every other
+  button in the app already uses, not a flat tinted chip of their own.
+  Entering edit mode and "New Route" both read blue (the two "forward"
+  actions, same `bg-blue-600` glossy button every other primary action
+  uses); exiting reads gray/neutral instead (the same `border-zinc-500
+  bg-zinc-300` glossy button Cancel/Back already use elsewhere). The
+  admin-mode box border itself switched from a solid red to a dashed
+  blue, less "warning," more "you're in a distinct editing mode."
 
   The Add Route paste box's helper text next to "Upload File" dropped
   its "one file at a time - multiple files is on the roadmap" aside

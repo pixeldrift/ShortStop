@@ -506,19 +506,19 @@ export function RouteListScreen({
           a primary driver action, tucked below the list rather than up
           with Search/View. "New Route" only appears once already in
           edit mode - there's no direct route to it from the normal
-          (non-admin) list. Full button chrome on both (not plain text
-          links) so they read as real actions next to the dashed-blue
-          admin box above; exiting is deliberately the gray/neutral one
-          of the pair, entering and adding a route are both the blue
-          "forward" action. */}
+          (non-admin) list. Same `btn-glossy` shaded-button look every
+          other button in the app uses (bevel/shine/shadow, not a flat
+          tinted chip) rather than a plain text-with-icon link; exiting
+          is deliberately the gray/neutral one of the pair, entering
+          and adding a route are both the blue "forward" action. */}
       <div ref={controlsRef} className="flex shrink-0 items-center gap-4">
         <button
           type="button"
           onClick={onToggleAdminMode}
-          className={`flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+          className={`btn-glossy flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${
             adminMode
-              ? "border-zinc-300 bg-zinc-100 text-zinc-600 active:bg-zinc-200"
-              : "border-blue-300 bg-blue-50 text-blue-600 active:bg-blue-100"
+              ? "border border-zinc-500 bg-zinc-300 text-zinc-900"
+              : "bg-blue-600 text-white"
           }`}
         >
           <EditIcon className="h-3 w-3" />
@@ -528,7 +528,7 @@ export function RouteListScreen({
           <button
             type="button"
             onClick={onAddRoute}
-            className="flex items-center gap-1 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-600 active:bg-blue-100"
+            className="btn-glossy flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
           >
             <PlusIcon className="h-3 w-3" />
             New Route
