@@ -329,6 +329,29 @@ function LeaveRouteConfirmModal({
   );
 }
 
+/** A cross-street subheading ("Main St & Oak Ave") only ever wraps
+ * between the two road names (or around the "&" itself) - never
+ * splitting either road's own, possibly multi-word name apart onto two
+ * lines, which reads like a mistake more than a wrap. Each name is its
+ * own `whitespace-nowrap` span so the browser's only remaining choice
+ * of where to break is the space next to "&" - if everything fits on
+ * one line it still does, this only constrains *where* a wrap can
+ * happen, not whether one does. A turn's own subheading (a single
+ * destination road, no "&") has nothing to split and passes through
+ * unchanged. */
+function RoadNames({ subheading }: { subheading: string }) {
+  const parts = subheading.split(" & ");
+  if (parts.length !== 2) return <>{subheading}</>;
+  const [roadA, roadB] = parts;
+  return (
+    <>
+      <span className="whitespace-nowrap">{roadA}</span>
+      {" & "}
+      <span className="whitespace-nowrap">{roadB}</span>
+    </>
+  );
+}
+
 function TurnContent({ step }: { step: NavigationStep }) {
   const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
 
@@ -350,7 +373,7 @@ function TurnContent({ step }: { step: NavigationStep }) {
           ref={subheadingRef}
           className="font-heading min-h-[2.5em] text-[clamp(1.25rem,4.5vh,2.75rem)] leading-tight font-black tracking-tight"
         >
-          {step.subheading}
+          <RoadNames subheading={step.subheading} />
         </p>
       )}
 
@@ -406,7 +429,7 @@ function StopContent({
           ref={subheadingRef}
           className="font-heading min-h-[2.5em] text-[clamp(1.25rem,4.5vh,2.75rem)] leading-tight font-black tracking-tight"
         >
-          {step.subheading}
+          <RoadNames subheading={step.subheading} />
         </p>
       )}
 

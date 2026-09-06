@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { Logo } from "./Logo";
 import {
+  CloseIcon,
   EditIcon,
   EyeIcon,
   EyeOffIcon,
@@ -280,8 +281,18 @@ export function RouteListScreen({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search routes"
             aria-label="Search routes"
-            className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-3 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <div className="relative shrink-0">
           <button

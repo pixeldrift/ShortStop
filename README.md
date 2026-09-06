@@ -2489,3 +2489,40 @@ so far.
   query happened to trigger it - `/api/geocode/route.ts` reads that
   back into its own response body's new `quota` field once a batch
   finishes.
+- **Search box gets a clear "X," cross-street names never split
+  mid-name when they wrap, and the screen-transition fix from a few
+  entries back turned out to be incomplete.**
+
+  RouteListScreen's search input now shows a small `CloseIcon` button
+  at its right edge whenever there's text in it, clearing `query` back
+  to empty - it wasn't there at all before, so clearing a search meant
+  selecting and deleting the text by hand.
+
+  A stop's own cross-street subheading ("Bill Stewart Blvd & Hidden
+  Forest Ln") could wrap anywhere the browser found room, including
+  mid-name if the second road happened to be two words ("Hidden" alone
+  on one line, "Forest Ln" pushed to a third) - a real bug shown
+  side-by-side with the intended read in a screenshot. `StepScreen.tsx`
+  now wraps each road name in its own `RoadNames` component, giving
+  each side of the "&" its own `whitespace-nowrap` span - the only place
+  left for the browser to wrap is the space around "&" itself, never
+  inside either name. A turn's own subheading (a single destination
+  road, no "&") passes through this unchanged.
+
+  **The screen-slide transition never actually worked right - only the
+  incoming screen animated, the outgoing one just vanished.** The bug
+  was in `ScreenTransition.tsx` itself: capturing the outgoing screen
+  happened in a `useEffect`, which only runs *after* a render commits
+  and paints - but the outgoing content (rendered in a div keyed to the
+  *old* `screenKey`) had already been unmounted in that same commit,
+  the moment `screenKey` changed and React swapped to a new key. By the
+  time the effect ran and captured it, there was nothing left on screen
+  to animate away, and the follow-up `setExiting` call landed a frame
+  late, showing the old screen doing a confusing re-mount-then-slide
+  instead of a real synchronized push. Fixed by capturing it *during*
+  the render that swaps `screenKey`, via React's own supported "adjust
+  state while rendering" pattern (comparing against the previous key
+  in the render body and calling `setState` immediately, before that
+  render ever commits) - the very first paint that shows the new screen
+  already has the old one captured alongside it, both animating in the
+  same frame, edge-to-edge, exactly as intended the first time.

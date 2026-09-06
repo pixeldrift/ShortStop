@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 const TRANSITION_DURATION_MS = 320;
 
 type Direction = "forward" | "backward";
+
+interface TransitionState {
+  key: string;
+  node: ReactNode;
+  direction: Direction;
+  exiting: { key: string; node: ReactNode; direction: Direction } | null;
+}
 
 /**
  * Swaps its children with a horizontal push instead of an instant
@@ -20,13 +27,15 @@ type Direction = "forward" | "backward";
  * (page.tsx's own `navigate` helper), not inferred here from the key
  * change itself.
  *
- * Modeled on StepTransition's own outgoing-absolute/incoming-in-flow
- * approach, but simpler: every screen used here already fills its own
- * `flex-1` box at a fixed size (this element's own, via the `flex-1`
- * below), so there's no odometer-style height measurement to do - both
- * the incoming and outgoing screen are absolutely positioned for the
- * whole transition, and this wrapper's own size never depends on
- * either one.
+ * Capturing the outgoing screen has to happen *during* the same render
+ * that swaps to the new one, not in a `useEffect` afterward - an effect
+ * only runs after that render has already committed and painted, by
+ * which point the old content (keyed under the old `screenKey`) has
+ * already been unmounted with nothing left to animate out. This uses
+ * React's supported "adjust state while rendering" pattern instead
+ * (calling `setState` mid-render when a prop changed since the last
+ * one) so the very first commit that shows the new screen already has
+ * the old one captured alongside it, both animating in the same paint.
  */
 export function ScreenTransition({
   screenKey,
@@ -37,49 +46,50 @@ export function ScreenTransition({
   direction: Direction;
   children: ReactNode;
 }) {
-  const prevRef = useRef<{ key: string; node: ReactNode; direction: Direction }>({
+  const [state, setState] = useState<TransitionState>({
     key: screenKey,
     node: children,
     direction,
+    exiting: null,
   });
-  const [exiting, setExiting] = useState<{
-    key: string;
-    node: ReactNode;
-    direction: Direction;
-  } | null>(null);
-  const timeoutRef = useRef<number | undefined>(undefined);
+
+  if (state.key !== screenKey) {
+    setState({
+      key: screenKey,
+      node: children,
+      direction,
+      exiting: { key: state.key, node: state.node, direction: state.direction },
+    });
+  }
 
   useEffect(() => {
-    if (prevRef.current.key !== screenKey) {
-      setExiting(prevRef.current);
-      window.clearTimeout(timeoutRef.current);
-      timeoutRef.current = window.setTimeout(() => setExiting(null), TRANSITION_DURATION_MS);
-    }
-    prevRef.current = { key: screenKey, node: children, direction };
-  }, [screenKey, children, direction]);
-
-  useEffect(() => () => window.clearTimeout(timeoutRef.current), []);
+    if (!state.exiting) return;
+    const timeout = window.setTimeout(() => {
+      setState((prev) => (prev.exiting ? { ...prev, exiting: null } : prev));
+    }, TRANSITION_DURATION_MS);
+    return () => window.clearTimeout(timeout);
+  }, [state.exiting]);
 
   return (
     <div className="relative flex flex-1 overflow-hidden">
-      <div
-        key={screenKey}
-        className={`absolute inset-0 flex flex-col ${
-          direction === "forward" ? "animate-screen-enter-forward" : "animate-screen-enter-backward"
-        }`}
-      >
-        {children}
-      </div>
-      {exiting && (
+      {state.exiting && (
         <div
           aria-hidden="true"
           className={`pointer-events-none absolute inset-0 flex flex-col ${
-            exiting.direction === "forward" ? "animate-screen-exit-forward" : "animate-screen-exit-backward"
+            state.exiting.direction === "forward" ? "animate-screen-exit-forward" : "animate-screen-exit-backward"
           }`}
         >
-          {exiting.node}
+          {state.exiting.node}
         </div>
       )}
+      <div
+        key={state.key}
+        className={`absolute inset-0 z-10 flex flex-col ${
+          state.direction === "forward" ? "animate-screen-enter-forward" : "animate-screen-enter-backward"
+        }`}
+      >
+        {state.node}
+      </div>
     </div>
   );
 }
