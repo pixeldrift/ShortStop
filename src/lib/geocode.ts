@@ -80,6 +80,25 @@ interface OrsGeocodeResponse {
   features: OrsFeature[];
 }
 
+/** OpenRouteService's own account-wide rate limit, as reported by the
+ * `X-Ratelimit-*` response headers on the most recent real ORS request
+ * this server process has made. Not guaranteed to exist - ORS's exact
+ * gating/quota semantics aren't confirmed (see README's own "Next
+ * steps" note on this) - so a caller should treat a missing value as
+ * "unknown," never as "unlimited" or "zero." Module-level rather than
+ * threaded through GeocodeProvider's own per-query return type, since
+ * it's one account-wide number every request already reports
+ * redundantly, not something specific to whichever query triggered it.
+ */
+export interface ApiQuota {
+  limit: number;
+  remaining: number;
+}
+let lastKnownQuota: ApiQuota | null = null;
+export function getLastKnownOrsQuota(): ApiQuota | null {
+  return lastKnownQuota;
+}
+
 export const geocodeViaOpenRouteService: GeocodeProvider = async (
   query,
   locationContext,
@@ -92,6 +111,20 @@ export const geocodeViaOpenRouteService: GeocodeProvider = async (
     `&text=${encodeURIComponent(source)}&size=1&boundary.country=US`;
 
   const res = await fetchImpl(url);
+
+  // Read before the ok-check below, deliberately - a request that
+  // finally trips the rate limit (a 429) is exactly the response most
+  // worth capturing this from.
+  const limitHeader = res.headers.get("X-Ratelimit-Limit");
+  const remainingHeader = res.headers.get("X-Ratelimit-Remaining");
+  if (limitHeader != null && remainingHeader != null) {
+    const limit = Number(limitHeader);
+    const remaining = Number(remainingHeader);
+    if (Number.isFinite(limit) && Number.isFinite(remaining)) {
+      lastKnownQuota = { limit, remaining };
+    }
+  }
+
   if (!res.ok) {
     // ORS's own error body (when there is one) usually says *why* -
     // "quota exceeded," "rate limit," an invalid key - which a bare

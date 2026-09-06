@@ -18,6 +18,7 @@ import {
   RightArrowIcon,
   RoundedTriangleIcon,
   SaveIcon,
+  SpinnerIcon,
   TrashIcon,
   TriangleIcon,
   TurnArrow,
@@ -29,7 +30,7 @@ import { buildRouteFromRows } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import { deriveWaypoints } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
-import type { GeocodableQuery } from "@/lib/geocode";
+import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
 import { stepsCsvBaseName } from "@/lib/parseRouteMasterList";
 import { parseRouteImport, rowsToCsvText, unresolvedRequiredFields } from "@/lib/parseRouteImport";
 import {
@@ -40,7 +41,7 @@ import {
 } from "@/lib/placeholderMeta";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import { resolutionCounts, summarizeRouteResolution } from "@/lib/routeResolutionStatus";
-import type { RowResolutionStatus } from "@/lib/routeResolutionStatus";
+import type { RouteResolutionCounts, RowResolutionStatus } from "@/lib/routeResolutionStatus";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -487,6 +488,143 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** OpenRouteService's own account-wide rate limit, drawn as a small
+ * health-meter bar - green while there's plenty left, amber then red
+ * as it runs low, the same "fuel gauge" reading any of those colors
+ * already implies. Only ever rendered when a real quota is known (see
+ * geocode.ts's own getLastKnownOrsQuota) - there's no "unknown" bar,
+ * just no bar at all. */
+function QuotaMeter({ quota }: { quota: ApiQuota }) {
+  const fraction = quota.limit > 0 ? Math.max(0, Math.min(1, quota.remaining / quota.limit)) : 0;
+  const barColor = fraction > 0.5 ? "bg-green-500" : fraction > 0.2 ? "bg-amber-500" : "bg-red-500";
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs font-semibold text-zinc-500">
+        <span>API quota remaining</span>
+        <span>
+          {quota.remaining} / {quota.limit}
+        </span>
+      </div>
+      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
+        <div
+          className={`h-full rounded-full transition-[width] ${barColor}`}
+          style={{ width: `${fraction * 100}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Opens from the Stops card's "Fetch Coordinates…" button - shows
+ * where the route's own waypoints currently stand (valid/missing/
+ * skipped, the same counts that used to sit inline on the card itself)
+ * and OpenRouteService's own rate limit if the last real request
+ * happened to report one. "Fetch Missing" only spends calls on rows
+ * that aren't already resolved (the old "Fetch All Locations"
+ * button's own behavior); "Re-fetch All" deliberately re-spends a call
+ * on every geocodable row, "ok" ones included, for when an admin
+ * suspects a previously-resolved coordinate is actually wrong - both
+ * live here now instead of a single button, since which one an admin
+ * wants depends on exactly what this modal already shows them.
+ */
+function FetchCoordinatesModal({
+  counts,
+  quota,
+  fetchRunning,
+  fetchError,
+  onFetchMissing,
+  onRefetchAll,
+  onClose,
+}: {
+  counts: RouteResolutionCounts;
+  quota: ApiQuota | null;
+  fetchRunning: boolean;
+  fetchError: string | null;
+  onFetchMissing: () => void;
+  onRefetchAll: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-heading text-xl font-black tracking-tight">Fetch Coordinates</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <div className="rounded-lg border border-green-200 bg-green-50 py-3 text-center">
+            <p className="font-heading text-2xl font-black text-green-700">{counts.resolved}</p>
+            <p className="text-xs font-semibold tracking-wide text-green-700 uppercase">Valid</p>
+          </div>
+          <div className="rounded-lg border border-red-200 bg-red-50 py-3 text-center">
+            <p className="font-heading text-2xl font-black text-red-600">{counts.unresolved}</p>
+            <p className="text-xs font-semibold tracking-wide text-red-600 uppercase">Missing</p>
+          </div>
+        </div>
+        {counts.skipped > 0 && (
+          <p className="mt-2 text-center text-xs text-zinc-400">
+            {counts.skipped} skipped ({counts.total} total)
+          </p>
+        )}
+
+        {quota && (
+          <div className="mt-4">
+            <QuotaMeter quota={quota} />
+          </div>
+        )}
+
+        {/* Reserves its own height whether or not there's anything to
+            show, so the buttons below don't jump up and down as a
+            fetch starts/finishes. */}
+        <div className="mt-4 flex min-h-[1.25rem] items-center justify-center gap-1.5 text-center">
+          {fetchRunning ? (
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-zinc-600">
+              <SpinnerIcon className="h-4 w-4 animate-spin" />
+              Fetching…
+            </p>
+          ) : (
+            fetchError && <p className="text-sm text-red-600">{fetchError}</p>
+          )}
+        </div>
+
+        <div className="mt-2 flex gap-3">
+          <button
+            type="button"
+            onClick={onRefetchAll}
+            disabled={fetchRunning || counts.total === 0}
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900 disabled:opacity-50"
+          >
+            Re-fetch All
+          </button>
+          <button
+            type="button"
+            onClick={onFetchMissing}
+            disabled={fetchRunning || counts.unresolved === 0}
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            Fetch Missing
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The admin-only Add Route / Edit Route screen - reached via
  * RouteListScreen's "Edit Mode" toggle (a new route, or clicking a
@@ -669,6 +807,11 @@ export function EditRouteScreen({
   const [fetchingStepIds, setFetchingStepIds] = useState<ReadonlySet<number>>(new Set());
   const [fetchAllRunning, setFetchAllRunning] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [showFetchModal, setShowFetchModal] = useState(false);
+  // OpenRouteService's own account-wide rate limit, if the last batch
+  // that made a real ORS call happened to report one - see geocode.ts's
+  // own getLastKnownOrsQuota doc comment for why this isn't guaranteed.
+  const [quota, setQuota] = useState<ApiQuota | null>(null);
 
   // Whatever's already geocoded for this exact route number/trip/level
   // combination, if anything - a real route's committed sidecar cache
@@ -852,6 +995,7 @@ export function EditRouteScreen({
     try {
       const data = await callGeocodeApi([waypoint]);
       if (data.anchor) setSchoolAnchor(data.anchor);
+      if (data.quota) setQuota(data.quota);
       const entry: WaypointCacheEntry | null = data.results[0];
       if (entry) {
         const key = waypointCacheKey(waypoint);
@@ -868,10 +1012,9 @@ export function EditRouteScreen({
     }
   }
 
-  async function fetchAllLocations() {
-    const toFetch = waypoints.filter(
-      (w): w is GeocodableQuery => w.kind !== "unresolvable" && cache[waypointCacheKey(w)]?.status !== "ok",
-    );
+  // Shared by both Fetch Coordinates modal buttons below - they only
+  // differ in which waypoints they decide are worth spending a call on.
+  async function runFetchAll(toFetch: GeocodableQuery[]) {
     if (toFetch.length === 0) return;
 
     setFetchError(null);
@@ -880,6 +1023,7 @@ export function EditRouteScreen({
     try {
       const data = await callGeocodeApi(toFetch);
       if (data.anchor) setSchoolAnchor(data.anchor);
+      if (data.quota) setQuota(data.quota);
       setCache((prev) => {
         const next = { ...prev };
         toFetch.forEach((w, i) => {
@@ -894,6 +1038,23 @@ export function EditRouteScreen({
       setFetchAllRunning(false);
       setFetchingStepIds(new Set());
     }
+  }
+
+  // Only spends calls on what isn't already resolved - the Fetch
+  // Coordinates modal's "Fetch Missing" button.
+  function fetchMissingLocations() {
+    return runFetchAll(
+      waypoints.filter(
+        (w): w is GeocodableQuery => w.kind !== "unresolvable" && cache[waypointCacheKey(w)]?.status !== "ok",
+      ),
+    );
+  }
+
+  // Deliberately re-spends a call on every geocodable row, "ok" ones
+  // included - the modal's "Re-fetch All" button, for when an admin
+  // suspects a previously-resolved coordinate is actually wrong.
+  function refetchAllLocations() {
+    return runFetchAll(waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable"));
   }
 
   // The only real requirement to save at all - a route number is what
@@ -1118,16 +1279,15 @@ export function EditRouteScreen({
           </div>
         ) : (
           <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
-            <div className="flex items-center justify-end gap-3">
+            <div className="flex items-center justify-between gap-3">
               <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
               <button
                 type="button"
-                onClick={fetchAllLocations}
-                disabled={fetchAllRunning || counts.unresolved === 0}
-                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-500 bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900 disabled:opacity-50"
+                onClick={() => setShowFetchModal(true)}
+                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-500 bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
               >
                 <GlobeIcon className="h-3.5 w-3.5" />
-                {fetchAllRunning ? "Fetching…" : "Fetch All Locations"}
+                Fetch Coordinates…
               </button>
             </div>
             {hasIncompleteRow && (
@@ -1135,7 +1295,6 @@ export function EditRouteScreen({
                 Every stop needs at least a type and a location before locations can be checked.
               </p>
             )}
-            {fetchError && <p className="mt-1 text-xs text-red-600">{fetchError}</p>}
 
             {/* An "Add Step" control before the first row and after
                 every row, not just once at the bottom - a new stop or
@@ -1228,6 +1387,17 @@ export function EditRouteScreen({
       </div>
 
       {showFormatModal && <StopsFormatModal onClose={() => setShowFormatModal(false)} />}
+      {showFetchModal && (
+        <FetchCoordinatesModal
+          counts={counts}
+          quota={quota}
+          fetchRunning={fetchAllRunning}
+          fetchError={fetchError}
+          onFetchMissing={fetchMissingLocations}
+          onRefetchAll={refetchAllLocations}
+          onClose={() => setShowFetchModal(false)}
+        />
+      )}
     </div>
   );
 }

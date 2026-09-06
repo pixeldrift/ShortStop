@@ -443,7 +443,7 @@ export function SunIcon({ className }: { className?: string }) {
 /** A network-style globe - a plain circle, an equator line, and one
  * meridian curve, the way "the web" gets drawn rather than a physical
  * classroom globe (no stand, no tilt, no continents) - used on
- * EditRouteScreen's "Fetch All Locations" button, which reaches out to
+ * EditRouteScreen's "Fetch Coordinates…" button, which reaches out to
  * a real geocoding service. */
 export function GlobeIcon({ className }: { className?: string }) {
   return (
@@ -460,6 +460,18 @@ export function GlobeIcon({ className }: { className?: string }) {
       <circle cx="12" cy="12" r="10" />
       <line x1="2" y1="12" x2="22" y2="12" />
       <path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20Z" />
+    </svg>
+  );
+}
+
+/** A partial ring - pair with Tailwind's own `animate-spin` on the
+ * caller's className for a standard loading spinner. Used while
+ * EditRouteScreen's Fetch Coordinates modal is mid-fetch. */
+export function SpinnerIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
     </svg>
   );
 }

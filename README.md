@@ -1990,13 +1990,6 @@ so far.
   datastore) instead of session state is its own follow-up - worth
   deciding deliberately (a GitHub-committing API route? a real
   database?) rather than defaulting into whichever's easiest to bolt on
-- Surfacing API usage/quota in the Add/Edit Route UI would be nice, but
-  it's not actually clear yet what OpenRouteService's or Overpass's
-  real gating criteria are (a request quota? a rate limit? both?) -
-  worth understanding before promising a usage meter that might not
-  mean what it looks like it means. OpenRouteService's free tier does
-  have *some* quota, confirmed the hard way - see "Maps, part ten"
-  above
 - For whatever's left unresolved after a validate pass: a per-row
   "Retry" button, and a manual fallback - a single paste-able "lat, lon"
   text field standing in for the two separate coordinate columns on
@@ -2463,3 +2456,36 @@ so far.
   instead of always assuming `rows.length`; each row's own `border-b`
   divider is gone in favor of the dashed line the new button already
   draws, since stacking both there read as two competing separators.
+- **"Fetch All Locations" is "Fetch Coordinates…" now, and opens a
+  status modal instead of fetching directly.** "Show turns" moved back
+  to the left of its row (the button is the only thing anchored right
+  now); tapping the renamed button opens a new `FetchCoordinatesModal`
+  showing Valid/Missing/skipped counts - the same numbers that used to
+  sit inline on the card, now with room to actually explain themselves
+  - and, if the last real request happened to report one, OpenRouteService's
+  own account-wide rate limit as a small green/amber/red health-meter
+  bar (`QuotaMeter`). ORS's exact gating semantics still aren't fully
+  confirmed (the "Next steps" entry flagging this as an open question
+  is gone now that it's built), so a missing quota just renders no
+  meter at all rather than a fake one.
+
+  Two buttons replace the old single "Fetch All Locations" action:
+  **Fetch Missing** (only spends calls on rows that aren't already
+  resolved - the old button's own behavior) and **Re-fetch All**
+  (deliberately re-spends a call on every geocodable row, "ok" ones
+  included, for when an admin suspects a previously-resolved coordinate
+  is actually wrong) - `fetchAllLocations` split into
+  `fetchMissingLocations`/`refetchAllLocations`, sharing one
+  `runFetchAll` that only differs by which waypoints it's given. While
+  either runs, the modal shows a `SpinnerIcon` (Tailwind's own
+  `animate-spin`) and "Fetching…"; a failure's error message takes that
+  same spot once it stops.
+
+  Getting the quota number out required a small plumbing change: ORS's
+  own `X-Ratelimit-Limit`/`X-Ratelimit-Remaining` response headers are
+  captured in `geocode.ts` (module-level state, read back via
+  `getLastKnownOrsQuota`) since they're one account-wide number every
+  request already reports redundantly, not something tied to whichever
+  query happened to trigger it - `/api/geocode/route.ts` reads that
+  back into its own response body's new `quota` field once a batch
+  finishes.

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
-import { extractCityState } from "@/lib/geocode";
-import type { GeocodableQuery } from "@/lib/geocode";
+import { extractCityState, getLastKnownOrsQuota } from "@/lib/geocode";
+import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
 import { resolveGeocodableQuery, resolveSchoolAnchor } from "@/lib/resolveWaypoint";
 import type { WaypointCacheEntry } from "@/lib/waypointCache";
 
@@ -51,6 +51,12 @@ export interface GeocodeResponseBody {
    * "unresolvable" query (nothing to look up at all, see
    * deriveWaypoints.ts), an entry otherwise. */
   results: (WaypointCacheEntry | null)[];
+  /** OpenRouteService's own account-wide rate limit, if this batch made
+   * at least one real ORS request and it happened to report one (see
+   * geocode.ts's own getLastKnownOrsQuota) - null otherwise, including
+   * when every query in the batch was an Overpass intersection lookup
+   * instead. */
+  quota: ApiQuota | null;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -123,6 +129,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     results.push(entry);
   }
 
-  const responseBody: GeocodeResponseBody = { anchor, results };
+  const responseBody: GeocodeResponseBody = { anchor, results, quota: getLastKnownOrsQuota() };
   return NextResponse.json(responseBody);
 }
