@@ -95,11 +95,11 @@ function turnMarkerHtml(label: string): string {
  * A real, pannable/zoomable OpenStreetMap tile map - replaces the
  * static "Demo only placeholder, not actual map" JPEG that used to sit
  * in this spot. Centers on La Vergne, TN with a live position dot, a
- * numbered pin per stop, and a small numbered dot per turn (routes with
- * real turn-by-turn data - see `turns`' own doc comment), wherever the
- * geocode cache actually has an entry for it (see the `stops`/`turns`
- * prop docs below) - no route line drawn between them yet (see README,
- * "Maps" sections).
+ * numbered pin per stop, a small numbered dot per turn (routes with
+ * real turn-by-turn data - see `turns`' own doc comment), and a line
+ * connecting every one of those in the route's own order (`path`'s own
+ * doc comment), wherever the geocode cache actually has an entry for it
+ * (see the `stops`/`turns`/`path` prop docs below).
  *
  * `leaflet` is imported dynamically inside the effect, not at module
  * top level - the package touches `window` as soon as it's evaluated,
@@ -114,6 +114,7 @@ export function RouteMap({
   className,
   stops = [],
   turns = [],
+  path = [],
   waypointsUrl,
 }: {
   className?: string;
@@ -127,18 +128,31 @@ export function RouteMap({
    * only), populated for 125's (see TurnMarker's own doc comment for
    * the label scheme). */
   turns?: TurnMarker[];
+  /** Every step's own waypointKey, in the route's own order (stops and
+   * turns both - StepScreen.tsx derives this straight from
+   * route.steps) - drawn as a single connect-the-dots line, straight
+   * segments between whichever of these actually have a cache entry
+   * (an ungeocoded or unresolvable step is simply skipped, same as a
+   * missing `stops`/`turns` entry, leaving a gap in the line rather
+   * than a fabricated straight line across it). Not routed against
+   * real streets - just the geocoded points already on the map, joined
+   * up - but since a turn marker already sits at each real intersection
+   * where the road actually bends, the straight segments between them
+   * already trace the real route's own shape for anything short of a
+   * curving mid-block road. */
+  path?: string[];
   /** The geocode cache endpoint (src/app/api/waypoints) - shared across
    * every route now that it's backed by Postgres rather than split into
    * a sidecar file per route, so this is the same URL regardless of
-   * which route is showing. A cache miss for a given `stops`/`turns`
-   * entry (nothing's geocoded it yet) is simply skipped, same as a
-   * fetch failure resolving to an empty cache below. */
+   * which route is showing. A cache miss for a given `stops`/`turns`/
+   * `path` entry (nothing's geocoded it yet) is simply skipped, same as
+   * a fetch failure resolving to an empty cache below. */
   waypointsUrl: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Read inside the mount effect's async callback below rather than
-  // added as that effect's own dependency - `stops`/`turns` are fresh
-  // arrays every render, and re-running the whole effect on every
+  // added as that effect's own dependency - `stops`/`turns`/`path` are
+  // fresh arrays every render, and re-running the whole effect on every
   // change would tear down and rebuild the entire map (tile layer,
   // geolocation watch included) just to redraw pins that don't
   // actually change mid-trip.
@@ -150,6 +164,10 @@ export function RouteMap({
   useEffect(() => {
     turnsRef.current = turns;
   }, [turns]);
+  const pathRef = useRef(path);
+  useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
   // Same reasoning as stopsRef above - read once inside the mount
   // effect rather than re-running the whole effect if it ever changed
   // (it doesn't, mid-trip: StepScreen computes it once from `route`,
@@ -191,6 +209,25 @@ export function RouteMap({
         .then((cache) => {
           if (cancelled || !map) return;
           const pinLatLngs: [number, number][] = [];
+
+          // Drawn before any marker below so the pins/dots sit visibly
+          // on top of the line rather than under it.
+          const pathLatLngs: [number, number][] = [];
+          for (const key of pathRef.current) {
+            const entry = cache[key];
+            if (!entry || entry.status !== "ok") continue;
+            pathLatLngs.push([entry.lat, entry.lon]);
+          }
+          if (pathLatLngs.length > 1) {
+            L.polyline(pathLatLngs, {
+              color: "#2563eb",
+              weight: 4,
+              opacity: 0.7,
+              lineJoin: "round",
+              interactive: false,
+            }).addTo(map);
+          }
+
           for (const stop of stopsRef.current) {
             const entry = cache[stop.waypointKey];
             if (!entry || entry.status !== "ok") continue;

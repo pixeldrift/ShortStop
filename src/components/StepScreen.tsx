@@ -107,6 +107,11 @@ export function StepScreen({
     }
     return markers;
   }, [route]);
+  // Every step's own waypointKey, in the route's own order - RouteMap
+  // connects whichever of these are actually geocoded into a single
+  // line (its own `path` prop doc comment explains why straight
+  // segments between them already trace the route's real shape).
+  const routePath = useMemo(() => route.steps.map((s) => s.waypointKey), [route]);
   // The geocode cache, shared across every route now that it lives in
   // Postgres (see src/app/api/waypoints) rather than split into a
   // sidecar file per route - RouteMap looks its own stops up from this
@@ -162,6 +167,7 @@ export function StepScreen({
           className="absolute inset-x-0 top-0 z-0 h-[calc(100%+20px)]"
           stops={stopMarkers}
           turns={turnMarkers}
+          path={routePath}
           waypointsUrl={waypointsUrl}
         />
 
