@@ -78,7 +78,13 @@ async function resolveIntersectionToEntry(
       const picked = pickNearest(resolution.candidates, near);
       return { status: "ok", lat: picked.lat, lon: picked.lon, displayName: label, source, provider: "overpass" };
     }
-    return { status: "error", message: "No shared node found in the search box", source, provider: "overpass" };
+    return {
+      status: "error",
+      message: "No shared node found in the search box",
+      notFound: true,
+      source,
+      provider: "overpass",
+    };
   } catch (err) {
     return {
       status: "error",

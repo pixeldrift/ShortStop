@@ -148,7 +148,7 @@ export const geocodeViaOpenRouteService: GeocodeProvider = async (
   const body = (await res.json()) as OrsGeocodeResponse;
   const [first] = body.features;
   if (!first) {
-    return { status: "error", message: "No geocoding result", source, provider: "openrouteservice" };
+    return { status: "error", message: "No geocoding result", notFound: true, source, provider: "openrouteservice" };
   }
 
   const [lon, lat] = first.geometry.coordinates;
@@ -199,7 +199,7 @@ export const geocodeViaNominatim: GeocodeProvider = async (
   const results = (await res.json()) as NominatimResult[];
   const [first] = results;
   if (!first) {
-    return { status: "error", message: "No geocoding result", source, provider: "nominatim" };
+    return { status: "error", message: "No geocoding result", notFound: true, source, provider: "nominatim" };
   }
 
   return {

@@ -3108,3 +3108,60 @@ so far.
   Holland Ridge Dr" - each one genuinely deriving from the road the bus
   was just on, never a manufactured pair. The Riverwood failure was
   real bad data, not a gap in this logic.
+
+## Smart "not found" - naming the actual suspect road, not just "coordinates not found"
+
+  The generic "Oops, could not look up coordinates" line (however
+  visible - see above) still left the same question the Riverwood
+  typo took manual digging to answer: *which* word in the query is
+  actually wrong? An intersection query only ever fails as a pair
+  ("roadA & roadB"), so nothing in a single failed lookup says whether
+  roadA, roadB, or both are misspelled.
+
+  The fix is a real, not string-matched, signal for "this specific
+  query genuinely ran and found nothing" versus every other way a
+  lookup can fail (no API key configured, a network/HTTP error, a
+  caught exception) - `WaypointCacheEntry`'s error variant gains a
+  `notFound?: boolean`, set `true` only at the two places that's
+  actually true: ORS/Nominatim's own "No geocoding result" in
+  `geocode.ts`, and Overpass's "No shared node found in the search box"
+  in `resolveWaypoint.ts`. Every other failure path leaves it unset, so
+  a missing API key never gets treated as a naming problem.
+
+  `routeResolutionStatus.ts` uses that signal to build a friendly,
+  specific line instead of the old generic one. For a genuine
+  not-found it now quotes the actual text: `"123 Fake St" not found`
+  for an address, `"RoadA" & "Roadb" not found` for an intersection
+  where neither side has independent corroboration. The smart part is
+  `confirmedRoadNames()`: it scans the route's own cache for every road
+  name that appears in some *other* already-resolved intersection
+  entry elsewhere on the same route (built straight from
+  `intersection:${roadA} & ${roadB}` cache keys, so it's exactly the
+  pairing a real successful lookup already confirmed) - deliberately
+  intersection-only, since stripping a house number back off an
+  address string to guess its road name would be its own source of
+  false positives for a case this app doesn't need to solve. When
+  exactly one of a failing intersection's two roads shows up
+  elsewhere as confirmed, that side is very likely spelled right, so
+  the message calls out the other one specifically instead of naming
+  both as equally suspect: `"Riverwood Ln" not found ("Bill Stewart
+  Blvd" confirmed by other stops on this route)`. Any other failure
+  (no `notFound`) still gets the honest generic "Couldn't look up
+  coordinates" rather than a guess it has no basis for.
+
+  `EditRouteScreen.tsx`'s row status line now shows that specific
+  `reason` directly instead of the old hardcoded text, with "View
+  Error" unchanged behind it for the full message/raw-response detail.
+  The Fetch Coordinates modal's own generic failure message (a whole
+  batch aborting on the school address itself, with no per-road
+  context to guess from) was deliberately left as-is - a different
+  kind of failure, not the same one.
+
+  Verified with an isolated scratch test (four constructed cache
+  states covering: a normal resolved row, the one-side-confirmed
+  guess, the ambiguous-both-sides case, and a genuine HTTP failure
+  that must *not* get smart treatment) rather than a live round-trip,
+  since this sandbox's own network block only ever produces the
+  generic HTTP-failure case here, never a real empty-result response -
+  confirmed live in the browser only that the new `reason` text
+  renders in the row without any wiring/runtime error.
