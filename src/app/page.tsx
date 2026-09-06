@@ -360,6 +360,7 @@ export default function Home() {
     content = (
       <SchoolListScreen
         schools={schools}
+        routes={routes}
         onSelectSchool={(schoolName) => navigate({ kind: "school-routes", schoolName }, "forward")}
         onBack={() => navigate({ kind: "list" }, "backward")}
       />

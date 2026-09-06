@@ -12,9 +12,8 @@ import {
   EyeOffIcon,
   HeartIcon,
   PlusIcon,
-  SchoolIcon,
+  RouteIcon,
   SearchIcon,
-  SortIcon,
   SunIcon,
   SunriseIcon,
   TrashIcon,
@@ -25,6 +24,8 @@ import { fetchCommittedWaypointCache, isRouteFullyResolved } from "@/lib/routeRe
 import { parseTimeToMinutes } from "@/lib/time";
 import type { Route, RouteStatus } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
+import { SortableHeader } from "./SortableHeader";
+import type { SortDir } from "./SortableHeader";
 
 /** A pending confirm-modal request - which action, on which route.
  * Rendered as a single shared ConfirmModal below rather than one
@@ -35,7 +36,6 @@ type ConfirmRequest =
   | { type: "delete"; route: Route };
 
 type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
-type SortDir = "asc" | "desc";
 
 // One comparator per sortable header - routeNumber compares numerically
 // (route numbers sort as text otherwise: "120" would land after "20"),
@@ -124,7 +124,7 @@ export function RouteListScreen({
    * passes this (back to SchoolListScreen); the top-level route list
    * has nowhere "back" to go, so it omits both this and `title`. */
   onBack?: () => void;
-  /** Renders the "View all Schools" corner button (bottom-left) when
+  /** Renders the "Schools" link (under the table, left-aligned) when
    * given - only the top-level route list passes this; the
    * school-scoped reuse above already knows which school it's showing
    * routes for, so re-offering a jump to the schools list from inside
@@ -318,7 +318,11 @@ export function RouteListScreen({
         </div>
       ) : (
         <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-          {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
+          {adminMode ? (
+            <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+          ) : (
+            !title && <RouteIcon className="h-5 w-5 shrink-0 text-blue-600" />
+          )}
           {title ?? (adminMode ? "Edit Routes" : "Routes")}
         </h1>
       )}
@@ -597,16 +601,50 @@ export function RouteListScreen({
         </div>
       </div>
 
-      {/* The Home Screen's own entry point (adminMode off) stays the
-          small `btn-glossy` chip this used to be everywhere - a
-          district-admin tool, not something that needs to compete with
-          Search/View for attention. Once actually in edit mode, though,
-          both controls become full-width and split evenly, the same
-          large treatment as StepScreen's own Back/Next footer buttons
-          (flex-1 each, py-3, text-lg) - exiting is deliberately the
-          gray/neutral button of the pair, adding a route is the blue
-          "forward" action. */}
-      {adminMode ? (
+      {/* Schools (left) and, outside admin mode, Edit Routes (right)
+          share one row directly under the table - admin mode has no
+          "Edit Routes" counterpart here (its own Exit Edit Mode/New
+          Route row follows below instead, same as always), so Schools
+          sits alone, still left-aligned, in that case. */}
+      {(onViewSchools || !adminMode) && (
+        <div
+          ref={adminMode ? undefined : controlsRef}
+          className="flex w-full max-w-md shrink-0 items-center justify-between"
+        >
+          {onViewSchools ? (
+            <button
+              type="button"
+              onClick={onViewSchools}
+              className="text-sm font-semibold text-blue-600 active:text-blue-800"
+            >
+              Schools
+            </button>
+          ) : (
+            <span />
+          )}
+          {/* The Home Screen's own entry point (adminMode off) stays the
+              small `btn-glossy` chip this used to be everywhere - a
+              district-admin tool, not something that needs to compete
+              with Search/View for attention. */}
+          {!adminMode && (
+            <button
+              type="button"
+              onClick={onToggleAdminMode}
+              className="btn-glossy flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              <EditIcon className="h-3 w-3" />
+              Edit Routes
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Once actually in edit mode, both controls become full-width
+          and split evenly, the same large treatment as StepScreen's own
+          Back/Next footer buttons (flex-1 each, py-3, text-lg) -
+          exiting is deliberately the gray/neutral button of the pair,
+          adding a route is the blue "forward" action. */}
+      {adminMode && (
         <div ref={controlsRef} className="flex w-full max-w-md shrink-0 items-center gap-3">
           <button
             type="button"
@@ -623,17 +661,6 @@ export function RouteListScreen({
           >
             <PlusIcon className="h-5 w-5" />
             New Route
-          </button>
-        </div>
-      ) : (
-        <div ref={controlsRef} className="flex shrink-0 items-center">
-          <button
-            type="button"
-            onClick={onToggleAdminMode}
-            className="btn-glossy flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
-          >
-            <EditIcon className="h-3 w-3" />
-            Edit Routes
           </button>
         </div>
       )}
@@ -697,17 +724,6 @@ export function RouteListScreen({
           <DownloadIcon className="h-4 w-4" />
         </button>
       )}
-
-      {onViewSchools && (
-        <button
-          type="button"
-          onClick={onViewSchools}
-          className="fixed bottom-4 left-4 z-10 flex items-center gap-1.5 text-sm font-semibold text-zinc-500 active:text-zinc-700"
-        >
-          <SchoolIcon className="h-4 w-4" />
-          View all Schools
-        </button>
-      )}
     </div>
   );
 }
@@ -750,51 +766,8 @@ function SchoolNameLabel({ name }: { name: string }) {
   );
 }
 
-/** One clickable, sortable column header - label plus the traditional
- * stacked up/down carets (SortIcon), which always render but only show
- * the active direction solid once this is the column being sorted by.
- * Every header here is `align="center"` - labels read centered in
- * their own cell regardless of how that column's own data below is
- * aligned (Start's data is right-aligned, say). */
-function SortableHeader({
-  label,
-  field,
-  align = "left",
-  padded = true,
-  fill = false,
-  sortField,
-  sortDir,
-  onSort,
-}: {
-  label: string;
-  field: SortField;
-  align?: "left" | "center" | "right";
-  /** This header's own leading gutter (pl-3, none if it's the first in
-   * its row) - on by default, off for every header in the route list's
-   * own header row (see above), which get their spacing from their
-   * shared grid's own gap and centered text instead of a per-button
-   * padding. */
-  padded?: boolean;
-  /** Fills its whole grid cell instead of shrinking to its own label+
-   * icon width - used for "#", whose tiny label alone would otherwise
-   * be a cramped tap target hugging the row's left edge. */
-  fill?: boolean;
-  sortField: SortField;
-  sortDir: SortDir;
-  onSort: (field: SortField) => void;
-}) {
-  const active = sortField === field;
-  const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "";
-  return (
-    <button
-      type="button"
-      onClick={() => onSort(field)}
-      className={`flex items-center gap-1 bg-transparent ${fill ? "h-full w-full" : ""} ${
-        padded ? "pl-3 first:pl-0" : ""
-      } ${justify} ${active ? "text-zinc-700" : ""}`}
-    >
-      <span>{label}</span>
-      <SortIcon direction={active ? sortDir : "none"} className="h-2.5 w-2.5 shrink-0" />
-    </button>
-  );
-}
+// SortableHeader itself now lives in ./SortableHeader.tsx (shared with
+// SchoolListScreen's own table) - every header in the route list's
+// header row is `align="center"`, labels read centered in their own
+// cell regardless of how that column's own data below is aligned
+// (Start's data is right-aligned, say).
