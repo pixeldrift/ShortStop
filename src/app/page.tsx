@@ -29,29 +29,22 @@ import type { WaypointCache } from "@/lib/waypointCache";
 // and search filtering - see demoRoutes.ts.
 const DEMO_ROUTE_COUNT = 24;
 
-// Where each master-list row's own turn-by-turn steps sheet lives,
-// keyed by the same `${routeNumber}-${tripType}-${schoolLevel}` id the
-// master list generates/carries (see Route.id's doc comment in
-// types.ts). File names follow the district's own convention -
-// route, AM/PM, school type (e.g. "120-AM-MS.csv"), not this app's
-// tripType/schoolLevel spelling. Deliberately only covers routes a real
-// steps sheet exists for - 120-PM-HS has no entry here yet (its sheet
-// came in visibly incomplete, cutting off mid-neighborhood, so the
-// master list marks it "draft" - see route-master-list.csv), and any
-// row with no entry here is skipped rather than crashing (see the
-// `.filter` below).
-const ROUTE_STEPS_CSV_PATHS: Record<string, string> = {
-  "125-dropoff-elementary": "/data/125-PM-EL.csv",
-  "120-pickup-elementary": "/data/120-AM-EL.csv",
-  "120-pickup-middle": "/data/120-AM-MS.csv",
-  "120-pickup-high": "/data/120-AM-HS.csv",
-  "120-dropoff-elementary": "/data/120-PM-EL.csv",
-  "120-dropoff-middle": "/data/120-PM-MS.csv",
-};
-
 async function fetchText(path: string): Promise<string> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${path}`);
+  return res.text();
+}
+
+/** Fetches one route's own turn-by-turn steps sheet from Postgres (see
+ * src/app/api/routes/[id]/steps) - null for a master-list row with no
+ * steps sheet committed yet (e.g. 120-PM-HS, whose sheet came in
+ * visibly incomplete, cutting off mid-neighborhood, so the master list
+ * marks it "draft"), same skip-not-crash handling the old hardcoded
+ * ROUTE_STEPS_CSV_PATHS file map gave a missing entry. */
+async function fetchStepsText(routeId: string): Promise<string | null> {
+  const res = await fetch(`/api/routes/${routeId}/steps`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for /api/routes/${routeId}/steps`);
   return res.text();
 }
 
@@ -163,7 +156,7 @@ export default function Home() {
   const [adminMode, setAdminMode] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetchText("/data/route-master-list.csv"), fetchText("/data/schools.csv")])
+    Promise.all([fetchText("/api/route-master-list"), fetchText("/api/schools")])
       .then(async ([masterListCsv, schoolsCsv]) => {
         const allRows = parseRouteMasterList(masterListCsv);
         const schoolsTable = parseSchoolsCsv(schoolsCsv);
@@ -171,9 +164,6 @@ export default function Home() {
 
         const built = await Promise.all(
           allRows.map(async (row) => {
-            const stepsPath = ROUTE_STEPS_CSV_PATHS[row.id];
-            if (!stepsPath) return null;
-
             // A row with no computable duration (blank end_time) means
             // the master list hasn't recorded when this route ends yet
             // - a data problem worth surfacing rather than silently
@@ -183,7 +173,9 @@ export default function Home() {
               return null;
             }
 
-            const stepsCsv = await fetchText(stepsPath);
+            const stepsCsv = await fetchStepsText(row.id);
+            if (!stepsCsv) return null;
+
             const meta: RouteMeta = {
               ...row,
               durationMinutes: row.durationMinutes,

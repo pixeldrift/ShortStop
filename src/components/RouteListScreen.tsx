@@ -252,7 +252,7 @@ export function RouteListScreen({
     }
     setCheckingRouteId(route.id);
     try {
-      const committed = await fetchCommittedWaypointCache(route);
+      const committed = await fetchCommittedWaypointCache();
       const merged = { ...committed, ...(adminWaypointCaches[route.id] ?? {}) };
       if (isRouteFullyResolved(route, merged)) {
         setConfirmRequest({ type: "publish", route });
