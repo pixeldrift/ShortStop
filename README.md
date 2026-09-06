@@ -2852,3 +2852,14 @@ so far.
   with no raw error text visible in the main interface at all, and
   "View Error" opens a popup with the exact same technical detail that
   used to sit inline.
+
+  Follow-up: that popup's own message still read as regular prose,
+  blending in with the modal's own "Error Details"/"Returned:" chrome
+  around it instead of clearly reading as *quoted* text from somewhere
+  else. Moved it into its own `<pre>` block - monospaced, shaded
+  background, on its own line below a plain "Returned:" label - so
+  what a geocoding service actually said is visually unmistakable from
+  this app's own writing around it, the same way code and prose read
+  differently anywhere else. `whitespace-pre-wrap break-words` keeps a
+  long message wrapping inside the modal's width rather than forcing it
+  wider or scrolling sideways.

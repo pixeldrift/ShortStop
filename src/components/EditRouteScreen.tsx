@@ -518,6 +518,13 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
  * modal in this screen's own z-20) since both call sites here - a
  * row's own status line, and the Fetch Coordinates modal - can trigger
  * this while already inside their own overlay.
+ *
+ * `message` is set in a monospaced block on its own line, visually
+ * distinct from this modal's own labels/chrome around it - it's
+ * whatever a real geocoding attempt actually returned (an HTTP error's
+ * status/body text, a caught exception's own message), not this app's
+ * own writing, so it shouldn't read like the same prose as "Returned:"
+ * above it.
  */
 function ErrorDetailsModal({ message, onClose }: { message: string; onClose: () => void }) {
   return (
@@ -540,7 +547,10 @@ function ErrorDetailsModal({ message, onClose }: { message: string; onClose: () 
             <CloseIcon className="h-5 w-5" />
           </button>
         </div>
-        <p className="mt-3 text-sm text-zinc-600">{message}</p>
+        <p className="mt-3 text-sm text-zinc-600">Returned:</p>
+        <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-zinc-100 p-3 font-mono text-xs whitespace-pre-wrap break-words text-zinc-700">
+          {message}
+        </pre>
       </div>
     </div>
   );
