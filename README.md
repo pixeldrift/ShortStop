@@ -1848,6 +1848,18 @@ so far.
   once `ORS_API_KEY` exists (bullet above) - everything so far has only
   been checked via the standalone prototype/type-checking, not a real
   end-to-end `npm run geocode` against live network access
+- **Consider Geoapify + MapLibre GL instead of the current CARTO raster
+  tiles + Leaflet setup**, raised once CARTO's own free basemap tiles
+  turned out to need a real account/key too (see the entry on that,
+  above). Geoapify covers tiles, geocoding, *and* routing under one key
+  - real appeal if/once actual driving-direction lines get drawn on the
+  map, since that'd otherwise be a third provider on top of ORS and
+  CARTO. The real cost: MapLibre GL is a genuinely different rendering
+  approach (WebGL vector tiles) from Leaflet's raster/DOM tiles, so
+  this is a rewrite of `RouteMap.tsx`'s marker/popup logic, not a
+  config swap - worth doing once routing is an actual near-term goal,
+  not simply to fix a gated tile provider a same-provider key already
+  fixes
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
   times, special instructions) once that data exists
 - It'd be nice to show each stop's estimated time alongside the actual
