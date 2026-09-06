@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { Logo } from "./Logo";
 import {
+  BackArrowIcon,
   CloseIcon,
   DownloadIcon,
   EditIcon,
@@ -11,6 +12,7 @@ import {
   EyeOffIcon,
   HeartIcon,
   PlusIcon,
+  SchoolIcon,
   SearchIcon,
   SortIcon,
   SunIcon,
@@ -41,9 +43,13 @@ type SortDir = "asc" | "desc";
 // relying on string comparison to happen to agree, departureTime goes
 // through parseTimeToMinutes rather than comparing the displayed
 // "3:30 PM" strings directly, since those don't sort into chronological
-// order as text either.
+// order as text either. routeNumber breaks a tie with tripType (a bus
+// runs both an AM and a PM route under the same number) rather than
+// leaving same-number rows in whatever order they happened to arrive
+// in - the only pair here that ties often enough for that to matter.
 const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
-  routeNumber: (a, b) => Number(a.routeNumber) - Number(b.routeNumber),
+  routeNumber: (a, b) =>
+    Number(a.routeNumber) - Number(b.routeNumber) || SORT_COMPARATORS.tripType(a, b),
   tripType: (a, b) => (a.tripType === b.tripType ? 0 : a.tripType === "pickup" ? -1 : 1),
   schoolName: (a, b) => a.schoolName.localeCompare(b.schoolName),
   departureTime: (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
@@ -92,6 +98,9 @@ function isRoutePublished(route: Route, demoHiddenIds: ReadonlySet<string>): boo
  */
 export function RouteListScreen({
   routes,
+  title,
+  onBack,
+  onViewSchools,
   adminMode,
   adminWaypointCaches,
   onToggleAdminMode,
@@ -104,6 +113,23 @@ export function RouteListScreen({
   demoHiddenIds,
 }: {
   routes: Route[];
+  /** Heading text - "Routes" (or "Edit Routes" in admin mode) when
+   * omitted, the normal top-level route list. page.tsx reuses this same
+   * component school-scoped (its own `school-routes` screen kind,
+   * reached from SchoolListScreen), passing a school's own name here so
+   * the heading reads as "which school's routes is this" instead. */
+  title?: string;
+  /** Shows a back-arrow button next to the heading when given, same
+   * placement/style as StartScreen's own - only the school-scoped reuse
+   * passes this (back to SchoolListScreen); the top-level route list
+   * has nowhere "back" to go, so it omits both this and `title`. */
+  onBack?: () => void;
+  /** Renders the "View all Schools" corner button (bottom-left) when
+   * given - only the top-level route list passes this; the
+   * school-scoped reuse above already knows which school it's showing
+   * routes for, so re-offering a jump to the schools list from inside
+   * one school's own routes would be redundant. */
+  onViewSchools?: () => void;
   /** Reveals draft real routes below, dimmed, and turns on the
    * per-row publish/unpublish/delete controls - toggled by the
    * "Edit Mode" link at the bottom (onToggleAdminMode), or turned on
@@ -152,11 +178,12 @@ export function RouteListScreen({
   const [checkingRouteId, setCheckingRouteId] = useState<string | null>(null);
   const [view, setView] = useState<ViewFilter>("all");
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
-  // departureTime/asc as the default matches the order routes already
-  // arrive in (page.tsx sorts real+demo routes by departure time before
-  // handing them to this screen), so picking this as the initial sort
-  // doesn't change anything a user would notice until they tap a header.
-  const [sortField, setSortField] = useState<SortField>("departureTime");
+  // routeNumber/asc (tripType as its own tie-break, see
+  // SORT_COMPARATORS) is the default a driver actually wants: routes
+  // grouped by bus, AM before PM within a bus, rather than the arrival
+  // order page.tsx happens to hand this screen (real+demo routes
+  // sorted by departure time).
+  const [sortField, setSortField] = useState<SortField>("routeNumber");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   // Lets a tap outside the red admin-mode box exit it (see the effect
   // below) without also swallowing a tap on the "Exit Edit Mode"/"New
@@ -273,10 +300,28 @@ export function RouteListScreen({
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
       <Logo size="large" />
-      <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-        {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
-        {adminMode ? "Edit Routes" : "Routes"}
-      </h1>
+      {onBack ? (
+        <div className="flex w-full max-w-md items-center justify-between">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to schools"
+            className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
+          >
+            <BackArrowIcon className="h-5 w-5" />
+          </button>
+          <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+            {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
+            {title}
+          </h1>
+          <span className="h-10 w-10 shrink-0" aria-hidden="true" />
+        </div>
+      ) : (
+        <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+          {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
+          {title ?? (adminMode ? "Edit Routes" : "Routes")}
+        </h1>
+      )}
 
       <div className="flex w-full max-w-md shrink-0 items-center gap-2">
         <div className="relative min-w-0 flex-1">
@@ -650,6 +695,17 @@ export function RouteListScreen({
           className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
         >
           <DownloadIcon className="h-4 w-4" />
+        </button>
+      )}
+
+      {onViewSchools && (
+        <button
+          type="button"
+          onClick={onViewSchools}
+          className="fixed bottom-4 left-4 z-10 flex items-center gap-1.5 text-sm font-semibold text-zinc-500 active:text-zinc-700"
+        >
+          <SchoolIcon className="h-4 w-4" />
+          View all Schools
         </button>
       )}
     </div>
