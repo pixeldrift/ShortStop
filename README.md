@@ -2816,3 +2816,39 @@ so far.
   network block substituting for a real ORS outage): both the
   single-row "Fetch" button and the modal's "Fetch Missing" now show
   that exact friendly error message inline instead of crashing.
+
+## A friendly line, not a wall of geocoder text
+
+  That exact friendly-error verification above was itself the
+  complaint - "Oops, could not look up coordinates" showing up at all
+  was progress over a crash, but the *raw* message underneath it
+  (`OpenRouteService geocoding returned 403 Forbidden for "201 Davids
+  Way, La Vergne, TN 37086" - Host not in allowlist:
+  api.openrouteservice.org. Add this host to your network egress
+  settings to allow access.`) was still sitting directly in the main
+  interface either way - the row's own status line, and the Fetch
+  Coordinates modal's error area.
+
+  Added a small `ErrorDetailsModal` (its own popup, matching this
+  screen's existing modal style) and wired it into both spots: the row
+  status line and the Fetch Coordinates modal now show only "Oops,
+  could not look up coordinates." (or, for the modal, the same line
+  plus its own already-distinct "Couldn't geocode the school address
+  itself" prefix) with a "View Error" link next to it - the full
+  technical message only ever shows once that's tapped, in its own
+  overlay stacked above whichever modal (if any) opened it.
+
+  `RowResolutionStatus`'s "unresolved" variant now carries the
+  technical message as a separate optional `detail` field alongside its
+  own already-friendly `reason` ("Not yet geocoded" for a row that's
+  simply never been attempted, "Couldn't look up coordinates" for one
+  that actually failed) - `detail` is only ever present for a real
+  failure, never for the plain unattempted case, which has nothing
+  technical to show in the first place.
+
+  Verified in the browser (same sandbox network block standing in for
+  a real geocoder failure): both the row's own "Fetch" and the Fetch
+  Coordinates modal's "Fetch Missing" now show only the friendly line
+  with no raw error text visible in the main interface at all, and
+  "View Error" opens a popup with the exact same technical detail that
+  used to sit inline.

@@ -273,6 +273,7 @@ function StepRowEditor({
   onUpdate: () => void;
 }) {
   const isStop = stopNumber !== null;
+  const [showErrorDetail, setShowErrorDetail] = useState(false);
 
   return (
     <div className="py-2 text-left">
@@ -338,13 +339,26 @@ function StepRowEditor({
         <div className="mt-2 flex items-center justify-between gap-2 text-sm">
           <span className="flex min-w-0 items-center gap-1.5">
             <ResolutionIcon status={status.status} className="h-4 w-4 shrink-0" />
-            <span className="truncate text-zinc-500">
-              {status.status === "resolved"
-                ? `${waypointLabel(waypoint)} (${status.lat.toFixed(5)}, ${status.lon.toFixed(5)})`
-                : status.status === "skipped"
-                  ? `Skipped: ${status.reason}`
-                  : status.reason}
-            </span>
+            {status.status === "unresolved" && status.detail ? (
+              <span className="flex min-w-0 items-center gap-1 text-zinc-500">
+                <span className="truncate">Oops, could not look up coordinates.</span>
+                <button
+                  type="button"
+                  onClick={() => setShowErrorDetail(true)}
+                  className="shrink-0 font-semibold text-red-600 underline underline-offset-2"
+                >
+                  View Error
+                </button>
+              </span>
+            ) : (
+              <span className="truncate text-zinc-500">
+                {status.status === "resolved"
+                  ? `${waypointLabel(waypoint)} (${status.lat.toFixed(5)}, ${status.lon.toFixed(5)})`
+                  : status.status === "skipped"
+                    ? `Skipped: ${status.reason}`
+                    : status.reason}
+              </span>
+            )}
           </span>
           {status.status !== "skipped" && (
             <button
@@ -357,6 +371,10 @@ function StepRowEditor({
             </button>
           )}
         </div>
+      )}
+
+      {showErrorDetail && status?.status === "unresolved" && status.detail && (
+        <ErrorDetailsModal message={status.detail} onClose={() => setShowErrorDetail(false)} />
       )}
 
       <div className="mt-3 flex items-center gap-2">
@@ -488,6 +506,46 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * A geocoder's own raw error text ("OpenRouteService geocoding
+ * returned 403 Forbidden for...", an Overpass timeout, whatever the
+ * live service actually said) behind its own "View Error" popup,
+ * rather than inline in the main interface where an admin is just
+ * trying to review stops - the friendly line next to that button
+ * ("Oops, could not look up coordinates.") is the only thing shown by
+ * default; this is purely opt-in detail for troubleshooting *why*.
+ * Stacks above whichever modal opened it (z-30, one above every other
+ * modal in this screen's own z-20) since both call sites here - a
+ * row's own status line, and the Fetch Coordinates modal - can trigger
+ * this while already inside their own overlay.
+ */
+function ErrorDetailsModal({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="font-heading text-xl font-black tracking-tight">Error Details</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <p className="mt-3 text-sm text-zinc-600">{message}</p>
+      </div>
+    </div>
+  );
+}
+
 /** OpenRouteService's own account-wide rate limit, drawn as a small
  * health-meter bar - green while there's plenty left, amber then red
  * as it runs low, the same "fuel gauge" reading any of those colors
@@ -545,6 +603,7 @@ function FetchCoordinatesModal({
   onRefetchAll: () => void;
   onClose: () => void;
 }) {
+  const [showErrorDetail, setShowErrorDetail] = useState(false);
   return (
     <div
       className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
@@ -598,9 +657,24 @@ function FetchCoordinatesModal({
               Fetching…
             </p>
           ) : (
-            fetchError && <p className="text-sm text-red-600">{fetchError}</p>
+            fetchError && (
+              <p className="flex items-center gap-1.5 text-sm text-red-600">
+                Oops, could not look up coordinates.
+                <button
+                  type="button"
+                  onClick={() => setShowErrorDetail(true)}
+                  className="font-semibold underline underline-offset-2"
+                >
+                  View Error
+                </button>
+              </p>
+            )
           )}
         </div>
+
+        {showErrorDetail && fetchError && (
+          <ErrorDetailsModal message={fetchError} onClose={() => setShowErrorDetail(false)} />
+        )}
 
         <div className="mt-2 flex gap-3">
           <button
