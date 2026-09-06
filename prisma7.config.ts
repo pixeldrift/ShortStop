@@ -19,7 +19,15 @@ export default defineConfig({
     path: "prisma/migrations",
     seed: "tsx prisma/seed.ts",
   },
+  // Migrations prefer the direct, non-pooled connection when the host
+  // provides one (e.g. Neon's own DATABASE_URL_UNPOOLED, set alongside
+  // DATABASE_URL by its Vercel integration) - schema changes need
+  // session-level advisory locks that a transaction-mode connection
+  // pooler (pgbouncer, which Neon's own pooled DATABASE_URL routes
+  // through) doesn't reliably support. The app itself still connects
+  // over the pooled DATABASE_URL at runtime (src/lib/db.ts) - only
+  // this CLI config prefers the unpooled one.
   datasource: {
-    url: process.env.DATABASE_URL,
+    url: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL,
   },
 });
