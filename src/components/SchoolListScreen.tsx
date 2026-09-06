@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { Logo } from "./Logo";
 import { BackArrowIcon, CloseIcon, MapPinIcon, SchoolIcon, SearchIcon } from "./icons";
+import { SortableHeader } from "./SortableHeader";
+import type { SortDir } from "./SortableHeader";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import type { Route } from "@/lib/types";
 
@@ -15,15 +17,28 @@ function cityFromAddress(address: string): string {
   return address.split(",")[1]?.trim() ?? "";
 }
 
+/** Just the street part of a school's address, for the line under its
+ * name - the city's already its own column, and the state/zip are
+ * always "TN <zip>" (every real school is Rutherford County, TN), so
+ * neither earns a second mention right below where the city already
+ * reads. */
+function streetFromAddress(address: string): string {
+  return address.split(",")[0]?.trim() ?? address;
+}
+
+type SchoolSortField = "name" | "city" | "routes";
+
 /**
  * Companion screen to RouteListScreen, reached via its "Schools" link -
  * every real district school (schools.csv/Postgres' `School` table, via
  * the same `schools` lookup page.tsx already loads for EditRouteScreen's
- * own school picker), searchable by name or city, sorted alphabetically
- * by name. Tapping a row hands its name up to `onSelectSchool`, which
- * page.tsx uses to open a school-scoped RouteListScreen (see its own
- * `school-routes` screen kind) - this screen itself only ever shows
- * school details, never route data beyond each one's own route count.
+ * own school picker), searchable by name or city, sorted by name
+ * alphabetically by default - same sortable-header convention as the
+ * route list's own table (SortableHeader, shared between both). Tapping
+ * a row hands its name up to `onSelectSchool`, which page.tsx uses to
+ * open a school-scoped RouteListScreen (see its own `school-routes`
+ * screen kind) - this screen itself only ever shows school details,
+ * never route data beyond each one's own route count.
  *
  * Every real school here is a Rutherford County one today (see the
  * small district label above the heading) - schoolLevel isn't shown
@@ -47,6 +62,17 @@ export function SchoolListScreen({
   onBack: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [sortField, setSortField] = useState<SchoolSortField>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const toggleSort = (field: SchoolSortField) => {
+    if (field === sortField) {
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
 
   const routeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -58,13 +84,23 @@ export function SchoolListScreen({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return Object.entries(schools)
-      .filter(
-        ([name, info]) =>
-          !q || name.toLowerCase().includes(q) || cityFromAddress(info.address).toLowerCase().includes(q),
-      )
-      .sort(([a], [b]) => a.localeCompare(b));
-  }, [schools, query]);
+    const matching = Object.entries(schools).filter(
+      ([name, info]) =>
+        !q || name.toLowerCase().includes(q) || cityFromAddress(info.address).toLowerCase().includes(q),
+    );
+
+    const compare = (a: [string, SchoolInfo], b: [string, SchoolInfo]): number => {
+      if (sortField === "city") {
+        return cityFromAddress(a[1].address).localeCompare(cityFromAddress(b[1].address));
+      }
+      if (sortField === "routes") {
+        return (routeCounts[a[0]] ?? 0) - (routeCounts[b[0]] ?? 0);
+      }
+      return a[0].localeCompare(b[0]);
+    };
+
+    return [...matching].sort((a, b) => (sortDir === "asc" ? compare(a, b) : -compare(a, b)));
+  }, [schools, query, sortField, sortDir, routeCounts]);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
@@ -120,10 +156,33 @@ export function SchoolListScreen({
       </div>
 
       <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
-        <div className="grid grid-cols-[1fr_7rem_3.5rem] items-center gap-x-2 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-3 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-          <span>School</span>
-          <span className="pl-2 text-center">City</span>
-          <span className="pl-2 text-center">Routes</span>
+        <div className="grid grid-cols-[1fr_7rem_3.5rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+          <SortableHeader
+            label="School"
+            field="name"
+            padded={false}
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={toggleSort}
+          />
+          <SortableHeader
+            label="City"
+            field="city"
+            align="center"
+            padded={false}
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={toggleSort}
+          />
+          <SortableHeader
+            label="Routes"
+            field="routes"
+            align="center"
+            padded={false}
+            sortField={sortField}
+            sortDir={sortDir}
+            onSort={toggleSort}
+          />
         </div>
         <div className="divide-y divide-zinc-200 overflow-y-auto">
           {filtered.map(([name, info]) => (
@@ -131,13 +190,13 @@ export function SchoolListScreen({
               key={name}
               type="button"
               onClick={() => onSelectSchool(name)}
-              className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-2 px-3 py-3 text-left active:bg-zinc-100"
+              className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-1 px-2 py-3 text-left active:bg-zinc-100"
             >
               <div className="min-w-0">
                 <span className="block truncate text-sm font-semibold text-zinc-900">{name}</span>
                 <span className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
                   <MapPinIcon className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{info.address}</span>
+                  <span className="truncate">{streetFromAddress(info.address)}</span>
                 </span>
               </div>
               <span className="truncate pl-2 text-center text-sm text-zinc-600">

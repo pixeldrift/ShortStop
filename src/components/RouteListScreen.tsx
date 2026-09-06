@@ -14,7 +14,6 @@ import {
   PlusIcon,
   RouteIcon,
   SearchIcon,
-  SortIcon,
   SunIcon,
   SunriseIcon,
   TrashIcon,
@@ -25,6 +24,8 @@ import { fetchCommittedWaypointCache, isRouteFullyResolved } from "@/lib/routeRe
 import { parseTimeToMinutes } from "@/lib/time";
 import type { Route, RouteStatus } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
+import { SortableHeader } from "./SortableHeader";
+import type { SortDir } from "./SortableHeader";
 
 /** A pending confirm-modal request - which action, on which route.
  * Rendered as a single shared ConfirmModal below rather than one
@@ -35,7 +36,6 @@ type ConfirmRequest =
   | { type: "delete"; route: Route };
 
 type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
-type SortDir = "asc" | "desc";
 
 // One comparator per sortable header - routeNumber compares numerically
 // (route numbers sort as text otherwise: "120" would land after "20"),
@@ -766,51 +766,8 @@ function SchoolNameLabel({ name }: { name: string }) {
   );
 }
 
-/** One clickable, sortable column header - label plus the traditional
- * stacked up/down carets (SortIcon), which always render but only show
- * the active direction solid once this is the column being sorted by.
- * Every header here is `align="center"` - labels read centered in
- * their own cell regardless of how that column's own data below is
- * aligned (Start's data is right-aligned, say). */
-function SortableHeader({
-  label,
-  field,
-  align = "left",
-  padded = true,
-  fill = false,
-  sortField,
-  sortDir,
-  onSort,
-}: {
-  label: string;
-  field: SortField;
-  align?: "left" | "center" | "right";
-  /** This header's own leading gutter (pl-3, none if it's the first in
-   * its row) - on by default, off for every header in the route list's
-   * own header row (see above), which get their spacing from their
-   * shared grid's own gap and centered text instead of a per-button
-   * padding. */
-  padded?: boolean;
-  /** Fills its whole grid cell instead of shrinking to its own label+
-   * icon width - used for "#", whose tiny label alone would otherwise
-   * be a cramped tap target hugging the row's left edge. */
-  fill?: boolean;
-  sortField: SortField;
-  sortDir: SortDir;
-  onSort: (field: SortField) => void;
-}) {
-  const active = sortField === field;
-  const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "";
-  return (
-    <button
-      type="button"
-      onClick={() => onSort(field)}
-      className={`flex items-center gap-1 bg-transparent ${fill ? "h-full w-full" : ""} ${
-        padded ? "pl-3 first:pl-0" : ""
-      } ${justify} ${active ? "text-zinc-700" : ""}`}
-    >
-      <span>{label}</span>
-      <SortIcon direction={active ? sortDir : "none"} className="h-2.5 w-2.5 shrink-0" />
-    </button>
-  );
-}
+// SortableHeader itself now lives in ./SortableHeader.tsx (shared with
+// SchoolListScreen's own table) - every header in the route list's
+// header row is `align="center"`, labels read centered in their own
+// cell regardless of how that column's own data below is aligned
+// (Start's data is right-aligned, say).
