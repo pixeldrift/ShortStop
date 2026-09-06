@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { EditRouteScreen } from "@/components/EditRouteScreen";
 import { RouteListScreen } from "@/components/RouteListScreen";
+import { SchoolListScreen } from "@/components/SchoolListScreen";
 import { ScreenTransition } from "@/components/ScreenTransition";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
@@ -60,7 +61,9 @@ type Screen =
   | { kind: "list" }
   | { kind: "trip"; route: Route }
   | { kind: "add-route" }
-  | { kind: "edit-route"; route: Route };
+  | { kind: "edit-route"; route: Route }
+  | { kind: "schools" }
+  | { kind: "school-routes"; schoolName: string };
 
 /** ScreenTransition's own `screenKey` for a given Screen - identifies
  * not just which kind of screen this is but which route it's for, so
@@ -78,6 +81,10 @@ function screenKey(screen: Screen): string {
       return "add-route";
     case "edit-route":
       return `edit-route:${screen.route.id}`;
+    case "schools":
+      return "schools";
+    case "school-routes":
+      return `school-routes:${screen.schoolName}`;
   }
 }
 
@@ -349,10 +356,37 @@ export default function Home() {
         }}
       />
     );
+  } else if (screen.kind === "schools") {
+    content = (
+      <SchoolListScreen
+        schools={schools}
+        onSelectSchool={(schoolName) => navigate({ kind: "school-routes", schoolName }, "forward")}
+        onBack={() => navigate({ kind: "list" }, "backward")}
+      />
+    );
+  } else if (screen.kind === "school-routes") {
+    content = (
+      <RouteListScreen
+        routes={routes.filter((route) => route.schoolName === screen.schoolName)}
+        title={screen.schoolName}
+        onBack={() => navigate({ kind: "schools" }, "backward")}
+        adminMode={adminMode}
+        adminWaypointCaches={adminWaypointCaches}
+        onToggleAdminMode={() => setAdminMode((prev) => !prev)}
+        onSelect={(route) => navigate({ kind: "trip", route }, "forward")}
+        onEditRoute={(route) => navigate({ kind: "edit-route", route }, "forward")}
+        onAddRoute={() => navigate({ kind: "add-route" }, "forward")}
+        onSetRouteStatus={handleSetRouteStatus}
+        onDeleteRoute={handleDeleteRoute}
+        onToggleFavorite={handleToggleFavorite}
+        demoHiddenIds={demoHiddenIds}
+      />
+    );
   } else {
     content = (
       <RouteListScreen
         routes={routes}
+        onViewSchools={() => navigate({ kind: "schools" }, "forward")}
         adminMode={adminMode}
         adminWaypointCaches={adminWaypointCaches}
         onToggleAdminMode={() => setAdminMode((prev) => !prev)}

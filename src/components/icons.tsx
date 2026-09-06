@@ -549,3 +549,24 @@ export function HeartIcon({
     </svg>
   );
 }
+
+/** A graduation cap - "View all Schools" (RouteListScreen), and the
+ * Schools list itself. A flat diamond cap over a curved head-band, with
+ * a small tassel bead hanging off the right point - the standard
+ * "school" glyph shorthand rather than a literal schoolhouse building. */
+export function SchoolIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <path fill="currentColor" d="M12 3 22 8 12 13 2 8Z" />
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6 10.2V15c0 1.66 2.69 3 6 3s6-1.34 6-3v-4.8"
+      />
+      <path fill="currentColor" d="M19 9v5.5a1 1 0 1 0 2 0V9l-1-.5-1 .5Z" />
+    </svg>
+  );
+}
