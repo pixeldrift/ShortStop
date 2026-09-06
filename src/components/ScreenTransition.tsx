@@ -8,7 +8,6 @@ type Direction = "forward" | "backward";
 
 interface TransitionState {
   key: string;
-  node: ReactNode;
   direction: Direction;
   exiting: { key: string; node: ReactNode; direction: Direction } | null;
 }
@@ -37,6 +36,28 @@ interface TransitionState {
  * (calling `setState` mid-render when a prop changed since the last
  * one) so the very first commit that shows the new screen already has
  * the old one captured alongside it, both animating in the same paint.
+ *
+ * The settled (non-exiting) side renders `children` directly on every
+ * render, never a snapshot held in state - `screenKey` can stay the
+ * same across many renders whose `children` still change underneath it
+ * (RouteApp's own "step" key covers the whole trip, but `StepScreen`
+ * still needs every `phase`/`currentStep` update along the way as the
+ * driver advances - an earlier version of this component froze
+ * `children` in state the moment `screenKey` first settled and never
+ * looked at it again, which left the whole driving screen stuck on its
+ * very first paint ("Ready to Depart") with every later click on
+ * Start/the progress bar updating state that nothing ever rendered).
+ *
+ * `lastSettled` tracks the most recently rendered children for whatever
+ * key is currently active, kept in sync with the same "adjust state
+ * while rendering" trick as `state` itself (not a ref - reading or
+ * writing a ref mid-render is banned by this repo's lint rules; not a
+ * `useEffect` either, since a ref/state update that only lands *after*
+ * paint would still be one commit too late to capture the true "last
+ * screen" the moment `screenKey` changes) so that whenever `screenKey`
+ * *does* change, the exiting snapshot is genuinely "whatever was last
+ * on screen" for the outgoing key, not whatever happened to be there
+ * the first time that key ever mounted.
  */
 export function ScreenTransition({
   screenKey,
@@ -49,18 +70,24 @@ export function ScreenTransition({
 }) {
   const [state, setState] = useState<TransitionState>({
     key: screenKey,
-    node: children,
     direction,
     exiting: null,
+  });
+  const [lastSettled, setLastSettled] = useState<{ key: string; node: ReactNode }>({
+    key: screenKey,
+    node: children,
   });
 
   if (state.key !== screenKey) {
     setState({
       key: screenKey,
-      node: children,
       direction,
-      exiting: { key: state.key, node: state.node, direction: state.direction },
+      exiting: { key: lastSettled.key, node: lastSettled.node, direction: state.direction },
     });
+  }
+
+  if (lastSettled.key !== screenKey || lastSettled.node !== children) {
+    setLastSettled({ key: screenKey, node: children });
   }
 
   useEffect(() => {
@@ -89,7 +116,7 @@ export function ScreenTransition({
           state.direction === "forward" ? "animate-screen-enter-forward" : "animate-screen-enter-backward"
         }`}
       >
-        {state.node}
+        {children}
       </div>
     </div>
   );

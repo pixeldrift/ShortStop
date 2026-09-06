@@ -2643,3 +2643,54 @@ so far.
   map area on load, and the simulated position marker sits far outside
   the frame, confirming the view follows the route's own stops, not
   the device's location.
+
+## Fixed: Start/progress bar frozen once a route's driving screen mounted
+
+  Reported right after the pins above finally gave someone a reason to
+  actually click through a real trip: "They show up! But now I can't
+  click the start button or any of the progress bar." Not a map/pins
+  bug at all - bisecting it (temporarily reverting `RouteMap.tsx`'s new
+  code, then removing the waypoints sidecar entirely) reproduced the
+  exact same stuck screen either way, which pointed at
+  `ScreenTransition.tsx` itself.
+
+  `RouteApp` (page.tsx) wraps its local `StartScreen`/`StepScreen`
+  switch in its own nested `ScreenTransition`, keyed `started ? "step"
+  : "start"` (see "Applied 'universally' this time" above). That key
+  stays `"step"` for a route's *entire* trip - depot, every turn/stop,
+  arrived - only `started` flipping back to false ever changes it
+  again. But `ScreenTransition` was freezing whatever `children` it
+  first received the moment a key change committed, into `state.node`,
+  and rendering that frozen snapshot on every later render *instead of*
+  the fresh `children` - so once `started` flipped true, `StepScreen`
+  was permanently stuck rendering with the very first `phase`/`step`/
+  `stopProgressNumber` props it ever got ("Ready to Depart"). Clicking
+  Start/Next/the progress bar all still correctly updated
+  `useRouteStepper`'s real state underneath - `advance()`/`jumpTo()`
+  ran fine - the visible screen just never once re-rendered to show
+  any of it. Harmless for every *other* screen this same component
+  drives (List, Route Info, Add/Edit Route) since those don't keep
+  receiving fresh props after they mount - StepScreen is the one
+  screen that has to.
+
+  Fixed by rendering `children` directly for the settled side on every
+  render (no frozen copy at all), while still freezing a real snapshot
+  for the *outgoing* side the moment `screenKey` changes - tracked via
+  a second bit of state (`lastSettled`) kept in sync with the same
+  "adjust state while rendering" trick already used for the transition
+  itself, not a `useEffect` (a commit too late to still be "the last
+  screen" once `screenKey` changes) and not a ref (this repo's lint
+  rules ban reading/writing a ref during render outright - hit that
+  directly on the first attempt). `StepTransition.tsx`'s odometer-roll
+  effect uses a ref for the same kind of "previous content" tracking,
+  but safely, only inside a `useEffect` - not a viable model here,
+  since that would remount the *entire outgoing screen* a frame after
+  it already disappeared (fine for small step content, not for a
+  screen that owns a live Leaflet map and a geolocation watch).
+
+  Verified in the browser: clicking Start now correctly advances the
+  depot screen into the first real step, repeated Next clicks walk the
+  bus icon and step content forward across several steps in a row, and
+  the ordinary full-screen navigations (List -> Route Info -> back)
+  still animate exactly as before.
+  the device's location.
