@@ -1848,13 +1848,19 @@ so far.
   once `ORS_API_KEY` exists (bullet above) - everything so far has only
   been checked via the standalone prototype/type-checking, not a real
   end-to-end `npm run geocode` against live network access
-- **Geoapify + MapLibre GL migration - in progress** on the
-  `geoapify-maplibre-tiles` branch (see "Maps, part thirteen"):
-  `RouteMap.tsx` itself is rewritten and typechecks/lints clean, but
-  still needs a real `NEXT_PUBLIC_GEOAPIFY_API_KEY` verified against
-  live network access (this sandbox can't reach Geoapify's domain at
-  all, same as CARTO/ORS/Nominatim before it) before merging to
-  `development`. Once actual driving-direction lines get drawn on the
+- **Geoapify + MapLibre GL migration - merged to `development`, not
+  `main`** (see "Maps, part thirteen"): `RouteMap.tsx` itself is
+  rewritten and typechecks/lints clean, but this fully replaces CARTO/
+  Leaflet, and the live deploy has no `NEXT_PUBLIC_GEOAPIFY_API_KEY`
+  configured yet - fast-forwarding `main` now would blank out the
+  live map tiles instead of upgrading them. Two things stand between
+  here and `main`: a real `NEXT_PUBLIC_GEOAPIFY_API_KEY` verified
+  against live network access (this sandbox can't reach Geoapify's
+  domain at all, same as CARTO/ORS/Nominatim before it), and adding
+  that same key to Vercel's own env vars before the deploy that
+  carries this code. Purely cosmetic otherwise - not blocking any of
+  the geocoding/coordinates work above, which is the actual priority
+  right now. Once actual driving-direction lines get drawn on the
   map, Geoapify's tiles+geocoding+routing-under-one-key also means one
   fewer provider than ORS+CARTO combined
 - Fill in the CSV's missing `time` and `notes` columns (departure/stop
