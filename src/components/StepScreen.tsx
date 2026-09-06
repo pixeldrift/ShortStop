@@ -7,6 +7,7 @@ import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
 import {
   CheckCircleIcon,
+  CheckIcon,
   MapPinIcon,
   PauseIcon,
   PersonSolidIcon,
@@ -64,9 +65,17 @@ export function StepScreen({
   // the depot/arrived virtual states never show the roster card, even if
   // route.steps[0] or the last step happens to be a stop.
   const isStop = phase === "step" && step.kind === "stop";
+  // Set by the roster card's own "OK" (closes the card without also
+  // advancing to the next stop - see RiderCheckInBox's onClose below).
+  // Keyed by step id rather than a plain boolean so it resets itself the
+  // moment the driver actually moves to a different step, without a
+  // separate effect to clear it - this step's own id simply stops
+  // matching once `step` changes.
+  const [dismissedStepId, setDismissedStepId] = useState<number | null>(null);
   // Held off until the stop's own announcement has finished speaking, so
   // the check-in card doesn't pop up over top of still-playing audio.
-  const showRoster = !paused && isStop && roster.length > 0 && announcementDone;
+  const showRoster =
+    !paused && isStop && roster.length > 0 && announcementDone && dismissedStepId !== step.id;
   // Memoized against `route` (unchanged for the whole trip) rather
   // than recomputed every render - RouteMap only reads this once per
   // mount (see its own stopsRef note), but a fresh array reference
@@ -165,14 +174,12 @@ export function StepScreen({
                 (see the z-0 note on RouteMap above). */}
             <div className="absolute inset-0 z-10 bg-black/35" />
             <div className="absolute inset-0 z-10 flex items-center justify-center p-3">
-              <div className="animate-roster-pop h-[78%] w-[86%]">
-                <RiderCheckInBox
-                  roster={roster}
-                  onRiderTap={onRiderTap}
-                  onAddRider={onAddRider}
-                  onAdvance={onAdvance}
-                />
-              </div>
+              <RiderCheckInBox
+                roster={roster}
+                onRiderTap={onRiderTap}
+                onAddRider={onAddRider}
+                onClose={() => setDismissedStepId(step.id)}
+              />
             </div>
           </>
         )}
@@ -466,25 +473,28 @@ function RiderCheckInBox({
   roster,
   onRiderTap,
   onAddRider,
-  onAdvance,
+  onClose,
 }: {
   roster: boolean[];
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
-  onAdvance: () => void;
+  /** Dismisses the card - the driver still has to tap the step content
+   * itself (or Next) to actually advance, same as any other step. */
+  onClose: () => void;
 }) {
-  // The map is a fixed size (doesn't condense to make room - see
-  // StepScreen above), so a route with a lot of expected riders can
-  // easily need more rows than this card has height for at the bubbles'
-  // baseline size. Rather than let the bottom row clip, useFitGrid
-  // shrinks --fit-scale until everything fits, down to a floor past
+  // Sized to its own content (a handful of riders shouldn't force a
+  // card that fills most of the map, especially on a tablet's much
+  // bigger map area) - max-h/max-w only cap it, they don't force it to
+  // that size, so useFitGrid only has to shrink anything once a route
+  // with a lot of expected riders actually needs more rows than that
+  // cap allows at the bubbles' baseline size. Down to a floor past
   // which a bubble would be too small to tap reliably.
   const fitRef = useFitGrid<HTMLDivElement>(roster.length, 0.6);
 
   return (
     <div
       ref={fitRef}
-      className="flex h-full w-full flex-col items-center justify-center gap-[calc(0.75rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
+      className="animate-roster-pop flex max-h-[78%] max-w-[86%] flex-col items-center justify-center gap-[calc(0.75rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex flex-wrap items-start justify-center gap-[calc(0.5rem*var(--fit-scale,1))]">
@@ -510,27 +520,25 @@ function RiderCheckInBox({
             </span>
           </button>
         ))}
+      </div>
 
+      <div className="flex w-full items-center justify-between gap-2">
         <button
           type="button"
           onClick={onAddRider}
-          aria-label="Add additional rider"
-          className="flex flex-col items-center"
+          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-900"
         >
-          <span className="flex h-[calc(2.75rem*var(--fit-scale,1))] w-[calc(2.75rem*var(--fit-scale,1))] items-center justify-center rounded-full border-2 border-blue-600 bg-zinc-100 text-[calc(1.5rem*var(--fit-scale,1))] leading-none font-bold text-zinc-400">
-            +
-          </span>
+          + Add Rider
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+        >
+          <CheckIcon className="h-4 w-4" />
+          Check in Riders
         </button>
       </div>
-
-      <button
-        type="button"
-        onClick={onAdvance}
-        aria-label="Continue route"
-        className="btn-glossy font-heading flex items-center justify-center rounded-xl bg-blue-600 px-6 py-2 text-sm font-semibold text-white"
-      >
-        OK
-      </button>
     </div>
   );
 }

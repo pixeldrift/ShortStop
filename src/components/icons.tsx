@@ -189,6 +189,26 @@ export function RightArrowIcon({ className }: { className?: string }) {
   );
 }
 
+/** A plain checkmark, no circle - CheckCircleIcon's own check path,
+ * standalone, for a button (StepScreen's "Check in Riders") that
+ * already supplies its own filled background. */
+export function CheckIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M7 12.5 L10.5 16 L17 8.5" />
+    </svg>
+  );
+}
+
 /** Checkmark in a filled circle - used for the "arrived, all stops
  * complete" state. */
 export function CheckCircleIcon({ className }: { className?: string }) {
