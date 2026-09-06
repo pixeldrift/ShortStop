@@ -1,0 +1,120 @@
+// ShortStop's Postgres schema - the source of truth this app's API
+// routes read from, replacing direct client-side fetches of the CSV/
+// JSON files under public/data/ (see prisma/seed.ts, which loads those
+// same files in once to populate this). Those files stay in the repo
+// as the district's original source documents (and as seed input) -
+// see README.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// No `url` here - Prisma 7 moved the connection string to
+// prisma.config.ts (CLI commands: migrate, generate, studio) and to
+// the driver adapter passed into `new PrismaClient()` at runtime (see
+// src/lib/db.ts) - a bare datasource `url` is rejected at schema-load
+// time now, not just ignored.
+datasource db {
+  provider = "postgresql"
+}
+
+enum SchoolLevelDb {
+  elementary
+  middle
+  high
+}
+
+enum TripTypeDb {
+  pickup
+  dropoff
+}
+
+// Only "published"/"draft" - the app's own third status, "demo", marks
+// entirely fabricated filler routes (src/lib/demoRoutes.ts) that never
+// come from real data and so never get a database row - see
+// RouteStatus's doc comment in src/lib/types.ts.
+enum RouteStatusDb {
+  published
+  draft
+}
+
+model School {
+  id        Int           @id @default(autoincrement())
+  name      String        @unique
+  address   String
+  level     SchoolLevelDb
+
+  @@map("schools")
+}
+
+// One row per real route (Route.id's `${routeNumber}-${tripType}-
+// ${schoolLevel}` convention - see src/lib/types.ts), mirroring
+// route-master-list.csv. schoolName is kept as its own column rather
+// than a foreign key to School - the master list and schools sheet are
+// two independently-maintained district documents today, joined by
+// name at read time exactly as parseSchoolsCsv/page.tsx already do,
+// and a route whose school isn't in the schools sheet yet (data lag,
+// not a bug) should still load rather than fail a foreign key.
+model Route {
+  id            String        @id
+  status        RouteStatusDb
+  routeNumber   String
+  busNumber     String
+  schoolName    String
+  schoolLevel   SchoolLevelDb
+  tripType      TripTypeDb
+  // 24-hour "H:MM" / "HH:MM:SS" text, exactly as the district's sheet
+  // writes it - see parseRouteMasterList's format24HourAsAmPm/
+  // durationBetween24HourTimes, which already parse this shape.
+  startTime     String
+  // Null means the sheet hasn't recorded when this route ends yet
+  // (parseRouteMasterList.ts's durationMinutes stays undefined too, in
+  // that case - see page.tsx's own skip-and-warn for such a row).
+  endTime       String?
+  steps         RouteStep[]
+  updatedAt     DateTime      @updatedAt
+
+  @@map("routes")
+}
+
+// One row per data row of a route's own steps sheet (public/data/
+// {route}.csv today), in original sheet order - see
+// parseRouteCsv.ts's RawRouteRow, whose shape this mirrors exactly.
+model RouteStep {
+  id         Int     @id @default(autoincrement())
+  routeId    String
+  route      Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  sequence   Int
+  action     String
+  fromAt     String
+  ontoAt     String
+  riderCount String
+  side       String
+  notes      String
+
+  @@unique([routeId, sequence])
+  @@map("route_steps")
+}
+
+// The geocoding cache - one row per waypointCacheKey(query) (see
+// src/lib/waypointCache.ts), shared across every route rather than
+// split per-route the way the old *-waypoints.json sidecar files were:
+// the key is already content-addressed (the same real-world
+// intersection/address resolves to the same key regardless of which
+// route's steps sheet asked for it first), so one shared table is
+// strictly more useful than several route-scoped files, with no change
+// to how a lookup works (still a single key -> entry read).
+model Waypoint {
+  cacheKey    String   @id
+  status      String
+  lat         Float?
+  lon         Float?
+  displayName String?
+  source      String
+  provider    String
+  message     String?
+  raw         String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("waypoints")
+}

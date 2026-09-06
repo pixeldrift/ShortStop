@@ -1,0 +1,98 @@
+{
+  "address:201 Davids Way, La Vergne, TN 37086": {
+    "status": "ok",
+    "lat": 36.038689,
+    "lon": -86.555189,
+    "displayName": "Davids Way, La Vergne, TN, USA",
+    "source": "201 Davids Way, La Vergne, TN 37086",
+    "provider": "openrouteservice"
+  },
+  "address:310 Lake Forest Dr": {
+    "status": "ok",
+    "lat": 36.04415,
+    "lon": -86.549356,
+    "displayName": "Lake Forest Drive, La Vergne, TN, USA",
+    "source": "310 Lake Forest Dr, La Vergne, TN",
+    "provider": "openrouteservice"
+  },
+  "address:LaVergne Lake Elementary School": {
+    "status": "ok",
+    "lat": 36.042271,
+    "lon": -86.549396,
+    "displayName": "Lavergne Lane, La Vergne, TN, USA",
+    "source": "LaVergne Lake Elementary School, La Vergne, TN",
+    "provider": "openrouteservice"
+  },
+  "intersection:Blue Lake Ln & Forest Ridge Dr": {
+    "status": "ok",
+    "lat": 36.0494541,
+    "lon": -86.5472209,
+    "displayName": "Blue Lake Ln & Forest Ridge Dr",
+    "source": "Blue Lake Ln and Forest Ridge Dr, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Cedar Bend Ct & Holland Ridge Dr": {
+    "status": "ok",
+    "lat": 36.0485226,
+    "lon": -86.546066,
+    "displayName": "Cedar Bend Ct & Holland Ridge Dr",
+    "source": "Cedar Bend Ct and Holland Ridge Dr, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Davids Way & Forest Ridge Dr": {
+    "status": "ok",
+    "lat": 36.0509605,
+    "lon": -86.5530233,
+    "displayName": "Davids Way & Forest Ridge Dr",
+    "source": "Davids Way and Forest Ridge Dr, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Davids Way & Lake Forest Dr": {
+    "status": "ok",
+    "lat": 36.0480972,
+    "lon": -86.5549627,
+    "displayName": "Lake Forest Dr & Davids Way",
+    "source": "Lake Forest Dr and Davids Way, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Davids Way & Little John Cv": {
+    "status": "ok",
+    "lat": 36.0499155,
+    "lon": -86.5538439,
+    "displayName": "Davids Way & Little John Cv",
+    "source": "Davids Way and Little John Cv, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Davids Way & Randall Ln": {
+    "status": "ok",
+    "lat": 36.0491311,
+    "lon": -86.5545717,
+    "displayName": "Davids Way & Randall Ln",
+    "source": "Davids Way and Randall Ln, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Forest Ridge Dr & Hollandale Rd": {
+    "status": "ok",
+    "lat": 36.0494906,
+    "lon": -86.5461113,
+    "displayName": "Forest Ridge Dr & Hollandale Rd",
+    "source": "Forest Ridge Dr and Hollandale Rd, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Forest Ridge Dr & Pine Ridge Ln": {
+    "status": "ok",
+    "lat": 36.0494021,
+    "lon": -86.5482877,
+    "displayName": "Forest Ridge Dr & Pine Ridge Ln",
+    "source": "Forest Ridge Dr and Pine Ridge Ln, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Holland Ridge Dr & Riverwood Ct": {
+    "status": "ok",
+    "lat": 36.0474846,
+    "lon": -86.5460576,
+    "displayName": "Holland Ridge Dr & Riverwood Ct",
+    "source": "Holland Ridge Dr and Riverwood Ct, La Vergne, TN",
+    "provider": "overpass"
+  }
+}
