@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { EditRouteScreen } from "@/components/EditRouteScreen";
 import { RouteListScreen } from "@/components/RouteListScreen";
+import { ScreenTransition } from "@/components/ScreenTransition";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
 import { buildDemoRoutes } from "@/lib/demoRoutes";
@@ -68,6 +69,25 @@ type Screen =
   | { kind: "add-route" }
   | { kind: "edit-route"; route: Route };
 
+/** ScreenTransition's own `screenKey` for a given Screen - identifies
+ * not just which kind of screen this is but which route it's for, so
+ * e.g. opening a *different* route's trip/edit screen while already on
+ * one still triggers a real transition (Home's own `key` props on
+ * EditRouteScreen already rely on this same route-scoped identity, for
+ * the same "actually a different screen" reason). */
+function screenKey(screen: Screen): string {
+  switch (screen.kind) {
+    case "list":
+      return "list";
+    case "trip":
+      return `trip:${screen.route.id}`;
+    case "add-route":
+      return "add-route";
+    case "edit-route":
+      return `edit-route:${screen.route.id}`;
+  }
+}
+
 export default function Home() {
   // null while the master list + every loadable route's steps sheet
   // are still loading; an empty array is a real (if unexpected) "loaded
@@ -81,6 +101,20 @@ export default function Home() {
   const [schools, setSchools] = useState<Record<string, SchoolInfo>>({});
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "list" });
+  // Which way ScreenTransition should animate the *next* time `screen`
+  // actually changes - "forward" (out left/in right) for every dive
+  // deeper into the app from the list (Add Route, Edit Route, a
+  // selected route's trip flow), "backward" (the reverse) for every
+  // Cancel/Back that returns to wherever that dive started. Set
+  // alongside `screen` itself via `navigate` below, always in the same
+  // state update, so ScreenTransition never sees a direction that
+  // doesn't match the transition it's actually mid-triggering.
+  const [navDirection, setNavDirection] = useState<"forward" | "backward">("forward");
+
+  function navigate(next: Screen, direction: "forward" | "backward") {
+    setNavDirection(direction);
+    setScreen(next);
+  }
 
   // Session-only admin edits/new routes, keyed by route id - overlaid
   // on top of whatever realRoutes loaded from the committed CSVs (see
@@ -215,13 +249,13 @@ export default function Home() {
     // already taken). Its edit screen is for review only - nothing
     // typed or saved there actually persists.
     if (route.status === "demo") {
-      setScreen({ kind: "list" });
+      navigate({ kind: "list" }, "backward");
       return;
     }
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
     setAdminRawStepsById((prev) => ({ ...prev, [route.id]: rawStepsText }));
     setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
-    setScreen({ kind: "edit-route", route });
+    navigate({ kind: "edit-route", route }, "forward");
   }
 
   // A demo route's own "status" is a fixed identity marker, not a real
@@ -265,8 +299,15 @@ export default function Home() {
     );
   }
 
+  // Rather than each branch returning straight away, every screen's
+  // own element is built into `content` first and returned once at the
+  // bottom wrapped in ScreenTransition - `navigate` above is what
+  // actually decides *which way* that wrapper animates a given change,
+  // matched to whichever branch is doing the navigating below.
+  let content: React.ReactNode;
+
   if (screen.kind === "add-route") {
-    return (
+    content = (
       <EditRouteScreen
         // Forces a fresh mount when handleSaveRoute switches straight
         // from this add screen into editing the just-created route
@@ -279,13 +320,11 @@ export default function Home() {
         route={null}
         rawStepsText=""
         schools={schools}
-        onCancel={() => setScreen({ kind: "list" })}
+        onCancel={() => navigate({ kind: "list" }, "backward")}
         onSave={handleSaveRoute}
       />
     );
-  }
-
-  if (screen.kind === "edit-route") {
+  } else if (screen.kind === "edit-route") {
     // A demo route (see demoRoutes.ts) never has its own real committed
     // steps sheet - it borrows realRoutes[0]'s exact steps as its base,
     // so its edit screen borrows that same route's raw CSV text too,
@@ -295,7 +334,7 @@ export default function Home() {
       adminRawStepsById[screen.route.id] ??
       rawStepsById[screen.route.id] ??
       (screen.route.status === "demo" ? (rawStepsById[realRoutes[0]?.id ?? ""] ?? "") : "");
-    return (
+    content = (
       <EditRouteScreen
         key={`edit-${screen.route.id}`}
         mode="edit"
@@ -303,39 +342,43 @@ export default function Home() {
         rawStepsText={rawStepsText}
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schools={schools}
-        onCancel={() => setScreen({ kind: "list" })}
+        onCancel={() => navigate({ kind: "list" }, "backward")}
         onSave={handleSaveRoute}
       />
     );
-  }
-
-  if (screen.kind === "trip") {
-    return (
+  } else if (screen.kind === "trip") {
+    content = (
       <RouteApp
         route={screen.route}
-        onBack={() => setScreen({ kind: "list" })}
+        onBack={() => navigate({ kind: "list" }, "backward")}
         onEdit={() => {
           setAdminMode(true);
-          setScreen({ kind: "edit-route", route: screen.route });
+          navigate({ kind: "edit-route", route: screen.route }, "forward");
         }}
+      />
+    );
+  } else {
+    content = (
+      <RouteListScreen
+        routes={routes}
+        adminMode={adminMode}
+        adminWaypointCaches={adminWaypointCaches}
+        onToggleAdminMode={() => setAdminMode((prev) => !prev)}
+        onSelect={(route) => navigate({ kind: "trip", route }, "forward")}
+        onEditRoute={(route) => navigate({ kind: "edit-route", route }, "forward")}
+        onAddRoute={() => navigate({ kind: "add-route" }, "forward")}
+        onSetRouteStatus={handleSetRouteStatus}
+        onDeleteRoute={handleDeleteRoute}
+        onToggleFavorite={handleToggleFavorite}
+        demoHiddenIds={demoHiddenIds}
       />
     );
   }
 
   return (
-    <RouteListScreen
-      routes={routes}
-      adminMode={adminMode}
-      adminWaypointCaches={adminWaypointCaches}
-      onToggleAdminMode={() => setAdminMode((prev) => !prev)}
-      onSelect={(route) => setScreen({ kind: "trip", route })}
-      onEditRoute={(route) => setScreen({ kind: "edit-route", route })}
-      onAddRoute={() => setScreen({ kind: "add-route" })}
-      onSetRouteStatus={handleSetRouteStatus}
-      onDeleteRoute={handleDeleteRoute}
-      onToggleFavorite={handleToggleFavorite}
-      demoHiddenIds={demoHiddenIds}
-    />
+    <ScreenTransition screenKey={screenKey(screen)} direction={navDirection}>
+      {content}
+    </ScreenTransition>
   );
 }
 

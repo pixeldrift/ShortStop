@@ -2383,3 +2383,27 @@ so far.
   matching what the column actually holds there - a heart-shaped label
   over a column full of pencils read as labeling the wrong thing once
   edit mode was on.
+- **Add Route, Edit Route, and View Route now slide in/out instead of
+  swapping instantly, with a new `ScreenTransition.tsx`.** Diving into
+  any of the three from the route list pushes the list fully off to the
+  left while the new screen slides in from the right; every Cancel/Back
+  that returns to the list is the exact reverse. Modeled on
+  `StepTransition.tsx`'s own outgoing-absolute/incoming-in-flow
+  approach (same 0.32s duration/ease, so both transitions in the app
+  read as one consistent feel) but simpler - every screen here already
+  fills a fixed-size `flex-1` box, so both the incoming and outgoing
+  screen are absolutely positioned for the whole transition rather than
+  needing StepTransition's own dynamic height measurement.
+
+  `page.tsx`'s screen-swapping `if`/`return` chain became a single
+  `content` variable built by the same branches, returned once at the
+  bottom wrapped in `<ScreenTransition>` - `direction` is never
+  inferred from the navigation itself, it's set explicitly alongside
+  `screen` by a new `navigate(next, direction)` helper at every call
+  site that used to just call `setScreen` directly, so which way a
+  given screen change animates is exactly as legible as the change
+  itself. Screens keep their own internal transitions unaffected -
+  StartScreen swapping to StepScreen once a route actually starts, and
+  StepScreen's own step-to-step roll, aren't part of this (`screenKey`
+  only changes on an actual list/add/edit/trip screen change, not
+  `useRouteStepper`'s own internal `started` flip).

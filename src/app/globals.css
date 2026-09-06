@@ -110,6 +110,67 @@ body {
   animation: step-exit 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 
+/* Full-screen navigation (List <-> Add Route / Edit Route / a selected
+   route's own trip flow) - a horizontal push, not the step content's
+   vertical roll above: "forward" (diving into one of those from the
+   list) slides the outgoing screen fully off to the left while the
+   incoming one slides in from the right; "backward" (Cancel/Back
+   returning to the list) is the exact reverse. Same duration/ease as
+   the step roll above so every full-motion transition in the app reads
+   as one consistent feel, just a different axis. See
+   ScreenTransition.tsx for which direction a given navigation uses. */
+@keyframes screen-enter-forward {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-screen-enter-forward {
+  animation: screen-enter-forward 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+@keyframes screen-exit-forward {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.animate-screen-exit-forward {
+  animation: screen-exit-forward 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+@keyframes screen-enter-backward {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-screen-enter-backward {
+  animation: screen-enter-backward 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+@keyframes screen-exit-backward {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.animate-screen-exit-backward {
+  animation: screen-exit-backward 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
 /* A small pop-in for the rider check-in card - it's held off (see
    announcementDone in useRouteStepper.ts) until the stop's spoken
    announcement finishes, so it shouldn't then just snap into place;
