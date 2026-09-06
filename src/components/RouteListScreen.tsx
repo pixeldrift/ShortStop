@@ -702,7 +702,7 @@ export function RouteListScreen({
         <button
           type="button"
           onClick={onViewSchools}
-          className="btn-glossy fixed bottom-4 left-4 z-10 flex items-center gap-1.5 rounded-full border border-zinc-500 bg-zinc-300 px-3.5 py-2 text-sm font-semibold text-zinc-900"
+          className="fixed bottom-4 left-4 z-10 flex items-center gap-1.5 text-sm font-semibold text-zinc-500 active:text-zinc-700"
         >
           <SchoolIcon className="h-4 w-4" />
           View all Schools
