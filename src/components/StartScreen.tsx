@@ -6,7 +6,6 @@ import { ToggleSwitch } from "./ToggleSwitch";
 import {
   BackArrowIcon,
   CloseIcon,
-  DownloadIcon,
   EditIcon,
   MapPinIcon,
   PersonSolidIcon,
@@ -16,9 +15,7 @@ import {
   TriangleIcon,
   TurnArrow,
 } from "./icons";
-import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { NavigationStep, Route } from "@/lib/types";
-import type { WaypointCache } from "@/lib/waypointCache";
 
 // Not currently rendered (see StartScreen below) - kept ready to
 // re-enable later, so it's exported rather than deleted.
@@ -87,30 +84,6 @@ export function StartScreen({
   const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
   const [distanceValue] = splitValueUnit(route.distance);
   const [showStopsModal, setShowStopsModal] = useState(false);
-
-  // Whatever's already geocoded, if anything - fetched once for the
-  // download button below (see routeStepsToCsv) so the exported CSV
-  // can include each stop/turn's own resolved coordinates alongside
-  // its raw data, not just the raw data alone. Best-effort: a failed
-  // fetch just means the export's lat/lon/status columns come back
-  // empty/"not yet geocoded" rather than blocking the download itself.
-  const [waypointCache, setWaypointCache] = useState<WaypointCache>({});
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/waypoints")
-      .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
-      .catch(() => ({}) as WaypointCache)
-      .then((data) => {
-        if (!cancelled) setWaypointCache(data);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  function handleDownloadCsv() {
-    downloadCsv(`${route.id}-stops.csv`, routeStepsToCsv(route, waypointCache));
-  }
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-6 pb-6 text-center landscape:pt-4">
@@ -192,15 +165,6 @@ export function StartScreen({
       {showStopsModal && (
         <AllStopsModal route={route} onClose={() => setShowStopsModal(false)} />
       )}
-
-      <button
-        type="button"
-        onClick={handleDownloadCsv}
-        aria-label="Download this route's stops and turns as a CSV"
-        className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
-      >
-        <DownloadIcon className="h-4 w-4" />
-      </button>
     </div>
   );
 }

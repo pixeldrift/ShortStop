@@ -642,14 +642,16 @@ export function RouteListScreen({
         />
       )}
 
-      <button
-        type="button"
-        onClick={handleDownloadCsv}
-        aria-label="Download the route list as a CSV"
-        className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
-      >
-        <DownloadIcon className="h-4 w-4" />
-      </button>
+      {adminMode && (
+        <button
+          type="button"
+          onClick={handleDownloadCsv}
+          aria-label="Download the route list as a CSV"
+          className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
+        >
+          <DownloadIcon className="h-4 w-4" />
+        </button>
+      )}
     </div>
   );
 }
