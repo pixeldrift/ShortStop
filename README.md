@@ -180,6 +180,23 @@ All work so far lives on the `claude/ipad-iphone-nav-app-ss8dsk` branch —
 Branch at `claude/ipad-iphone-nav-app-ss8dsk`, or merge that branch into
 `main`.
 
+Since "Postgres: routes, schools, and the waypoint cache move off static
+files" below, a deploy also needs a real `DATABASE_URL` - set it in
+Vercel (Project Settings → Environment Variables, Production and
+Preview both) to a real Postgres connection string (Neon, Vercel
+Postgres, Supabase, ...), the same one `prisma/schema.prisma`'s tables
+should live in. Without it every page load fails with a 500 from
+whichever API route hit Postgres first (`/api/route-master-list`,
+typically). `next build` now runs `prisma migrate deploy` first (see
+`package.json`'s `build` script), so schema changes apply automatically
+on every deploy once `DATABASE_URL` is set - but the *first* deploy
+against a brand-new database still needs seeding once
+(`.github/workflows/db-migrate-seed.yml`, manually triggered, run from
+a GitHub Actions runner rather than locally since this project's own
+sandboxed dev environments can't reach a real Postgres server directly -
+needs a `DATABASE_URL` repository secret set to that same connection
+string).
+
 ### Route data
 
 `public/data/125-PM-EL.csv` (Bus 125's PM Elementary run - file names
