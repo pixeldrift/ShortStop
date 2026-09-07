@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { EditRouteScreen } from "@/components/EditRouteScreen";
+import { Logo } from "@/components/Logo";
 import { RouteListScreen } from "@/components/RouteListScreen";
 import { SchoolListScreen } from "@/components/SchoolListScreen";
 import { ScreenTransition } from "@/components/ScreenTransition";
@@ -94,6 +95,13 @@ export default function Home() {
   // but nothing came back" result, kept distinct from still-loading so
   // the spinner doesn't hang forever on that edge case.
   const [realRoutes, setRealRoutes] = useState<Route[] | null>(null);
+  // True for the one moment realRoutes first finishes loading - lets
+  // the top-level route list's own heading/table slide up into place
+  // under the already-visible logo (see globals.css's own
+  // animate-list-content-enter) instead of just snapping into view.
+  // Flips back to false shortly after (matching that animation's own
+  // duration) so it never replays on a later visit to the list.
+  const [justLoaded, setJustLoaded] = useState(false);
   // Each loaded real route's own source steps text, alongside the
   // parsed Route itself - EditRouteScreen needs the raw text to
   // pre-fill its textarea, not just the already-derived NavigationSteps.
@@ -200,9 +208,20 @@ export default function Home() {
         const loaded = built.filter((r): r is { route: Route; rawStepsText: string } => r !== null);
         setRealRoutes(loaded.map((l) => l.route));
         setRawStepsById(Object.fromEntries(loaded.map((l) => [l.route.id, l.rawStepsText])));
+        setJustLoaded(true);
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
   }, []);
+
+  // Clears justLoaded shortly after it's set - long enough for
+  // animate-list-content-enter (0.4s) to actually finish playing, so
+  // the class comes off only once it's no longer needed rather than
+  // mid-animation.
+  useEffect(() => {
+    if (!justLoaded) return;
+    const timer = setTimeout(() => setJustLoaded(false), 500);
+    return () => clearTimeout(timer);
+  }, [justLoaded]);
 
   // realRoutes overlaid with any session-only admin edits/new routes -
   // an edited real route's admin version wins outright (steps, status,
@@ -294,8 +313,9 @@ export default function Home() {
 
   if (!realRoutes) {
     return (
-      <div className="flex flex-1 items-center justify-center p-6 text-zinc-500">
-        Loading route…
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-zinc-500">
+        <Logo size="large" />
+        Loading routes…
       </div>
     );
   }
@@ -389,6 +409,7 @@ export default function Home() {
     content = (
       <RouteListScreen
         routes={routes}
+        slideInOnMount={justLoaded}
         onViewSchools={() => navigate({ kind: "schools" }, "forward")}
         adminMode={adminMode}
         adminWaypointCaches={adminWaypointCaches}

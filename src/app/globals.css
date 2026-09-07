@@ -191,3 +191,25 @@ body {
 .animate-roster-pop {
   animation: roster-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* The route list's own heading/search/table, sliding up into place the
+   first time the app finishes loading (see page.tsx's own `justLoaded`)
+   - the logo appears first, alone, while "Loading routes…" shows; once
+   real route data is in hand this rises in underneath it rather than
+   just snapping into view. Not replayed on every later visit to the
+   list (navigating away and back, admin toggle, etc.) - only this one
+   first-load moment. */
+@keyframes list-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-list-content-enter {
+  animation: list-content-enter 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
