@@ -5,17 +5,29 @@ name: Geocode all schools
 # outbound calls with the real ORS_API_KEY directly, so populating
 # School.lat/lon for every school has to happen from somewhere with
 # normal network access. Applies any pending migration first (the
-# add_school_coordinates one included), then runs
-# scripts/geocodeSchools.ts against the real database.
+# add_school_coordinates one included), then either geocodes every
+# school via ORS (scripts/geocodeSchools.ts) or applies a small set of
+# hand-verified manual corrections (scripts/fixSchoolCoordinates.ts,
+# for the handful of schools ORS only resolved to city-center
+# precision), depending on the `mode` input.
 #
 # Needs DATABASE_URL and ORS_API_KEY repo secrets (Settings -> Secrets
 # and variables -> Actions) - the same ones db-migrate-seed.yml and
-# geocode-route.yml already use.
+# geocode-route.yml already use. `mode: fix` doesn't call ORS at all,
+# but ORS_API_KEY is still wired up unconditionally since it's cheap
+# to and keeps this one step simple.
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "geocode (fetch every school via ORS) or fix (apply scripts/fixSchoolCoordinates.ts's hand-verified corrections)"
+        type: choice
+        options:
+          - geocode
+          - fix
+        default: geocode
       force:
-        description: "Re-geocode every school, even ones that already have lat/lon on file"
+        description: "geocode mode only: re-geocode every school, even ones that already have lat/lon on file"
         type: boolean
         default: false
 
@@ -31,7 +43,12 @@ jobs:
       - run: npx prisma migrate deploy
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      - run: npm run geocode:schools -- ${{ inputs.force && '--force' || '' }}
+      - if: inputs.mode == 'geocode'
+        run: npm run geocode:schools -- ${{ inputs.force && '--force' || '' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+      - if: inputs.mode == 'fix'
+        run: npm run fix-school-coordinates
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

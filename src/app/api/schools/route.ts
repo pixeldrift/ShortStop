@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { formatAddress } from "@/lib/schoolAddress";
 
 /**
  * Regenerates schools.csv's exact tab-separated schema (school_name,
@@ -11,7 +12,7 @@ export async function GET(): Promise<NextResponse> {
   const schools = await prisma.school.findMany({ orderBy: { name: "asc" } });
 
   const header = ["school_name", "address", "school_level"].join("\t");
-  const lines = schools.map((school) => [school.name, school.address, school.level].join("\t"));
+  const lines = schools.map((school) => [school.name, formatAddress(school), school.level].join("\t"));
 
   return new NextResponse([header, ...lines].join("\n"), {
     headers: { "Content-Type": "text/plain; charset=utf-8" },

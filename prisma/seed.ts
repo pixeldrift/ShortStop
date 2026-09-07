@@ -22,6 +22,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { parseRouteCsvRows } from "../src/lib/parseRouteCsv";
 import { parseSchoolsCsv } from "../src/lib/parseSchoolsCsv";
 import { stepsCsvBaseName } from "../src/lib/parseRouteMasterList";
+import { parseAddress } from "../src/lib/schoolAddress";
 import type { WaypointCache } from "../src/lib/waypointCache";
 
 const DATA_DIR = join(process.cwd(), "public", "data");
@@ -91,10 +92,11 @@ async function main() {
     const schoolsCsv = readFileSync(join(DATA_DIR, "schools.csv"), "utf8");
     const schools = parseSchoolsCsv(schoolsCsv);
     for (const [name, info] of Object.entries(schools)) {
+      const { street, city, state, zip } = parseAddress(info.address);
       await prisma.school.upsert({
         where: { name },
-        create: { name, address: info.address, level: info.schoolLevel },
-        update: { address: info.address, level: info.schoolLevel },
+        create: { name, street, city, state, zip, level: info.schoolLevel },
+        update: { street, city, state, zip, level: info.schoolLevel },
       });
     }
     console.log(`Seeded ${Object.keys(schools).length} schools.`);

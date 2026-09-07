@@ -41,7 +41,16 @@ enum RouteStatusDb {
 model School {
   id        Int           @id @default(autoincrement())
   name      String        @unique
-  address   String
+  // Split from schools.csv's own single combined "{street}, {city},
+  // {ST} {zip}" address column (see src/lib/schoolAddress.ts's
+  // parseAddress/formatAddress - the seed script splits it going in,
+  // src/app/api/schools/route.ts joins it back going out, so the
+  // wire format every existing consumer of SchoolInfo.address already
+  // relies on never has to change).
+  street    String
+  city      String
+  state     String
+  zip       String
   level     SchoolLevelDb
   // The school's own geocoded location - independent of the Waypoint
   // cache below, which only ever learns a school's address as a side

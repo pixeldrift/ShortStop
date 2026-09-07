@@ -13,6 +13,7 @@
   "include": [
     "./geocodeRoute.ts",
     "./geocodeSchools.ts",
+    "./fixSchoolCoordinates.ts",
     "./prototypeOverpassGeocode.ts",
     "../src/lib/parseRouteCsv.ts",
     "../src/lib/deriveWaypoints.ts",
@@ -23,6 +24,7 @@
     "../src/lib/geocode.ts",
     "../src/lib/overpassGeocode.ts",
     "../src/lib/resolveWaypoint.ts",
+    "../src/lib/schoolAddress.ts",
     "../src/lib/waypointCache.ts"
   ]
 }
