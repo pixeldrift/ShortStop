@@ -19,6 +19,8 @@ import {
   RoundedTriangleIcon,
   SaveIcon,
   SpinnerIcon,
+  SunIcon,
+  SunriseIcon,
   TrashIcon,
   TriangleIcon,
   TurnArrow,
@@ -28,7 +30,7 @@ import {
 } from "./icons";
 import { buildRouteFromRows } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
-import { deriveWaypoints } from "@/lib/deriveWaypoints";
+import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
@@ -104,7 +106,15 @@ interface BatchProgress {
 // primary path and this is the secondary one.
 const STEPS_PLACEHOLDER = "One stop or turn per line, or delimited fields with headers.";
 
-const BLANK_ROW: RawRouteRow = { action: "Stop", fromAt: "", ontoAt: "", riderCount: "", side: "", notes: "" };
+const BLANK_ROW: RawRouteRow = {
+  action: "Stop",
+  fromAt: "",
+  ontoAt: "",
+  riderCount: "",
+  side: "",
+  notes: "",
+  skip: false,
+};
 
 const inputClass =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
@@ -218,7 +228,7 @@ function StepRowView({
   );
 
   return (
-    <div className="flex items-start gap-2 py-2 text-left">
+    <div className="flex items-start gap-2 py-1 text-left">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-heading flex items-center gap-1.5 text-base font-black">
@@ -255,14 +265,19 @@ function StepRowView({
           {subheading || <span className="text-zinc-400 italic">No location yet</span>}
         </p>
         {row.notes && <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>}
+        {/* The row's own real geocoding outcome - actual coordinates
+            once resolved (green check), the specific miss/error reason
+            otherwise (red X), or "- Instructions Only -" for a row
+            deriveWaypoints.ts flagged as never needing a location at
+            all (a driver instruction, not a real road). */}
         {status && (
           <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
             <ResolutionIcon status={status.status} className="h-3.5 w-3.5 shrink-0" />
             {status.status === "resolved"
-              ? "Geocoded"
+              ? `${status.lat.toFixed(5)}, ${status.lon.toFixed(5)}`
               : status.status === "skipped"
-                ? "Skipped"
-                : "Needs attention"}
+                ? "- Instructions Only -"
+                : status.reason}
           </p>
         )}
       </div>
@@ -281,47 +296,70 @@ function StepRowView({
 
 /**
  * The expanded form for one row, in place of its collapsed
- * StepRowView - every field editable, plus the same resolution status/
- * Fetch line the old always-editable row had, and Delete/Cancel/Update
- * controls instead of committing every keystroke live. `row` here is a
- * local draft (see EditRouteScreen's `draftRow`), not the committed
- * `rows` entry - Cancel discards it, Update is the only thing that
- * writes it back. The "type" select is what deriveWaypoints.ts
- * actually reads as `action` - changing it between Stop/Turn Left/Turn
- * Right changes how this row's own location gets resolved, not just
- * how it displays.
+ * StepRowView - every field labeled and editable, plus a red-outlined
+ * error line under the location box when it's unresolved, and Delete/
+ * Cancel/Save controls instead of committing every keystroke live.
+ * `row` here is a local draft (see EditRouteScreen's `draftRow`), not
+ * the committed `rows` entry - Cancel discards it, Save is the only
+ * thing that writes it back. The "type" select is what
+ * deriveWaypoints.ts actually reads as `action` - changing it between
+ * Stop/Turn Left/Turn Right changes how this row's own location gets
+ * resolved, not just how it displays.
+ *
+ * One location box, not two: a road name a driver would type again
+ * for every row ("from Main St, onto Elm St, from Elm St, onto Oak
+ * Ave, ...") is already implied by whatever the *previous* row ended
+ * up naming as its own road (deriveWaypoints.ts's own "current road"
+ * tracking - see `previousRoad` below) - so this box only ever asks
+ * for the one new thing about this row: the destination road/cross
+ * street, or a literal address for a stop that's genuinely just an
+ * address (detected by its own leading house number, the one reliable
+ * signal telling "123 Maple Dr" apart from a bare road name). Which
+ * mode a given row opens in is decided once, from its own existing
+ * content, not re-decided while typing - so a fresh Add Step row
+ * (blank, no `ontoAt`) with a real `previousRoad` already known opens
+ * in destination mode with that road shown as read-only context above
+ * the box, matching how EditRouteScreen's `addRow` already pre-fills a
+ * new row's `fromAt` with it.
  */
 function StepRowEditor({
   row,
   stopNumber,
-  waypoint,
+  previousRoad,
   status,
   fetching,
   fetchLocked,
   onChange,
   onFetch,
+  onManualCoordinates,
   onCancel,
   onDelete,
   onUpdate,
 }: {
   row: RawRouteRow;
   stopNumber: number | null;
-  /** This row's own last-*committed* location - still derived from
-   * EditRouteScreen's real `rows`, not this draft, so Fetch here always
-   * geocodes whatever's actually saved; a location edited in this same
-   * draft only takes effect once Update commits it. */
-  waypoint: WaypointQuery | undefined;
+  /** The road deriveWaypoints.ts already has tracked as "current"
+   * heading into this row, from every row before it - null only for
+   * the very first row, or when nothing earlier has named a real road
+   * yet. */
+  previousRoad: string | null;
   status: RowResolutionStatus | undefined;
   /** This row's own request is actually in flight right now - drives
-   * the button's "Fetching…" label specifically. */
+   * the globe button's spinner specifically. */
   fetching: boolean;
   /** True for `fetching` above *or* for the shared cooldown afterward
    * (see EditRouteScreen's own singleFetchCoolingDown) - drives the
-   * button's disabled state, separately from its label, so it reads
-   * "Fetch" (not "Fetching…") while merely cooling down. */
+   * globe button's disabled state, separately from its icon, so it
+   * still shows a plain globe (not a spinner) while merely cooling
+   * down. */
   fetchLocked: boolean;
   onChange: (patch: Partial<RawRouteRow>) => void;
   onFetch: () => void;
+  /** A coordinate typed/pasted directly into the Latitude/Longitude
+   * box, parsed and handed up on Save (see handleSave below) - writes
+   * straight into the shared waypoint cache, the same place a real
+   * Fetch would have, bypassing the geocoder entirely. */
+  onManualCoordinates: (lat: number, lon: number) => void;
   onCancel: () => void;
   onDelete: () => void;
   onUpdate: () => void;
@@ -329,103 +367,145 @@ function StepRowEditor({
   const isStop = stopNumber !== null;
   const [showErrorDetail, setShowErrorDetail] = useState(false);
 
+  // A plain address (a stop with no cross street, its own house number
+  // out front) has no "from road" concept at all - the box edits
+  // `fromAt` directly and no from-context line shows. Everything else
+  // (an intersection-based stop, any turn) edits `ontoAt`, with
+  // `fromAt` supplied from the row's own existing value or, once
+  // that's empty, `previousRoad` - never re-typed by hand.
+  const [isPlainAddress] = useState(() => isStop && !row.ontoAt && /^\d/.test(row.fromAt.trim()));
+  const [derivedFrom] = useState(() => (row.ontoAt ? row.fromAt : previousRoad) || row.fromAt || "");
+  const [destination, setDestination] = useState(() =>
+    isPlainAddress ? row.fromAt : row.ontoAt || row.fromAt,
+  );
+
+  function handleDestinationChange(value: string) {
+    setDestination(value);
+    if (isPlainAddress) {
+      onChange({ fromAt: value, ontoAt: "" });
+    } else {
+      onChange({ fromAt: derivedFrom, ontoAt: value });
+    }
+  }
+
+  // Latitude/Longitude - local text, seeded from whatever's already
+  // resolved for this row (blank otherwise), parsed only on Save
+  // (handleSave below) rather than live on every keystroke, so a
+  // half-typed number is never mistaken for a real coordinate. Accepts
+  // a space, comma, or tab between the two values.
+  const [coordsText, setCoordsText] = useState(() =>
+    status?.status === "resolved" ? `${status.lat}, ${status.lon}` : "",
+  );
+  const [coordsError, setCoordsError] = useState(false);
+
+  function handleSave() {
+    const trimmed = coordsText.trim();
+    if (trimmed) {
+      const parts = trimmed.split(/[\s,]+/).map(Number);
+      if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n))) {
+        setCoordsError(true);
+        return;
+      }
+      onManualCoordinates(parts[0], parts[1]);
+    }
+    setCoordsError(false);
+    onUpdate();
+  }
+
   return (
     <div className="py-2 text-left">
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <select
-          className={inputClass}
-          value={row.action}
-          onChange={(e) => onChange({ action: e.target.value })}
-        >
-          <option value="Stop">Stop</option>
-          <option value="Left">Turn Left</option>
-          <option value="Right">Turn Right</option>
-        </select>
-        {isStop ? (
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Type">
           <select
             className={inputClass}
-            value={row.side}
-            onChange={(e) => onChange({ side: e.target.value })}
+            value={row.action}
+            onChange={(e) => onChange({ action: e.target.value })}
           >
-            <option value="">Side (none)</option>
-            <option value="Left">Left</option>
-            <option value="Right">Right</option>
+            <option value="Stop">Stop</option>
+            <option value="Left">Turn Left</option>
+            <option value="Right">Turn Right</option>
           </select>
+        </Field>
+        {isStop ? (
+          <Field label="Side">
+            <select
+              className={inputClass}
+              value={row.side}
+              onChange={(e) => onChange({ side: e.target.value })}
+            >
+              <option value="">Side (none)</option>
+              <option value="Left">Left</option>
+              <option value="Right">Right</option>
+            </select>
+          </Field>
         ) : (
           <span />
         )}
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <input
-          className={inputClass}
-          placeholder="From"
-          value={row.fromAt}
-          onChange={(e) => onChange({ fromAt: e.target.value })}
-        />
-        <input
-          className={inputClass}
-          placeholder="Onto / cross street"
-          value={row.ontoAt}
-          onChange={(e) => onChange({ ontoAt: e.target.value })}
-        />
-      </div>
-
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {isStop && (
-          <input
-            className={inputClass}
-            placeholder="Riders"
-            inputMode="numeric"
-            value={row.riderCount}
-            onChange={(e) => onChange({ riderCount: e.target.value })}
-          />
+      <div className="mt-2">
+        {!isPlainAddress && (
+          <p className="mb-1 text-xs text-zinc-400">
+            From <span className="font-semibold text-zinc-500">{derivedFrom || "start of route"}</span>
+          </p>
         )}
-        <input
-          className={`${inputClass} ${isStop ? "" : "col-span-2"}`}
-          placeholder="Notes"
-          value={row.notes}
-          onChange={(e) => onChange({ notes: e.target.value })}
-        />
+        <Field label={isPlainAddress ? "Address" : "Destination / cross street"}>
+          <input
+            className={`${inputClass} ${
+              status?.status === "unresolved" ? "border-red-400 focus:border-red-500 focus:ring-red-500" : ""
+            }`}
+            value={destination}
+            onChange={(e) => handleDestinationChange(e.target.value)}
+            placeholder={isPlainAddress ? "123 Maple Dr" : "Elm St"}
+          />
+        </Field>
+        {status?.status === "unresolved" && (
+          <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
+            <XCircleIcon className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 truncate">{status.reason}</span>
+            {status.detail && (
+              <button
+                type="button"
+                onClick={() => setShowErrorDetail(true)}
+                className="shrink-0 font-semibold underline underline-offset-2"
+              >
+                View Error
+              </button>
+            )}
+          </p>
+        )}
       </div>
 
-      {waypoint && status && (
-        <div className="mt-2 flex items-center justify-between gap-2 text-sm">
-          <span className="flex min-w-0 items-center gap-1.5">
-            <ResolutionIcon status={status.status} className="h-4 w-4 shrink-0" />
-            {status.status === "unresolved" && status.detail ? (
-              <span className="flex min-w-0 items-center gap-1 text-zinc-500">
-                <span className="truncate">{status.reason}</span>
-                <button
-                  type="button"
-                  onClick={() => setShowErrorDetail(true)}
-                  className="shrink-0 font-semibold text-red-600 underline underline-offset-2"
-                >
-                  View Error
-                </button>
-              </span>
-            ) : (
-              <span className="truncate text-zinc-500">
-                {status.status === "resolved"
-                  ? `${waypointLabel(waypoint)} (${status.lat.toFixed(5)}, ${status.lon.toFixed(5)})`
-                  : status.status === "skipped"
-                    ? `Skipped: ${status.reason}`
-                    : status.reason}
-              </span>
-            )}
-          </span>
-          {status.status !== "skipped" && (
+      <div className="mt-2">
+        <Field label="Latitude, longitude">
+          <div className="flex items-center gap-2">
+            <input
+              className={`${inputClass} flex-1 font-mono ${coordsError ? "border-red-400 focus:border-red-500 focus:ring-red-500" : ""}`}
+              value={coordsText}
+              onChange={(e) => {
+                setCoordsText(e.target.value);
+                setCoordsError(false);
+              }}
+              placeholder="35.83961, -86.61234"
+            />
             <button
               type="button"
               onClick={onFetch}
               disabled={fetchLocked}
-              className="shrink-0 rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50"
+              aria-label="Fetch coordinates for this location"
+              className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
             >
-              {fetching ? "Fetching…" : "Fetch"}
+              {fetching ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <GlobeIcon className="h-4 w-4" />}
             </button>
-          )}
-        </div>
-      )}
+          </div>
+        </Field>
+        {coordsError && (
+          <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
+            <XCircleIcon className="h-3.5 w-3.5 shrink-0" />
+            Enter latitude and longitude, separated by a space, comma, or tab.
+          </p>
+        )}
+      </div>
 
       {showErrorDetail && status?.status === "unresolved" && status.detail && (
         <ErrorDetailsModal
@@ -434,6 +514,34 @@ function StepRowEditor({
           onClose={() => setShowErrorDetail(false)}
         />
       )}
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {isStop && (
+          <Field label="Riders">
+            <input
+              className={inputClass}
+              inputMode="numeric"
+              value={row.riderCount}
+              onChange={(e) => onChange({ riderCount: e.target.value })}
+            />
+          </Field>
+        )}
+        <div className={isStop ? "" : "col-span-2"}>
+          <Field label="Notes">
+            <input className={inputClass} value={row.notes} onChange={(e) => onChange({ notes: e.target.value })} />
+          </Field>
+        </div>
+      </div>
+
+      <label className="mt-3 flex items-center gap-2 text-sm text-zinc-600">
+        <input
+          type="checkbox"
+          checked={row.skip}
+          onChange={(e) => onChange({ skip: e.target.checked })}
+          className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+        />
+        Skip - instructions only, don&apos;t look up a location
+      </label>
 
       <div className="mt-3 flex items-center gap-2">
         <button
@@ -455,10 +563,10 @@ function StepRowEditor({
         </button>
         <button
           type="button"
-          onClick={onUpdate}
+          onClick={handleSave}
           className="btn-glossy shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
         >
-          Update
+          Save
         </button>
       </div>
     </div>
@@ -480,7 +588,7 @@ function AddStepButton({ onClick, disabled }: { onClick: () => void; disabled: b
         onClick={onClick}
         disabled={disabled}
         aria-label="Add step here"
-        className="btn-glossy relative z-10 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-300 text-zinc-900 disabled:opacity-30"
+        className="btn-glossy relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
@@ -515,7 +623,7 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
           >
             <CloseIcon className="h-5 w-5" />
           </button>
@@ -609,7 +717,7 @@ function ErrorDetailsModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
           >
             <CloseIcon className="h-5 w-5" />
           </button>
@@ -703,7 +811,7 @@ function FetchCoordinatesModal({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-100"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
           >
             <CloseIcon className="h-5 w-5" />
           </button>
@@ -981,6 +1089,12 @@ export function EditRouteScreen({
   // mode "add" only - the paste box's own "Details" link, see
   // StopsFormatModal above.
   const [showFormatModal, setShowFormatModal] = useState(false);
+  // The Route Details card's own collapsed/expanded state - a plain
+  // text summary by default (its own pencil to open the real form),
+  // same read-first convention StepRowView/StepRowEditor already use
+  // for each stop/turn below, just for this one metadata block instead
+  // of a whole list of rows.
+  const [editingDetails, setEditingDetails] = useState(false);
 
   // The school's own geocoded point, once known - reused across every
   // "Fetch"/"Fetch All" call in this edit session instead of
@@ -1063,9 +1177,11 @@ export function EditRouteScreen({
     () => rows.some((r) => !r.action.trim() || !r.fromAt.trim()),
     [rows],
   );
-  const waypoints = useMemo(() => {
-    if (mode !== "edit" || hasIncompleteRow || !hasRealSchoolAddress || rows.length === 0) return [];
-    return deriveWaypoints(rows, schoolAddress);
+  const { waypoints, previousRoads } = useMemo(() => {
+    if (mode !== "edit" || hasIncompleteRow || !hasRealSchoolAddress || rows.length === 0) {
+      return { waypoints: [] as WaypointQuery[], previousRoads: [] as (string | null)[] };
+    }
+    return deriveWaypointsWithContext(rows, schoolAddress);
   }, [mode, rows, hasIncompleteRow, hasRealSchoolAddress, schoolAddress]);
   const resolutionRows = useMemo(
     () => summarizeRouteResolution(waypoints, cache),
@@ -1140,13 +1256,21 @@ export function EditRouteScreen({
   // of this specific row does differently from canceling an edit to
   // one that already existed.
   function addRow(index: number) {
+    // Pre-fills the new row's own `fromAt` with whatever road was
+    // already tracked heading into this exact position - not shown as
+    // an editable "From" box (StepRowEditor's own destination-mode
+    // logic reads this straight off the row), just there so the row
+    // doesn't silently regress to "no from-context at all" the moment
+    // it's created, before its own StepRowEditor instance has even
+    // mounted to compute it fresh.
+    const inheritedRoad = previousRoads[index] ?? "";
     setRows((prev) => {
       const next = [...prev];
-      next.splice(index, 0, { ...BLANK_ROW });
+      next.splice(index, 0, { ...BLANK_ROW, fromAt: inheritedRoad });
       return next;
     });
     setExpandedIndex(index);
-    setDraftRow({ ...BLANK_ROW });
+    setDraftRow({ ...BLANK_ROW, fromAt: inheritedRoad });
     setNewlyAddedIndex(index);
   }
 
@@ -1205,6 +1329,27 @@ export function EditRouteScreen({
   function persistSchoolAnchorIfFresh(anchorEntry: WaypointCacheEntry | null) {
     if (!anchorEntry) return;
     persistWaypoint(waypointCacheKey({ stepId: -1, kind: "address", text: schoolAddress }), anchorEntry);
+  }
+
+  // A coordinate typed/pasted directly into StepRowEditor's own
+  // Latitude/Longitude box - bypasses the geocoder entirely (there's
+  // no query to send, no provider that resolved it), but still lands
+  // in the exact same shared cache a real "Fetch" would, so the row
+  // reads as resolved everywhere else that checks it (the collapsed
+  // row's own green check, Publish's readiness count) the same way
+  // either path got there.
+  function setManualCoordinates(waypoint: GeocodableQuery, lat: number, lon: number) {
+    const key = waypointCacheKey(waypoint);
+    const entry: WaypointCacheEntry = {
+      status: "ok",
+      lat,
+      lon,
+      displayName: waypointLabel(waypoint),
+      source: waypointLabel(waypoint),
+      provider: "manual",
+    };
+    setCache((prev) => ({ ...prev, [key]: entry }));
+    persistWaypoint(key, entry);
   }
 
   async function fetchLocation(waypoint: GeocodableQuery) {
@@ -1455,7 +1600,8 @@ export function EditRouteScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1 className="font-heading text-2xl font-black tracking-tight">
+        <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+          <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
           {mode === "add" ? "Add New Route" : `Edit Route ${route?.routeNumber ?? ""}`}
         </h1>
         <span className="w-10" />
@@ -1463,72 +1609,141 @@ export function EditRouteScreen({
 
       <CollapsibleSection title="Route Details">
         <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Route number">
-              <input
-                className={inputClass}
-                value={routeNumber}
-                onChange={(e) => setRouteNumber(e.target.value)}
-                placeholder="125"
-              />
-            </Field>
-            <Field label="Bus number">
-              <input
-                className={inputClass}
-                value={busNumber}
-                onChange={(e) => setBusNumber(e.target.value)}
-                placeholder="125"
-              />
-            </Field>
-            {/* School level and address are never picked or typed
-                separately - both come from whichever school is chosen
-                here, looked up in `schools` (schools.csv). */}
-            <Field label="School">
-              <select
-                className={inputClass}
-                value={schoolName}
-                onChange={(e) => setSchoolName(e.target.value)}
-              >
-                <option value="">Select a school</option>
-                {schoolOptions.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Trip">
-              <select
-                className={inputClass}
-                value={tripType}
-                onChange={(e) => setTripType(e.target.value as TripType)}
-              >
-                <option value="pickup">AM Pickup</option>
-                <option value="dropoff">PM Drop Off</option>
-              </select>
-            </Field>
-          </div>
+          {editingDetails ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Route number">
+                  <input
+                    className={inputClass}
+                    value={routeNumber}
+                    onChange={(e) => setRouteNumber(e.target.value)}
+                    placeholder="125"
+                  />
+                </Field>
+                <Field label="Trip">
+                  <select
+                    className={inputClass}
+                    value={tripType}
+                    onChange={(e) => setTripType(e.target.value as TripType)}
+                  >
+                    <option value="pickup">AM Pickup</option>
+                    <option value="dropoff">PM Drop Off</option>
+                  </select>
+                </Field>
+              </div>
 
-          {schoolName && (
-            <p className="mt-2 flex items-center gap-1 text-xs text-zinc-500">
-              <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
-              {schoolAddress}
-            </p>
+              <div className="mt-3">
+                <Field label="Departure time">
+                  <input
+                    className={inputClass}
+                    value={departureTime}
+                    onChange={(e) => setDepartureTime(e.target.value)}
+                    placeholder="6:30 AM"
+                  />
+                </Field>
+              </div>
+
+              {/* School level and address are never picked or typed
+                  separately - both come from whichever school is chosen
+                  here, looked up in `schools` (schools.csv). Its own
+                  full-width line, not paired with anything else -
+                  picking the wrong school is the single costliest
+                  mistake to make in this whole form. */}
+              <div className="mt-3">
+                <Field label="School">
+                  <select
+                    className={inputClass}
+                    value={schoolName}
+                    onChange={(e) => setSchoolName(e.target.value)}
+                  >
+                    <option value="">Select a school</option>
+                    {schoolOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+
+              {schoolName && (
+                <p className="mt-2 flex items-center gap-1 text-xs text-zinc-500">
+                  <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+                  {schoolAddress}
+                </p>
+              )}
+
+              {/* Bus number/driver last - least important of this
+                  card's fields, kept together since neither means much
+                  without the other (which bus, whose route). */}
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <Field label="Bus number">
+                  <input
+                    className={inputClass}
+                    value={busNumber}
+                    onChange={(e) => setBusNumber(e.target.value)}
+                    placeholder="125"
+                  />
+                </Field>
+                <Field label="Driver">
+                  <input
+                    className={inputClass}
+                    value={driverName}
+                    onChange={(e) => setDriverName(e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setEditingDetails(false)}
+                className="btn-glossy mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-300 py-2 text-sm font-semibold text-zinc-900"
+              >
+                Done
+              </button>
+            </>
+          ) : (
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="font-heading text-2xl font-black tracking-tight">
+                    {routeNumber || <span className="text-zinc-400 italic">No route number</span>}
+                  </span>
+                  {routeNumber && (
+                    <span className="flex items-center gap-1 text-sm font-bold text-blue-500">
+                      {tripType === "pickup" ? "AM" : "PM"}
+                      {tripType === "pickup" ? (
+                        <SunriseIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <SunIcon className="h-3.5 w-3.5" />
+                      )}
+                    </span>
+                  )}
+                  {departureTime && <span className="text-sm text-zinc-500">{departureTime}</span>}
+                </div>
+                <p className="mt-2 font-semibold text-zinc-900">
+                  {schoolName || <span className="text-zinc-400 italic">No school selected</span>}
+                </p>
+                {schoolName && (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
+                    <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+                    {schoolAddress}
+                  </p>
+                )}
+                <p className="mt-2 text-sm text-zinc-500">
+                  Bus {busNumber || "—"} · {driverName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingDetails(true)}
+                aria-label="Edit route details"
+                className="shrink-0 text-zinc-400 active:text-blue-600"
+              >
+                <EditIcon className="h-4 w-4" />
+              </button>
+            </div>
           )}
-
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <Field label="Departure time">
-              <input
-                className={inputClass}
-                value={departureTime}
-                onChange={(e) => setDepartureTime(e.target.value)}
-                placeholder="6:30 AM"
-              />
-            </Field>
-            <Field label="Driver">
-              <input className={inputClass} value={driverName} onChange={(e) => setDriverName(e.target.value)} />
-            </Field>
-          </div>
         </div>
       </CollapsibleSection>
 
@@ -1597,8 +1812,12 @@ export function EditRouteScreen({
             )}
           </div>
         ) : (
-          <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
-            <div className="flex items-center justify-between gap-3">
+          <>
+            {/* Show turns/Fetch Coordinates sit above the stops table
+                itself now, not inside its own bordered box - they're
+                controls over the whole list, not part of what's being
+                listed. */}
+            <div className="flex w-full max-w-md items-center justify-between gap-3 px-1 pb-2">
               <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
               <button
                 type="button"
@@ -1610,54 +1829,59 @@ export function EditRouteScreen({
               </button>
             </div>
             {hasIncompleteRow && (
-              <p className="mt-1 text-xs text-red-600">
+              <p className="w-full max-w-md px-1 pb-2 text-xs text-red-600">
                 Every stop needs at least a type and a location before locations can be checked.
               </p>
             )}
 
-            {/* An "Add Step" control before the first row and after
-                every row, not just once at the bottom - a new stop or
-                turn can be dropped in anywhere along the route's real
-                order this way, not only appended past the last one. */}
-            <div className="mt-1 max-h-96 overflow-y-auto">
-              <AddStepButton onClick={() => addRow(0)} disabled={expandedIndex !== null} />
-              {visibleRowIndices.map((index) => {
-                const row = rows[index];
-                const isStop = row.action.toLowerCase() === "stop";
-                const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
-                const waypoint = waypoints[index];
+            <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
+              {/* An "Add Step" control before the first row and after
+                  every row, not just once at the bottom - a new stop or
+                  turn can be dropped in anywhere along the route's real
+                  order this way, not only appended past the last one. */}
+              <div className="max-h-96 overflow-y-auto">
+                <AddStepButton onClick={() => addRow(0)} disabled={expandedIndex !== null} />
+                {visibleRowIndices.map((index) => {
+                  const row = rows[index];
+                  const isStop = row.action.toLowerCase() === "stop";
+                  const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
+                  const waypoint = waypoints[index];
 
-                return (
-                  <div key={index}>
-                    {expandedIndex === index && draftRow ? (
-                      <StepRowEditor
-                        row={draftRow}
-                        stopNumber={stopNumber}
-                        waypoint={waypoint}
-                        status={waypoint ? resolutionRows[index] : undefined}
-                        fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
-                        fetchLocked={singleFetchCoolingDown}
-                        onChange={handleDraftChange}
-                        onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
-                        onCancel={handleCancelRow}
-                        onDelete={() => handleDeleteRow(index)}
-                        onUpdate={handleUpdateRow}
-                      />
-                    ) : (
-                      <StepRowView
-                        row={row}
-                        stopNumber={stopNumber}
-                        status={waypoint ? resolutionRows[index] : undefined}
-                        locked={expandedIndex !== null}
-                        onEdit={() => openRowEditor(index)}
-                      />
-                    )}
-                    <AddStepButton onClick={() => addRow(index + 1)} disabled={expandedIndex !== null} />
-                  </div>
-                );
-              })}
+                  return (
+                    <div key={index}>
+                      {expandedIndex === index && draftRow ? (
+                        <StepRowEditor
+                          row={draftRow}
+                          stopNumber={stopNumber}
+                          previousRoad={previousRoads[index] ?? null}
+                          status={waypoint ? resolutionRows[index] : undefined}
+                          fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
+                          fetchLocked={singleFetchCoolingDown}
+                          onChange={handleDraftChange}
+                          onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
+                          onManualCoordinates={(lat, lon) =>
+                            waypoint && waypoint.kind !== "unresolvable" && setManualCoordinates(waypoint, lat, lon)
+                          }
+                          onCancel={handleCancelRow}
+                          onDelete={() => handleDeleteRow(index)}
+                          onUpdate={handleUpdateRow}
+                        />
+                      ) : (
+                        <StepRowView
+                          row={row}
+                          stopNumber={stopNumber}
+                          status={waypoint ? resolutionRows[index] : undefined}
+                          locked={expandedIndex !== null}
+                          onEdit={() => openRowEditor(index)}
+                        />
+                      )}
+                      <AddStepButton onClick={() => addRow(index + 1)} disabled={expandedIndex !== null} />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          </>
         )}
       </CollapsibleSection>
 
@@ -1727,7 +1951,7 @@ export function EditRouteScreen({
           type="button"
           onClick={handleDownloadCsv}
           aria-label="Download this route's stops and turns as a CSV"
-          className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-zinc-300 text-zinc-900"
+          className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
         >
           <DownloadIcon className="h-4 w-4" />
         </button>

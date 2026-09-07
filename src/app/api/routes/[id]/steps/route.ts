@@ -23,9 +23,18 @@ export async function GET(
     return NextResponse.json({ error: `No steps sheet for route "${id}".` }, { status: 404 });
   }
 
-  const header = ["time", "action", "from_at", "onto_at", "rider_count", "side", "notes"].join("\t");
+  const header = ["time", "action", "from_at", "onto_at", "rider_count", "side", "notes", "skip"].join("\t");
   const lines = route.steps.map((step) =>
-    ["", step.action, step.fromAt, step.ontoAt, step.riderCount, step.side, step.notes].join("\t"),
+    [
+      "",
+      step.action,
+      step.fromAt,
+      step.ontoAt,
+      step.riderCount,
+      step.side,
+      step.notes,
+      step.skip ? "true" : "false",
+    ].join("\t"),
   );
 
   return new NextResponse([header, ...lines].join("\n"), {

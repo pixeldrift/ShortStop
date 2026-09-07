@@ -497,15 +497,15 @@ export default function Home() {
           never re-mounts or moves as part of a screen-to-screen push;
           it only ever appears/disappears outright, and only when
           crossing into/out of the one arrangement that doesn't have it
-          (StepScreen, via showsPinnedLogo above). A much smaller top
-          inset (pt-4/landscape:pt-3) than every one of those screens
-          used to carry on its own logo - the logo doesn't need that
-          much breathing room above it, and trimming it back leaves
-          more of the viewport for the actual content below - plus a
-          pb-4 standing in for the gap-4 that used to separate it from
-          what's now each screen's own first child. */}
+          (StepScreen, via showsPinnedLogo above). A minimal top inset
+          (pt-2/landscape:pt-1) - trimmed down again from pt-4/pt-3, the
+          logo doesn't need much breathing room above it at all, and
+          reclaiming that space leaves more of the viewport for the
+          actual content below - plus a pb-4 standing in for the gap-4
+          that used to separate it from what's now each screen's own
+          first child. */}
       {showsPinnedLogo && (
-        <div className="flex shrink-0 justify-center px-6 pt-4 pb-4 landscape:pt-3">
+        <div className="flex shrink-0 justify-center px-6 pt-2 pb-4 landscape:pt-1">
           <Logo size="large" />
         </div>
       )}

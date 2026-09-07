@@ -102,7 +102,7 @@ export function SchoolListScreen({
   }, [schools, query, sortField, sortDir, routeCounts]);
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-6 text-center">
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center">
       {/* Everything that can genuinely grow past the viewport (the
           school table especially) lives in this inner, scrollable
           region - the "Routes" link and copyright below stay outside
@@ -249,7 +249,7 @@ export function SchoolListScreen({
         href="mailto:nathan@pizar.net"
         className="shrink-0 text-xs text-zinc-400 active:text-zinc-600"
       >
-        © 2026 Nathan D. B. Pizar
+        © 2026 Nathan D. B. Pizar 🦊
       </a>
     </div>
   );

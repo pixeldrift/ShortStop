@@ -98,6 +98,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         riderCount: row.riderCount,
         side: row.side,
         notes: row.notes,
+        skip: row.skip,
       })),
     });
   }

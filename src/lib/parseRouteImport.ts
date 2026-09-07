@@ -33,7 +33,15 @@ import type { RawRouteRow } from "./parseRouteCsv";
  * ground until that's built.
  */
 
-export type ImportColumnField = "time" | "action" | "fromAt" | "ontoAt" | "riderCount" | "side" | "notes";
+export type ImportColumnField =
+  | "time"
+  | "action"
+  | "fromAt"
+  | "ontoAt"
+  | "riderCount"
+  | "side"
+  | "notes"
+  | "skip";
 
 // The app's own schema (parseRouteCsvRows) as the canonical header name
 // for each field - what an import's own header is matched against
@@ -46,6 +54,7 @@ const CANONICAL_HEADER_NAMES: Record<ImportColumnField, string> = {
   riderCount: "rider_count",
   side: "side",
   notes: "notes",
+  skip: "skip",
 };
 
 // Every field's own canonical name, pre-normalized once - matched
@@ -152,6 +161,7 @@ function parseHeaderlessLine(line: string, delimiter: string): RawRouteRow {
       riderCount: "",
       side: "",
       notes: "",
+      skip: false,
     };
   }
 
@@ -163,6 +173,7 @@ function parseHeaderlessLine(line: string, delimiter: string): RawRouteRow {
     riderCount: "",
     side: "",
     notes: "",
+    skip: false,
   };
 }
 
@@ -243,6 +254,7 @@ export function parseRouteImport(text: string): ImportParseResult {
       riderCount: valueFor("riderCount"),
       side: valueFor("side"),
       notes: valueFor("notes"),
+      skip: valueFor("skip") === "true",
     };
   });
 
@@ -275,9 +287,11 @@ export function unresolvedRequiredFields(mapping: ImportColumnMapping[]): Import
  * it never takes the header-less path back.
  */
 export function rowsToCsvText(rows: RawRouteRow[]): string {
-  const header = "action,from_at,onto_at,rider_count,side,notes";
+  const header = "action,from_at,onto_at,rider_count,side,notes,skip";
   const lines = rows.map((row) =>
-    [row.action, row.fromAt, row.ontoAt, row.riderCount, row.side, row.notes].join(","),
+    [row.action, row.fromAt, row.ontoAt, row.riderCount, row.side, row.notes, row.skip ? "true" : "false"].join(
+      ",",
+    ),
   );
   return [header, ...lines].join("\n");
 }

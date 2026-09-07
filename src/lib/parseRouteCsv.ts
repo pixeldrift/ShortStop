@@ -49,6 +49,13 @@ export interface RawRouteRow {
   riderCount: string;
   side: string;
   notes: string;
+  /** Manually marked "instructions only, don't geocode this" from
+   * EditRouteScreen.tsx's own Skip checkbox - honored by
+   * deriveWaypoints.ts ahead of its own pattern-based "unresolvable"
+   * detection. Absent from every real steps sheet today (defaults to
+   * false via the `row.skip === "true"` read below), same as `side` is
+   * already missing from route-120's own schema. */
+  skip: boolean;
 }
 
 /** Splits a route steps sheet's data rows (header row dropped) into
@@ -77,6 +84,7 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
         riderCount: row.rider_count ?? "",
         side: row.side ?? "",
         notes: row.notes ?? "",
+        skip: row.skip === "true",
       };
     });
 }

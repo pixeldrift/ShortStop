@@ -102,10 +102,50 @@ function locationFor(
  * immediately rather than ever propagating the stale name forward.
  */
 export function deriveWaypoints(rows: RawRouteRow[], schoolAddress: string): WaypointQuery[] {
-  let currentRoad: string | null = null;
+  return deriveWaypointsWithContext(rows, schoolAddress).waypoints;
+}
 
-  return rows.map((row, stepId) => {
+/**
+ * Same derivation as deriveWaypoints above, plus the "current road"
+ * tracked value as it stood *before* each row was processed -
+ * EditRouteScreen's single-box row editor shows that as the row's own
+ * derived "from" context (see its own doc comment), so a human never
+ * has to type the road they're already on again. Kept as one shared
+ * pass rather than a second copy of this same tracking loop, so the
+ * two can never drift out of sync with each other.
+ *
+ * `previousRoads` has one *more* entry than `rows` - a trailing one for
+ * the road tracked after the very last row, so EditRouteScreen's own
+ * `addRow` can pre-fill a brand-new row appended past the end
+ * (`index === rows.length`) with real context too, not just one
+ * inserted before an existing row.
+ */
+export function deriveWaypointsWithContext(
+  rows: RawRouteRow[],
+  schoolAddress: string,
+): { waypoints: WaypointQuery[]; previousRoads: (string | null)[] } {
+  let currentRoad: string | null = null;
+  const previousRoads: (string | null)[] = [];
+
+  const waypoints = rows.map((row, stepId): WaypointQuery => {
+    previousRoads.push(currentRoad);
     const isStop = row.action.toLowerCase() === "stop";
+
+    // A manually-skipped row (EditRouteScreen's own Skip checkbox) is
+    // never queried at all, same as a pattern-detected "unresolvable"
+    // one - but it still has to update `currentRoad` the same way an
+    // ordinary row would have, so a later row that leans on "the road
+    // we're already on" (a lone-value turn, an intersection-based
+    // stop) isn't left tracking whatever road was current before this
+    // skipped row instead.
+    if (row.skip) {
+      currentRoad = isStop
+        ? row.ontoAt
+          ? row.fromAt
+          : roadNameFromAddress(row.fromAt)
+        : row.ontoAt || row.fromAt || currentRoad;
+      return { stepId, kind: "unresolvable", description: "Marked as instructions only" };
+    }
 
     if (isStop) {
       if (row.ontoAt) {
@@ -136,4 +176,7 @@ export function deriveWaypoints(rows: RawRouteRow[], schoolAddress: string): Way
     currentRoad = destination;
     return waypoint;
   });
+
+  previousRoads.push(currentRoad);
+  return { waypoints, previousRoads };
 }

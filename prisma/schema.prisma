@@ -123,6 +123,13 @@ model RouteStep {
   riderCount String
   side       String
   notes      String
+  // Manually marked "instructions only, don't geocode this" from
+  // EditRouteScreen.tsx's own Skip checkbox - distinct from
+  // deriveWaypoints.ts's own pattern-based "unresolvable" detection
+  // (a ramp description, say), which never touches this column at all.
+  // Defaults false so every existing/seeded row (none of which have
+  // ever set this) reads as "not skipped" without a backfill.
+  skip       Boolean @default(false)
 
   @@unique([routeId, sequence])
   @@map("route_steps")
