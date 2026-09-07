@@ -840,14 +840,15 @@ function FetchCoordinatesModal({
  * still covers the whole route in one call, and "Publish" is replaced
  * by a warning until every geocodable stop actually resolves.
  *
- * Session-only for now: `onSave` hands the built Route back up to
- * page.tsx's in-memory admin-route store, not a real committed file -
- * same "real workflow, no persistence yet" honesty this app already
- * uses for rider check-in state (see useRiderRoster.ts). A freshly
- * fetched coordinate here lives in this screen's own state too, not a
- * committed sidecar cache file - RouteMap.tsx still reads only the
- * real, committed one, so "Fetch Location" is for review here, not yet
- * what actually puts a pin on the map.
+ * Save/Create Route/Publish all go through handleSave below, which
+ * POSTs to /api/routes (the route's own row and its full RouteStep
+ * list, replacing whatever was there) before ever calling `onSave` -
+ * page.tsx's in-memory admin-route store is still updated too (for
+ * this session's own immediate UI, same as ever), but the real
+ * database row is what a page reload now actually reflects. A freshly
+ * fetched coordinate here is persisted the moment it resolves
+ * (persistWaypoint below, POSTing to /api/waypoints), independent of
+ * whether the rest of the edit ever gets saved at all.
  */
 export function EditRouteScreen({
   mode,
@@ -972,6 +973,11 @@ export function EditRouteScreen({
   // reaches the effect below.
   const [cache, setCache] = useState<WaypointCache>(() => initialWaypointCache ?? {});
   const [message, setMessage] = useState<string | null>(null);
+  // Guards the Save/Create Route/Publish buttons against a second tap
+  // firing a second /api/routes request while the first is still in
+  // flight - same "one at a time" guard fetchLocation's own
+  // singleFetchCoolingDown already uses for Fetch Location.
+  const [saving, setSaving] = useState(false);
   // mode "add" only - the paste box's own "Details" link, see
   // StopsFormatModal above.
   const [showFormatModal, setShowFormatModal] = useState(false);
@@ -1342,7 +1348,7 @@ export function EditRouteScreen({
     ],
   );
 
-  function handleSave(nextStatus: RouteStatus = status) {
+  async function handleSave(nextStatus: RouteStatus = status) {
     // The only real requirement to save at all - a route number is
     // what gives a draft its own identity (see `id` above), and
     // everything else (school, stops, whether they're geocoded) can
@@ -1354,9 +1360,48 @@ export function EditRouteScreen({
       setMessage("Route number is required.");
       return;
     }
+    if (saving) return;
     const currentRows = mode === "add" ? parseResult.rows : rows;
     const built = buildRouteFromRows(currentRows, buildMetaFields(nextStatus));
     const textToPersist = mode === "add" ? stepsText : rowsToCsvText(rows);
+
+    setSaving(true);
+    setMessage("Saving…");
+    try {
+      const res = await fetch("/api/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: built.id,
+          // Only set in "edit" mode - a brand-new route (mode "add")
+          // has no previous row to clean up after, even if its own
+          // freshly-typed routeNumber/tripType/schoolLevel happen to
+          // collide with something already saved (a real id collision,
+          // not a rename - the upsert below already handles that case
+          // correctly on its own).
+          previousId: mode === "edit" ? (route?.id ?? null) : null,
+          status: nextStatus,
+          routeNumber: built.routeNumber,
+          busNumber: built.busNumber,
+          schoolName: built.schoolName,
+          schoolLevel: built.schoolLevel,
+          tripType: built.tripType,
+          startTime: built.departureTime,
+          steps: currentRows,
+        }),
+      });
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        setMessage(`Couldn't save: ${data.error ?? res.statusText}`);
+        return;
+      }
+    } catch (err) {
+      setMessage(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    } finally {
+      setSaving(false);
+    }
+
     setStatus(nextStatus);
     setMessage("Saved.");
     onSave(built, textToPersist, cache);
@@ -1622,7 +1667,8 @@ export function EditRouteScreen({
         <button
           type="button"
           onClick={() => handleSave()}
-          className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white"
+          disabled={saving}
+          className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white disabled:opacity-60"
         >
           {mode === "add" ? (
             <>
@@ -1642,7 +1688,8 @@ export function EditRouteScreen({
             <button
               type="button"
               onClick={handleToggleStatus}
-              className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
+              disabled={saving}
+              className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-base font-semibold text-zinc-900 disabled:opacity-60"
             >
               {status === "published" ? (
                 <EyeOffIcon className="h-5 w-5" />

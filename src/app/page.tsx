@@ -109,18 +109,32 @@ export default function Home() {
   const [schools, setSchools] = useState<Record<string, SchoolInfo>>({});
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "list" });
+  // Every screen `navigate` has dived forward through, oldest first -
+  // what makes goBack (below) a *true* back button rather than each
+  // screen's own onBack hardcoding a fixed parent. That hardcoding
+  // used to be fine (every screen had exactly one way in), but broke
+  // the moment a screen became reachable from more than one place -
+  // e.g. school-routes, reachable both from the Schools list and now
+  // from a route's own info screen (StartScreen's onViewSchool):
+  // hardcoding "back always goes to Schools" is simply wrong from the
+  // second entry point. goBack instead returns to whatever's actually
+  // on top of this stack, regardless of how the current screen was
+  // reached.
+  const [, setHistory] = useState<Screen[]>([]);
   // Which way ScreenTransition should animate the *next* time `screen`
   // actually changes - "forward" (out left/in right) for every dive
-  // deeper into the app from the list (Add Route, Edit Route, a
-  // selected route's trip flow), "backward" (the reverse) for every
-  // Cancel/Back that returns to wherever that dive started. Set
-  // alongside `screen` itself via `navigate` below, always in the same
-  // state update, so ScreenTransition never sees a direction that
-  // doesn't match the transition it's actually mid-triggering.
+  // deeper into the app, "backward" (the reverse) for every Cancel/Back
+  // that returns to wherever that dive started. Set alongside `screen`
+  // itself, always in the same state update, so ScreenTransition never
+  // sees a direction that doesn't match the transition it's actually
+  // mid-triggering.
   const [navDirection, setNavDirection] = useState<"forward" | "backward">("forward");
 
-  function navigate(next: Screen, direction: "forward" | "backward") {
-    setNavDirection(direction);
+  // Dives deeper into the app - pushes the current screen onto history
+  // so goBack (below) can return to it later, then switches to `next`.
+  function navigate(next: Screen) {
+    setNavDirection("forward");
+    setHistory((prev) => [...prev, screen]);
     setScreen(next);
     // Every "trip" screen starts on StartScreen, never mid-drive - reset
     // here rather than waiting on RouteApp's own onStartedChange mirror
@@ -128,6 +142,34 @@ export default function Home() {
     // reads a stale `true` left over from whatever trip was open last,
     // not even for the one frame that'd otherwise be visible.
     if (next.kind === "trip") setTripStarted(false);
+  }
+
+  // The one true "Back"/"Cancel" - pops whatever screen is actually on
+  // top of `history` rather than a hardcoded destination. `history`
+  // should never genuinely be empty here (the top-level list is the
+  // only screen with no way to reach this at all, and it's always
+  // pushed before anything deeper is), but a no-op if it somehow is
+  // beats crashing on a screen that isn't there.
+  function goBack() {
+    setNavDirection("backward");
+    setHistory((prev) => {
+      if (prev.length === 0) return prev;
+      setScreen(prev[prev.length - 1]);
+      return prev.slice(0, -1);
+    });
+  }
+
+  // Re-navigates to a screen the user is conceptually already on, for
+  // handleSaveRoute's own remount-forcing trick (EditRouteScreen's key
+  // prop needs a real prop change to re-seed its state after a route's
+  // just been created/saved) - a real `navigate` would push a phantom
+  // history entry for a screen that isn't a genuine new place the user
+  // went, breaking goBack (Cancel would land back on that phantom
+  // add-route/edit-route hop instead of wherever the edit session
+  // actually started from).
+  function replaceScreen(next: Screen) {
+    setNavDirection("forward");
+    setScreen(next);
   }
 
   // Mirrors RouteApp's own internal (useRouteStepper) `started` flag -
@@ -287,13 +329,13 @@ export default function Home() {
     // already taken). Its edit screen is for review only - nothing
     // typed or saved there actually persists.
     if (route.status === "demo") {
-      navigate({ kind: "list" }, "backward");
+      goBack();
       return;
     }
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
     setAdminRawStepsById((prev) => ({ ...prev, [route.id]: rawStepsText }));
     setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
-    navigate({ kind: "edit-route", route }, "forward");
+    replaceScreen({ kind: "edit-route", route });
   }
 
   // A demo route's own "status" is a fixed identity marker, not a real
@@ -359,7 +401,7 @@ export default function Home() {
         route={null}
         rawStepsText=""
         schools={schools}
-        onCancel={() => navigate({ kind: "list" }, "backward")}
+        onCancel={goBack}
         onSave={handleSaveRoute}
       />
     );
@@ -381,7 +423,7 @@ export default function Home() {
         rawStepsText={rawStepsText}
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schools={schools}
-        onCancel={() => navigate({ kind: "list" }, "backward")}
+        onCancel={goBack}
         onSave={handleSaveRoute}
       />
     );
@@ -389,13 +431,13 @@ export default function Home() {
     content = (
       <RouteApp
         route={screen.route}
-        onBack={() => navigate({ kind: "list" }, "backward")}
+        onBack={goBack}
         onEdit={() => {
           setAdminMode(true);
-          navigate({ kind: "edit-route", route: screen.route }, "forward");
+          navigate({ kind: "edit-route", route: screen.route });
         }}
         onStartedChange={setTripStarted}
-        onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName }, "forward")}
+        onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
       />
     );
   } else if (screen.kind === "schools") {
@@ -403,8 +445,8 @@ export default function Home() {
       <SchoolListScreen
         schools={schools}
         routes={routes}
-        onSelectSchool={(schoolName) => navigate({ kind: "school-routes", schoolName }, "forward")}
-        onBack={() => navigate({ kind: "list" }, "backward")}
+        onSelectSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
+        onBack={goBack}
       />
     );
   } else if (screen.kind === "school-routes") {
@@ -412,13 +454,13 @@ export default function Home() {
       <RouteListScreen
         routes={routes.filter((route) => route.schoolName === screen.schoolName)}
         title={screen.schoolName}
-        onBack={() => navigate({ kind: "schools" }, "backward")}
+        onBack={goBack}
         adminMode={adminMode}
         adminWaypointCaches={adminWaypointCaches}
         onToggleAdminMode={() => setAdminMode((prev) => !prev)}
-        onSelect={(route) => navigate({ kind: "trip", route }, "forward")}
-        onEditRoute={(route) => navigate({ kind: "edit-route", route }, "forward")}
-        onAddRoute={() => navigate({ kind: "add-route" }, "forward")}
+        onSelect={(route) => navigate({ kind: "trip", route })}
+        onEditRoute={(route) => navigate({ kind: "edit-route", route })}
+        onAddRoute={() => navigate({ kind: "add-route" })}
         onSetRouteStatus={handleSetRouteStatus}
         onDeleteRoute={handleDeleteRoute}
         onToggleFavorite={handleToggleFavorite}
@@ -430,13 +472,13 @@ export default function Home() {
       <RouteListScreen
         routes={routes}
         slideInOnMount={justLoaded}
-        onViewSchools={() => navigate({ kind: "schools" }, "forward")}
+        onViewSchools={() => navigate({ kind: "schools" })}
         adminMode={adminMode}
         adminWaypointCaches={adminWaypointCaches}
         onToggleAdminMode={() => setAdminMode((prev) => !prev)}
-        onSelect={(route) => navigate({ kind: "trip", route }, "forward")}
-        onEditRoute={(route) => navigate({ kind: "edit-route", route }, "forward")}
-        onAddRoute={() => navigate({ kind: "add-route" }, "forward")}
+        onSelect={(route) => navigate({ kind: "trip", route })}
+        onEditRoute={(route) => navigate({ kind: "edit-route", route })}
+        onAddRoute={() => navigate({ kind: "add-route" })}
         onSetRouteStatus={handleSetRouteStatus}
         onDeleteRoute={handleDeleteRoute}
         onToggleFavorite={handleToggleFavorite}
