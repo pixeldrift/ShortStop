@@ -91,6 +91,21 @@ function turnMarkerHtml(label: string): string {
   );
 }
 
+// The school itself - its own blue pin, distinct from a stop's red one
+// (a school is where the route starts or ends, never a stop a driver
+// checks riders in/out at) and a turn's plain yellow dot. Same teardrop
+// glyph MapPinIcon (icons.tsx) already draws elsewhere for an address -
+// as a raw SVG string here since Leaflet's divIcon takes an HTML string,
+// not a React component.
+function schoolMarkerHtml(): string {
+  return (
+    '<svg viewBox="0 0 24 24" width="32" height="32" fill="#2563eb" ' +
+    'style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45))" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" />' +
+    "</svg>"
+  );
+}
+
 /**
  * A real, pannable/zoomable OpenStreetMap tile map - replaces the
  * static "Demo only placeholder, not actual map" JPEG that used to sit
@@ -115,6 +130,7 @@ export function RouteMap({
   stops = [],
   turns = [],
   path = [],
+  school,
   waypointsUrl,
 }: {
   className?: string;
@@ -141,12 +157,24 @@ export function RouteMap({
    * already trace the real route's own shape for anything short of a
    * curving mid-block road. */
   path?: string[];
+  /** The school's own waypointKey - `waypointCacheKey({kind: "address",
+   * text: route.schoolAddress})`, the same key the geocode pipeline
+   * already writes a real entry under (resolveSchoolAnchor uses the
+   * school's own address to anchor Overpass's intersection searches,
+   * and persists that same lookup into the cache - see
+   * scripts/geocodeRoute.ts) - so this is usually already resolved even
+   * for a route whose stops/turns mostly aren't yet. Drawn as its own
+   * blue pin, distinct from a stop's red one or a turn's yellow dot,
+   * since the school is where the route starts or ends, never a stop a
+   * driver checks riders in/out at. Omitted (no pin) if this route's
+   * own school address was never geocoded. */
+  school?: string;
   /** The geocode cache endpoint (src/app/api/waypoints) - shared across
    * every route now that it's backed by Postgres rather than split into
    * a sidecar file per route, so this is the same URL regardless of
    * which route is showing. A cache miss for a given `stops`/`turns`/
-   * `path` entry (nothing's geocoded it yet) is simply skipped, same as
-   * a fetch failure resolving to an empty cache below. */
+   * `path`/`school` entry (nothing's geocoded it yet) is simply
+   * skipped, same as a fetch failure resolving to an empty cache below. */
   waypointsUrl: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -168,6 +196,10 @@ export function RouteMap({
   useEffect(() => {
     pathRef.current = path;
   }, [path]);
+  const schoolRef = useRef(school);
+  useEffect(() => {
+    schoolRef.current = school;
+  }, [school]);
   // Same reasoning as stopsRef above - read once inside the mount
   // effect rather than re-running the whole effect if it ever changed
   // (it doesn't, mid-trip: StepScreen computes it once from `route`,
@@ -257,6 +289,22 @@ export function RouteMap({
               }),
               interactive: false,
             }).addTo(map);
+          }
+          if (schoolRef.current) {
+            const entry = cache[schoolRef.current];
+            if (entry && entry.status === "ok") {
+              const latLng: [number, number] = [entry.lat, entry.lon];
+              pinLatLngs.push(latLng);
+              L.marker(latLng, {
+                icon: L.divIcon({
+                  className: "",
+                  html: schoolMarkerHtml(),
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 30],
+                }),
+                interactive: false,
+              }).addTo(map);
+            }
           }
           // Once the route's own stops are geocoded, they're a far more
           // useful default view than the fixed La Vergne town-center
