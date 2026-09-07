@@ -70,6 +70,7 @@ export function StartScreen({
   onStart,
   onBack,
   onEdit,
+  onViewSchool,
 }: {
   route: Route;
   onStart: () => void;
@@ -78,6 +79,9 @@ export function StartScreen({
    * Small and easy to miss on purpose: this is a district-admin tool
    * living on the same screen every driver sees, not a primary action. */
   onEdit: () => void;
+  /** Opens the school's own school-routes screen (page.tsx) - the
+   * school name/address block below is its tap target. */
+  onViewSchool: (schoolName: string) => void;
 }) {
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
   const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
@@ -95,7 +99,11 @@ export function StartScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1 className="font-heading flex items-center gap-2 text-4xl font-black tracking-tight">
+        <h1
+          className={`font-heading flex gap-2 text-4xl font-black tracking-tight ${
+            route.tripType === "pickup" ? "items-end" : "items-start"
+          }`}
+        >
           Route {route.routeNumber}
           <span className="flex items-center gap-1 text-lg text-blue-500">
             {route.tripType === "pickup" ? "AM" : "PM"}
@@ -109,13 +117,19 @@ export function StartScreen({
       </div>
 
       <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">
-        <p className="font-heading text-xl leading-tight font-bold text-zinc-700">
-          {route.schoolName}
-        </p>
-        <p className="mt-1 flex items-center justify-center gap-1 text-sm text-zinc-500">
-          <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-          {route.schoolAddress}
-        </p>
+        <button
+          type="button"
+          onClick={() => onViewSchool(route.schoolName)}
+          className="w-full rounded-lg py-1 active:bg-zinc-100"
+        >
+          <p className="font-heading text-xl leading-tight font-bold text-zinc-700">
+            {route.schoolName}
+          </p>
+          <p className="mt-1 flex items-center justify-center gap-1 text-sm text-zinc-500">
+            <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+            {route.schoolAddress}
+          </p>
+        </button>
 
         <div className="mt-4 grid grid-cols-4 gap-2">
           <StatTile value={distanceValue} label="miles" />
@@ -240,12 +254,16 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
           <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
             Route {route.routeNumber}
-            <span className="flex items-center gap-1 text-blue-500">
+            <span
+              className={`flex items-center gap-1 text-sm text-blue-500 ${
+                route.tripType === "pickup" ? "self-end" : "self-start"
+              }`}
+            >
               {route.tripType === "pickup" ? "AM" : "PM"}
               {route.tripType === "pickup" ? (
-                <SunriseIcon className="h-4 w-4" />
+                <SunriseIcon className="h-3.5 w-3.5" />
               ) : (
-                <SunIcon className="h-4 w-4" />
+                <SunIcon className="h-3.5 w-3.5" />
               )}
             </span>
             <span className="text-zinc-400">-</span>

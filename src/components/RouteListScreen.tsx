@@ -10,6 +10,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   HeartIcon,
+  MapPinIcon,
   PlusIcon,
   RouteIcon,
   SchoolIcon,
@@ -179,6 +180,11 @@ export function RouteListScreen({
    * to know whether it currently reads as published. */
   demoHiddenIds: ReadonlySet<string>;
 }) {
+  // Only ever read when onBack is set (the school-scoped reuse) - every
+  // route here already carries its own school's address (Route.schoolAddress),
+  // so the school itself is the same for all of them; no separate prop
+  // needed just to look one up.
+  const scopedSchoolAddress = routes[0]?.schoolAddress;
   const [query, setQuery] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   // Only set while handlePublishClick's own readiness check is in
@@ -314,20 +320,32 @@ export function RouteListScreen({
         }`}
       >
         {onBack ? (
-          <div className="flex w-full max-w-md items-center justify-between">
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label="Back to schools"
-              className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
-            >
-              <BackArrowIcon className="h-5 w-5" />
-            </button>
-            <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-              {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
-              {title}
-            </h1>
-            <span className="h-10 w-10 shrink-0" aria-hidden="true" />
+          <div className="flex w-full flex-col items-center gap-1">
+            <div className="flex w-full max-w-md items-center justify-between">
+              <button
+                type="button"
+                onClick={onBack}
+                aria-label="Back to schools"
+                className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
+              >
+                <BackArrowIcon className="h-5 w-5" />
+              </button>
+              <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+                {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
+                {title}
+              </h1>
+              <span className="h-10 w-10 shrink-0" aria-hidden="true" />
+            </div>
+            {/* Same MapPinIcon + address convention every other
+                school-name callout in the app uses (StartScreen's own
+                school card, StepScreen's "From/To" line) - under the
+                name, not folded into the heading itself. */}
+            {scopedSchoolAddress && (
+              <p className="flex items-center justify-center gap-1 text-sm text-zinc-500">
+                <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                {scopedSchoolAddress}
+              </p>
+            )}
           </div>
         ) : (
           <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
@@ -503,18 +521,22 @@ export function RouteListScreen({
                       onClick={() => onSelect(route)}
                       className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-center gap-x-1 text-left active:bg-zinc-100"
                     >
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-heading text-lg leading-none font-black">
+                      <div
+                        className={`flex gap-1.5 ${
+                          route.tripType === "pickup" ? "items-end" : "items-start"
+                        }`}
+                      >
+                        <span className="font-heading text-xl leading-none font-black">
                           #{route.routeNumber}
                         </span>
                         <div className="flex items-center gap-0.5 text-blue-500">
-                          <span className="font-heading text-lg leading-none font-black">
+                          <span className="font-heading text-xs leading-none font-black">
                             {route.tripType === "pickup" ? "AM" : "PM"}
                           </span>
                           {route.tripType === "pickup" ? (
-                            <SunriseIcon className="h-3.5 w-3.5" />
+                            <SunriseIcon className="h-3 w-3" />
                           ) : (
-                            <SunIcon className="h-3.5 w-3.5" />
+                            <SunIcon className="h-3 w-3" />
                           )}
                         </div>
                       </div>

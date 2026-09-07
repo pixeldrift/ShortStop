@@ -43,14 +43,18 @@ export function TopBar({
         <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
           Route
         </p>
-        <p className="font-heading -mt-1 flex items-center justify-center gap-1.5 text-3xl font-black tracking-tight">
+        <p
+          className={`font-heading -mt-1 flex justify-center gap-1.5 text-3xl font-black tracking-tight ${
+            tripType === "pickup" ? "items-end" : "items-start"
+          }`}
+        >
           #{routeNumber}
-          <span className="flex items-center gap-1 text-3xl text-blue-500">
+          <span className="flex items-center gap-1 text-base text-blue-500">
             {tripType === "pickup" ? "AM" : "PM"}
             {tripType === "pickup" ? (
-              <SunriseIcon className="h-6 w-6" />
+              <SunriseIcon className="h-5 w-5" />
             ) : (
-              <SunIcon className="h-6 w-6" />
+              <SunIcon className="h-5 w-5" />
             )}
           </span>
         </p>
