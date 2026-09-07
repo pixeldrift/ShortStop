@@ -49,6 +49,13 @@ export interface GeocodeResponseBody {
    * address every time. Null if this query didn't need one (a plain
    * address). */
   anchor: { lat: number; lon: number } | null;
+  /** The school's own address, as a real cache entry - only present
+   * when this exact request is what freshly resolved it (see
+   * fetchOneLocation's own doc comment). The caller should persist
+   * this under the school address's own cache key so the interactive
+   * Fetch Location/Fetch All flow actually saves it somewhere real,
+   * not just this session's own `anchor` state above. */
+  anchorEntry: WaypointCacheEntry | null;
   result: WaypointCacheEntry;
   /** OpenRouteService's own account-wide rate limit, if this request
    * made a real ORS request and it happened to report one (see
@@ -92,6 +99,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const responseBody: GeocodeResponseBody = {
     anchor: result.anchor,
+    anchorEntry: result.anchorEntry,
     result: result.entry,
     quota: getLastKnownOrsQuota(),
   };

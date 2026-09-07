@@ -1185,6 +1185,21 @@ export function EditRouteScreen({
     }).catch((err) => console.warn(`Couldn't persist waypoint "${key}":`, err));
   }
 
+  // callGeocodeApi's own `anchorEntry` is only ever set when that exact
+  // call is what freshly resolved the school's own address (see
+  // fetchOneLocation's doc comment) - every other call (a plain address
+  // query, or an intersection query reusing this session's own
+  // `schoolAnchor`) sends null, so this is a no-op then. Without this,
+  // the interactive Fetch Location/Fetch All flow could resolve the
+  // school's own anchor point (needed to search for an intersection)
+  // and reuse it all session via `schoolAnchor` state, yet never
+  // actually save it anywhere real - only scripts/geocodeRoute.ts's own
+  // batch pipeline did that.
+  function persistSchoolAnchorIfFresh(anchorEntry: WaypointCacheEntry | null) {
+    if (!anchorEntry) return;
+    persistWaypoint(waypointCacheKey({ stepId: -1, kind: "address", text: schoolAddress }), anchorEntry);
+  }
+
   async function fetchLocation(waypoint: GeocodableQuery) {
     if (singleFetchCoolingDown) return; // the button's own disabled state should already prevent this
     setFetchError(null);
@@ -1193,6 +1208,7 @@ export function EditRouteScreen({
     try {
       const data = await callGeocodeApi(waypoint);
       if (data.anchor) setSchoolAnchor(data.anchor);
+      persistSchoolAnchorIfFresh(data.anchorEntry);
       if (data.quota) setQuota(data.quota);
       const key = waypointCacheKey(waypoint);
       setCache((prev) => ({ ...prev, [key]: data.result }));
@@ -1239,6 +1255,7 @@ export function EditRouteScreen({
 
         const data = await callGeocodeApi(waypoint);
         if (data.anchor) setSchoolAnchor(data.anchor);
+        persistSchoolAnchorIfFresh(data.anchorEntry);
         if (data.quota) setQuota(data.quota);
         const key = waypointCacheKey(waypoint);
         setCache((prev) => ({ ...prev, [key]: data.result }));

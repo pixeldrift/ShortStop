@@ -19,6 +19,7 @@ import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
 import type { NavigationStep, Route } from "@/lib/types";
+import { waypointCacheKey } from "@/lib/waypointCache";
 
 export function StepScreen({
   route,
@@ -112,6 +113,16 @@ export function StepScreen({
   // line (its own `path` prop doc comment explains why straight
   // segments between them already trace the route's real shape).
   const routePath = useMemo(() => route.steps.map((s) => s.waypointKey), [route]);
+  // Same key the geocode pipeline persists the school's own anchor
+  // point under (see RouteMap's own `school` prop doc comment).
+  const schoolWaypointKey = useMemo(
+    // stepId: -1 - matches scripts/geocodeRoute.ts's own placeholder for
+    // this exact "not a real route step" lookup; waypointCacheKey never
+    // actually reads it for an "address" query, just required by
+    // WaypointQuery's own shape.
+    () => waypointCacheKey({ stepId: -1, kind: "address", text: route.schoolAddress }),
+    [route.schoolAddress],
+  );
   // The geocode cache, shared across every route now that it lives in
   // Postgres (see src/app/api/waypoints) rather than split into a
   // sidecar file per route - RouteMap looks its own stops up from this
@@ -168,6 +179,7 @@ export function StepScreen({
           stops={stopMarkers}
           turns={turnMarkers}
           path={routePath}
+          school={schoolWaypointKey}
           waypointsUrl={waypointsUrl}
         />
 

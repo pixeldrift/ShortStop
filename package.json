@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "geocode": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeRoute.js",
+    "geocode:schools": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeSchools.js",
     "prototype:overpass": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/prototypeOverpassGeocode.js"
   },
   "dependencies": {
