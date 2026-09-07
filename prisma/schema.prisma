@@ -63,6 +63,18 @@ model School {
   // run for a given school.
   lat       Float?
   lon       Float?
+  // True once a human has actually confirmed lat/lon are correct -
+  // set for now by scripts/fixSchoolCoordinates.ts's own hand-checked
+  // corrections, not by anything automated (an ORS "ok" status means
+  // ORS found *a* match, not that anyone confirmed it's the right
+  // one - see that script's own doc). scripts/geocodeSchools.ts never
+  // overwrites a verified row, even with --force. There's no UI path
+  // that lets a user edit a school's own details at all (its address/
+  // level/coordinates only ever come from schools.csv by way of this
+  // table - see EditRouteScreen.tsx's school picker, a plain <select>
+  // with no free-text school fields), so this can only ever be set by
+  // a script/admin action like that one, never a stray edit.
+  verified  Boolean       @default(false)
 
   @@map("schools")
 }
@@ -134,6 +146,13 @@ model Waypoint {
   provider    String
   message     String?
   raw         String?
+  // Same meaning as School.verified above (a human confirmed this
+  // stop/turn's coordinates, not just that some geocoder returned an
+  // "ok" status for it) - not wired into any read/write path yet,
+  // added now so a future confirmation step (e.g. an admin marking a
+  // route's turns reviewed) has a column to set rather than a schema
+  // change of its own.
+  verified    Boolean  @default(false)
   updatedAt   DateTime @updatedAt
 
   @@map("waypoints")
