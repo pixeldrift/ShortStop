@@ -388,7 +388,7 @@ export function RouteListScreen({
                 <div className="fixed inset-0 z-10" onClick={() => setViewMenuOpen(false)} />
                 <div
                   role="listbox"
-                  className="absolute top-full right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-zinc-300 bg-white py-1 shadow-lg"
+                  className="animate-popup-pop absolute top-full right-0 z-20 mt-1 w-44 origin-top-right overflow-hidden rounded-xl border border-zinc-300 bg-white py-1 shadow-lg"
                 >
                   {VIEW_OPTIONS.map((option) => (
                     <button
