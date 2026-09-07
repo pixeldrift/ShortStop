@@ -20,7 +20,10 @@ export function SortableHeader<F extends string>({
   sortDir,
   onSort,
 }: {
-  label: string;
+  /** Usually a plain string - a `ReactNode` is only for a header that
+   * needs its own internal layout (RouteListScreen's stacked "AM"/"PM"
+   * label, say), not a general escape hatch. */
+  label: React.ReactNode;
   field: F;
   align?: "left" | "center" | "right";
   /** This header's own leading gutter (pl-3, none if it's the first in

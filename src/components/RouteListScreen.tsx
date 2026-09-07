@@ -356,7 +356,7 @@ export function RouteListScreen({
     selectedRoutes.length > 0 && selectedRoutes.every((r) => !isRoutePublished(r, demoHiddenIds));
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-6 text-center">
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center">
       {/* Everything that can genuinely grow past the viewport (the
           route table especially) lives in this inner, scrollable
           region - the toolbar/links/copyright below stay outside it,
@@ -432,9 +432,11 @@ export function RouteListScreen({
               top, school level below. Every toggle starts on/blue
               ("showing"); tapping one off fades it, excluding that
               trip type/level from the list below rather than picking a
-              single exclusive view the old "View" dropdown did. */}
-          <div className="flex shrink-0 flex-col gap-1">
-            <div className="flex items-center gap-1">
+              single exclusive view the old "View" dropdown did. Sized
+              small enough that both rows together sit within the
+              search box's own height beside them, not taller than it. */}
+          <div className="flex shrink-0 flex-col gap-0.5">
+            <div className="flex items-center gap-0.5">
               {TRIP_TYPE_TOGGLES.map((toggle) => {
                 const active = activeTripTypes.has(toggle.value);
                 return (
@@ -443,7 +445,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleTripType(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-bold ${
+                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
                       active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
                     }`}
                   >
@@ -452,7 +454,7 @@ export function RouteListScreen({
                 );
               })}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               {SCHOOL_LEVEL_TOGGLES.map((toggle) => {
                 const active = activeSchoolLevels.has(toggle.value);
                 return (
@@ -461,7 +463,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleSchoolLevel(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-bold ${
+                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
                       active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
                     }`}
                   >
@@ -489,28 +491,30 @@ export function RouteListScreen({
                 exactly on the row content's own column edges instead of
                 drifting off to the side of them. */}
             <div className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-stretch gap-x-1 divide-x divide-zinc-200">
-              {/* "#" and "AM/PM" stacked in one cell rather than two
-                  side-by-side ones with a divider between them - the
-                  row below doesn't actually split its own route-number/
-                  AM-PM block at a fixed width either (it's one flowing
-                  flex group), so a divider "matching the actual
-                  columns" only ever belongs at this cell's real right
-                  edge (the existing divide-x above already puts one
-                  there), not at some arbitrary point partway through it. */}
-              <div className="flex h-full flex-col items-center justify-center gap-0 leading-none text-[10px]">
+              {/* "#" keeps its own cell/divider, separate from AM/PM -
+                  AM and PM themselves stack as two lines within that
+                  second cell instead of reading "AM/PM" on one line. */}
+              <div className="grid h-full grid-cols-[2.75rem_1fr] items-stretch gap-x-1 divide-x divide-zinc-200">
                 <SortableHeader
                   label="#"
                   field="routeNumber"
                   align="center"
+                  fill
                   padded={false}
                   sortField={sortField}
                   sortDir={sortDir}
                   onSort={toggleSort}
                 />
                 <SortableHeader
-                  label="AM/PM"
+                  label={
+                    <span className="flex flex-col items-center leading-none">
+                      <span>AM</span>
+                      <span>PM</span>
+                    </span>
+                  }
                   field="tripType"
                   align="center"
+                  fill
                   padded={false}
                   sortField={sortField}
                   sortDir={sortDir}
@@ -852,7 +856,7 @@ export function RouteListScreen({
         href="mailto:nathan@pizar.net"
         className="shrink-0 text-xs text-zinc-400 active:text-zinc-600"
       >
-        © 2026 Nathan D. B. Pizar
+        © 2026 Nathan D. B. Pizar 🦊
       </a>
 
       {confirmRequest && (

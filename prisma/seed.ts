@@ -154,6 +154,7 @@ async function main() {
             riderCount: row.riderCount,
             side: row.side,
             notes: row.notes,
+            skip: row.skip,
           })),
         });
       }
