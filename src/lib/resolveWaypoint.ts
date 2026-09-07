@@ -225,8 +225,11 @@ interface AdminFetchContext {
 async function ensureAnchor(
   query: GeocodableQuery,
   ctx: AdminFetchContext,
-): Promise<{ lat: number; lon: number } | null | { error: string; raw?: string }> {
-  if (query.kind === "address" || ctx.anchor) return ctx.anchor;
+): Promise<
+  | { point: { lat: number; lon: number } | null; entry: WaypointCacheEntry | null }
+  | { error: string; raw?: string }
+> {
+  if (query.kind === "address" || ctx.anchor) return { point: ctx.anchor, entry: null };
   const { entry, point } = await resolveSchoolAnchor(ctx.schoolAddress, ctx.locationContext, ctx.apiKey);
   if (!point) {
     // Same reasoning as lookupCoordinates's own anchor-failure branch -
@@ -239,7 +242,15 @@ async function ensureAnchor(
       raw,
     };
   }
-  return point;
+  // `entry` here is a real, freshly-resolved WaypointCacheEntry for the
+  // school's own address (not just the bare point) - handed back up to
+  // fetchOneLocation below so its own caller (EditRouteScreen.tsx) can
+  // persist it under its own cache key, same as any other resolved
+  // waypoint. Without this, the interactive Fetch Location/Fetch All
+  // flow could resolve the school's own anchor point (needed to search
+  // for an intersection) yet never actually save it anywhere real -
+  // only scripts/geocodeRoute.ts's own batch pipeline did that.
+  return { point, entry };
 }
 
 /** Resolves exactly one geocodable query - EditRouteScreen.tsx's own
@@ -255,18 +266,29 @@ export async function fetchOneLocation(
   query: GeocodableQuery,
   ctx: AdminFetchContext,
 ): Promise<
-  | { entry: WaypointCacheEntry; anchor: { lat: number; lon: number } | null }
+  | {
+      entry: WaypointCacheEntry;
+      anchor: { lat: number; lon: number } | null;
+      /** The school's own address, as a real cache entry - only
+       * present when this exact call is what freshly resolved it (a
+       * plain address query, or a repeat intersection query reusing
+       * `ctx.anchor`, never returns one). The caller should persist
+       * this under the school address's own cache key, same as
+       * `entry` under the query's. */
+      anchorEntry: WaypointCacheEntry | null;
+    }
   | { error: string; raw?: string }
 > {
-  const anchor = await ensureAnchor(query, ctx);
-  if (anchor && "error" in anchor) return anchor;
+  const anchorResult = await ensureAnchor(query, ctx);
+  if ("error" in anchorResult) return anchorResult;
+  const { point: anchor, entry: anchorEntry } = anchorResult;
 
   const entry = await lookupCoordinates(query, ctx.locationContext, {
     apiKey: ctx.apiKey,
     anchor: anchor ?? undefined,
     near: anchor ?? undefined,
   });
-  return { entry, anchor };
+  return { entry, anchor, anchorEntry };
 }
 
 /** Resolves any one geocodable (address or intersection) query,
