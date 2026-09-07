@@ -13,6 +13,7 @@
   "include": [
     "./geocodeRoute.ts",
     "./geocodeSchools.ts",
+    "./fixSchoolCoordinates.ts",
     "./prototypeOverpassGeocode.ts",
     "../src/lib/parseRouteCsv.ts",
     "../src/lib/deriveWaypoints.ts",
