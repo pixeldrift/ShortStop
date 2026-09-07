@@ -1883,6 +1883,13 @@ so far.
 
 ### Next steps
 
+- **Nicely formatted, printable route lists.** The route list's own
+  "Download routes" link (admin/Edit Routes mode, see "A round of
+  formatting polish" further below) is just a flat CSV of the whole
+  routes table for now - a district admin would rather hand a driver
+  (or a substitute) an actual printable per-route sheet than a
+  spreadsheet. Worth a real print/PDF layout once there's a concrete
+  need for one.
 - **Get an `ORS_API_KEY`** (free at openrouteservice.org) and add it as
   a GitHub repository secret, plus locally in a gitignored `.env.local`
   if running `npm run geocode` by hand - see "Maps, part five" above.
@@ -3249,3 +3256,150 @@ so far.
   the migration reconciliation above - this session still can't reach
   the Postgres-backed API routes the app now loads its route data
   from.
+
+## A round of formatting polish
+
+  A batch of smaller visual/UX fixes across the schools list, turn-by-
+  turn header, and route list, mostly cosmetic but touching a lot of
+  surface area:
+
+  **Schools list** - the city moved off its own column and onto the
+  address line under each school's name (`{city}, {street}`, same
+  `text-xs text-zinc-500` style the street address already had), with
+  the "City" header/column kept in place (an empty per-row cell under
+  it) so "Routes" doesn't shift over - the city's own sort still works
+  off that header, just with nothing printed in its own cell anymore.
+  The school name itself dropped `truncate` and grew to `text-base` so
+  a longer name can wrap instead of clipping.
+
+  **Turn-by-turn header (`TopBar.tsx`)** - the sun/sunrise icon now
+  matches the AM/PM text's own `text-base` size instead of towering
+  over it, and the whole route-number/AM-PM cluster's vertical
+  alignment flips with trip type (bottom-aligned to AM's baseline on a
+  pickup, top-aligned to PM's on a dropoff) - both already existed
+  before this round in some form, tightened up here. "Stop X of Y,"
+  "Back to Routes," and the onboard-count badge now sit on one shared
+  text baseline (`items-baseline` on their own row, split out from the
+  row above it, which needs `items-start` instead for its own reasons)
+  rather than three independently-positioned pieces that happened to
+  read close to level. "Back to Routes" is bumped to the same
+  size/weight as its two neighbors and colored blue, to actually read
+  as a peer of them instead of a much smaller aside. A substitute bus
+  running under a different number than its route's own gets a red box
+  around the bus number (`busNumber !== routeNumber`) - a driver
+  expecting to find "their" bus number on the lot would otherwise miss
+  it entirely.
+
+  **`#` dropped from displayed route/bus numbers** everywhere a raw
+  value is shown (TopBar, the route list's own rows, StartScreen's bus
+  number) - the route list's own "#" *column header* is untouched, same
+  as every other column label in the app (that's a symbol labeling
+  what the column holds, not a value prefix).
+
+  **Rider check-in bubbles balance across two rows** instead of
+  wrapping however many happen to fit on the first line and leaving a
+  lone straggler on the second (`RiderCheckInBox` in `StepScreen.tsx`) -
+  measures whether the bubble grid actually wraps at all (`offsetTop`
+  comparison across its children, since bubble size is already
+  dynamically scaled by `useFitGrid`), and if so, forces an exact,
+  balanced split (half top row, half bottom, with the one odd-count
+  edge case - a lone bubble on row two - resolved by shifting one over)
+  via a zero-height, full-width spacer inserted at the split point
+  rather than restructuring into two separate row containers. Re-
+  measures on window resize/orientation change in case a fixed split
+  no longer actually needs to wrap, or needs a different one.
+
+  **Route list, several changes at once:**
+  - The "View" dropdown is gone, replaced by two stacked rows of toggle
+    chips (AM/PM on top, EL/MS/HS below) to the right of the search box -
+    every toggle starts on/blue ("showing"), tapping one off fades it
+    and excludes that trip type/school level from the list, rather than
+    picking one exclusive view at a time. The old "Favorites" filter
+    option didn't carry over - it wasn't part of what was asked for
+    here, and the per-row heart still works to mark a favorite either
+    way.
+  - Admin mode's per-row quick actions are now always Delete/Edit/
+    Publish-or-Unpublish (three buttons, every row), instead of the old
+    Unpublish-alone-or-Delete-and-Publish pair - Delete is disabled/
+    faded until the route is actually unpublished first, an extra
+    safety measure against deleting something still live. Tapping a row
+    itself now opens its edit screen directly in admin mode (it used to
+    still navigate to the normal trip-summary screen, with editing only
+    reachable via a separate pencil button); that pencil column is now
+    a checkbox column instead, backing a new bulk-selection toolbar
+    ("Delete Selected"/"Edit Selected"/"Publish or Unpublish Selected")
+    under the table, plus a "select all" checkbox in the header. Edit
+    Selected only enables for exactly one selected route (there's only
+    one edit screen); bulk publish skips the single-row readiness
+    check/edit-screen redirect a solo Publish tap gets, since a bulk
+    action has nowhere sensible to redirect *to* for just one of
+    several selected routes - a simplification worth revisiting if
+    bulk-publishing a not-yet-geocoded route turns out to matter in
+    practice. The "draft" text under an unpublished route's school name
+    is gone - the row's own dimmed/opacity-50 styling and its quick
+    actions already say that.
+  - The old fixed floating download button is gone; a plain "Download
+    routes" text link (icon in front, per feedback) sits opposite the
+    "Schools" link in the row under the table, admin-mode only. Still
+    just a flat CSV of the whole table for now - see "Next steps"'
+    "Nicely formatted, printable route lists" entry.
+  - The header's "#"/"AM/PM" pair is now stacked in one cell (small,
+    tight-leading, no divider between them) rather than two side-by-side
+    cells with a divider in between - a divider that used to land at an
+    arbitrary fixed width, not an actual column boundary the row content
+    below shares (that row's own route-number/AM-PM pair is a flowing
+    flex group, not a fixed-width split). The real divider before
+    "School" is unchanged; it already sits at a true column edge. The
+    row's own route number grew a size (`text-xl` to `text-2xl`) to read
+    closer in visual weight to the AM/PM badge beside it.
+
+  **Gray buttons now match blue/red ones stroke-for-stroke** - every
+  `btn-glossy` gray button (`bg-zinc-300`) used to also carry
+  `border border-zinc-500`, which blue/red buttons never had; dropping
+  that border project-wide leaves the shared bevel/shadow/gradient as
+  the only styling difference callers actually add color for, instead
+  of gray buttons reading visibly thicker/darker-edged than their blue
+  and red counterparts everywhere in the app.
+
+  **The pinned logo sits closer to the top now** (`pt-10`/
+  `landscape:pt-6` trimmed to `pt-4`/`landscape:pt-3` in `page.tsx`) -
+  it didn't need that much breathing room above it, and the reclaimed
+  space goes to the actual content below instead.
+
+  **"Add Route" retitled "Add New Route"** on EditRouteScreen's own
+  heading in `mode: "add"`.
+
+  **The route info screen (StartScreen) gets the same small "Rutherford
+  County" label above its own heading** that SchoolListScreen already
+  carried, for the same reason (a future multi-district version has an
+  obvious place to swap in whichever district is actually selected,
+  without restyling the heading around it).
+
+  **Only the route/school table itself scrolls now, not the whole
+  screen** - RouteListScreen's and SchoolListScreen's outer container
+  switched from `overflow-y-auto` to `overflow-hidden` with `min-h-0`
+  threaded through the flex chain down to each table's own row list, so
+  the copyright line and the primary action row(s) beneath the table
+  stay pinned to the bottom of the viewport (shrink-0 siblings of a
+  now-properly-constrained `flex-1` table) instead of scrolling away
+  along with a long or heavily filtered list. Neither table carries a
+  static or max height of its own; it simply gets whatever space is
+  left once the header/search/toolbar rows above and the pinned rows
+  below have taken theirs.
+
+  **"Routes" and "Schools" now read at the same size as a route's own
+  name title** (`text-2xl` to `text-4xl`, matching StartScreen's own
+  `Route {number}` heading) - RouteListScreen's school-scoped heading
+  (a specific school's own name, reached via the schools list) picked
+  up the same size for consistency, since it's the exact same `<h1>`
+  in a different state, not a separate heading. Every circular back
+  button (`rounded-full` on RouteListScreen, SchoolListScreen,
+  StartScreen, and EditRouteScreen's own Cancel button) is now
+  rectangular (`rounded-lg`) instead - there's no other circle like it
+  anywhere else in the interface, size otherwise unchanged from before.
+  SchoolListScreen's and StartScreen's own small county-label-above-
+  title stacks (the "Rutherford County" line, see above and "Route data:
+  real school addresses" further above) both got a tighter `-mt-1
+  leading-none` on the title itself, so a title sized to match a route
+  name doesn't drift further from its own label above than the two
+  actually need to sit.

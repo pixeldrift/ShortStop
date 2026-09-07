@@ -102,114 +102,131 @@ export function SchoolListScreen({
   }, [schools, query, sortField, sortDir, routeCounts]);
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-6 text-center">
-      <div className="flex w-full max-w-md items-center justify-between">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to routes"
-          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
-        >
-          <BackArrowIcon className="h-5 w-5" />
-        </button>
-        <div>
-          {/* Hardcoded for now - every real school here is a Rutherford
-              County one. Its own small line above "Schools" rather than
-              folded into the heading itself so a future multi-district
-              version has an obvious place to swap in whichever
-              district is actually selected, without restyling the
-              heading around it. */}
-          <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-            Rutherford County
-          </span>
-          <h1 className="font-heading flex items-center justify-center gap-2 text-2xl font-black tracking-tight">
-            <SchoolIcon className="h-5 w-5 shrink-0 text-blue-600" />
-            Schools
-          </h1>
-        </div>
-        <span className="h-10 w-10 shrink-0" aria-hidden="true" />
-      </div>
-
-      <div className="relative w-full max-w-md shrink-0">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search schools"
-          aria-label="Search schools"
-          className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-        />
-        {query && (
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-6 text-center">
+      {/* Everything that can genuinely grow past the viewport (the
+          school table especially) lives in this inner, scrollable
+          region - the "Routes" link and copyright below stay outside
+          it, pinned to the bottom of the screen instead of scrolling
+          away with a long/filtered list. */}
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-4">
+        <div className="flex w-full max-w-md items-center justify-between">
           <button
             type="button"
-            onClick={() => setQuery("")}
-            aria-label="Clear search"
-            className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+            onClick={onBack}
+            aria-label="Back to routes"
+            className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
           >
-            <CloseIcon className="h-3.5 w-3.5" />
+            <BackArrowIcon className="h-5 w-5" />
           </button>
-        )}
-      </div>
-
-      <div className="flex w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
-        <div className="grid grid-cols-[1fr_7rem_3.5rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
-          <SortableHeader
-            label="School"
-            field="name"
-            padded={false}
-            sortField={sortField}
-            sortDir={sortDir}
-            onSort={toggleSort}
-          />
-          <SortableHeader
-            label="City"
-            field="city"
-            align="center"
-            padded={false}
-            sortField={sortField}
-            sortDir={sortDir}
-            onSort={toggleSort}
-          />
-          <SortableHeader
-            label="Routes"
-            field="routes"
-            align="center"
-            padded={false}
-            sortField={sortField}
-            sortDir={sortDir}
-            onSort={toggleSort}
-          />
+          <div>
+            {/* Hardcoded for now - every real school here is a Rutherford
+                County one. Its own small line above "Schools" rather than
+                folded into the heading itself so a future multi-district
+                version has an obvious place to swap in whichever
+                district is actually selected, without restyling the
+                heading around it. */}
+            <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+              Rutherford County
+            </span>
+            {/* -mt-1/leading-none - a bigger title (now sized to match
+                the route name title, see RouteListScreen's own heading)
+                also has a taller default line box, which otherwise
+                drifts it further from the small county label above
+                than the two actually need to sit. */}
+            <h1 className="font-heading -mt-1 flex items-center justify-center gap-2 text-4xl leading-none font-black tracking-tight">
+              <SchoolIcon className="h-6 w-6 shrink-0 text-blue-600" />
+              Schools
+            </h1>
+          </div>
+          <span className="h-10 w-10 shrink-0" aria-hidden="true" />
         </div>
-        <div className="divide-y divide-zinc-200 overflow-y-auto">
-          {filtered.map(([name, info]) => (
-            <button
-              key={name}
-              type="button"
-              onClick={() => onSelectSchool(name)}
-              className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-1 px-2 py-3 text-left active:bg-zinc-100"
-            >
-              <div className="min-w-0">
-                <span className="block truncate text-sm font-semibold text-zinc-900">{name}</span>
-                <span className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
-                  <MapPinIcon className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{streetFromAddress(info.address)}</span>
-                </span>
-              </div>
-              <span className="truncate pl-2 text-center text-sm text-zinc-600">
-                {cityFromAddress(info.address)}
-              </span>
-              <span className="pl-2 text-center text-sm font-semibold text-zinc-700">
-                {routeCounts[name] ?? 0}
-              </span>
-            </button>
-          ))}
 
-          {filtered.length === 0 && (
-            <p className="px-2 py-6 text-center text-sm text-zinc-500">
-              {query ? <>No schools match &ldquo;{query}&rdquo;.</> : "No schools found."}
-            </p>
+        <div className="relative w-full max-w-md shrink-0">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search schools"
+            aria-label="Search schools"
+            className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
           )}
+        </div>
+
+        <div className="flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
+          <div className="grid grid-cols-[1fr_7rem_3.5rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+            <SortableHeader
+              label="School"
+              field="name"
+              padded={false}
+              sortField={sortField}
+              sortDir={sortDir}
+              onSort={toggleSort}
+            />
+            <SortableHeader
+              label="City"
+              field="city"
+              align="center"
+              padded={false}
+              sortField={sortField}
+              sortDir={sortDir}
+              onSort={toggleSort}
+            />
+            <SortableHeader
+              label="Routes"
+              field="routes"
+              align="center"
+              padded={false}
+              sortField={sortField}
+              sortDir={sortDir}
+              onSort={toggleSort}
+            />
+          </div>
+          <div className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto">
+            {filtered.map(([name, info]) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => onSelectSchool(name)}
+                className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-1 px-2 py-3 text-left active:bg-zinc-100"
+              >
+                <div className="min-w-0">
+                  <span className="block text-base font-semibold text-zinc-900">{name}</span>
+                  <span className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
+                    <MapPinIcon className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {cityFromAddress(info.address)}, {streetFromAddress(info.address)}
+                    </span>
+                  </span>
+                </div>
+                {/* City still has its own sortable header/column just to
+                    the right (below) - its own per-row value moved onto
+                    the address line above instead of a separate cell, but
+                    the column itself stays reserved so "Routes" doesn't
+                    shift over. */}
+                <span aria-hidden="true" />
+                <span className="pl-2 text-center text-sm font-semibold text-zinc-700">
+                  {routeCounts[name] ?? 0}
+                </span>
+              </button>
+            ))}
+
+            {filtered.length === 0 && (
+              <p className="px-2 py-6 text-center text-sm text-zinc-500">
+                {query ? <>No schools match &ldquo;{query}&rdquo;.</> : "No schools found."}
+              </p>
+            )}
+          </div>
         </div>
       </div>
 

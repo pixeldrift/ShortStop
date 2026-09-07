@@ -570,6 +570,43 @@ export function HeartIcon({
   );
 }
 
+/** A rounded-square checkbox - filled blue with a white check when
+ * `checked`, an empty outline otherwise. Used for RouteListScreen's own
+ * admin-mode bulk-selection column (replacing what used to be a pencil
+ * there - editing now happens by tapping the row itself). */
+export function CheckboxIcon({
+  checked,
+  className,
+}: {
+  checked?: boolean;
+  className?: string;
+}) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <rect
+        x="3.5"
+        y="3.5"
+        width="17"
+        height="17"
+        rx="4"
+        fill={checked ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="2"
+      />
+      {checked && (
+        <path
+          d="M7 12.5 L10.5 16 L17 8.5"
+          fill="none"
+          stroke="var(--background)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+    </svg>
+  );
+}
+
 /** A literal schoolhouse - a peaked roof with a bit of eave overhang
  * past the walls, a small round window in the gable, a center door,
  * and a ground line wider than the building itself. Used for the

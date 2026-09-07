@@ -95,25 +95,39 @@ export function StartScreen({
           type="button"
           onClick={onBack}
           aria-label="Back to routes"
-          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
+          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1
-          className={`font-heading flex gap-2 text-4xl font-black tracking-tight ${
-            route.tripType === "pickup" ? "items-end" : "items-start"
-          }`}
-        >
-          Route {route.routeNumber}
-          <span className="flex items-center gap-1 text-lg text-blue-500">
-            {route.tripType === "pickup" ? "AM" : "PM"}
-            {route.tripType === "pickup" ? (
-              <SunriseIcon className="h-4 w-4" />
-            ) : (
-              <SunIcon className="h-4 w-4" />
-            )}
+        <div>
+          {/* Same small district label SchoolListScreen carries above
+              its own heading - hardcoded for now, every real route
+              here is a Rutherford County one (see that screen's own
+              doc comment for why this isn't folded into the heading
+              itself). */}
+          <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            Rutherford County
           </span>
-        </h1>
+          {/* -mt-1/leading-none, matching SchoolListScreen's own
+              identical label-above-title pattern - tightens the gap
+              the title's own default line box would otherwise leave
+              against the small county label above it. */}
+          <h1
+            className={`font-heading -mt-1 flex gap-2 text-4xl leading-none font-black tracking-tight ${
+              route.tripType === "pickup" ? "items-end" : "items-start"
+            }`}
+          >
+            Route {route.routeNumber}
+            <span className="flex items-center gap-1 text-lg text-blue-500">
+              {route.tripType === "pickup" ? "AM" : "PM"}
+              {route.tripType === "pickup" ? (
+                <SunriseIcon className="h-4 w-4" />
+              ) : (
+                <SunIcon className="h-4 w-4" />
+              )}
+            </span>
+          </h1>
+        </div>
       </div>
 
       <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">
@@ -142,7 +156,7 @@ export function StartScreen({
           <dt className="text-right text-zinc-500">Departure</dt>
           <dd className="text-left font-medium">{route.departureTime}</dd>
           <dt className="text-right text-zinc-500">Bus</dt>
-          <dd className="text-left font-medium">#{route.busNumber}</dd>
+          <dd className="text-left font-medium">{route.busNumber}</dd>
           <dt className="text-right text-zinc-500">Driver</dt>
           <dd className="text-left font-medium">{route.driverName}</dd>
         </dl>
@@ -150,7 +164,7 @@ export function StartScreen({
         <button
           type="button"
           onClick={() => setShowStopsModal(true)}
-          className="btn-glossy font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
+          className="btn-glossy font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
         >
           View All Stops
         </button>
