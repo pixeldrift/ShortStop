@@ -188,6 +188,8 @@ export default function Home() {
               durationMinutes: row.durationMinutes,
               driverName: PLACEHOLDER_DRIVER_NAME,
               schoolAddress: schoolsTable[row.schoolName]?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
+              schoolLat: schoolsTable[row.schoolName]?.lat ?? null,
+              schoolLon: schoolsTable[row.schoolName]?.lon ?? null,
               distance: PLACEHOLDER_DISTANCE,
               isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
             };

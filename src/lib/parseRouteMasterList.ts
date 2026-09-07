@@ -32,14 +32,14 @@ const TRIP_TYPE_LABEL: Record<TripType, string> = {
 };
 
 /** Fields the master list actually provides - everything on RouteMeta
- * except driverName, schoolAddress, distance and isFavorite, which
- * still have no real-data source and stay merged in separately (see
- * placeholderMeta.ts) - with durationMinutes made optional, since a
- * route whose end_time the sheet hasn't recorded yet has no way to
- * compute one. */
+ * except driverName, schoolAddress, schoolLat, schoolLon, distance and
+ * isFavorite, which still have no real-data source and stay merged in
+ * separately (see placeholderMeta.ts) - with durationMinutes made
+ * optional, since a route whose end_time the sheet hasn't recorded yet
+ * has no way to compute one. */
 export type MasterListRoute = Omit<
   RouteMeta,
-  "driverName" | "schoolAddress" | "distance" | "isFavorite" | "durationMinutes"
+  "driverName" | "schoolAddress" | "schoolLat" | "schoolLon" | "distance" | "isFavorite" | "durationMinutes"
 > & { durationMinutes: number | undefined };
 
 /**

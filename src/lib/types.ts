@@ -71,6 +71,16 @@ export interface Route {
   schoolName: string;
   schoolAddress: string;
   schoolLevel: SchoolLevel;
+  /** The school's own geocoded location (School.lat/lon - see
+   * scripts/geocodeSchools.ts), independent of the Waypoint cache -
+   * null for a demo/fabricated route (demoRoutes.ts) or a real school
+   * that hasn't been geocoded yet. This is what RouteMap's blue school
+   * pin actually draws from now, not a Waypoint cache lookup - so
+   * changing a route's school (EditRouteScreen) reflects on the map
+   * immediately, with no separate "fetch location" step needed for
+   * the school pin itself. */
+  schoolLat: number | null;
+  schoolLon: number | null;
   /** A pickup route arrives somewhere (school); a dropoff route doesn't
    * have one single destination, so the trip-summary label reads
    * "Complete" instead of "Arrive". */

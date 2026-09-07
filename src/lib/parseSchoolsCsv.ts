@@ -3,10 +3,16 @@ import type { SchoolLevel } from "./types";
 /** One schools.csv row's own data - its real address, and which
  * SchoolLevel it is, both looked up by name rather than typed by an
  * admin creating/editing a route (see EditRouteScreen.tsx's school
- * dropdown). */
+ * dropdown). lat/lon are Postgres-only additions (schools.csv itself
+ * has no such columns, so a row parsed straight from that file - see
+ * scripts/geocodeRoute.ts/prototypeOverpassGeocode.ts - always gets
+ * null here) - the school's own geocoded location (see
+ * scripts/geocodeSchools.ts), null until that's been run for it. */
 export interface SchoolInfo {
   address: string;
   schoolLevel: SchoolLevel;
+  lat: number | null;
+  lon: number | null;
 }
 
 const VALID_SCHOOL_LEVELS = new Set<SchoolLevel>(["elementary", "middle", "high"]);
@@ -40,7 +46,14 @@ export function parseSchoolsCsv(csvText: string): Record<string, SchoolInfo> {
       console.warn(`Schools sheet row "${row.school_name}" has no recognized school_level - skipped`);
       continue;
     }
-    schools[row.school_name] = { address: row.address, schoolLevel: row.school_level as SchoolLevel };
+    const lat = row.lat ? Number(row.lat) : NaN;
+    const lon = row.lon ? Number(row.lon) : NaN;
+    schools[row.school_name] = {
+      address: row.address,
+      schoolLevel: row.school_level as SchoolLevel,
+      lat: Number.isFinite(lat) ? lat : null,
+      lon: Number.isFinite(lon) ? lon : null,
+    };
   }
   return schools;
 }
