@@ -2,8 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { extractCityState } from "../src/lib/geocode";
 import { lookupCoordinates } from "../src/lib/resolveWaypoint";
+import { formatAddress } from "../src/lib/schoolAddress";
 
 // See scripts/geocodeRoute.ts's own doc comment for why this exists
 // (no .env.local auto-loading outside Next.js) and why it only fills
@@ -68,7 +68,6 @@ async function main() {
     let geocoded = 0;
     let alreadyHad = 0;
     let failed = 0;
-    let skipped = 0;
 
     for (const school of schools) {
       if (!force && school.lat != null && school.lon != null) {
@@ -76,14 +75,10 @@ async function main() {
         continue;
       }
 
-      const locationContext = extractCityState(school.address);
-      if (!locationContext) {
-        console.log(`  SKIP  ${school.name} - couldn't pull a "City, ST" context out of "${school.address}"`);
-        skipped++;
-        continue;
-      }
+      const address = formatAddress(school);
+      const locationContext = `${school.city}, ${school.state}`;
 
-      const entry = await lookupCoordinates({ kind: "address", text: school.address }, locationContext, { apiKey });
+      const entry = await lookupCoordinates({ kind: "address", text: address }, locationContext, { apiKey });
       await sleep(RATE_LIMIT_MS);
 
       if (entry.status === "ok") {
@@ -92,13 +87,13 @@ async function main() {
         console.log(`  ok    ${school.name}\n        -> ${entry.lat}, ${entry.lon} (${entry.displayName})`);
       } else {
         failed++;
-        console.log(`  FAIL  ${school.name} ("${school.address}"): ${entry.message}`);
+        console.log(`  FAIL  ${school.name} ("${address}"): ${entry.message}`);
       }
     }
 
     console.log(
-      `\n${geocoded} newly geocoded, ${alreadyHad} already on file, ${failed} failed, ${skipped} skipped ` +
-        `(no city/state context) - ${schools.length} school(s) total.`,
+      `\n${geocoded} newly geocoded, ${alreadyHad} already on file, ${failed} failed - ` +
+        `${schools.length} school(s) total.`,
     );
     if (failed > 0) {
       console.log("Failed lookups usually need a wording fix in schools.csv - re-run this once that's fixed.");

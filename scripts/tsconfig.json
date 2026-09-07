@@ -23,6 +23,7 @@
     "../src/lib/geocode.ts",
     "../src/lib/overpassGeocode.ts",
     "../src/lib/resolveWaypoint.ts",
+    "../src/lib/schoolAddress.ts",
     "../src/lib/waypointCache.ts"
   ]
 }
