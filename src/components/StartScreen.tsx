@@ -95,7 +95,11 @@ export function StartScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1 className="font-heading flex items-center gap-2 text-4xl font-black tracking-tight">
+        <h1
+          className={`font-heading flex gap-2 text-4xl font-black tracking-tight ${
+            route.tripType === "pickup" ? "items-end" : "items-start"
+          }`}
+        >
           Route {route.routeNumber}
           <span className="flex items-center gap-1 text-lg text-blue-500">
             {route.tripType === "pickup" ? "AM" : "PM"}
@@ -240,12 +244,16 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
           <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
             Route {route.routeNumber}
-            <span className="flex items-center gap-1 text-blue-500">
+            <span
+              className={`flex items-center gap-1 text-sm text-blue-500 ${
+                route.tripType === "pickup" ? "self-end" : "self-start"
+              }`}
+            >
               {route.tripType === "pickup" ? "AM" : "PM"}
               {route.tripType === "pickup" ? (
-                <SunriseIcon className="h-4 w-4" />
+                <SunriseIcon className="h-3.5 w-3.5" />
               ) : (
-                <SunIcon className="h-4 w-4" />
+                <SunIcon className="h-3.5 w-3.5" />
               )}
             </span>
             <span className="text-zinc-400">-</span>
