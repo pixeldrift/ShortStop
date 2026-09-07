@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
-import { Logo } from "./Logo";
 import {
   BackArrowIcon,
   CloseIcon,
@@ -308,8 +307,7 @@ export function RouteListScreen({
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
-      <Logo size="large" />
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-6 text-center">
       <div
         className={`flex min-h-0 w-full flex-1 flex-col items-center gap-4 ${
           slideInOnMount ? "animate-list-content-enter" : ""

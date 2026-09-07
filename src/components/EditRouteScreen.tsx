@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { Logo } from "./Logo";
 import { ToggleSwitch } from "./ToggleSwitch";
 import {
   BackArrowIcon,
@@ -1401,9 +1400,7 @@ export function EditRouteScreen({
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-10 text-center landscape:pt-6">
-      <Logo size="large" />
-
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-10 text-center">
       <div className="flex w-full max-w-md items-center justify-between">
         <button
           type="button"

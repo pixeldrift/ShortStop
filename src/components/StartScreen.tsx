@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Logo } from "./Logo";
 import { ToggleSwitch } from "./ToggleSwitch";
 import {
   BackArrowIcon,
@@ -86,9 +85,7 @@ export function StartScreen({
   const [showStopsModal, setShowStopsModal] = useState(false);
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-6 pb-6 text-center landscape:pt-4">
-      <Logo size="large" />
-
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-6 text-center">
       <div className="flex w-full max-w-md items-center justify-between">
         <button
           type="button"

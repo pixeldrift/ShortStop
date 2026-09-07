@@ -120,7 +120,21 @@ export function ScreenTransition({
       <div
         key={state.key}
         className={`absolute inset-0 z-10 flex flex-col ${
-          state.direction === "forward" ? "animate-screen-enter-forward" : "animate-screen-enter-backward"
+          // No animation at all when there's nothing exiting alongside it -
+          // covers both this component's very first mount ever (nothing to
+          // push in from anywhere) and, critically, a *nested* ScreenTransition
+          // (RouteApp's own start/step one) mounting fresh as part of a
+          // larger outer push that's already animating it in - without this,
+          // that inner instance played its own enter animation on top of the
+          // outer one moving it, so the incoming content visibly moved twice
+          // (once via the outer transform, again via its own), never actually
+          // looking like one rigid screen sliding in align with the one
+          // sliding out.
+          state.exiting == null
+            ? ""
+            : state.direction === "forward"
+              ? "animate-screen-enter-forward"
+              : "animate-screen-enter-backward"
         }`}
       >
         {children}

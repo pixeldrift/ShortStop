@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Logo } from "./Logo";
 import { BackArrowIcon, CloseIcon, MapPinIcon, RouteIcon, SchoolIcon, SearchIcon } from "./icons";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
@@ -103,9 +102,7 @@ export function SchoolListScreen({
   }, [schools, query, sortField, sortDir, routeCounts]);
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pt-10 pb-6 text-center landscape:pt-6">
-      <Logo size="large" />
-
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-6 text-center">
       <div className="flex w-full max-w-md items-center justify-between">
         <button
           type="button"
