@@ -395,6 +395,7 @@ export default function Home() {
           navigate({ kind: "edit-route", route: screen.route }, "forward");
         }}
         onStartedChange={setTripStarted}
+        onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName }, "forward")}
       />
     );
   } else if (screen.kind === "schools") {
@@ -476,6 +477,7 @@ function RouteApp({
   onBack,
   onEdit,
   onStartedChange,
+  onViewSchool,
 }: {
   route: Route;
   onBack: () => void;
@@ -485,6 +487,9 @@ function RouteApp({
    * logo (see showsPinnedLogo there) - RouteApp itself still owns
    * `started` outright, this is a one-way mirror, not a hand-off. */
   onStartedChange: (started: boolean) => void;
+  /** Passed straight through to StartScreen - opens the school's own
+   * school-routes screen (see page.tsx's own navigate call below). */
+  onViewSchool: (schoolName: string) => void;
 }) {
   const {
     currentStep,
@@ -522,7 +527,7 @@ function RouteApp({
   // direction always follows `started` itself, no separate state
   // needed to track which way this particular flip just went.
   const content = !started ? (
-    <StartScreen route={route} onStart={start} onBack={onBack} onEdit={onEdit} />
+    <StartScreen route={route} onStart={start} onBack={onBack} onEdit={onEdit} onViewSchool={onViewSchool} />
   ) : (
     <StepScreen
       route={route}
