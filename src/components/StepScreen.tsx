@@ -345,7 +345,7 @@ function LeaveRouteConfirmModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
+        className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-heading text-xl font-black tracking-tight">
@@ -510,7 +510,7 @@ function RiderCheckInBox({
   return (
     <div
       ref={fitRef}
-      className="animate-roster-pop flex max-h-[78%] max-w-[86%] flex-col items-center justify-center gap-[calc(0.75rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
+      className="animate-popup-pop flex max-h-[78%] max-w-[86%] flex-col items-center justify-center gap-[calc(0.75rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex flex-wrap items-start justify-center gap-[calc(0.5rem*var(--fit-scale,1))]">

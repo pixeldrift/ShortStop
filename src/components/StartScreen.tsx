@@ -237,7 +237,7 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-sm flex-col rounded-xl bg-[var(--background)] shadow-lg"
+        className="animate-popup-pop flex max-h-[80vh] w-full max-w-sm flex-col rounded-xl bg-[var(--background)] shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">

@@ -507,7 +507,7 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl bg-[var(--background)] shadow-lg"
+        className="animate-popup-pop flex max-h-[80vh] w-full max-w-md flex-col rounded-xl bg-[var(--background)] shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
@@ -601,7 +601,7 @@ function ErrorDetailsModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
+        className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2">
@@ -695,7 +695,7 @@ function FetchCoordinatesModal({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
+        className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2">

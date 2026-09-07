@@ -172,12 +172,15 @@ body {
   animation: screen-exit-backward 0.32s cubic-bezier(0.65, 0, 0.35, 1) both;
 }
 
-/* A small pop-in for the rider check-in card - it's held off (see
-   announcementDone in useRouteStepper.ts) until the stop's spoken
-   announcement finishes, so it shouldn't then just snap into place;
-   a quick scale+fade reads as "arriving," not as another instant
-   swap. */
-@keyframes roster-pop {
+/* A small scale+fade pop-in, shared by every popup/modal card in the
+   app (StepScreen's rider check-in card and "End Route" confirm,
+   ConfirmModal, EditRouteScreen's Stops Format/Error Details/Fetch
+   Coordinates modals, StartScreen's All Stops modal, RouteListScreen's
+   View filter dropdown) - a quick "arriving" read instead of just
+   snapping into place. Only ever applied to the popup's own card/menu
+   element, never its backdrop - the dim overlay behind a full-screen
+   modal appears instantly, same as it always has. */
+@keyframes popup-pop {
   from {
     opacity: 0;
     transform: scale(0.92);
@@ -188,6 +191,28 @@ body {
   }
 }
 
-.animate-roster-pop {
-  animation: roster-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+.animate-popup-pop {
+  animation: popup-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The route list's own heading/search/table, sliding up into place the
+   first time the app finishes loading (see page.tsx's own `justLoaded`)
+   - the logo appears first, alone, while "Loading routes…" shows; once
+   real route data is in hand this rises in underneath it rather than
+   just snapping into view. Not replayed on every later visit to the
+   list (navigating away and back, admin toggle, etc.) - only this one
+   first-load moment. */
+@keyframes list-content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-list-content-enter {
+  animation: list-content-enter 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }

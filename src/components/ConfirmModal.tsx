@@ -38,7 +38,7 @@ export function ConfirmModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
+        className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-heading text-xl font-black tracking-tight">{title}</h2>

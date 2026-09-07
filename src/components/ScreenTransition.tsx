@@ -82,7 +82,14 @@ export function ScreenTransition({
     setState({
       key: screenKey,
       direction,
-      exiting: { key: lastSettled.key, node: lastSettled.node, direction: state.direction },
+      // This transition's own `direction` (the prop), not `state.direction`
+      // (the *previous* transition's, still sitting in `state` at this
+      // point) - the exiting and entering screens need to move together
+      // (both left for "forward", both right for "backward"), and using
+      // the stale value here had them moving in opposite directions
+      // instead whenever a transition's direction actually differed from
+      // the one before it (any real forward-then-back sequence).
+      exiting: { key: lastSettled.key, node: lastSettled.node, direction },
     });
   }
 
