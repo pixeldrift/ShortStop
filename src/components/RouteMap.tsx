@@ -157,18 +157,19 @@ export function RouteMap({
    * already trace the real route's own shape for anything short of a
    * curving mid-block road. */
   path?: string[];
-  /** The school's own waypointKey - `waypointCacheKey({kind: "address",
-   * text: route.schoolAddress})`, the same key the geocode pipeline
-   * already writes a real entry under (resolveSchoolAnchor uses the
-   * school's own address to anchor Overpass's intersection searches,
-   * and persists that same lookup into the cache - see
-   * scripts/geocodeRoute.ts) - so this is usually already resolved even
-   * for a route whose stops/turns mostly aren't yet. Drawn as its own
-   * blue pin, distinct from a stop's red one or a turn's yellow dot,
-   * since the school is where the route starts or ends, never a stop a
-   * driver checks riders in/out at. Omitted (no pin) if this route's
-   * own school address was never geocoded. */
-  school?: string;
+  /** The school's own geocoded location - School.lat/lon (see
+   * scripts/geocodeSchools.ts), straight from the route
+   * (StepScreen.tsx's own `schoolPoint`), not a Waypoint cache lookup -
+   * every real school gets geocoded directly now, independent of any
+   * route's stops/turns, so this is reliably present without needing
+   * this specific route's own stops fetched first, and updates
+   * immediately when a route's school changes (EditRouteScreen), with
+   * no separate "fetch location" step for the school pin itself. Drawn
+   * as its own blue pin, distinct from a stop's red one or a turn's
+   * yellow dot, since the school is where the route starts or ends,
+   * never a stop a driver checks riders in/out at. Omitted (no pin) if
+   * this school hasn't been geocoded yet. */
+  school?: { lat: number; lon: number } | null;
   /** The geocode cache endpoint (src/app/api/waypoints) - shared across
    * every route now that it's backed by Postgres rather than split into
    * a sidecar file per route, so this is the same URL regardless of
@@ -291,20 +292,17 @@ export function RouteMap({
             }).addTo(map);
           }
           if (schoolRef.current) {
-            const entry = cache[schoolRef.current];
-            if (entry && entry.status === "ok") {
-              const latLng: [number, number] = [entry.lat, entry.lon];
-              pinLatLngs.push(latLng);
-              L.marker(latLng, {
-                icon: L.divIcon({
-                  className: "",
-                  html: schoolMarkerHtml(),
-                  iconSize: [32, 32],
-                  iconAnchor: [16, 30],
-                }),
-                interactive: false,
-              }).addTo(map);
-            }
+            const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
+            pinLatLngs.push(latLng);
+            L.marker(latLng, {
+              icon: L.divIcon({
+                className: "",
+                html: schoolMarkerHtml(),
+                iconSize: [32, 32],
+                iconAnchor: [16, 30],
+              }),
+              interactive: false,
+            }).addTo(map);
           }
           // Once the route's own stops are geocoded, they're a far more
           // useful default view than the fixed La Vergne town-center

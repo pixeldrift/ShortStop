@@ -21,6 +21,8 @@ export interface RouteMeta {
   schoolName: string;
   schoolAddress: string;
   schoolLevel: SchoolLevel;
+  schoolLat: number | null;
+  schoolLon: number | null;
   tripType: TripType;
   distance: string;
   durationMinutes: number;

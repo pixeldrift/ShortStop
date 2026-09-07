@@ -910,6 +910,8 @@ export function EditRouteScreen({
     schoolInfo?.address ?? (isOriginalUnmatchedSchool ? route.schoolAddress : SCHOOL_ADDRESS_NOT_YET_PROVIDED);
   const schoolLevel: SchoolLevel =
     schoolInfo?.schoolLevel ?? (isOriginalUnmatchedSchool ? route.schoolLevel : "elementary");
+  const schoolLat = schoolInfo?.lat ?? (isOriginalUnmatchedSchool ? route.schoolLat : null);
+  const schoolLon = schoolInfo?.lon ?? (isOriginalUnmatchedSchool ? route.schoolLon : null);
   // Whether `schoolAddress` above is a real, geocodable address rather
   // than the generic "not yet provided" placeholder it falls back to
   // when nothing's selected - unlike that state-backed field before
@@ -1315,6 +1317,8 @@ export function EditRouteScreen({
       schoolName,
       schoolAddress,
       schoolLevel,
+      schoolLat,
+      schoolLon,
       tripType,
       // Real mileage/timing needs actual routing calculation, not an
       // admin's own guess - these stay flat placeholders here the same
@@ -1324,7 +1328,19 @@ export function EditRouteScreen({
       durationMinutes: route?.durationMinutes ?? PLACEHOLDER_DURATION_MINUTES,
       isFavorite: route?.isFavorite ?? false,
     }),
-    [routeNumber, tripType, schoolLevel, schoolName, schoolAddress, departureTime, driverName, busNumber, route],
+    [
+      routeNumber,
+      tripType,
+      schoolLevel,
+      schoolName,
+      schoolAddress,
+      schoolLat,
+      schoolLon,
+      departureTime,
+      driverName,
+      busNumber,
+      route,
+    ],
   );
 
   function handleSave(nextStatus: RouteStatus = status) {
