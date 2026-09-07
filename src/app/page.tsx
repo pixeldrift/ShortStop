@@ -122,7 +122,25 @@ export default function Home() {
   function navigate(next: Screen, direction: "forward" | "backward") {
     setNavDirection(direction);
     setScreen(next);
+    // Every "trip" screen starts on StartScreen, never mid-drive - reset
+    // here rather than waiting on RouteApp's own onStartedChange mirror
+    // (a plain effect) to catch up, so showsPinnedLogo below never
+    // reads a stale `true` left over from whatever trip was open last,
+    // not even for the one frame that'd otherwise be visible.
+    if (next.kind === "trip") setTripStarted(false);
   }
+
+  // Mirrors RouteApp's own internal (useRouteStepper) `started` flag -
+  // page.tsx doesn't otherwise know or care whether a "trip" screen is
+  // showing StartScreen or StepScreen, but it needs exactly this one
+  // bit to decide whether the pinned logo below still applies (see
+  // showsPinnedLogo) - StepScreen has its own compact header instead,
+  // the one arrangement among every screen here that doesn't want it.
+  const [tripStarted, setTripStarted] = useState(false);
+
+  // Every screen kind but "trip" always wants the pinned logo; "trip"
+  // does too, but only for its own StartScreen (before tripStarted).
+  const showsPinnedLogo = screen.kind !== "trip" || !tripStarted;
 
   // Session-only admin edits/new routes, keyed by route id - overlaid
   // on top of whatever realRoutes loaded from the committed CSVs (see
@@ -376,6 +394,7 @@ export default function Home() {
           setAdminMode(true);
           navigate({ kind: "edit-route", route: screen.route }, "forward");
         }}
+        onStartedChange={setTripStarted}
       />
     );
   } else if (screen.kind === "schools") {
@@ -426,9 +445,29 @@ export default function Home() {
   }
 
   return (
-    <ScreenTransition screenKey={screenKey(screen)} direction={navDirection}>
-      {content}
-    </ScreenTransition>
+    <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Rendered once here, outside ScreenTransition entirely, rather
+          than by each screen component itself (RouteListScreen,
+          SchoolListScreen, StartScreen, EditRouteScreen used to each
+          render their own) - every one of those shares this exact same
+          logo/position, so keeping one persistent instance means it
+          never re-mounts or moves as part of a screen-to-screen push;
+          it only ever appears/disappears outright, and only when
+          crossing into/out of the one arrangement that doesn't have it
+          (StepScreen, via showsPinnedLogo above). Same top inset
+          (pt-10/landscape:pt-6) every one of those screens used to
+          carry on its own logo, plus a pb-4 standing in for the gap-4
+          that used to separate it from what's now each screen's own
+          first child. */}
+      {showsPinnedLogo && (
+        <div className="flex shrink-0 justify-center px-6 pt-10 pb-4 landscape:pt-6">
+          <Logo size="large" />
+        </div>
+      )}
+      <ScreenTransition screenKey={screenKey(screen)} direction={navDirection}>
+        {content}
+      </ScreenTransition>
+    </div>
   );
 }
 
@@ -436,10 +475,16 @@ function RouteApp({
   route,
   onBack,
   onEdit,
+  onStartedChange,
 }: {
   route: Route;
   onBack: () => void;
   onEdit: () => void;
+  /** Reports RouteApp's own internal started flag (useRouteStepper) up
+   * to page.tsx, purely so it knows whether to keep showing the pinned
+   * logo (see showsPinnedLogo there) - RouteApp itself still owns
+   * `started` outright, this is a one-way mirror, not a hand-off. */
+  onStartedChange: (started: boolean) => void;
 }) {
   const {
     currentStep,
@@ -459,6 +504,10 @@ function RouteApp({
     exitTrip,
     announcementDone,
   } = useRouteStepper(route);
+
+  useEffect(() => {
+    onStartedChange(started);
+  }, [started, onStartedChange]);
 
   const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
 
