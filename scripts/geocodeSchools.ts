@@ -39,7 +39,11 @@ function sleep(ms: number): Promise<void> {
  *
  * Idempotent and safe to re-run: skips a school that already has
  * lat/lon on file unless --force is passed (e.g. after a school's
- * address changes in schools.csv/the schools table).
+ * address changes in schools.csv/the schools table). Never touches a
+ * `verified` row though, even with --force - that flag means a human
+ * already confirmed the coordinates (see scripts/fixSchoolCoordinates.ts),
+ * which this script has no way to judge is wrong or right, only that
+ * ORS returned *some* match.
  *
  * Run with `npm run geocode:schools`. Needs ORS_API_KEY (see
  * geocodeRoute.ts) and DATABASE_URL, both either in a gitignored
@@ -70,7 +74,7 @@ async function main() {
     let failed = 0;
 
     for (const school of schools) {
-      if (!force && school.lat != null && school.lon != null) {
+      if (school.verified || (!force && school.lat != null && school.lon != null)) {
         alreadyHad++;
         continue;
       }

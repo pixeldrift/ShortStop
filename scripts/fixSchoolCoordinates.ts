@@ -11,6 +11,13 @@ import { PrismaPg } from "@prisma/adapter-pg";
  * looked up and handed back by the district, not re-derived from any
  * automated geocoder.
  *
+ * Also marks each one `verified: true` - the whole reason that column
+ * exists is to record that a human actually confirmed these
+ * coordinates, as opposed to an ORS "ok" status which only means ORS
+ * found *a* match. geocodeSchools.ts skips any verified row
+ * unconditionally (even with --force), so a future re-geocode can't
+ * clobber a correction applied here.
+ *
  * One-off by nature (this table only makes sense for the specific
  * schools it names), not meant to be extended into a general
  * "manual overrides" mechanism - if more corrections come in later,
@@ -57,7 +64,7 @@ async function main() {
         notFound++;
         continue;
       }
-      await prisma.school.update({ where: { name }, data: { lat, lon } });
+      await prisma.school.update({ where: { name }, data: { lat, lon, verified: true } });
       console.log(`  ok    ${name}\n        -> ${lat}, ${lon} (was ${school.lat}, ${school.lon})`);
       updated++;
     }
