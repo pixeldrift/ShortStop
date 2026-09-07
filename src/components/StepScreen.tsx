@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RouteMap } from "./RouteMap";
 import type { StopMarker, TurnMarker } from "./RouteMap";
 import { RouteProgressBar } from "./RouteProgressBar";
@@ -281,7 +281,7 @@ export function StepScreen({
             onClick={phase === "depot" ? onLogoClick : onBack}
             disabled={paused}
             aria-label={phase === "depot" ? "Routes" : "Back"}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-lg font-semibold text-zinc-900 disabled:opacity-40"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900 disabled:opacity-40"
           >
             <TriangleIcon direction="left" className="h-6 w-6" />
             {phase === "depot" ? "Routes" : "Back"}
@@ -291,7 +291,7 @@ export function StepScreen({
             type="button"
             onClick={onTogglePause}
             aria-label={paused ? "Resume route" : "Pause route"}
-            className="btn-glossy flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
+            className="btn-glossy flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-300 text-zinc-900"
           >
             {paused ? (
               <TriangleIcon direction="right" className="h-6 w-6" />
@@ -356,7 +356,7 @@ function LeaveRouteConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
           >
             <TriangleIcon direction="left" className="h-6 w-6" /> End Route
           </button>
@@ -507,34 +507,110 @@ function RiderCheckInBox({
   // which a bubble would be too small to tap reliably.
   const fitRef = useFitGrid<HTMLDivElement>(roster.length, 0.6);
 
+  // Balances the bubbles across exactly two rows once they'd otherwise
+  // wrap, instead of leaving the browser's own left-to-right flex-wrap
+  // packing to strand however many are left over (as few as one) alone
+  // on the second row. `null` means "render naturally, one row if it
+  // fits" - measured fresh (see the layout effects below) rather than
+  // computed from container/bubble widths directly, since the bubbles'
+  // own size already depends on useFitGrid's --fit-scale above.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [split, setSplit] = useState<{ top: number; bottom: number } | null>(null);
+  // What `split` was actually computed for - compared against the
+  // current roster.length during render (React's own sanctioned
+  // alternative to an effect that just resets state on a prop change:
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-state-based-on-a-prop)
+  // so a previous split computed for a differently-sized roster (or
+  // before a rider was added) doesn't linger into a render it no
+  // longer applies to.
+  const [splitForLength, setSplitForLength] = useState(roster.length);
+  if (splitForLength !== roster.length) {
+    setSplitForLength(roster.length);
+    setSplit(null);
+  }
+
+  // Runs after every render but only does real work while `split` is
+  // still null - once it computes and sets a split, this same effect
+  // fires again for the render that follows, sees `split` is no longer
+  // null, and bails immediately, so this converges in at most two
+  // passes rather than looping. Deps cover everything the body reads
+  // apart from the ref itself.
+  useLayoutEffect(() => {
+    if (split !== null) return;
+    const grid = gridRef.current;
+    if (!grid || grid.children.length === 0) return;
+    const children = Array.from(grid.children) as HTMLElement[];
+    const firstTop = children[0].offsetTop;
+    const wraps = children.some((child) => child.offsetTop !== firstTop);
+    if (!wraps) return;
+
+    let top = Math.ceil(roster.length / 2);
+    let bottom = roster.length - top;
+    // The plain half/half (or half-minus-one) split still strands a
+    // lone bubble on row 2 for exactly one case - an odd count whose
+    // "one less than half" rounds all the way down to 1 (only ever
+    // happens at roster.length === 3). Shift one bubble down from row
+    // 1 so row 2 reads as a real (if shorter) row instead.
+    if (bottom === 1 && top > 1) {
+      top -= 1;
+      bottom += 1;
+    }
+    setSplit({ top, bottom });
+  }, [split, roster.length]);
+
+  // A width change (rotating the tablet, say) can just as easily let a
+  // previously-wrapped roster fit back on one line - re-measuring from
+  // scratch on resize (rather than only ever re-checking the split
+  // already in place) is what lets it un-split again.
+  useEffect(() => {
+    const onResize = () => setSplit(null);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+
   return (
     <div
       ref={fitRef}
       className="animate-popup-pop flex max-h-[78%] max-w-[86%] flex-col items-center justify-center gap-[calc(0.75rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex flex-wrap items-start justify-center gap-[calc(0.5rem*var(--fit-scale,1))]">
+      <div
+        ref={gridRef}
+        className="flex flex-wrap items-start justify-center gap-[calc(0.5rem*var(--fit-scale,1))]"
+      >
         {roster.map((checked, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => onRiderTap(i)}
-            aria-pressed={checked}
-            aria-label={`Check in through rider ${i + 1}${checked ? " (checked in)" : ""}`}
-            className="flex flex-col items-center gap-[calc(0.125rem*var(--fit-scale,1))]"
-          >
-            <span
-              className={
-                "flex h-[calc(2.75rem*var(--fit-scale,1))] w-[calc(2.75rem*var(--fit-scale,1))] items-center justify-center rounded-full border-2 border-blue-600 transition-colors " +
-                (checked ? "bg-blue-600 text-white" : "bg-zinc-100 text-zinc-400")
-              }
+          <Fragment key={i}>
+            {/* Forces flex-wrap to break the line here rather than
+                wherever it naturally would have - a zero-height,
+                full-width item ends the current row immediately, same
+                classic flexbox trick as a manual column break. Only
+                inserted once a split's actually been measured/needed
+                (see above), and only right after the row-1 count. */}
+            {split && i === split.top && <div className="h-0 w-full" aria-hidden="true" />}
+            <button
+              type="button"
+              onClick={() => onRiderTap(i)}
+              aria-pressed={checked}
+              aria-label={`Check in through rider ${i + 1}${checked ? " (checked in)" : ""}`}
+              className="flex flex-col items-center gap-[calc(0.125rem*var(--fit-scale,1))]"
             >
-              <PersonSolidIcon className="h-[calc(1.5rem*var(--fit-scale,1))] w-[calc(1.5rem*var(--fit-scale,1))]" />
-            </span>
-            <span className="text-[calc(0.75rem*var(--fit-scale,1))] font-semibold text-zinc-500">
-              {i + 1}
-            </span>
-          </button>
+              <span
+                className={
+                  "flex h-[calc(2.75rem*var(--fit-scale,1))] w-[calc(2.75rem*var(--fit-scale,1))] items-center justify-center rounded-full border-2 border-blue-600 transition-colors " +
+                  (checked ? "bg-blue-600 text-white" : "bg-zinc-100 text-zinc-400")
+                }
+              >
+                <PersonSolidIcon className="h-[calc(1.5rem*var(--fit-scale,1))] w-[calc(1.5rem*var(--fit-scale,1))]" />
+              </span>
+              <span className="text-[calc(0.75rem*var(--fit-scale,1))] font-semibold text-zinc-500">
+                {i + 1}
+              </span>
+            </button>
+          </Fragment>
         ))}
       </div>
 
@@ -542,7 +618,7 @@ function RiderCheckInBox({
         <button
           type="button"
           onClick={onAddRider}
-          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-900"
+          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl bg-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-900"
         >
           + Add Rider
         </button>

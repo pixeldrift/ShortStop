@@ -456,7 +456,7 @@ function StepRowEditor({
         <button
           type="button"
           onClick={onUpdate}
-          className="btn-glossy shrink-0 rounded-lg border border-zinc-500 bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+          className="btn-glossy shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
         >
           Update
         </button>
@@ -480,7 +480,7 @@ function AddStepButton({ onClick, disabled }: { onClick: () => void; disabled: b
         onClick={onClick}
         disabled={disabled}
         aria-label="Add step here"
-        className="btn-glossy relative z-10 flex h-6 w-6 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900 disabled:opacity-30"
+        className="btn-glossy relative z-10 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-300 text-zinc-900 disabled:opacity-30"
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
@@ -784,7 +784,7 @@ function FetchCoordinatesModal({
             type="button"
             onClick={onRefetchAll}
             disabled={fetchRunning || counts.total === 0}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-zinc-500 bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900 disabled:opacity-50"
+            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900 disabled:opacity-50"
           >
             Re-fetch All
           </button>
@@ -1451,12 +1451,12 @@ export function EditRouteScreen({
           type="button"
           onClick={onCancel}
           aria-label="Cancel"
-          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
+          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
         <h1 className="font-heading text-2xl font-black tracking-tight">
-          {mode === "add" ? "Add Route" : `Edit Route ${route?.routeNumber ?? ""}`}
+          {mode === "add" ? "Add New Route" : `Edit Route ${route?.routeNumber ?? ""}`}
         </h1>
         <span className="w-10" />
       </div>
@@ -1539,7 +1539,7 @@ export function EditRouteScreen({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-500 bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
               >
                 <UploadIcon className="h-3.5 w-3.5" />
                 Upload File
@@ -1603,7 +1603,7 @@ export function EditRouteScreen({
               <button
                 type="button"
                 onClick={() => setShowFetchModal(true)}
-                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-500 bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
+                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
               >
                 <GlobeIcon className="h-3.5 w-3.5" />
                 Fetch Coordinates…
@@ -1689,7 +1689,7 @@ export function EditRouteScreen({
               type="button"
               onClick={handleToggleStatus}
               disabled={saving}
-              className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-500 bg-zinc-300 py-3 text-base font-semibold text-zinc-900 disabled:opacity-60"
+              className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900 disabled:opacity-60"
             >
               {status === "published" ? (
                 <EyeOffIcon className="h-5 w-5" />
@@ -1727,7 +1727,7 @@ export function EditRouteScreen({
           type="button"
           onClick={handleDownloadCsv}
           aria-label="Download this route's stops and turns as a CSV"
-          className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-zinc-500 bg-zinc-300 text-zinc-900"
+          className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-zinc-300 text-zinc-900"
         >
           <DownloadIcon className="h-4 w-4" />
         </button>

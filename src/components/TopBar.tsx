@@ -19,64 +19,80 @@ export function TopBar({
   totalStops: number;
   totalOnboard: number;
 }) {
+  // A substitute/alternator bus running this route under its own bus
+  // number rather than the route's usual one - worth calling out since
+  // a driver expecting to find "their" bus number on the lot would
+  // otherwise miss it entirely.
+  const isAlternateBus = busNumber !== routeNumber;
+
   return (
-    // items-start (not items-center) so every column lines up flush
-    // against the row's own top - the middle column is the tallest
-    // (Route/#/Back to Routes is three lines stacked, versus two in
-    // the outer columns), and centering against that extra height was
-    // what pushed the logo and Bus figure down out of line with it.
-    <div className="grid w-full grid-cols-3 items-start">
-      <div className="justify-self-start">
-        <button type="button" onClick={onLogoClick} aria-label="Back to routes">
-          <Logo size="small" />
-        </button>
-        {/* Directly under the logo, in the same column, rather than a
-            separate full-width row below the whole bar - so it sits
-            snug under the logo regardless of the middle column's own
-            height. */}
-        <p className="mt-0.5 font-heading text-sm font-black tracking-wide text-zinc-600">
-          Stop {stopProgressNumber} of {totalStops}
-        </p>
+    <div>
+      {/* Row 1 - items-start so every column lines up flush against
+          its own top, same reasoning as always: the middle column is
+          the tallest (Route/#/AM-PM is two stacked lines, versus one
+          in the outer columns), and centering against that extra
+          height would push the logo/Bus figure down out of line. */}
+      <div className="grid w-full grid-cols-3 items-start">
+        <div className="justify-self-start">
+          <button type="button" onClick={onLogoClick} aria-label="Back to routes">
+            <Logo size="small" />
+          </button>
+        </div>
+
+        <div className="col-start-2 justify-self-center text-center">
+          <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
+            Route
+          </p>
+          <p
+            className={`font-heading -mt-1 flex justify-center gap-1.5 text-3xl font-black tracking-tight ${
+              tripType === "pickup" ? "items-end" : "items-start"
+            }`}
+          >
+            {routeNumber}
+            <span className="flex items-center gap-1 text-base text-blue-500">
+              {tripType === "pickup" ? "AM" : "PM"}
+              {tripType === "pickup" ? (
+                <SunriseIcon className="h-4 w-4" />
+              ) : (
+                <SunIcon className="h-4 w-4" />
+              )}
+            </span>
+          </p>
+        </div>
+
+        <div className="col-start-3 justify-self-end text-right">
+          <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Bus</p>
+          <p
+            className={`font-heading -mt-1 text-xl font-bold tracking-tight ${
+              isAlternateBus ? "rounded border-2 border-red-500 px-1 text-red-600" : ""
+            }`}
+          >
+            {busNumber}
+          </p>
+        </div>
       </div>
 
-      <div className="col-start-2 justify-self-center text-center">
-        <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
-          Route
+      {/* Row 2 - its own grid rather than a second stacked line inside
+          each column above: items-baseline here shares one real text
+          baseline across all three cells (whichever of the three sits
+          lowest), which the row-1 divs' own independent stacking can't
+          give for free - "Back to Routes" carries an icon the other
+          two don't, so only true baseline alignment (not just "same
+          top" or "same bottom box edge") keeps its text sitting level
+          with them. */}
+      <div className="mt-0.5 grid w-full grid-cols-3 items-baseline">
+        <p className="justify-self-start font-heading text-sm font-black tracking-wide text-zinc-600">
+          Stop {stopProgressNumber} of {totalStops}
         </p>
-        <p
-          className={`font-heading -mt-1 flex justify-center gap-1.5 text-3xl font-black tracking-tight ${
-            tripType === "pickup" ? "items-end" : "items-start"
-          }`}
-        >
-          #{routeNumber}
-          <span className="flex items-center gap-1 text-base text-blue-500">
-            {tripType === "pickup" ? "AM" : "PM"}
-            {tripType === "pickup" ? (
-              <SunriseIcon className="h-5 w-5" />
-            ) : (
-              <SunIcon className="h-5 w-5" />
-            )}
-          </span>
-        </p>
-        {/* Same destination/confirmation as the logo (onLogoClick) - a
-            second, labeled way to reach it for anyone who wouldn't
-            think to tap the logo itself. */}
         <button
           type="button"
           onClick={onLogoClick}
-          className="mt-0.5 flex w-full items-center justify-center gap-1 text-[10px] font-semibold text-zinc-500"
+          className="col-start-2 flex items-center justify-self-center gap-1 text-sm font-bold text-blue-600"
         >
-          <BackArrowIcon className="h-2.5 w-2.5" />
+          <BackArrowIcon className="h-3 w-3" />
           Back to Routes
         </button>
-      </div>
-
-      <div className="col-start-3 justify-self-end text-right">
-        <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Bus</p>
-        <p className="font-heading -mt-1 text-xl font-bold tracking-tight">#{busNumber}</p>
-        {/* Directly under the Bus figure, same column - see the Stop
-            line's own note above. */}
-        <div className="mt-0.5 flex items-center justify-end gap-1 text-sm font-bold text-zinc-700">
+        <div className="col-start-3 flex items-center justify-self-end gap-1 text-sm font-bold text-zinc-700">
           <PersonSolidIcon className="h-4 w-4" />
           {totalOnboard} onboard
         </div>
