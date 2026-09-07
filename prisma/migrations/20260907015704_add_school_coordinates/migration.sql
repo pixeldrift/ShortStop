@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "schools" ADD COLUMN     "lat" DOUBLE PRECISION,
+ADD COLUMN     "lon" DOUBLE PRECISION;

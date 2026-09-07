@@ -1,0 +1,37 @@
+name: Geocode all schools
+
+# Manual-only, same reasoning as db-migrate-seed.yml: this repo's
+# sandboxed dev environments can't reach a real Postgres server or make
+# outbound calls with the real ORS_API_KEY directly, so populating
+# School.lat/lon for every school has to happen from somewhere with
+# normal network access. Applies any pending migration first (the
+# add_school_coordinates one included), then runs
+# scripts/geocodeSchools.ts against the real database.
+#
+# Needs DATABASE_URL and ORS_API_KEY repo secrets (Settings -> Secrets
+# and variables -> Actions) - the same ones db-migrate-seed.yml and
+# geocode-route.yml already use.
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Re-geocode every school, even ones that already have lat/lon on file"
+        type: boolean
+        default: false
+
+jobs:
+  geocode-schools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - run: npm run geocode:schools -- ${{ inputs.force && '--force' || '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}

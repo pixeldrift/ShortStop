@@ -43,6 +43,17 @@ model School {
   name      String        @unique
   address   String
   level     SchoolLevelDb
+  // The school's own geocoded location - independent of the Waypoint
+  // cache below, which only ever learns a school's address as a side
+  // effect of resolving one of its routes' intersection-kind stops
+  // (see resolveWaypoint.ts's ensureAnchor). A school with no routes
+  // yet, or whose routes are all address-kind stops, never triggers
+  // that path - these columns are geocoded directly from every
+  // school's own address (scripts/geocodeSchools.ts) so every school
+  // has a real coordinate regardless of its routes. Null until that's
+  // run for a given school.
+  lat       Float?
+  lon       Float?
 
   @@map("schools")
 }
