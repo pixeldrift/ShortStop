@@ -95,7 +95,7 @@ export function StartScreen({
           type="button"
           onClick={onBack}
           aria-label="Back to routes"
-          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+          className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
@@ -164,7 +164,7 @@ export function StartScreen({
         <button
           type="button"
           onClick={() => setShowStopsModal(true)}
-          className="btn-glossy font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
+          className="btn-glossy-light font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
         >
           View All Stops
         </button>
@@ -173,7 +173,7 @@ export function StartScreen({
       <button
         type="button"
         onClick={onStart}
-        className="btn-glossy font-heading flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
+        className="btn-glossy-blue font-heading flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
       >
         Start Route <TriangleIcon direction="right" className="h-6 w-6" />
       </button>
@@ -311,7 +311,7 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
                       Stop {number}
                       {step.sideOfRoad && (
                         <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
-                          (on {step.sideOfRoad.toLowerCase()}
+                          ({step.sideOfRoad.toLowerCase()}
                           <RoundedTriangleIcon
                             direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
                             className="h-3 w-3"

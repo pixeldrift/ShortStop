@@ -9,8 +9,6 @@ import {
   CloseIcon,
   DownloadIcon,
   EditIcon,
-  EyeIcon,
-  EyeOffIcon,
   GlobeIcon,
   MapPinIcon,
   PersonSolidIcon,
@@ -25,7 +23,6 @@ import {
   TriangleIcon,
   TurnArrow,
   UploadIcon,
-  WarningIcon,
   XCircleIcon,
 } from "./icons";
 import { buildRouteFromRows } from "@/lib/parseRouteCsv";
@@ -238,7 +235,7 @@ function StepRowView({
                 Stop {stopNumber}
                 {row.side && (
                   <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
-                    (on {row.side.toLowerCase()}
+                    ({row.side.toLowerCase()}
                     <RoundedTriangleIcon
                       direction={row.side.toLowerCase() === "left" ? "left" : "right"}
                       className="h-3 w-3"
@@ -480,20 +477,21 @@ function StepRowEditor({
         <Field label="Latitude, longitude">
           <div className="flex items-center gap-2">
             <input
-              className={`${inputClass} flex-1 font-mono ${coordsError ? "border-red-400 focus:border-red-500 focus:ring-red-500" : ""}`}
+              className={`${inputClass} flex-1 font-mono disabled:opacity-50 ${coordsError ? "border-red-400 focus:border-red-500 focus:ring-red-500" : ""}`}
               value={coordsText}
               onChange={(e) => {
                 setCoordsText(e.target.value);
                 setCoordsError(false);
               }}
               placeholder="35.83961, -86.61234"
+              disabled={row.skip}
             />
             <button
               type="button"
               onClick={onFetch}
-              disabled={fetchLocked}
+              disabled={fetchLocked || row.skip}
               aria-label="Fetch coordinates for this location"
-              className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
+              className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
             >
               {fetching ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <GlobeIcon className="h-4 w-4" />}
             </button>
@@ -505,6 +503,15 @@ function StepRowEditor({
             Enter latitude and longitude, separated by a space, comma, or tab.
           </p>
         )}
+        <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-600">
+          <input
+            type="checkbox"
+            checked={row.skip}
+            onChange={(e) => onChange({ skip: e.target.checked })}
+            className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+          />
+          Instructions only - no location coordinates
+        </label>
       </div>
 
       {showErrorDetail && status?.status === "unresolved" && status.detail && (
@@ -533,16 +540,6 @@ function StepRowEditor({
         </div>
       </div>
 
-      <label className="mt-3 flex items-center gap-2 text-sm text-zinc-600">
-        <input
-          type="checkbox"
-          checked={row.skip}
-          onChange={(e) => onChange({ skip: e.target.checked })}
-          className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
-        />
-        Skip - instructions only, don&apos;t look up a location
-      </label>
-
       <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
@@ -564,7 +561,7 @@ function StepRowEditor({
         <button
           type="button"
           onClick={handleSave}
-          className="btn-glossy shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+          className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
         >
           Save
         </button>
@@ -588,7 +585,7 @@ function AddStepButton({ onClick, disabled }: { onClick: () => void; disabled: b
         onClick={onClick}
         disabled={disabled}
         aria-label="Add step here"
-        className="btn-glossy relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
+        className="btn-glossy-light relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
@@ -892,7 +889,7 @@ function FetchCoordinatesModal({
             type="button"
             onClick={onRefetchAll}
             disabled={fetchRunning || counts.total === 0}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900 disabled:opacity-50"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900 disabled:opacity-50"
           >
             Re-fetch All
           </button>
@@ -900,7 +897,7 @@ function FetchCoordinatesModal({
             type="button"
             onClick={onFetchMissing}
             disabled={fetchRunning || counts.unresolved === 0}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           >
             Fetch Missing
           </button>
@@ -1025,8 +1022,7 @@ export function EditRouteScreen({
   // when nothing's selected - unlike that state-backed field before
   // this pass, `schoolAddress` is never actually blank anymore, so
   // gating on this instead of `schoolAddress.trim()` is what still
-  // keeps waypoints/canPublish from treating an unselected school as
-  // ready.
+  // keeps `waypoints` from treating an unselected school as ready.
   const hasRealSchoolAddress = Boolean(schoolInfo) || isOriginalUnmatchedSchool;
   // Every known school, plus - only if it wouldn't otherwise be a real
   // option - whatever school this route already had, so re-opening an
@@ -1070,9 +1066,8 @@ export function EditRouteScreen({
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const [draftRow, setDraftRow] = useState<RawRouteRow | null>(null);
   const [newlyAddedIndex, setNewlyAddedIndex] = useState<number | null>(null);
-  // A brand-new route always starts "draft" - readiness to publish is
-  // checked live (canPublish below), not tracked as a separate status
-  // of its own.
+  // A brand-new route always starts "draft" - publishing itself now
+  // only ever happens from the route list screen, not here.
   const [status, setStatus] = useState<RouteStatus>(route?.status ?? "draft");
   // Seeded straight from initialWaypointCache when there is one (this
   // exact route's own cache from an earlier edit this session) - a
@@ -1089,12 +1084,18 @@ export function EditRouteScreen({
   // mode "add" only - the paste box's own "Details" link, see
   // StopsFormatModal above.
   const [showFormatModal, setShowFormatModal] = useState(false);
-  // The Route Details card's own collapsed/expanded state - a plain
-  // text summary by default (its own pencil to open the real form),
-  // same read-first convention StepRowView/StepRowEditor already use
-  // for each stop/turn below, just for this one metadata block instead
-  // of a whole list of rows.
-  const [editingDetails, setEditingDetails] = useState(false);
+  // mode "edit" only - which of the three screens this whole component
+  // is currently showing: a small hub (a read-only summary plus "Edit
+  // Details"/"Edit Stops" buttons), the Route Details form on its own
+  // screen, or the Stops and Turns table on its own screen (still the
+  // one that actually owns Save/Cancel/Download, per its own JSX
+  // below) - all three share this one component's state directly
+  // rather than being separately-mounted screens/routes, so nothing
+  // typed into Details is ever lost switching over to Stops, or back.
+  // mode "add" never reads this - it stays the single combined screen
+  // it always was, since a route that doesn't exist yet has no stops
+  // of its own to split off into a second screen.
+  const [subScreen, setSubScreen] = useState<"hub" | "details" | "stops">("hub");
 
   // The school's own geocoded point, once known - reused across every
   // "Fetch"/"Fetch All" call in this edit session instead of
@@ -1188,18 +1189,6 @@ export function EditRouteScreen({
     [waypoints, cache],
   );
   const counts = useMemo(() => resolutionCounts(resolutionRows), [resolutionRows]);
-  const canPublish =
-    mode === "edit" &&
-    !hasIncompleteRow &&
-    rows.length > 0 &&
-    hasRealSchoolAddress &&
-    counts.unresolved === 0;
-  // The readiness check only ever gates *publishing* - unpublishing an
-  // already-published route (one that's live despite having unresolved
-  // waypoints, e.g. before the real geocoding pipeline has ever run
-  // against it) is always allowed, no warning needed for that
-  // direction.
-  const canToggleStatus = status === "published" || canPublish;
 
   // Opens row `index`'s full editor - always switches straight to it
   // even if a different row's editor is already open (that row's own
@@ -1498,9 +1487,8 @@ export function EditRouteScreen({
     // what gives a draft its own identity (see `id` above), and
     // everything else (school, stops, whether they're geocoded) can
     // genuinely be filled in later. This deliberately lets a stub with
-    // nothing but a route number get saved - readiness for anything
-    // past that is Publish's own concern (canPublish above), not
-    // Save's.
+    // nothing but a route number get saved - readiness/publishing is
+    // the route list screen's own concern now, not Save's.
     if (!routeNumber.trim()) {
       setMessage("Route number is required.");
       return;
@@ -1568,10 +1556,6 @@ export function EditRouteScreen({
     downloadCsv(`${exportableRoute.id}-stops.csv`, routeStepsToCsv(exportableRoute, cache));
   }
 
-  function handleToggleStatus() {
-    handleSave(status === "published" ? "draft" : "published");
-  }
-
   // Which rows to actually render below - every row when "Show turns"
   // is on, stops only otherwise (matching StartScreen's own "View All
   // Stops" default). Never affects the underlying `rows` state itself,
@@ -1589,172 +1573,116 @@ export function EditRouteScreen({
     if (rows[index].action.toLowerCase() === "stop") stopNumbers.set(index, ++stopCounter);
   }
 
-  return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-10 text-center">
-      <div className="flex w-full max-w-md items-center justify-between">
-        <button
-          type="button"
-          onClick={onCancel}
-          aria-label="Cancel"
-          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
-        >
-          <BackArrowIcon className="h-5 w-5" />
-        </button>
-        <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-          <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
-          {mode === "add" ? "Add New Route" : `Edit Route ${route?.routeNumber ?? ""}`}
-        </h1>
-        <span className="w-10" />
+  // Shared by mode "add"'s single screen and mode "edit"'s own
+  // dedicated Details screen (see subScreen below) - identical either
+  // way, so it's built once here rather than duplicated. Route #/Trip/
+  // Start share one line (the three things a driver actually needs
+  // for the trip itself); School gets its own full-width line right
+  // after (picking the wrong school is the single costliest mistake in
+  // this whole form); Bus number/Driver share a line last - least
+  // important, neither means much without the other.
+  const routeDetailsForm = (
+    <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
+      <div className="grid grid-cols-3 gap-2">
+        <Field label="Route #">
+          <input
+            className={inputClass}
+            value={routeNumber}
+            onChange={(e) => setRouteNumber(e.target.value)}
+            placeholder="125"
+          />
+        </Field>
+        <Field label="Trip">
+          <select
+            className={inputClass}
+            value={tripType}
+            onChange={(e) => setTripType(e.target.value as TripType)}
+          >
+            <option value="pickup">AM</option>
+            <option value="dropoff">PM</option>
+          </select>
+        </Field>
+        <Field label="Start">
+          <input
+            className={inputClass}
+            value={departureTime}
+            onChange={(e) => setDepartureTime(e.target.value)}
+            placeholder="6:30 AM"
+          />
+        </Field>
       </div>
 
-      <CollapsibleSection title="Route Details">
-        <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
-          {editingDetails ? (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Route number">
-                  <input
-                    className={inputClass}
-                    value={routeNumber}
-                    onChange={(e) => setRouteNumber(e.target.value)}
-                    placeholder="125"
-                  />
-                </Field>
-                <Field label="Trip">
-                  <select
-                    className={inputClass}
-                    value={tripType}
-                    onChange={(e) => setTripType(e.target.value as TripType)}
-                  >
-                    <option value="pickup">AM Pickup</option>
-                    <option value="dropoff">PM Drop Off</option>
-                  </select>
-                </Field>
-              </div>
+      {/* School level and address are never picked or typed separately
+          - both come from whichever school is chosen here, looked up
+          in `schools` (schools.csv). */}
+      <div className="mt-3">
+        <Field label="School">
+          <select
+            className={inputClass}
+            value={schoolName}
+            onChange={(e) => setSchoolName(e.target.value)}
+          >
+            <option value="">Select a school</option>
+            {schoolOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
 
-              <div className="mt-3">
-                <Field label="Departure time">
-                  <input
-                    className={inputClass}
-                    value={departureTime}
-                    onChange={(e) => setDepartureTime(e.target.value)}
-                    placeholder="6:30 AM"
-                  />
-                </Field>
-              </div>
+      {schoolName && (
+        <p className="mt-2 flex items-center gap-1 text-xs text-zinc-500">
+          <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+          {schoolAddress}
+        </p>
+      )}
 
-              {/* School level and address are never picked or typed
-                  separately - both come from whichever school is chosen
-                  here, looked up in `schools` (schools.csv). Its own
-                  full-width line, not paired with anything else -
-                  picking the wrong school is the single costliest
-                  mistake to make in this whole form. */}
-              <div className="mt-3">
-                <Field label="School">
-                  <select
-                    className={inputClass}
-                    value={schoolName}
-                    onChange={(e) => setSchoolName(e.target.value)}
-                  >
-                    <option value="">Select a school</option>
-                    {schoolOptions.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <Field label="Bus number">
+          <input
+            className={inputClass}
+            value={busNumber}
+            onChange={(e) => setBusNumber(e.target.value)}
+            placeholder="125"
+          />
+        </Field>
+        <Field label="Driver">
+          <input className={inputClass} value={driverName} onChange={(e) => setDriverName(e.target.value)} />
+        </Field>
+      </div>
+    </div>
+  );
 
-              {schoolName && (
-                <p className="mt-2 flex items-center gap-1 text-xs text-zinc-500">
-                  <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
-                  {schoolAddress}
-                </p>
-              )}
-
-              {/* Bus number/driver last - least important of this
-                  card's fields, kept together since neither means much
-                  without the other (which bus, whose route). */}
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <Field label="Bus number">
-                  <input
-                    className={inputClass}
-                    value={busNumber}
-                    onChange={(e) => setBusNumber(e.target.value)}
-                    placeholder="125"
-                  />
-                </Field>
-                <Field label="Driver">
-                  <input
-                    className={inputClass}
-                    value={driverName}
-                    onChange={(e) => setDriverName(e.target.value)}
-                  />
-                </Field>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setEditingDetails(false)}
-                className="btn-glossy mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-zinc-300 py-2 text-sm font-semibold text-zinc-900"
-              >
-                Done
-              </button>
-            </>
-          ) : (
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <span className="font-heading text-2xl font-black tracking-tight">
-                    {routeNumber || <span className="text-zinc-400 italic">No route number</span>}
-                  </span>
-                  {routeNumber && (
-                    <span className="flex items-center gap-1 text-sm font-bold text-blue-500">
-                      {tripType === "pickup" ? "AM" : "PM"}
-                      {tripType === "pickup" ? (
-                        <SunriseIcon className="h-3.5 w-3.5" />
-                      ) : (
-                        <SunIcon className="h-3.5 w-3.5" />
-                      )}
-                    </span>
-                  )}
-                  {departureTime && <span className="text-sm text-zinc-500">{departureTime}</span>}
-                </div>
-                <p className="mt-2 font-semibold text-zinc-900">
-                  {schoolName || <span className="text-zinc-400 italic">No school selected</span>}
-                </p>
-                {schoolName && (
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
-                    <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
-                    {schoolAddress}
-                  </p>
-                )}
-                <p className="mt-2 text-sm text-zinc-500">
-                  Bus {busNumber || "—"} · {driverName}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingDetails(true)}
-                aria-label="Edit route details"
-                className="shrink-0 text-zinc-400 active:text-blue-600"
-              >
-                <EditIcon className="h-4 w-4" />
-              </button>
-            </div>
-          )}
+  if (mode === "add") {
+    return (
+      <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-10 text-center">
+        <div className="flex w-full max-w-md items-center justify-between">
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel"
+            className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+          >
+            <BackArrowIcon className="h-5 w-5" />
+          </button>
+          <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+            <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+            Add New Route
+          </h1>
+          <span className="w-10" />
         </div>
-      </CollapsibleSection>
 
-      <CollapsibleSection title="Stops and Turns">
-        {mode === "add" ? (
+        <CollapsibleSection title="Route Details">{routeDetailsForm}</CollapsibleSection>
+
+        <CollapsibleSection title="Stops and Turns">
           <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+                className="btn-glossy-light flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
               >
                 <UploadIcon className="h-3.5 w-3.5" />
                 Upload File
@@ -1811,151 +1739,269 @@ export function EditRouteScreen({
               </p>
             )}
           </div>
-        ) : (
-          <>
-            {/* Show turns/Fetch Coordinates sit above the stops table
-                itself now, not inside its own bordered box - they're
-                controls over the whole list, not part of what's being
-                listed. */}
-            <div className="flex w-full max-w-md items-center justify-between gap-3 px-1 pb-2">
-              <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
+        </CollapsibleSection>
+
+        {message && <p className="text-sm text-zinc-500">{message}</p>}
+
+        <div className="flex w-full max-w-md flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => handleSave()}
+            disabled={saving}
+            className="btn-glossy-blue font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white disabled:opacity-60"
+          >
+            Create Route
+            <RightArrowIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        {showFormatModal && <StopsFormatModal onClose={() => setShowFormatModal(false)} />}
+      </div>
+    );
+  }
+
+  // mode "edit" - a small hub (route summary + "Edit Details"/"Edit
+  // Stops") by default, or one of those two screens once picked.
+  if (subScreen === "details") {
+    return (
+      <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-10 text-center">
+        <div className="flex w-full max-w-md items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setSubScreen("hub")}
+            aria-label="Back"
+            className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+          >
+            <BackArrowIcon className="h-5 w-5" />
+          </button>
+          <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+            <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+            Route Details
+          </h1>
+          <span className="w-10" />
+        </div>
+        {routeDetailsForm}
+      </div>
+    );
+  }
+
+  if (subScreen === "stops") {
+    return (
+      <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
+        {/* Everything that can genuinely grow past the viewport (the
+            stops table especially) lives in this inner, scrollable
+            region - Download/Cancel/Save below stay outside it, pinned
+            to the bottom of the screen instead of scrolling away with
+            a long stops list. */}
+        <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3">
+          <div className="flex w-full max-w-md items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setSubScreen("hub")}
+              aria-label="Back"
+              className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+            >
+              <BackArrowIcon className="h-5 w-5" />
+            </button>
+            <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+              <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+              Stops and Turns
+            </h1>
+            <span className="w-10" />
+          </div>
+
+          <div className="flex w-full max-w-md shrink-0 items-center justify-between gap-3">
+            <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
+            <button
+              type="button"
+              onClick={() => setShowFetchModal(true)}
+              className="btn-glossy-light flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
+            >
+              <GlobeIcon className="h-3.5 w-3.5" />
+              Fetch Coordinates…
+            </button>
+          </div>
+          {hasIncompleteRow && (
+            <p className="w-full max-w-md shrink-0 text-xs text-red-600">
+              Every stop needs at least a type and a location before locations can be checked.
+            </p>
+          )}
+
+          <div className="flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
+            {/* An "Add Step" control before the first row and after
+                every row, not just once at the bottom - a new stop or
+                turn can be dropped in anywhere along the route's real
+                order this way, not only appended past the last one.
+                Real padding on this scrollable region itself (not just
+                the static card around it) so the first/last row never
+                sits flush against the box's own edges, scrolled to
+                either end or not. */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+              <AddStepButton onClick={() => addRow(0)} disabled={expandedIndex !== null} />
+              {visibleRowIndices.map((index) => {
+                const row = rows[index];
+                const isStop = row.action.toLowerCase() === "stop";
+                const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
+                const waypoint = waypoints[index];
+
+                return (
+                  <div key={index}>
+                    {expandedIndex === index && draftRow ? (
+                      <StepRowEditor
+                        row={draftRow}
+                        stopNumber={stopNumber}
+                        previousRoad={previousRoads[index] ?? null}
+                        status={waypoint ? resolutionRows[index] : undefined}
+                        fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
+                        fetchLocked={singleFetchCoolingDown}
+                        onChange={handleDraftChange}
+                        onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
+                        onManualCoordinates={(lat, lon) =>
+                          waypoint && waypoint.kind !== "unresolvable" && setManualCoordinates(waypoint, lat, lon)
+                        }
+                        onCancel={handleCancelRow}
+                        onDelete={() => handleDeleteRow(index)}
+                        onUpdate={handleUpdateRow}
+                      />
+                    ) : (
+                      <StepRowView
+                        row={row}
+                        stopNumber={stopNumber}
+                        status={waypoint ? resolutionRows[index] : undefined}
+                        locked={expandedIndex !== null}
+                        onEdit={() => openRowEditor(index)}
+                      />
+                    )}
+                    <AddStepButton onClick={() => addRow(index + 1)} disabled={expandedIndex !== null} />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex w-full max-w-md shrink-0 flex-col gap-1.5">
+          {/* A plain text link, not a button - matches RouteListScreen's
+              own "Download routes" link. Still just a flat CSV of this
+              one route's stops for now. */}
+          {exportableRoute && (
+            <div className="flex justify-end">
               <button
                 type="button"
-                onClick={() => setShowFetchModal(true)}
-                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
+                onClick={handleDownloadCsv}
+                aria-label="Download this route's stops and turns as a CSV"
+                className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800"
               >
-                <GlobeIcon className="h-3.5 w-3.5" />
-                Fetch Coordinates…
+                <DownloadIcon className="h-4 w-4" />
+                Download stops
               </button>
             </div>
-            {hasIncompleteRow && (
-              <p className="w-full max-w-md px-1 pb-2 text-xs text-red-600">
-                Every stop needs at least a type and a location before locations can be checked.
-              </p>
-            )}
+          )}
+          {message && <p className="text-sm text-zinc-500">{message}</p>}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSave()}
+              disabled={saving}
+              className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white disabled:opacity-60"
+            >
+              <SaveIcon className="h-5 w-5" />
+              Save
+            </button>
+          </div>
+        </div>
 
-            <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
-              {/* An "Add Step" control before the first row and after
-                  every row, not just once at the bottom - a new stop or
-                  turn can be dropped in anywhere along the route's real
-                  order this way, not only appended past the last one. */}
-              <div className="max-h-96 overflow-y-auto">
-                <AddStepButton onClick={() => addRow(0)} disabled={expandedIndex !== null} />
-                {visibleRowIndices.map((index) => {
-                  const row = rows[index];
-                  const isStop = row.action.toLowerCase() === "stop";
-                  const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
-                  const waypoint = waypoints[index];
-
-                  return (
-                    <div key={index}>
-                      {expandedIndex === index && draftRow ? (
-                        <StepRowEditor
-                          row={draftRow}
-                          stopNumber={stopNumber}
-                          previousRoad={previousRoads[index] ?? null}
-                          status={waypoint ? resolutionRows[index] : undefined}
-                          fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
-                          fetchLocked={singleFetchCoolingDown}
-                          onChange={handleDraftChange}
-                          onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
-                          onManualCoordinates={(lat, lon) =>
-                            waypoint && waypoint.kind !== "unresolvable" && setManualCoordinates(waypoint, lat, lon)
-                          }
-                          onCancel={handleCancelRow}
-                          onDelete={() => handleDeleteRow(index)}
-                          onUpdate={handleUpdateRow}
-                        />
-                      ) : (
-                        <StepRowView
-                          row={row}
-                          stopNumber={stopNumber}
-                          status={waypoint ? resolutionRows[index] : undefined}
-                          locked={expandedIndex !== null}
-                          onEdit={() => openRowEditor(index)}
-                        />
-                      )}
-                      <AddStepButton onClick={() => addRow(index + 1)} disabled={expandedIndex !== null} />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </>
+        {showFetchModal && (
+          <FetchCoordinatesModal
+            counts={counts}
+            quota={quota}
+            fetchRunning={fetchAllRunning}
+            batchProgress={batchProgress}
+            fetchError={fetchError}
+            onFetchMissing={fetchMissingLocations}
+            onRefetchAll={refetchAllLocations}
+            onClose={() => setShowFetchModal(false)}
+          />
         )}
-      </CollapsibleSection>
+      </div>
+    );
+  }
 
-      {message && <p className="text-sm text-zinc-500">{message}</p>}
+  // subScreen "hub"
+  return (
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-10 text-center">
+      <div className="flex w-full max-w-md items-center justify-between">
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label="Cancel"
+          className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+        >
+          <BackArrowIcon className="h-5 w-5" />
+        </button>
+        <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
+          <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+          Edit Route {route?.routeNumber ?? ""}
+        </h1>
+        <span className="w-10" />
+      </div>
+
+      <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="font-heading text-2xl font-black tracking-tight">
+            {routeNumber || <span className="text-zinc-400 italic">No route number</span>}
+          </span>
+          {routeNumber && (
+            <span className="flex items-center gap-1 text-sm font-bold text-blue-500">
+              {tripType === "pickup" ? "AM" : "PM"}
+              {tripType === "pickup" ? (
+                <SunriseIcon className="h-3.5 w-3.5" />
+              ) : (
+                <SunIcon className="h-3.5 w-3.5" />
+              )}
+            </span>
+          )}
+          {departureTime && <span className="text-sm text-zinc-500">{departureTime}</span>}
+        </div>
+        <p className="mt-2 font-semibold text-zinc-900">
+          {schoolName || <span className="text-zinc-400 italic">No school selected</span>}
+        </p>
+        {schoolName && (
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
+            <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+            {schoolAddress}
+          </p>
+        )}
+        <p className="mt-2 text-sm text-zinc-500">
+          Bus {busNumber || "—"} · {driverName}
+        </p>
+      </div>
 
       <div className="flex w-full max-w-md flex-col gap-2">
         <button
           type="button"
-          onClick={() => handleSave()}
-          disabled={saving}
-          className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white disabled:opacity-60"
+          onClick={() => setSubScreen("details")}
+          className="btn-glossy-light font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
         >
-          {mode === "add" ? (
-            <>
-              Create Route
-              <RightArrowIcon className="h-5 w-5" />
-            </>
-          ) : (
-            <>
-              <SaveIcon className="h-5 w-5" />
-              Save
-            </>
-          )}
+          <EditIcon className="h-5 w-5" />
+          Edit Details
         </button>
-
-        {mode === "edit" &&
-          (canToggleStatus ? (
-            <button
-              type="button"
-              onClick={handleToggleStatus}
-              disabled={saving}
-              className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900 disabled:opacity-60"
-            >
-              {status === "published" ? (
-                <EyeOffIcon className="h-5 w-5" />
-              ) : (
-                <EyeIcon className="h-5 w-5" />
-              )}
-              {status === "published" ? "Unpublish" : "Publish"}
-            </button>
-          ) : (
-            <div className="flex items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 py-3 text-sm font-semibold text-amber-700">
-              <WarningIcon className="h-5 w-5 shrink-0" />
-              {rows.length === 0
-                ? "Add stops before this route can be published."
-                : `Can't publish yet - ${counts.unresolved} stop${counts.unresolved === 1 ? "" : "s"} still need${counts.unresolved === 1 ? "s" : ""} geocoding.`}
-            </div>
-          ))}
-      </div>
-
-      {showFormatModal && <StopsFormatModal onClose={() => setShowFormatModal(false)} />}
-      {showFetchModal && (
-        <FetchCoordinatesModal
-          counts={counts}
-          quota={quota}
-          fetchRunning={fetchAllRunning}
-          batchProgress={batchProgress}
-          fetchError={fetchError}
-          onFetchMissing={fetchMissingLocations}
-          onRefetchAll={refetchAllLocations}
-          onClose={() => setShowFetchModal(false)}
-        />
-      )}
-
-      {exportableRoute && (
         <button
           type="button"
-          onClick={handleDownloadCsv}
-          aria-label="Download this route's stops and turns as a CSV"
-          className="btn-glossy fixed right-4 bottom-4 z-10 flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+          onClick={() => setSubScreen("stops")}
+          className="btn-glossy-blue font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-base font-semibold text-white"
         >
-          <DownloadIcon className="h-4 w-4" />
+          <MapPinIcon className="h-5 w-5" />
+          Edit Stops
         </button>
-      )}
+      </div>
     </div>
   );
 }

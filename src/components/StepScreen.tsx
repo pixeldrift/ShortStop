@@ -203,7 +203,7 @@ export function StepScreen({
 
       {/* Glossy blue divider between the map/rider region and the rest of
           the pane - a horizontal bar in portrait, vertical in landscape. */}
-      <div className="btn-glossy h-1.5 w-full shrink-0 bg-blue-600 landscape:h-full landscape:w-1.5" />
+      <div className="btn-glossy-blue h-1.5 w-full shrink-0 bg-blue-600 landscape:h-full landscape:w-1.5" />
 
       {/* Everything else - stacked below the top third in portrait, to its
           right (its own column) in landscape. */}
@@ -281,7 +281,7 @@ export function StepScreen({
             onClick={phase === "depot" ? onLogoClick : onBack}
             disabled={paused}
             aria-label={phase === "depot" ? "Routes" : "Back"}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900 disabled:opacity-40"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900 disabled:opacity-40"
           >
             <TriangleIcon direction="left" className="h-6 w-6" />
             {phase === "depot" ? "Routes" : "Back"}
@@ -291,7 +291,7 @@ export function StepScreen({
             type="button"
             onClick={onTogglePause}
             aria-label={paused ? "Resume route" : "Pause route"}
-            className="btn-glossy flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-300 text-zinc-900"
+            className="btn-glossy-light flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-300 text-zinc-900"
           >
             {paused ? (
               <TriangleIcon direction="right" className="h-6 w-6" />
@@ -305,7 +305,7 @@ export function StepScreen({
             onClick={phase === "arrived" ? onEndRoute : onAdvance}
             disabled={paused}
             aria-label={phase === "depot" ? "Start" : phase === "arrived" ? "End" : "Next"}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
           >
             {phase === "depot" ? "Start" : phase === "arrived" ? "End" : "Next"}{" "}
             <TriangleIcon direction="right" className="h-6 w-6" />
@@ -356,14 +356,14 @@ function LeaveRouteConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
           >
             <TriangleIcon direction="left" className="h-6 w-6" /> End Route
           </button>
           <button
             type="button"
             onClick={onCancel}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
           >
             Return <TriangleIcon direction="right" className="h-6 w-6" />
           </button>
@@ -618,14 +618,14 @@ function RiderCheckInBox({
         <button
           type="button"
           onClick={onAddRider}
-          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl bg-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-900"
+          className="btn-glossy-light font-heading flex items-center gap-1.5 rounded-xl bg-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-900"
         >
           + Add Rider
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+          className="btn-glossy-blue font-heading flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
         >
           <CheckIcon className="h-4 w-4" />
           Check in Riders

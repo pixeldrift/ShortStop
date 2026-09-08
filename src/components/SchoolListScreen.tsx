@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BackArrowIcon, CloseIcon, MapPinIcon, RouteIcon, SchoolIcon, SearchIcon } from "./icons";
+import { BackArrowIcon, CloseIcon, MailIcon, MapPinIcon, RouteIcon, SchoolIcon, SearchIcon } from "./icons";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
@@ -114,7 +114,7 @@ export function SchoolListScreen({
             type="button"
             onClick={onBack}
             aria-label="Back to routes"
-            className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+            className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
@@ -247,9 +247,10 @@ export function SchoolListScreen({
 
       <a
         href="mailto:nathan@pizar.net"
-        className="shrink-0 text-xs text-zinc-400 active:text-zinc-600"
+        className="flex shrink-0 items-center gap-1 text-xs text-zinc-400 active:text-zinc-600"
       >
-        © 2026 Nathan D. B. Pizar 🦊
+        © 2026 Nathan D. B. Pizar
+        <MailIcon className="h-3 w-3" />
       </a>
     </div>
   );

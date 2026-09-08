@@ -27,33 +27,100 @@ body {
 
 /* A little dimensionality on buttons - bevel + drop shadow + a glassy
    highlight across the top - to match the glossy feel of the logo/pin/
-   bus art rather than sitting flat against everything else. The white
-   top-highlight is toned down from its original 0.35/0.55 opacities:
-   on a light gray fill (the Back/Pause buttons) that much white washed
-   the button out to looking almost blank, far lighter than intended -
-   the drop shadow/bottom inset are left close to where they were so
-   there's still real depth, just from less of a glaring highlight. */
-.btn-glossy {
+   bus art rather than sitting flat against everything else. Three
+   color-specific variants below (blue/red/light) rather than one
+   shared recipe: the original single `.btn-glossy` used
+   `background-blend-mode: overlay`, which is base-color-dependent in a
+   way that doesn't scale - overlay is a multiply/screen split around
+   50% lightness, applied per RGB channel, so it lands differently (and
+   sometimes tints the highlight toward the fill's own hue) depending
+   on exactly which color sits underneath it. Every variant below drops
+   that blend mode for a plain white gradient instead - reads the same
+   regardless of the fill color - and scales the highlight opacity and
+   shadow trio to that fill's own lightness, so all three read as the
+   same *weight* of gloss instead of one recipe that happens to suit
+   only whichever color it was first tuned against. */
+.btn-glossy-blue {
   background-image: linear-gradient(
     to bottom,
-    rgba(255, 255, 255, 0.2),
+    rgba(255, 255, 255, 0.3),
     rgba(255, 255, 255, 0) 55%
   );
-  background-blend-mode: overlay;
   box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.32),
-    inset 0 -2px 3px rgba(0, 0, 0, 0.2);
+    0 2px 4px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.15);
   transition: box-shadow 0.1s ease-out;
 }
 
-.btn-glossy:active {
+.btn-glossy-blue:active {
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.18),
-    inset 0 1px 4px rgba(0, 0, 0, 0.28);
+    0 1px 1px rgba(0, 0, 0, 0.12),
+    inset 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.btn-glossy:disabled {
+.btn-glossy-blue:disabled {
+  background-image: none;
+  box-shadow: none;
+}
+
+/* Same recipe as .btn-glossy-blue, kept as its own class rather than a
+   shared selector - bg-red-600 (the delete confirm button) happens to
+   land at nearly the same lightness as bg-blue-600 today so the values
+   match, but the two are independent asks (a driver-facing primary
+   action vs. a destructive confirm) and may want to diverge later
+   without dragging each other along. */
+.btn-glossy-red {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.3),
+    rgba(255, 255, 255, 0) 55%
+  );
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.15);
+  transition: box-shadow 0.1s ease-out;
+}
+
+.btn-glossy-red:active {
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.12),
+    inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.btn-glossy-red:disabled {
+  background-image: none;
+  box-shadow: none;
+}
+
+/* Same gloss/bevel idea as the variants above, rebalanced for a pale
+   fill (bg-zinc-300, the Cancel/Back/gray buttons) - a lighter fill
+   needs a much stronger highlight (it has far less room below full
+   white) and a much softer shadow (little tonal contrast to begin with
+   against a near-white fill, so the same shadow that reads as subtle
+   depth on blue/red reads as a heavy bevel here) than either of those
+   above. */
+.btn-glossy-light {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.75),
+    rgba(255, 255, 255, 0) 55%
+  );
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.1s ease-out;
+}
+
+.btn-glossy-light:active {
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.08),
+    inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.btn-glossy-light:disabled {
   background-image: none;
   box-shadow: none;
 }

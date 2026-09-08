@@ -53,15 +53,15 @@ export function ConfirmModal({
           <button
             type="button"
             onClick={onCancel}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className={`btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-base font-semibold text-white ${
-              destructive ? "bg-red-600" : "bg-blue-600"
+            className={`font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-base font-semibold text-white ${
+              destructive ? "btn-glossy-red bg-red-600" : "btn-glossy-blue bg-blue-600"
             }`}
           >
             {confirmIcon}
