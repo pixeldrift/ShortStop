@@ -43,13 +43,13 @@ export function TopBar({
           <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
             Route
           </p>
-          <p
-            className={`font-heading -mt-1 flex justify-center gap-1.5 text-3xl font-black tracking-tight ${
-              tripType === "pickup" ? "items-end" : "items-start"
-            }`}
-          >
+          {/* relative/absolute rather than a flex row - the AM/PM badge
+              floats off the route number's own right edge (left-full)
+              so it never shifts the number itself off-center from the
+              "ROUTE" label above. */}
+          <p className="font-heading relative -mt-1 text-3xl font-black tracking-tight">
             {routeNumber}
-            <span className="flex items-center gap-1 text-base text-blue-500">
+            <span className="absolute top-1/2 left-full ml-1.5 flex -translate-y-1/2 items-center gap-1 text-base text-blue-500">
               {tripType === "pickup" ? "AM" : "PM"}
               {tripType === "pickup" ? (
                 <SunriseIcon className="h-4 w-4" />

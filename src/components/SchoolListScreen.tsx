@@ -133,8 +133,13 @@ export function SchoolListScreen({
                 also has a taller default line box, which otherwise
                 drifts it further from the small county label above
                 than the two actually need to sit. */}
-            <h1 className="font-heading -mt-1 flex items-center justify-center gap-2 text-4xl leading-none font-black tracking-tight">
-              <SchoolIcon className="h-6 w-6 shrink-0 text-blue-600" />
+            {/* relative/absolute rather than a flex row - the icon
+                floats off the text's own left edge (right-full) so it
+                never shifts the text itself off-center from the county
+                label above, the way sharing a centered flex row with it
+                used to. */}
+            <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
+              <SchoolIcon className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-blue-600" />
               Schools
             </h1>
           </div>
@@ -198,25 +203,25 @@ export function SchoolListScreen({
                 key={name}
                 type="button"
                 onClick={() => onSelectSchool(name)}
-                className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-1 px-2 py-3 text-left active:bg-zinc-100"
+                className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-1 gap-y-0.5 px-2 py-3 text-left active:bg-zinc-100"
               >
-                <div className="min-w-0">
-                  <span className="block text-base font-semibold text-zinc-900">{name}</span>
-                  <span className="mt-0.5 flex items-center gap-1 text-xs text-zinc-500">
-                    <MapPinIcon className="h-3 w-3 shrink-0" />
-                    <span className="truncate">
-                      {cityFromAddress(info.address)}, {streetFromAddress(info.address)}
-                    </span>
-                  </span>
-                </div>
-                {/* City still has its own sortable header/column just to
-                    the right (below) - its own per-row value moved onto
-                    the address line above instead of a separate cell, but
-                    the column itself stays reserved so "Routes" doesn't
-                    shift over. */}
-                <span aria-hidden="true" />
-                <span className="pl-2 text-center text-sm font-semibold text-zinc-700">
+                {/* Spans into the City column's own width (not the
+                    row's full width - Routes keeps its narrow column to
+                    the right) so a normal-length school name reads on
+                    one line instead of wrapping the way it did when
+                    squeezed into just the School column. */}
+                <span className="col-span-2 text-base font-semibold text-zinc-900">{name}</span>
+                <span className="row-span-2 self-center pl-2 text-center text-sm font-semibold text-zinc-700">
                   {routeCounts[name] ?? 0}
+                </span>
+                <span className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
+                  <MapPinIcon className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{streetFromAddress(info.address)}</span>
+                </span>
+                {/* The real per-row value for the City column above,
+                    not a placeholder - genuinely sortable now. */}
+                <span className="truncate pl-2 text-center text-xs text-zinc-500">
+                  {cityFromAddress(info.address)}
                 </span>
               </button>
             ))}

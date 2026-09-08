@@ -160,15 +160,14 @@ export function StartScreen({
           {/* -mt-1/leading-none, matching SchoolListScreen's own
               identical label-above-title pattern - tightens the gap
               the title's own default line box would otherwise leave
-              against the small county label above it. justify-center
-              (not just centered by the row - see the matching spacer
-              on the right below, which is what actually centers this
-              whole block in the row rather than just the text within
-              it) so the AM/PM badge doesn't itself throw the title back
-              off-center. */}
-          <h1 className="font-heading -mt-1 flex items-center justify-center gap-2 text-4xl leading-none font-black tracking-tight">
+              against the small county label above it. relative/absolute
+              rather than a flex row - the AM/PM badge floats off the
+              text's own right edge (left-full) so it never shifts the
+              title text itself off-center from the county label above,
+              the way sharing a centered flex row with it used to. */}
+          <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
             Route {route.routeNumber}
-            <span className="flex items-center gap-1 text-lg text-blue-500">
+            <span className="absolute top-1/2 left-full ml-2 flex -translate-y-1/2 items-center gap-1 text-lg text-blue-500">
               {route.tripType === "pickup" ? "AM" : "PM"}
               {route.tripType === "pickup" ? (
                 <SunriseIcon className="h-4 w-4" />

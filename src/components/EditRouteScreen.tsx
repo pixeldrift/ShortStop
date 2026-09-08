@@ -1747,8 +1747,11 @@ export function EditRouteScreen({
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
-          <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-            <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+          {/* relative/absolute rather than a flex row - the pencil
+              icon floats off the text's own left edge (right-full) so
+              it never shifts the title text itself off true center. */}
+          <h1 className="font-heading relative text-2xl font-black tracking-tight">
+            <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
             Add New Route
           </h1>
           <span className="w-10" />
@@ -1862,8 +1865,11 @@ export function EditRouteScreen({
             >
               <BackArrowIcon className="h-5 w-5" />
             </button>
-            <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-              <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+            {/* relative/absolute rather than a flex row - the pencil
+                icon floats off the text's own left edge (right-full) so
+                it never shifts the title text itself off true center. */}
+            <h1 className="font-heading relative text-2xl font-black tracking-tight">
+              <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
               Stops and Turns
             </h1>
             <span className="w-10" />
@@ -2058,8 +2064,11 @@ export function EditRouteScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-          <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+        {/* relative/absolute rather than a flex row - the pencil icon
+            floats off the text's own left edge (right-full) so it
+            never shifts the title text itself off true center. */}
+        <h1 className="font-heading relative text-2xl font-black tracking-tight">
+          <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
           Edit Route {route?.routeNumber ?? ""}
         </h1>
         <span className="w-10" />
