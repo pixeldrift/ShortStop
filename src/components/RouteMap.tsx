@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import type { Map as LeafletMap, Marker } from "leaflet";
+import type { RouteWaypoint, RoutingResult } from "@/lib/routing/types";
+import type { TripType } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 /** One "stop" step's marker: waypointKey looks it up in the route's own
@@ -131,6 +133,7 @@ export function RouteMap({
   turns = [],
   path = [],
   school,
+  tripType,
   waypointsUrl,
 }: {
   className?: string;
@@ -146,16 +149,12 @@ export function RouteMap({
   turns?: TurnMarker[];
   /** Every step's own waypointKey, in the route's own order (stops and
    * turns both - StepScreen.tsx derives this straight from
-   * route.steps) - drawn as a single connect-the-dots line, straight
-   * segments between whichever of these actually have a cache entry
-   * (an ungeocoded or unresolvable step is simply skipped, same as a
-   * missing `stops`/`turns` entry, leaving a gap in the line rather
-   * than a fabricated straight line across it). Not routed against
-   * real streets - just the geocoded points already on the map, joined
-   * up - but since a turn marker already sits at each real intersection
-   * where the road actually bends, the straight segments between them
-   * already trace the real route's own shape for anything short of a
-   * curving mid-block road. */
+   * route.steps). Used to build the ordered list of {lat, lon} points
+   * (school spliced in at whichever end `tripType` puts it) sent to
+   * /api/route-geometry for the actual road-following line - not drawn
+   * directly itself. Whichever of these don't have a cache entry (an
+   * ungeocoded or unresolvable step) are simply left out of that list,
+   * same as a missing `stops`/`turns` marker. */
   path?: string[];
   /** The school's own geocoded location - School.lat/lon (see
    * scripts/geocodeSchools.ts), straight from the route
@@ -168,8 +167,17 @@ export function RouteMap({
    * as its own blue pin, distinct from a stop's red one or a turn's
    * yellow dot, since the school is where the route starts or ends,
    * never a stop a driver checks riders in/out at. Omitted (no pin) if
-   * this school hasn't been geocoded yet. */
+   * this school hasn't been geocoded yet. Also spliced into the
+   * road-geometry request below at whichever end of `path` `tripType`
+   * says it actually belongs. */
   school?: { lat: number; lon: number } | null;
+  /** Which end of `path` the school (above) actually belongs at when
+   * building the road-geometry request - a dropoff route starts at the
+   * school (school first), a pickup route ends there (school last),
+   * matching AllStopsModal's own identical dropoff-first/pickup-last
+   * convention for the same reason (StartScreen.tsx). Only meaningful
+   * alongside `school`; ignored if that's omitted. */
+  tripType?: TripType;
   /** The geocode cache endpoint (src/app/api/waypoints) - shared across
    * every route now that it's backed by Postgres rather than split into
    * a sidecar file per route, so this is the same URL regardless of
@@ -201,6 +209,10 @@ export function RouteMap({
   useEffect(() => {
     schoolRef.current = school;
   }, [school]);
+  const tripTypeRef = useRef(tripType);
+  useEffect(() => {
+    tripTypeRef.current = tripType;
+  }, [tripType]);
   // Same reasoning as stopsRef above - read once inside the mount
   // effect rather than re-running the whole effect if it ever changed
   // (it doesn't, mid-trip: StepScreen computes it once from `route`,
@@ -243,22 +255,53 @@ export function RouteMap({
           if (cancelled || !map) return;
           const pinLatLngs: [number, number][] = [];
 
-          // Drawn before any marker below so the pins/dots sit visibly
-          // on top of the line rather than under it.
-          const pathLatLngs: [number, number][] = [];
+          // The road-following line itself - a real routed path, not a
+          // connect-the-dots line through the cache's own points (see
+          // this component's own doc comment on `path` for why that
+          // changed). `routeWaypoints` is the same ordered list of
+          // {lat, lon} points the old straight-line version built,
+          // just handed to /api/route-geometry instead of drawn
+          // directly - the school spliced in at whichever end its own
+          // trip type puts it (see `tripType`'s own prop doc), since
+          // it's a real leg of the trip but isn't one of `path`'s own
+          // steps. A request/response failure (no ORS key configured,
+          // a real ORS error, a network blip) just means no line draws
+          // at all - same "quietly do without it" fallback every other
+          // cache/fetch failure on this map already gets, never a
+          // fabricated straight line standing in for it.
+          const routeWaypoints: RouteWaypoint[] = [];
+          if (schoolRef.current && tripTypeRef.current === "dropoff") {
+            routeWaypoints.push(schoolRef.current);
+          }
           for (const key of pathRef.current) {
             const entry = cache[key];
             if (!entry || entry.status !== "ok") continue;
-            pathLatLngs.push([entry.lat, entry.lon]);
+            routeWaypoints.push({ lat: entry.lat, lon: entry.lon });
           }
-          if (pathLatLngs.length > 1) {
-            L.polyline(pathLatLngs, {
-              color: "#2563eb",
-              weight: 4,
-              opacity: 0.7,
-              lineJoin: "round",
-              interactive: false,
-            }).addTo(map);
+          if (schoolRef.current && tripTypeRef.current === "pickup") {
+            routeWaypoints.push(schoolRef.current);
+          }
+          if (routeWaypoints.length > 1) {
+            fetch("/api/route-geometry", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ waypoints: routeWaypoints }),
+            })
+              .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+              .then((result) => {
+                if (cancelled || !map || !result) return;
+                const roadLatLngs: [number, number][] = result.geometry.coordinates.map(
+                  ([lon, lat]) => [lat, lon],
+                );
+                L.polyline(roadLatLngs, {
+                  color: "#2563eb",
+                  weight: 4,
+                  opacity: 0.7,
+                  lineJoin: "round",
+                  interactive: false,
+                }).addTo(map);
+              })
+              .catch((err) => console.warn("Couldn't fetch route geometry:", err));
           }
 
           for (const stop of stopsRef.current) {
