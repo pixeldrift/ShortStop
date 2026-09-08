@@ -15,10 +15,17 @@ import {
   TriangleIcon,
   TurnArrow,
 } from "./icons";
+import { addressWithoutZip } from "@/lib/schoolAddress";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
 import type { NavigationStep, Route } from "@/lib/types";
+
+// How long the depot bus's own slide-off animation runs (matches
+// animate-bus-depart in globals.css) - handleStart below holds off the
+// real onAdvance for exactly this long so the bus is fully off screen,
+// not cut short, before the step actually changes underneath it.
+const BUS_DEPART_MS = 450;
 
 export function StepScreen({
   route,
@@ -143,6 +150,23 @@ export function StepScreen({
     }
   };
 
+  // Fun send-off for the one moment there's actually a bus graphic to
+  // send off with - pressing "Start" at the depot slides it away to the
+  // right (see DepotContent's own bus Image, animate-bus-depart in
+  // globals.css) before the real onAdvance actually fires, rather than
+  // just cutting straight to the first step the instant it's tapped.
+  // Guarded by the flag itself (not just `phase`) so a second tap mid-
+  // animation can't double-fire the timeout/onAdvance.
+  const [busDeparting, setBusDeparting] = useState(false);
+  const handleStart = () => {
+    if (busDeparting) return;
+    setBusDeparting(true);
+    window.setTimeout(() => {
+      setBusDeparting(false);
+      onAdvance();
+    }, BUS_DEPART_MS);
+  };
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none landscape:flex-row">
       {/* Top third of the screen in portrait / left column in landscape -
@@ -255,7 +279,7 @@ export function StepScreen({
             {paused ? (
               <PausedContent />
             ) : phase === "depot" ? (
-              <DepotContent route={route} />
+              <DepotContent route={route} departing={busDeparting} />
             ) : phase === "arrived" ? (
               <ArrivedContent />
             ) : isStop ? (
@@ -304,8 +328,8 @@ export function StepScreen({
 
           <button
             type="button"
-            onClick={phase === "arrived" ? onEndRoute : onAdvance}
-            disabled={paused}
+            onClick={phase === "depot" ? handleStart : phase === "arrived" ? onEndRoute : onAdvance}
+            disabled={paused || busDeparting}
             aria-label={phase === "depot" ? "Start" : phase === "arrived" ? "End" : "Next"}
             className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
           >
@@ -641,27 +665,56 @@ function RiderCheckInBox({
  * on the start cul-de-sac (RouteProgressBar) while this generic content
  * shows in place of any actual turn/stop, so step 0's own directions
  * only appear once "Start" is tapped. */
-function DepotContent({ route }: { route: Route }) {
+function DepotContent({ route, departing }: { route: Route; departing: boolean }) {
   return (
     <>
+      <p className="font-heading text-[clamp(1.5rem,5vh,2.5rem)] font-black tracking-tight text-blue-600">
+        {route.departureTime}
+      </p>
+      {/* animate-bus-depart plays once, on the way out - see
+          StepScreen's own handleStart, which holds off the real
+          onAdvance (and the StepTransition swap that comes with it)
+          until this finishes, so the bus is still fully on screen for
+          the whole slide instead of getting cut off mid-exit. */}
       <Image
         src="/assets/bus.png"
         alt=""
         width={780}
         height={465}
-        className="h-[clamp(3.25rem,12vh,8rem)] w-auto drop-shadow-sm"
+        className={`h-[clamp(3.25rem,12vh,8rem)] w-auto drop-shadow-sm ${
+          departing ? "animate-bus-depart" : ""
+        }`}
       />
       <h1 className="font-heading text-[clamp(1.5rem,5vh,2.75rem)] font-black tracking-tight">
         Ready to Depart
       </h1>
-      <p className="text-[clamp(0.875rem,2.5vh,1.25rem)] font-semibold text-zinc-700">
-        {route.tripType === "pickup" ? "To " : "From "}
-        {route.schoolName}
-      </p>
-      <p className="flex items-center gap-1 text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">
-        <MapPinIcon className="h-[0.9em] w-[0.9em] shrink-0 text-blue-500" />
-        {route.schoolAddress}
-      </p>
+      {/* Its own tighter gap (half of the gap-2 every other sibling here
+          shares, via StepTransition's own flex column) - just between
+          the school name and its address, not the bus/title above. */}
+      <div className="flex flex-col items-center gap-1">
+        <p className="flex items-center justify-center gap-1.5 text-[clamp(0.875rem,2.5vh,1.25rem)] font-semibold text-zinc-700">
+          {/* Dropoff: the bus is leaving *from* the school - the arrow
+              trails off after the name, pointing away. Pickup and a
+              one-off field trip both default to heading *to* the
+              school instead (not "pickup only" - a fieldtrip route
+              would otherwise get no arrow at all, having matched
+              neither branch) - the arrow leads into the name. Same
+              rightward TriangleIcon either way, just placed on
+              whichever side reads as the right direction of travel. */}
+          {route.tripType !== "dropoff" && (
+            <TriangleIcon direction="right" className="h-[0.7em] w-[0.7em] shrink-0 text-blue-500" />
+          )}
+          {route.tripType === "dropoff" ? "From " : "To "}
+          {route.schoolName}
+          {route.tripType === "dropoff" && (
+            <TriangleIcon direction="right" className="h-[0.7em] w-[0.7em] shrink-0 text-blue-500" />
+          )}
+        </p>
+        <p className="flex items-center gap-1 text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">
+          <MapPinIcon className="h-[0.9em] w-[0.9em] shrink-0 text-blue-500" />
+          {addressWithoutZip(route.schoolAddress)}
+        </p>
+      </div>
     </>
   );
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { ToggleSwitch } from "./ToggleSwitch";
+import { TripTypeIcon } from "./TripTypeIcon";
 import {
   BackArrowIcon,
   CheckCircleIcon,
@@ -17,15 +18,13 @@ import {
   RoundedTriangleIcon,
   SaveIcon,
   SpinnerIcon,
-  SunIcon,
-  SunriseIcon,
   TrashIcon,
   TriangleIcon,
   TurnArrow,
   UploadIcon,
   XCircleIcon,
 } from "./icons";
-import { buildRouteFromRows } from "@/lib/parseRouteCsv";
+import { buildRouteFromRows, formatWaypointInstruction } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
@@ -41,6 +40,7 @@ import {
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import { resolutionCounts, summarizeRouteResolution } from "@/lib/routeResolutionStatus";
 import type { RouteResolutionCounts, RowResolutionStatus } from "@/lib/routeResolutionStatus";
+import { tripTypeFullLabel, tripTypeLabel } from "@/lib/tripType";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -117,7 +117,7 @@ const inputClass =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
 const labelClass = "text-xs font-semibold tracking-wide text-zinc-500 uppercase";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
       <span className={labelClass}>{label}</span>
@@ -208,7 +208,14 @@ function StepRowView({
   onEdit: () => void;
 }) {
   const isStop = stopNumber !== null;
-  const direction = row.action.toLowerCase() === "left" ? "left" : "right";
+  // Only "Left"/"Right" actually have a direction (and the mirrored
+  // TurnArrow to go with it) - every other action (Proceed, Turn
+  // Around, Pull Over, Return) reads as its own plain label instead,
+  // same as the real driving screen falls back to a text-only heading
+  // once a step's own `direction` is unset (StepContent's own doc
+  // comment).
+  const turnDirection =
+    row.action.toLowerCase() === "left" ? "left" : row.action.toLowerCase() === "right" ? "right" : null;
   // A stop's own from/onto pair reads as an intersection ("Main St &
   // Oak Ave"); a turn's reads as the maneuver itself ("Main St onto
   // Oak Ave") - same shape, different connector word, both set apart
@@ -244,11 +251,13 @@ function StepRowView({
                   </span>
                 )}
               </>
-            ) : (
+            ) : turnDirection ? (
               <>
-                <TurnArrow direction={direction} className="h-4 w-4 shrink-0" />
-                Turn {direction === "left" ? "Left" : "Right"}
+                <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+                Turn {turnDirection === "left" ? "Left" : "Right"}
               </>
+            ) : (
+              row.action || "Turn"
             )}
           </span>
           {isStop && row.riderCount && (
@@ -361,8 +370,20 @@ function StepRowEditor({
   onDelete: () => void;
   onUpdate: () => void;
 }) {
-  const isStop = stopNumber !== null;
-  const [showErrorDetail, setShowErrorDetail] = useState(false);
+  // Live off the draft's own Type select, not the `stopNumber` prop
+  // (only recomputed by the parent from the *committed* rows, see
+  // EditRouteScreen's own StepRowEditor call site) - so switching Type
+  // between Stop and Turn Left/Right here updates the Side/Riders
+  // fields and the subtitle below immediately, not just after Update
+  // commits the draft back.
+  const isStop = row.action.toLowerCase() === "stop";
+  // Only "Left"/"Right" actually have a direction (and the mirrored
+  // TurnArrow to go with it) - every other action (Proceed, Turn
+  // Around, Pull Over, Return) reads as its own plain label in the
+  // subtitle below instead, same as StepRowView's own identical
+  // turnDirection derivation for the collapsed row.
+  const turnDirection =
+    row.action.toLowerCase() === "left" ? "left" : row.action.toLowerCase() === "right" ? "right" : null;
 
   // A plain address (a stop with no cross street, its own house number
   // out front) has no "from road" concept at all - the box edits
@@ -418,10 +439,26 @@ function StepRowEditor({
         className="animate-popup-pop flex max-h-[85vh] w-full max-w-sm flex-col overflow-y-auto rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="font-heading text-xl font-black tracking-tight">
-            {isStop ? `Edit Stop${stopNumber ? ` ${stopNumber}` : ""}` : "Edit Turn"}
-          </h2>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="font-heading text-xl font-black tracking-tight">Edit Waypoint</h2>
+            {/* Same icon the collapsed StepRowView row above shows for
+                this same stop/turn (live off `isStop`/`turnDirection` -
+                the draft's own Type select, not a snapshot from when
+                this editor opened), paired with the exact instruction
+                this row now produces ("Stop 1 at Lake Forest Dr &
+                Davids Way," "Left onto Main Street") instead of just
+                its own type/number - both update immediately as Type/
+                destination change, not only after Update commits. */}
+            <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-500">
+              {isStop ? (
+                <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
+              ) : turnDirection ? (
+                <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+              ) : null}
+              {formatWaypointInstruction(row, stopNumber)}
+            </p>
+          </div>
           <button
             type="button"
             onClick={onCancel}
@@ -442,6 +479,10 @@ function StepRowEditor({
             <option value="Stop">Stop</option>
             <option value="Left">Turn Left</option>
             <option value="Right">Turn Right</option>
+            <option value="Proceed">Proceed</option>
+            <option value="Turn Around">Turn Around</option>
+            <option value="Pull Over">Pull Over</option>
+            <option value="Return">Return</option>
           </select>
         </Field>
         {isStop ? (
@@ -481,15 +522,6 @@ function StepRowEditor({
           <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
             <XCircleIcon className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">{status.reason}</span>
-            {status.detail && (
-              <button
-                type="button"
-                onClick={() => setShowErrorDetail(true)}
-                className="shrink-0 font-semibold underline underline-offset-2"
-              >
-                View Error
-              </button>
-            )}
           </p>
         )}
       </div>
@@ -551,38 +583,48 @@ function StepRowEditor({
         </label>
       </div>
 
-      {showErrorDetail && status?.status === "unresolved" && status.detail && (
-        <ErrorDetailsModal
-          message={status.detail}
-          raw={status.raw}
-          onClose={() => setShowErrorDetail(false)}
-        />
-      )}
+      {/* Notes ahead of Riders - a driver reads this box top to bottom,
+          and the note (a special instruction) matters regardless of
+          whether this row even has riders, so it shouldn't sit below a
+          field that sometimes isn't even shown at all. */}
+      <div className="mt-2">
+        <Field label="Driver Notes">
+          <input className={inputClass} value={row.notes} onChange={(e) => onChange({ notes: e.target.value })} />
+        </Field>
+      </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {isStop && (
-          <Field label="Riders">
+      {/* Riders only for a stop (a turn has no one boarding/leaving at
+          it) - live off `isStop` above, so switching Type away from
+          Stop hides this immediately rather than leaving a stale count
+          behind on what's now a turn. Its own full-width line, not
+          sharing a row with Driver Notes - the two aren't related
+          enough to read as a pair, and Driver Notes needs the room on
+          longer entries. */}
+      {isStop && (
+        <div className="mt-2">
+          <Field
+            label={
+              <span className="inline-flex items-center gap-1">
+                <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
+              </span>
+            }
+          >
             <input
               className={inputClass}
               inputMode="numeric"
               value={row.riderCount}
-              onChange={(e) => onChange({ riderCount: e.target.value })}
+              onChange={(e) => onChange({ riderCount: e.target.value.replace(/\D/g, "") })}
             />
           </Field>
-        )}
-        <div className={isStop ? "" : "col-span-2"}>
-          <Field label="Notes">
-            <input className={inputClass} value={row.notes} onChange={(e) => onChange({ notes: e.target.value })} />
-          </Field>
         </div>
-      </div>
+      )}
 
       <div className="mt-3 flex items-center gap-2">
         <button
           type="button"
           onClick={onDelete}
           aria-label="Delete step"
-          className="flex shrink-0 items-center gap-1 rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-600 active:bg-red-50"
+          className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
         >
           <TrashIcon className="h-3.5 w-3.5" />
           Delete
@@ -591,14 +633,14 @@ function StepRowEditor({
         <button
           type="button"
           onClick={onCancel}
-          className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
+          className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
         >
           Cancel
         </button>
         <button
           type="button"
           onClick={handleSave}
-          className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+          className="btn-glossy-blue shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
         >
           Save
         </button>
@@ -996,6 +1038,7 @@ function FetchCoordinatesModal({
 export function EditRouteScreen({
   mode,
   route,
+  routes,
   rawStepsText,
   initialWaypointCache,
   schools,
@@ -1005,6 +1048,12 @@ export function EditRouteScreen({
   mode: "add" | "edit";
   /** The route being edited, or null when adding a brand-new one. */
   route: Route | null;
+  /** Every other route (real and demo) - only real, non-demo ones
+   * (anything but `status: "demo"`) are ever eligible "Next Action"
+   * targets below, but this is the same full list RouteListScreen
+   * itself gets, not pre-filtered, so this screen doesn't need its own
+   * separate real-routes-only prop just for this one field. */
+  routes: Route[];
   /** The route's own current steps text - pre-fills `mode: "add"`'s
    * textarea directly, and seeds `mode: "edit"`'s structured row list
    * once on mount (see the `rows` useState below) - always "" for
@@ -1072,6 +1121,45 @@ export function EditRouteScreen({
     return names;
   }, [schools, schoolName]);
   const [tripType, setTripType] = useState<TripType>(route?.tripType ?? "pickup");
+  // Every other real route this bus could plausibly hand off to once
+  // this one's done - same bus (a chain is one bus driving more than
+  // one leg back-to-back) and same trip type (an AM route handing off
+  // into a PM one, or vice versa, would mean the bus sits idle for
+  // hours mid-"trip"), excluding this route itself and every demo/
+  // fabricated filler route (chaining only ever makes sense between
+  // real, scheduled routes - see Route.nextRouteId's own doc comment
+  // in types.ts).
+  const nextRouteOptions = useMemo(
+    () =>
+      routes.filter(
+        (r) => r.status !== "demo" && r.id !== route?.id && r.busNumber === busNumber && r.tripType === tripType,
+      ),
+    [routes, route?.id, busNumber, tripType],
+  );
+  // The dropdown's own default the first time this route's editor opens
+  // (a brand-new route, or an existing one that's never had this field
+  // set by hand) - whichever eligible route above runs the next school
+  // level up from this one (elementary -> middle -> high), if exactly
+  // the kind of route this bus would obviously hand off to next. High
+  // school has nowhere further to go, so it never gets a default -
+  // "smartly infer where possible, or none if it's high school." Only
+  // ever computed once, from this route's *initial* school level - not
+  // re-decided while editing, same "decided once from initial content"
+  // convention every other inferred-from-context field in this screen
+  // already follows (see StepRowEditor's own isPlainAddress).
+  const [nextRouteId, setNextRouteId] = useState<string | null>(() => {
+    // A real, already-linked route keeps exactly that - an admin's own
+    // explicit choice always wins over guessing again. Null covers both
+    // "never set" and "explicitly set to None" (the database can't tell
+    // those apart once saved) - re-suggesting the inferred default in
+    // that second case is an accepted tradeoff for actually being
+    // useful in the far more common first one.
+    if (route?.nextRouteId) return route.nextRouteId;
+    const nextLevel: SchoolLevel | null =
+      schoolLevel === "elementary" ? "middle" : schoolLevel === "middle" ? "high" : null;
+    if (!nextLevel) return null;
+    return nextRouteOptions.find((r) => r.schoolLevel === nextLevel)?.id ?? null;
+  });
   const [departureTime, setDepartureTime] = useState(route?.departureTime ?? "");
   const [driverName, setDriverName] = useState(route?.driverName ?? PLACEHOLDER_DRIVER_NAME);
   // mode "add" only - the paste/upload box. mode "edit" never reads
@@ -1506,7 +1594,7 @@ export function EditRouteScreen({
     (nextStatus: RouteStatus): RouteMeta => ({
       id: `${routeNumber}-${tripType}-${schoolLevel}`,
       status: nextStatus,
-      name: `${schoolName} — ${tripType === "pickup" ? "Morning Pickup" : "Afternoon Drop Off"}`,
+      name: `${schoolName} — ${tripTypeFullLabel(tripType)}`,
       routeNumber,
       driverName,
       busNumber,
@@ -1524,6 +1612,7 @@ export function EditRouteScreen({
       distance: route?.distance ?? PLACEHOLDER_DISTANCE,
       durationMinutes: route?.durationMinutes ?? PLACEHOLDER_DURATION_MINUTES,
       isFavorite: route?.isFavorite ?? false,
+      nextRouteId,
     }),
     [
       routeNumber,
@@ -1537,6 +1626,7 @@ export function EditRouteScreen({
       driverName,
       busNumber,
       route,
+      nextRouteId,
     ],
   );
 
@@ -1578,6 +1668,7 @@ export function EditRouteScreen({
           schoolLevel: built.schoolLevel,
           tripType: built.tripType,
           startTime: built.departureTime,
+          nextRouteId: built.nextRouteId,
           steps: currentRows,
         }),
       });
@@ -1664,6 +1755,7 @@ export function EditRouteScreen({
           >
             <option value="pickup">AM</option>
             <option value="dropoff">PM</option>
+            <option value="fieldtrip">Field Trip</option>
           </select>
         </Field>
         <Field label="Start">
@@ -1732,6 +1824,33 @@ export function EditRouteScreen({
           />
         </Field>
       </div>
+
+      {/* Chains this route straight into another one's own directions
+          once its last step is reached, instead of ending the trip -
+          same bus driving more than one leg back-to-back (elementary,
+          then middle school, say). Defaults to whichever eligible route
+          (nextRouteOptions) runs the next school level up, if there is
+          one - see the nextRouteId state's own doc comment for exactly
+          how. */}
+      <div className="mt-3">
+        <Field label="Next Action">
+          <select
+            className={inputClass}
+            value={nextRouteId ?? ""}
+            onChange={(e) => {
+              setNextRouteId(e.target.value || null);
+              setDirty(true);
+            }}
+          >
+            <option value="">None - end trip here</option>
+            {nextRouteOptions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.routeNumber} — {r.schoolName}
+              </option>
+            ))}
+          </select>
+        </Field>
+      </div>
     </div>
   );
 
@@ -1747,8 +1866,11 @@ export function EditRouteScreen({
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
-          <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-            <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+          {/* relative/absolute rather than a flex row - the pencil
+              icon floats off the text's own left edge (right-full) so
+              it never shifts the title text itself off true center. */}
+          <h1 className="font-heading relative text-2xl font-black tracking-tight">
+            <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
             Add New Route
           </h1>
           <span className="w-10" />
@@ -1862,8 +1984,11 @@ export function EditRouteScreen({
             >
               <BackArrowIcon className="h-5 w-5" />
             </button>
-            <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-              <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+            {/* relative/absolute rather than a flex row - the pencil
+                icon floats off the text's own left edge (right-full) so
+                it never shifts the title text itself off true center. */}
+            <h1 className="font-heading relative text-2xl font-black tracking-tight">
+              <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
               Stops and Turns
             </h1>
             <span className="w-10" />
@@ -1885,12 +2010,8 @@ export function EditRouteScreen({
               </span>
               {routeNumber && (
                 <span className="flex items-center gap-1 text-sm font-bold text-blue-500">
-                  {tripType === "pickup" ? "AM" : "PM"}
-                  {tripType === "pickup" ? (
-                    <SunriseIcon className="h-3.5 w-3.5" />
-                  ) : (
-                    <SunIcon className="h-3.5 w-3.5" />
-                  )}
+                  {tripTypeLabel(tripType)}
+                  <TripTypeIcon tripType={tripType} className="h-3.5 w-3.5" />
                 </span>
               )}
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
@@ -2058,8 +2179,11 @@ export function EditRouteScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1 className="font-heading flex items-center gap-2 text-2xl font-black tracking-tight">
-          <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
+        {/* relative/absolute rather than a flex row - the pencil icon
+            floats off the text's own left edge (right-full) so it
+            never shifts the title text itself off true center. */}
+        <h1 className="font-heading relative text-2xl font-black tracking-tight">
+          <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
           Edit Route {route?.routeNumber ?? ""}
         </h1>
         <span className="w-10" />

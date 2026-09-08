@@ -27,6 +27,7 @@ enum SchoolLevelDb {
 enum TripTypeDb {
   pickup
   dropoff
+  fieldtrip
 }
 
 // Only "published"/"draft" - the app's own third status, "demo", marks
@@ -104,6 +105,20 @@ model Route {
   // that case - see page.tsx's own skip-and-warn for such a row).
   endTime       String?
   steps         RouteStep[]
+  // EditRouteScreen's own "Next Action" field - reaching the end of
+  // this route auto-continues straight into `nextRoute`'s own
+  // directions (useRouteStepper.ts) instead of ending the trip, for a
+  // bus that drives more than one leg back-to-back (elementary, then
+  // middle, then high school, say) without a driver pulling the next
+  // route up separately. A self-relation, so it's just another Route
+  // row rather than a whole separate "route chain" concept. SetNull
+  // (not the default Restrict) so deleting a route that happens to be
+  // some other route's own "next" doesn't fail that deletion - it just
+  // leaves that other route pointing nowhere again, same as if an
+  // admin had picked "None" by hand.
+  nextRouteId   String?
+  nextRoute     Route?        @relation("RouteNextRoute", fields: [nextRouteId], references: [id], onDelete: SetNull)
+  previousRoutes Route[]      @relation("RouteNextRoute")
   updatedAt     DateTime      @updatedAt
 
   @@map("routes")

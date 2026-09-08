@@ -197,6 +197,8 @@ export function useRouteStepper(route: Route) {
       phase === "depot"
         ? [
             `Starting route ${speakRouteNumber(route.routeNumber)} ${
+              // Pickup and a field trip both default to "to" (heading
+              // there); only dropoff actually starts "from" the school.
               route.tripType === "dropoff" ? "from" : "to"
             } ${route.schoolName}.`,
           ]

@@ -43,6 +43,14 @@ interface SaveRouteRequestBody {
    * fine either way: parseRouteMasterList's format24HourAsAmPm passes
    * an already-"H:MM AM/PM" string through unchanged. */
   startTime: string;
+  /** EditRouteScreen's own "Next Action" field - another route's id, or
+   * null to end the trip here (see Route.nextRouteId's own doc comment
+   * in schema.prisma). The database's own foreign key is what actually
+   * guards this - a nonexistent id fails the upsert below outright
+   * rather than saving a dangling reference; a *valid* one that's later
+   * deleted gets reset to null automatically (ON DELETE SetNull), not
+   * left pointing at nothing. */
+  nextRouteId: string | null;
   steps: RawRouteRow[];
 }
 
@@ -54,8 +62,19 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  const { id, previousId, status, routeNumber, busNumber, schoolName, schoolLevel, tripType, startTime, steps } =
-    body;
+  const {
+    id,
+    previousId,
+    status,
+    routeNumber,
+    busNumber,
+    schoolName,
+    schoolLevel,
+    tripType,
+    startTime,
+    nextRouteId,
+    steps,
+  } = body;
   if (!id || !routeNumber || !busNumber || !schoolName || !schoolLevel || !tripType || !status || !startTime) {
     return NextResponse.json({ error: "Missing required route fields." }, { status: 400 });
   }
@@ -77,8 +96,8 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   await prisma.route.upsert({
     where: { id },
-    create: { id, status, routeNumber, busNumber, schoolName, schoolLevel, tripType, startTime },
-    update: { status, routeNumber, busNumber, schoolName, schoolLevel, tripType, startTime },
+    create: { id, status, routeNumber, busNumber, schoolName, schoolLevel, tripType, startTime, nextRouteId },
+    update: { status, routeNumber, busNumber, schoolName, schoolLevel, tripType, startTime, nextRouteId },
   });
 
   // Replace-all rather than a per-row diff/update - same reasoning as

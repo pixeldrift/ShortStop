@@ -1932,6 +1932,12 @@ so far.
   once there's an actual driver/routing source. `durationMinutes` no
   longer needs one for any `active` route - the master list's
   `start_time`/`end_time` cover that now
+- **"Distance From Me," as a real sort/filter on RouteListScreen** (not
+  a persistent stat elsewhere) - genuinely useful for a substitute
+  scanning the route list deciding which one to pick up, before they've
+  committed to driving it. Needs a real driver-location source (GPS
+  permission, or a saved home-base address) that doesn't exist yet -
+  `distance: "8.4 mi"` above is the placeholder already waiting on it
 - `120-dropoff-high` is sitting on `status: "inactive"` because its
   steps sheet came in incomplete (see "Route data: the master list"
   above) - once the rest of its stop data arrives, flip it to `active`
@@ -2642,6 +2648,24 @@ so far.
   Route" - forward - and true->false via "Exit Route" ending a route -
   backward - so no separate state is needed to track which way a given
   flip went).
+- **Manual pin placement for a stop/turn's coordinates.** A button that
+  opens a map popup with a pin fixed at the center of the view - the
+  admin scrolls/drags the map underneath it to position the pin instead
+  of the pin moving on the map. Popup title "Set Location," subtitle the
+  stop's own intersection or address (whatever's already on the row),
+  "Cancel"/"Set Location" buttons, and the pin's live lat/lon printed
+  under the map as it's dragged. An alternative path to a resolved
+  coordinate alongside the existing address/globe-fetch flow in
+  `StepRowEditor.tsx`, for the cases geocoding just can't resolve on its
+  own (a driveway, a mid-block stop with no real address).
+- **Districts.** Every route today is implicitly Rutherford County's
+  (see the hardcoded "Rutherford County" label on RouteListScreen,
+  SchoolListScreen, StartScreen) - a real multi-district deployment
+  needs `district` as an actual field on a route (and on "Add New
+  Route"), not a hardcoded label, plus a Districts screen to manage the
+  list itself. Bigger than a single field: schools and routes would both
+  need to scope to a district, and the county label sprinkled across
+  those three screens would need to read from real data instead.
 
 ## Maps, part ten
 

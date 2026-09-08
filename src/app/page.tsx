@@ -60,7 +60,18 @@ async function fetchStepsText(routeId: string): Promise<string | null> {
  * out not to be ready yet (see RouteListScreen.tsx). */
 type Screen =
   | { kind: "list" }
-  | { kind: "trip"; route: Route }
+  | {
+      kind: "trip";
+      route: Route;
+      /** True only for the automatic hand-off from a finished route
+       * into its own linked Route.nextRouteId (see RouteApp's own
+       * onArrived below) - skips straight into this route's directions
+       * (RouteApp calls start() itself the moment it mounts) instead of
+       * landing on its StartScreen the way every other "trip" navigation
+       * still does, matching "you get those directions automatically,
+       * without pulling the route up separately." */
+      autoStart?: boolean;
+    }
   | { kind: "add-route" }
   | { kind: "edit-route"; route: Route }
   | { kind: "schools" }
@@ -136,12 +147,15 @@ export default function Home() {
     setNavDirection("forward");
     setHistory((prev) => [...prev, screen]);
     setScreen(next);
-    // Every "trip" screen starts on StartScreen, never mid-drive - reset
-    // here rather than waiting on RouteApp's own onStartedChange mirror
-    // (a plain effect) to catch up, so showsPinnedLogo below never
-    // reads a stale `true` left over from whatever trip was open last,
-    // not even for the one frame that'd otherwise be visible.
-    if (next.kind === "trip") setTripStarted(false);
+    // Every "trip" screen starts on StartScreen, never mid-drive, *except*
+    // an autoStart hand-off from a just-finished route's own
+    // Route.nextRouteId (RouteApp calls start() itself the instant it
+    // mounts for one of those) - matching that here too, rather than
+    // waiting on RouteApp's own onStartedChange mirror (a plain effect)
+    // to catch up, so showsPinnedLogo below never reads a stale value
+    // left over from whatever trip was open last, not even for the one
+    // frame that'd otherwise be visible.
+    if (next.kind === "trip") setTripStarted(Boolean(next.autoStart));
   }
 
   // The one true "Back"/"Cancel" - pops whatever screen is actually on
@@ -363,6 +377,20 @@ export default function Home() {
     });
   }
 
+  // RouteApp's own hand-off the moment a route reaches "arrived" -
+  // Route.nextRouteId (EditRouteScreen's "Next Action" field) is what
+  // actually decides whether anything happens: no id set, or one that
+  // no longer resolves against `routes` (a deleted/renamed route),
+  // just does nothing here and leaves the normal manual "End" flow in
+  // place. A real match navigates straight into that route's own
+  // directions (autoStart) instead of ending the trip - "you get those
+  // directions automatically, without pulling the route up separately."
+  function handleRouteArrived(route: Route) {
+    if (!route.nextRouteId) return;
+    const nextRoute = routes.find((r) => r.id === route.nextRouteId);
+    if (nextRoute) navigate({ kind: "trip", route: nextRoute, autoStart: true });
+  }
+
   if (error) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-center text-red-500">
@@ -399,6 +427,7 @@ export default function Home() {
         key="add"
         mode="add"
         route={null}
+        routes={routes}
         rawStepsText=""
         schools={schools}
         onCancel={goBack}
@@ -420,6 +449,7 @@ export default function Home() {
         key={`edit-${screen.route.id}`}
         mode="edit"
         route={screen.route}
+        routes={routes}
         rawStepsText={rawStepsText}
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schools={schools}
@@ -431,6 +461,7 @@ export default function Home() {
     content = (
       <RouteApp
         route={screen.route}
+        autoStart={screen.autoStart}
         onBack={goBack}
         onEdit={() => {
           setAdminMode(true);
@@ -438,6 +469,7 @@ export default function Home() {
         }}
         onStartedChange={setTripStarted}
         onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
+        onArrived={handleRouteArrived}
       />
     );
   } else if (screen.kind === "schools") {
@@ -518,12 +550,20 @@ export default function Home() {
 
 function RouteApp({
   route,
+  autoStart,
   onBack,
   onEdit,
   onStartedChange,
   onViewSchool,
+  onArrived,
 }: {
   route: Route;
+  /** True only for the automatic hand-off from a finished route into
+   * this one (see the Screen type's own doc comment, page.tsx) - calls
+   * start() itself the instant this mounts, skipping past StartScreen
+   * straight into this route's own directions the same way a driver
+   * tapping "Start Route" normally would. */
+  autoStart?: boolean;
   onBack: () => void;
   onEdit: () => void;
   /** Reports RouteApp's own internal started flag (useRouteStepper) up
@@ -534,6 +574,11 @@ function RouteApp({
   /** Passed straight through to StartScreen - opens the school's own
    * school-routes screen (see page.tsx's own navigate call below). */
   onViewSchool: (schoolName: string) => void;
+  /** Fires once this route reaches its own "arrived" phase - page.tsx
+   * decides what that actually means (nothing, if this route has no
+   * Route.nextRouteId, or an autoStart navigation into whichever route
+   * that id names, if page.tsx's own `routes` still has one under it). */
+  onArrived: (route: Route) => void;
 }) {
   const {
     currentStep,
@@ -557,6 +602,26 @@ function RouteApp({
   useEffect(() => {
     onStartedChange(started);
   }, [started, onStartedChange]);
+
+  useEffect(() => {
+    if (autoStart) start();
+    // Only ever meant to fire once, right as this route's own RouteApp
+    // instance mounts (autoStart is fixed for this instance's whole
+    // lifetime - a real change means page.tsx navigated to a genuinely
+    // different route, which remounts this component fresh anyway, see
+    // page.tsx's own screenKey) - deliberately not depending on `start`
+    // itself (a useRouteStepper useCallback that's already stable
+    // across renders in practice) to keep that "once" guarantee explicit
+    // rather than relying on referential stability.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // This route's own hand-off, the moment it's actually reached - see
+  // this component's own onArrived prop doc comment for what page.tsx
+  // does with it.
+  useEffect(() => {
+    if (phase === "arrived") onArrived(route);
+  }, [phase, route, onArrived]);
 
   const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
 

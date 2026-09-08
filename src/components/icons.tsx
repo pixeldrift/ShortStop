@@ -1,8 +1,15 @@
 import Image from "next/image";
 import type { TurnDirection } from "@/lib/types";
+import CheckboxCheckedSvg from "./icons/checkbox-checked.svg";
+import CheckboxUncheckedSvg from "./icons/checkbox-unchecked.svg";
+import HeartFilledSvg from "./icons/heart-filled.svg";
+import HeartOutlineSvg from "./icons/heart-outline.svg";
+import TriangleRoundedSvg from "./icons/triangle-rounded.svg";
+import TriangleSvg from "./icons/triangle.svg";
 
 /** The turn-sign image, mirrored for a left turn (the source art is a
- * right turn). */
+ * right turn). Still a raster PNG, not one of the vector icons below -
+ * nothing to extract to its own .svg file for. */
 export function TurnArrow({
   direction,
   className,
@@ -22,24 +29,26 @@ export function TurnArrow({
   );
 }
 
-export function ChevronDownIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 16" className={className} aria-hidden="true">
-      <path d="M12 15 L1 1 H23 Z" fill="#facc15" stroke="#000000" strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  );
-}
+// Every icon below is a standalone .svg file under ./icons/ (see
+// next.config.ts's own turbopack.rules for the @svgr/webpack wiring,
+// and src/svg.d.ts for the type that import actually resolves to) -
+// open any of them directly in a vector editor to tweak its shape,
+// no copy-paste back into this file needed. Every file uses
+// currentColor for its own fill/stroke, same as these always did as
+// inline JSX, so a caller's className (a Tailwind text-* color) still
+// tints it exactly the same way.
+//
+// A handful need real per-render logic beyond what a plain className
+// passthrough can express (a mirrored direction, a checked/filled
+// toggle) and keep a small wrapper function here instead of a plain
+// re-export - each one's own doc comment below says why.
 
-export function PauseIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-      <rect x="5" y="4" width="5" height="16" rx="1.5" />
-      <rect x="14" y="4" width="5" height="16" rx="1.5" />
-    </svg>
-  );
-}
+export { default as ChevronDownIcon } from "./icons/chevron-down.svg";
+export { default as PauseIcon } from "./icons/pause.svg";
 
-/** A filled triangle, pointing right by default and mirrored for "left". */
+/** A filled triangle, pointing right by default and mirrored for
+ * "left" - the mirroring is a plain CSS transform forwarded onto the
+ * imported SVG's own root element via `style`, not a second file. */
 export function TriangleIcon({
   direction = "right",
   className,
@@ -48,23 +57,16 @@ export function TriangleIcon({
   className?: string;
 }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="currentColor"
-      aria-hidden="true"
-      style={direction === "left" ? { transform: "scaleX(-1)" } : undefined}
-    >
-      <path d="M6 4 L20 12 L6 20 Z" />
-    </svg>
+    <TriangleSvg className={className} style={direction === "left" ? { transform: "scaleX(-1)" } : undefined} />
   );
 }
 
-/** A softer, rounded-corner triangle (stroke+fill sharing a color rounds
- * the corners via strokeLinejoin, rather than a crisp point) - used for
- * the stop side-of-road indicator, where a plain sharp arrowhead read as
- * too much like another tappable control. Pointing right by default and
- * mirrored for "left". */
+/** A softer, rounded-corner triangle (stroke+fill sharing a color
+ * rounds the corners via strokeLinejoin, rather than a crisp point) -
+ * used for the stop side-of-road indicator, where a plain sharp
+ * arrowhead read as too much like another tappable control. Pointing
+ * right by default and mirrored for "left", same style-forwarding
+ * approach as TriangleIcon above. */
 export function RoundedTriangleIcon({
   direction = "right",
   className,
@@ -73,19 +75,10 @@ export function RoundedTriangleIcon({
   className?: string;
 }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
+    <TriangleRoundedSvg
       className={className}
-      fill="currentColor"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinejoin="round"
-      strokeLinecap="round"
-      aria-hidden="true"
       style={direction === "left" ? { transform: "scaleX(-1)" } : undefined}
-    >
-      <path d="M7 4 L18 12 L7 20 Z" />
-    </svg>
+    />
   );
 }
 
@@ -97,7 +90,11 @@ export function PlayIcon({ className }: { className?: string }) {
  * column header - both drawn always, with whichever one matches the
  * active sort direction solid and the other faint, so the icon itself
  * shows the current state rather than needing a separate indicator.
- * `direction: "none"` (an unsorted column) shows both equally faint. */
+ * `direction: "none"` (an unsorted column) shows both equally faint.
+ * Kept hand-authored here rather than importing ./icons/sort.svg (a
+ * shape reference only, see its own comment) - its two carets need
+ * independent per-direction opacity, which a plain className/style
+ * passthrough onto one imported file can't express. */
 export function SortIcon({
   direction = "none",
   className,
@@ -113,440 +110,43 @@ export function SortIcon({
   );
 }
 
-/** Outline person - used for a rider not yet checked in. */
-export function PersonIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <circle cx="12" cy="7.5" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path
-        d="M4 20c0-4.42 3.58-8 8-8s8 3.58 8 8"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
+export { default as PersonIcon } from "./icons/person-outline.svg";
+export { default as PersonSolidIcon } from "./icons/person-solid.svg";
+export { default as MapPinIcon } from "./icons/map-pin.svg";
 
-/** Solid/filled person - used for a rider checked in as onboard. */
-export function PersonSolidIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-      <circle cx="12" cy="7.5" r="4" />
-      <path d="M4 21c0-4.42 3.58-8 8-8s8 3.58 8 8v1H4z" />
-    </svg>
-  );
-}
-
-/** Small solid map pin - used inline next to an address. */
-export function MapPinIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" />
-    </svg>
-  );
-}
-
-/** Plain left-pointing arrow - used for "back to the previous screen"
- * navigation, as opposed to TriangleIcon's filled arrowheads used for
- * step-by-step Back/Next. */
-export function BackArrowIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M19 12H5M11 18l-6-6 6-6" />
-    </svg>
-  );
-}
-
-/** BackArrowIcon's own path mirrored - a real shaft-and-chevron "->"
- * rather than TriangleIcon's solid play-button shape, for a button
- * whose forward action isn't literally "play/start" (e.g. "Create
- * Route"). */
-export function RightArrowIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 12h14M13 6l6 6-6 6" />
-    </svg>
-  );
-}
-
-/** A plain checkmark, no circle - CheckCircleIcon's own check path,
- * standalone, for a button (StepScreen's "Check in Riders") that
- * already supplies its own filled background. */
-export function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M7 12.5 L10.5 16 L17 8.5" />
-    </svg>
-  );
-}
-
-/** Checkmark in a filled circle - used for the "arrived, all stops
- * complete" state. */
-export function CheckCircleIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15" />
-      <path
-        d="M7 12.5 L10.5 16 L17 8.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** A miss, alongside CheckCircleIcon's hit - same filled-circle-plus-
- * mark shape so the two read as a matched pair (auto-resolve status
- * rows, see routeResolutionStatus.ts), just an X instead of a check. */
-export function XCircleIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <circle cx="12" cy="12" r="10" fill="currentColor" opacity="0.15" />
-      <path
-        d="M8.5 8.5 15.5 15.5M15.5 8.5 8.5 15.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** A route that can't be made active yet (still has unresolved
- * waypoints) - shown in place of the Make Active button on the edit-
- * route screen, and as a dimmed-list badge, rather than a plain
- * disabled button with no explanation of why. */
-export function WarningIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <path
-        d="M12 3 L22 20 H2 Z"
-        fill="currentColor"
-        fillOpacity="0.15"
-        stroke="currentColor"
-        strokeWidth="1.75"
-        strokeLinejoin="round"
-      />
-      <rect x="11" y="9" width="2" height="6" rx="1" fill="currentColor" />
-      <rect x="11" y="16.5" width="2" height="2" rx="1" fill="currentColor" />
-    </svg>
-  );
-}
-
-/** Plain "+" - the Add Route link on the route list. */
-export function PlusIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" aria-hidden="true">
-      <path d="M12 5 V19 M5 12 H19" strokeWidth="2.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** Small pencil - every edit link/button (StartScreen's "Edit Route",
- * the route-list "Edit Mode" toggle and its header badge). */
-export function EditIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" aria-hidden="true">
-      <path
-        d="M4 20 L4.8 16.4 L16 5.2 A1.5 1.5 0 0 1 18 5.2 L18.8 6 A1.5 1.5 0 0 1 18.8 8 L7.6 19.2 Z M14.5 6.7 L17.3 9.5"
-        strokeWidth="1.75"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/** Trash can - every delete action (RouteListScreen's per-row Delete
- * button and its confirm modal). */
-export function TrashIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M5 7 H19 M9 7 V5 A1 1 0 0 1 10 4 H14 A1 1 0 0 1 15 5 V7 M7 7 L8 19 A1 1 0 0 0 9 20 H15 A1 1 0 0 0 16 19 L17 7" />
-      <path d="M10 11 V16 M14 11 V16" />
-    </svg>
-  );
-}
-
-/** The traditional "save" glyph - an arrow pointing down into an open
- * box/tray - used on every Save button (as opposed to EditIcon, which
- * marks a link/button that only ever *opens* an edit screen). */
-export function SaveIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 14 V18.5 A1.5 1.5 0 0 0 5.5 20 H18.5 A1.5 1.5 0 0 0 20 18.5 V14" />
-      <path d="M12 3 V13.5 M7.5 9 L12 13.5 L16.5 9" />
-    </svg>
-  );
-}
-
-/** SaveIcon flipped the other way - an arrow lifting up off a base
- * line - the Add Route screen's "Upload File" button (an alternative
- * to pasting stops in directly). */
-export function UploadIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 18 V18.5 A1.5 1.5 0 0 0 5.5 20 H18.5 A1.5 1.5 0 0 0 20 18.5 V18" />
-      <path d="M12 15 V4.5 M7.5 9 L12 4.5 L16.5 9" />
-    </svg>
-  );
-}
-
-/** UploadIcon's own tray, arrow flipped to point down into it instead
- * of up out of it - "download this as a CSV" buttons (StartScreen,
- * EditRouteScreen, RouteListScreen). */
-export function DownloadIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 18 V18.5 A1.5 1.5 0 0 0 5.5 20 H18.5 A1.5 1.5 0 0 0 20 18.5 V18" />
-      <path d="M12 4.5 V15 M7.5 10.5 L12 15 L16.5 10.5" />
-    </svg>
-  );
-}
-
-/** An open eye - "Publish" (a route becomes visible to drivers), paired
- * with EyeOffIcon below for "Unpublish" the same way TrashIcon/EditIcon
- * pair up for delete/edit elsewhere in this list. */
-export function EyeIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2 12s3.75-7 10-7 10 7 10 7-3.75 7-10 7-10-7-10-7Z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-/** EyeIcon with a slash through it - "Unpublish," the same visibility-
- * off pairing a password field's own show/hide toggle uses. */
-export function EyeOffIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M2 12s3.75-7 10-7 10 7 10 7-3.75 7-10 7-10-7-10-7Z" />
-      <circle cx="12" cy="12" r="3" />
-      <path d="M3 3 21 21" />
-    </svg>
-  );
-}
-
-/** Magnifying glass - used inline in the route-list search box. */
-export function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="10.5" cy="10.5" r="6.5" />
-      <path d="M20 20 L15.2 15.2" />
-    </svg>
-  );
-}
-
-/** Half-sun-on-a-horizon with rays above only (no rays below the
- * horizon, since the sun hasn't risen yet there) - used on
- * RouteListScreen's rows to mark a "pickup" (AM) route, paired with
- * SunIcon for "dropoff" (PM) ones. */
-export function SunriseIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 3v4" />
-      <path d="M4.9 9.9l1.4 1.4M19.1 9.9l-1.4 1.4" />
-      <path d="M7 17a5 5 0 0 1 10 0" />
-      <path d="M2 17h20" />
-      <path d="M5 21h14" />
-    </svg>
-  );
-}
-
-/** Full sun, rays all the way around - used on RouteListScreen's rows
- * to mark a "dropoff" (PM) route, paired with SunriseIcon for
- * "pickup" (AM) ones. */
-export function SunIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="5" />
-      <path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-    </svg>
-  );
-}
-
-/** A network-style globe - a plain circle, an equator line, and one
- * meridian curve, the way "the web" gets drawn rather than a physical
- * classroom globe (no stand, no tilt, no continents) - used on
- * EditRouteScreen's "Fetch Coordinates…" button, which reaches out to
- * a real geocoding service. */
-export function GlobeIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="2" y1="12" x2="22" y2="12" />
-      <path d="M12 2a15 15 0 0 1 0 20a15 15 0 0 1 0-20Z" />
-    </svg>
-  );
-}
-
-/** A partial ring - pair with Tailwind's own `animate-spin` on the
- * caller's className for a standard loading spinner. Used while
- * EditRouteScreen's Fetch Coordinates modal is mid-fetch. */
-export function SpinnerIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
-      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** A plain X - used to close a modal (AllStopsModal, StartScreen). */
-export function CloseIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M6 6 18 18M18 6 6 18" />
-    </svg>
-  );
-}
+/** A small pennant on a pole - the field-trip badge every AM/PM badge's
+ * own SunriseIcon/SunIcon pairs with once a route's trip type is
+ * "fieldtrip" instead (TripTypeIcon, TripTypeIcon.tsx) - a one-off
+ * special trip has no time-of-day to show a sun icon for. */
+export { default as FlagIcon } from "./icons/flag.svg";
+export { default as BackArrowIcon } from "./icons/back-arrow.svg";
+export { default as RightArrowIcon } from "./icons/right-arrow.svg";
+export { default as CheckIcon } from "./icons/check.svg";
+export { default as CheckCircleIcon } from "./icons/check-circle.svg";
+export { default as XCircleIcon } from "./icons/x-circle.svg";
+export { default as WarningIcon } from "./icons/warning.svg";
+export { default as PlusIcon } from "./icons/plus.svg";
+export { default as EditIcon } from "./icons/edit.svg";
+export { default as TrashIcon } from "./icons/trash.svg";
+export { default as SaveIcon } from "./icons/save.svg";
+export { default as UploadIcon } from "./icons/upload.svg";
+export { default as DownloadIcon } from "./icons/download.svg";
+export { default as EyeIcon } from "./icons/eye.svg";
+export { default as EyeOffIcon } from "./icons/eye-off.svg";
+export { default as SearchIcon } from "./icons/search.svg";
+export { default as SunriseIcon } from "./icons/sunrise.svg";
+export { default as SunIcon } from "./icons/sun.svg";
+export { default as GlobeIcon } from "./icons/globe.svg";
+export { default as SpinnerIcon } from "./icons/spinner.svg";
+export { default as CloseIcon } from "./icons/close.svg";
 
 /** Favorite marker on RouteListScreen's rows - solid+filled when
  * `filled`, a faint outline otherwise (caller controls both fill and
  * outline color via `className`'s text color, same as every other
- * icon here). Built from two cubic-bezier lobes that are true mirror
- * images of each other around x=12 (every coordinate pair checked by
- * hand) - an earlier hand-tuned path here wasn't actually symmetric
- * (its left and right lobes used unrelated control points) and its
- * closing curve didn't even return to its own start point, both of
- * which only showed up as a visible lopsided bump once filled solid.
- * A follow-up pass that fixed the symmetry also flattened the top
- * notch too much - this one keeps the full, round lobes but with a
- * single clean point at the bottom, merged and centered on x=12. */
+ * icon here). Two separate files (heart-outline.svg/heart-filled.svg)
+ * rather than one dynamically-filled shape - `fill` can't be forwarded
+ * cleanly onto an already-imported static SVG component the way
+ * `style` can for a mirrored direction elsewhere in this file. */
 export function HeartIcon({
   filled,
   className,
@@ -554,26 +154,15 @@ export function HeartIcon({
   filled?: boolean;
   className?: string;
 }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill={filled ? "currentColor" : "none"}
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12 21C12 21 3 14 3 9C3 6 5.5 3 8 3C9.8 3 12 4.5 12 6C12 4.5 14.2 3 16 3C18.5 3 21 6 21 9C21 14 12 21 12 21Z" />
-    </svg>
-  );
+  const Svg = filled ? HeartFilledSvg : HeartOutlineSvg;
+  return <Svg className={className} />;
 }
 
 /** A rounded-square checkbox - filled blue with a white check when
  * `checked`, an empty outline otherwise. Used for RouteListScreen's own
  * admin-mode bulk-selection column (replacing what used to be a pencil
- * there - editing now happens by tapping the row itself). */
+ * there - editing now happens by tapping the row itself). Same
+ * two-file approach as HeartIcon above, for the same reason. */
 export function CheckboxIcon({
   checked,
   className,
@@ -581,101 +170,16 @@ export function CheckboxIcon({
   checked?: boolean;
   className?: string;
 }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-      <rect
-        x="3.5"
-        y="3.5"
-        width="17"
-        height="17"
-        rx="4"
-        fill={checked ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="2"
-      />
-      {checked && (
-        <path
-          d="M7 12.5 L10.5 16 L17 8.5"
-          fill="none"
-          stroke="var(--background)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      )}
-    </svg>
-  );
+  const Svg = checked ? CheckboxCheckedSvg : CheckboxUncheckedSvg;
+  return <Svg className={className} />;
 }
 
-/** A literal schoolhouse - a peaked roof with a bit of eave overhang
- * past the walls, a small round window in the gable, a center door,
- * and a ground line wider than the building itself. Used for the
- * Schools heading (SchoolListScreen) and RouteListScreen's own
- * "Schools" link. */
-export function SchoolIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M4 10 12 3 20 10" />
-      <circle cx="12" cy="7" r="0.8" fill="currentColor" stroke="none" />
-      <line x1="5" y1="10" x2="5" y2="20" />
-      <line x1="19" y1="10" x2="19" y2="20" />
-      <path d="M10 20v-6h4v6" />
-      <line x1="2" y1="20" x2="22" y2="20" />
-    </svg>
-  );
-}
+/** A literal schoolhouse - used for the Schools heading
+ * (SchoolListScreen) and RouteListScreen's own "Schools" link. */
+export { default as SchoolIcon } from "./icons/school.svg";
 
-/** A folded paper map - a zigzag-edged outline (its corners rounded off
- * rather than left knife-sharp, via strokeLinejoin below) with a
- * dotted route line crossing it. Used for the Routes heading
- * (RouteListScreen). */
-export function RouteIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 8 9 3 14 8 21 3 21 16 15 21 9 16 3 21Z" />
-      <path d="M7 12 11 15 14 11 18 14" />
-      <circle cx="7" cy="12" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="11" cy="15" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="14" cy="11" r="1.3" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="14" r="1.3" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
+/** A folded paper map with a dotted route line crossing it - used for
+ * the Routes heading (RouteListScreen). */
+export { default as RouteIcon } from "./icons/route.svg";
 
-/** A plain envelope - the copyright line's own mailto link, replacing
- * an emoji (a fox, of all things) that landed there by mistake. */
-export function MailIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="M4 7l8 6 8-6" />
-    </svg>
-  );
-}
+export { default as MailIcon } from "./icons/mail.svg";

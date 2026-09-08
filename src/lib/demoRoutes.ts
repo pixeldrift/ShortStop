@@ -176,6 +176,11 @@ export function buildDemoRoutes(realRoutes: Route[], count: number): Route[] {
       distance: `${(4 + rng() * 12).toFixed(1)} mi`,
       durationMinutes: 15 + Math.floor(rng() * 35),
       isFavorite: false,
+      // Never inherited from `base` - a fabricated route never auto-
+      // continues into another real route's own directions the way a
+      // real chained route does (see Route.nextRouteId's own doc
+      // comment in types.ts).
+      nextRouteId: null,
     };
   });
 

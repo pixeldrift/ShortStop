@@ -1,4 +1,5 @@
 import type { RouteMeta } from "./parseRouteCsv";
+import { tripTypeFullLabel } from "./tripType";
 import type { SchoolLevel, TripType } from "./types";
 import { durationBetween24HourTimes, format24HourAsAmPm } from "./time";
 
@@ -17,18 +18,16 @@ const LEVEL_TO_SCHOOL_TYPE: Record<SchoolLevel, string> = {
   high: "HS",
 };
 
+// "FT" is unreachable in practice - the real master list's own am_pm
+// column below only ever parses as "AM"/"PM" (a route ever needs this
+// derived the other way, route -> file-naming convention, only for a
+// route this same parse already produced) - filled in purely so this
+// Record<TripType, string> stays exhaustive once TripType has a third
+// value.
 const TRIP_TYPE_TO_AM_PM: Record<TripType, string> = {
   pickup: "AM",
   dropoff: "PM",
-};
-
-// Same tripType -> display-label pairing as demoRoutes.ts's TRIP_LABELS,
-// duplicated locally rather than shared - it's two fixed strings, not
-// parsing logic, and this file otherwise has no reason to import from a
-// module that's purely about fabricating demo filler.
-const TRIP_TYPE_LABEL: Record<TripType, string> = {
-  pickup: "Morning Pickup",
-  dropoff: "Afternoon Drop Off",
+  fieldtrip: "FT",
 };
 
 /** Fields the master list actually provides - everything on RouteMeta
@@ -45,8 +44,12 @@ export type MasterListRoute = Omit<
 /**
  * Parses the tab-separated master route list (route_id, route_number,
  * bus_number, am_pm, school_type, school_name, start_time, end_time,
- * stop_count, rider_count, status - one header row plus one data row
- * per route) into route metadata, one entry per row.
+ * stop_count, rider_count, status, next_route_id - one header row plus
+ * one data row per route) into route metadata, one entry per row.
+ * next_route_id is /api/route-master-list's own addition (see that
+ * route's own doc comment) - the district's real sheet has no such
+ * column, so a header-less or otherwise-shaped source just reads every
+ * row's own nextRouteId as null, same as any other missing column here.
  *
  * route_id is expected blank in practice (the sheet hasn't started
  * populating it) - falls back to the `${routeNumber}-${tripType}-
@@ -72,7 +75,13 @@ export function parseRouteMasterList(csvText: string): MasterListRoute[] {
       const values = line.split("\t").map((v) => v.trim());
       const row = Object.fromEntries(headers.map((header, i) => [header, values[i] ?? ""]));
 
-      const tripType: TripType = row.am_pm.toUpperCase() === "AM" ? "pickup" : "dropoff";
+      // "FT" round-trips a field-trip route back out of
+      // /api/route-master-list's own am_pm column (see that route's
+      // own TRIP_TYPE_TO_AM_PM) - the district's real sheet only ever
+      // has "AM"/"PM" here today, but a real admin-created field-trip
+      // route now can too, once it's gone through Postgres.
+      const amPm = row.am_pm.toUpperCase();
+      const tripType: TripType = amPm === "AM" ? "pickup" : amPm === "FT" ? "fieldtrip" : "dropoff";
       const schoolLevel = SCHOOL_TYPE_TO_LEVEL[row.school_type.toUpperCase()];
       const id = row.route_id || `${row.route_number}-${tripType}-${schoolLevel}`;
 
@@ -80,7 +89,7 @@ export function parseRouteMasterList(csvText: string): MasterListRoute[] {
         id,
         status: row.status.toLowerCase() as RouteMeta["status"],
         routeNumber: row.route_number,
-        name: `${row.school_name} — ${TRIP_TYPE_LABEL[tripType]}`,
+        name: `${row.school_name} — ${tripTypeFullLabel(tripType)}`,
         busNumber: row.bus_number,
         schoolName: row.school_name,
         schoolLevel,
@@ -89,6 +98,11 @@ export function parseRouteMasterList(csvText: string): MasterListRoute[] {
         durationMinutes: row.end_time
           ? durationBetween24HourTimes(row.start_time, row.end_time)
           : undefined,
+        // A missing column (the district's own real sheet has no such
+        // field) and an empty one (nothing links from this route yet)
+        // both read as undefined/"" here, so `|| null` covers either
+        // case the same way without its own presence check.
+        nextRouteId: row.next_route_id || null,
       };
     });
 }

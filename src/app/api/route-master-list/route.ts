@@ -5,11 +5,14 @@ import type { SchoolLevelDb, TripTypeDb } from "@prisma/client";
 /**
  * Regenerates route-master-list.csv's exact tab-separated schema
  * (route_id, route_number, bus_number, am_pm, school_type, school_name,
- * start_time, end_time, stop_count, rider_count, status) from Postgres
- * - page.tsx fetches this instead of the static file now, and hands the
- * response straight to the same parseRouteMasterList.ts it always has,
- * unchanged, so this route's only job is to produce text that parser
- * still recognizes.
+ * start_time, end_time, stop_count, rider_count, status), plus one
+ * column the district's real sheet never had - next_route_id, this
+ * route's own addition, carrying EditRouteScreen's "Next Action" field
+ * (Route.nextRouteId) through to parseRouteMasterList.ts the same way
+ * every other real column already does - from Postgres. page.tsx
+ * fetches this instead of the static file now, and hands the response
+ * straight to that same parser, so this route's only job is to produce
+ * text it still recognizes.
  *
  * stop_count/rider_count are recomputed from each route's own steps
  * (rather than stored) purely so this text stays informative to a
@@ -27,6 +30,7 @@ const LEVEL_TO_SCHOOL_TYPE: Record<SchoolLevelDb, string> = {
 const TRIP_TYPE_TO_AM_PM: Record<TripTypeDb, string> = {
   pickup: "AM",
   dropoff: "PM",
+  fieldtrip: "FT",
 };
 
 export async function GET(): Promise<NextResponse> {
@@ -47,6 +51,7 @@ export async function GET(): Promise<NextResponse> {
     "stop_count",
     "rider_count",
     "status",
+    "next_route_id",
   ].join("\t");
 
   const lines = routes.map((route) => {
@@ -64,6 +69,7 @@ export async function GET(): Promise<NextResponse> {
       stopSteps.length || "",
       riderCount || "",
       route.status,
+      route.nextRouteId ?? "",
     ].join("\t");
   });
 

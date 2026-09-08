@@ -1,0 +1,11 @@
+<!-- Shape reference only - SortIcon (icons.tsx) stays hand-authored, not
+     wired to this file. Its two carets need independent per-direction
+     opacity (which of "asc"/"desc"/"none" is active), a state SVGR's
+     plain className/style passthrough can't parametrize without a
+     second, dynamically-chosen file per state. If you edit the shape
+     here, port the same path data into SortIcon's own two <path>
+     elements by hand. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+  <path d="M5 0 L9 6 H1 Z" opacity="0.35" />
+  <path d="M5 16 L9 10 H1 Z" opacity="0.35" />
+</svg>

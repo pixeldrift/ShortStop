@@ -1,5 +1,7 @@
 import { Logo } from "./Logo";
-import { BackArrowIcon, PersonSolidIcon, SunIcon, SunriseIcon } from "./icons";
+import { TripTypeIcon } from "./TripTypeIcon";
+import { BackArrowIcon, PersonSolidIcon } from "./icons";
+import { tripTypeLabel } from "@/lib/tripType";
 import type { TripType } from "@/lib/types";
 
 export function TopBar({
@@ -43,19 +45,15 @@ export function TopBar({
           <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
             Route
           </p>
-          <p
-            className={`font-heading -mt-1 flex justify-center gap-1.5 text-3xl font-black tracking-tight ${
-              tripType === "pickup" ? "items-end" : "items-start"
-            }`}
-          >
+          {/* relative/absolute rather than a flex row - the AM/PM badge
+              floats off the route number's own right edge (left-full)
+              so it never shifts the number itself off-center from the
+              "ROUTE" label above. */}
+          <p className="font-heading relative -mt-1 text-3xl font-black tracking-tight">
             {routeNumber}
-            <span className="flex items-center gap-1 text-base text-blue-500">
-              {tripType === "pickup" ? "AM" : "PM"}
-              {tripType === "pickup" ? (
-                <SunriseIcon className="h-4 w-4" />
-              ) : (
-                <SunIcon className="h-4 w-4" />
-              )}
+            <span className="absolute top-1/2 left-full ml-1.5 flex -translate-y-1/2 items-center gap-1 text-base text-blue-500">
+              {tripTypeLabel(tripType)}
+              <TripTypeIcon tripType={tripType} className="h-4 w-4" />
             </span>
           </p>
         </div>
@@ -63,8 +61,8 @@ export function TopBar({
         <div className="col-start-3 justify-self-end text-right">
           <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Bus</p>
           <p
-            className={`font-heading -mt-1 text-xl font-bold tracking-tight ${
-              isAlternateBus ? "rounded border-2 border-red-500 px-1 text-red-600" : ""
+            className={`font-heading -mt-1 text-xl leading-none font-bold tracking-tight ${
+              isAlternateBus ? "rounded-md border border-red-500 px-1 py-0.5" : ""
             }`}
           >
             {busNumber}

@@ -78,6 +78,64 @@ export function detectDelimiter(headerLine: string): string {
   return headerLine.includes("\t") ? "\t" : ",";
 }
 
+// USPS Publication 28's own street-suffix abbreviations, spelled-out
+// name -> standard form - just the handful actually likely to show up
+// in a district's own steps sheet, not the full USPS list of a few
+// hundred. No period on the abbreviated side, matching this app's
+// existing house style (every real address already in schools.csv and
+// each route's own steps sheet is already written this way - see the
+// README/project doc's own conformity note).
+const STREET_SUFFIX_ABBREVIATIONS: Record<string, string> = {
+  avenue: "Ave",
+  boulevard: "Blvd",
+  circle: "Cir",
+  court: "Ct",
+  crescent: "Cres",
+  crossing: "Xing",
+  drive: "Dr",
+  highway: "Hwy",
+  lane: "Ln",
+  loop: "Loop",
+  parkway: "Pkwy",
+  place: "Pl",
+  road: "Rd",
+  square: "Sq",
+  street: "St",
+  terrace: "Ter",
+  trail: "Trl",
+  way: "Way",
+};
+
+// Every spelled-out form above maps to its own canonical abbreviation,
+// and every already-abbreviated form maps to that same canonical
+// spelling too (so "Rd.", "RD", and "rd" all settle on "Rd" the same
+// as "Road" does) - one lookup covers both directions, casing and
+// stray punctuation included.
+const STREET_SUFFIX_CANONICAL: Record<string, string> = Object.fromEntries(
+  Object.entries(STREET_SUFFIX_ABBREVIATIONS).flatMap(([full, abbr]) => [
+    [full, abbr],
+    [abbr.toLowerCase(), abbr],
+  ]),
+);
+
+/** Normalizes a road name's own trailing suffix ("Road"/"Rd."/"RD" all
+ * become "Rd") to this app's existing address style. Only ever touches
+ * the very last word - an intersection's second road ("Main St & Oak
+ * Ave") is already its own separate fromAt/ontoAt value (see
+ * RawRouteRow), so each call here only ever sees one road name - which
+ * leaves the house number, the road's own name, and anything else
+ * about the string untouched. A last word this doesn't recognize as a
+ * suffix at all (a numbered highway's own trailing route number, a
+ * road genuinely named "Broadway") passes straight through unchanged
+ * rather than guessing. */
+export function normalizeStreetSuffix(text: string): string {
+  const match = text.match(/^(.*\s)([A-Za-z]+)\.?\s*$/);
+  if (!match) return text;
+  const [, prefix, lastWord] = match;
+  const canonical = STREET_SUFFIX_CANONICAL[lastWord.toLowerCase()];
+  return canonical ? `${prefix}${canonical}` : text;
+}
+
 export interface ImportColumnMapping {
   field: ImportColumnField;
   /** The imported sheet's own header text this field resolved to, or
@@ -118,11 +176,20 @@ export function matchColumns(headerLine: string, delimiter: string): ImportColum
 }
 
 // A line the doc's own schema already recognizes as an action, not a
-// location - "Stop", or a turn's own direction. Matched case-
-// insensitively against a header-less line's first cell to tell "this
-// line names its own action" apart from "this line is just a bare
-// location" (see parseHeaderlessLine).
-const RECOGNIZED_ACTIONS = new Set(["stop", "left", "right"]);
+// location - "Stop", a turn's own direction, or one of the dropdown's
+// other waypoint types (StepRowEditor's own Type select). Matched
+// case-insensitively against a header-less line's first cell to tell
+// "this line names its own action" apart from "this line is just a
+// bare location" (see parseHeaderlessLine).
+const RECOGNIZED_ACTIONS = new Set([
+  "stop",
+  "left",
+  "right",
+  "proceed",
+  "turn around",
+  "pull over",
+  "return",
+]);
 
 /** Splits "Road A & Road B" (or "Road A and Road B") into its two road
  * names - the plain-English way a human would write a cross-street
@@ -156,8 +223,8 @@ function parseHeaderlessLine(line: string, delimiter: string): RawRouteRow {
   if (cells.length >= 2 && RECOGNIZED_ACTIONS.has(firstWord)) {
     return {
       action: cells[0],
-      fromAt: cells[1] ?? "",
-      ontoAt: cells[2] ?? "",
+      fromAt: normalizeStreetSuffix(cells[1] ?? ""),
+      ontoAt: normalizeStreetSuffix(cells[2] ?? ""),
       riderCount: "",
       side: "",
       notes: "",
@@ -168,8 +235,8 @@ function parseHeaderlessLine(line: string, delimiter: string): RawRouteRow {
   const intersection = splitIntersectionText(line.trim());
   return {
     action: "Stop",
-    fromAt: intersection?.fromAt ?? line.trim(),
-    ontoAt: intersection?.ontoAt ?? "",
+    fromAt: normalizeStreetSuffix(intersection?.fromAt ?? line.trim()),
+    ontoAt: normalizeStreetSuffix(intersection?.ontoAt ?? ""),
     riderCount: "",
     side: "",
     notes: "",
@@ -249,8 +316,8 @@ export function parseRouteImport(text: string): ImportParseResult {
     };
     return {
       action: valueFor("action"),
-      fromAt: valueFor("fromAt"),
-      ontoAt: valueFor("ontoAt"),
+      fromAt: normalizeStreetSuffix(valueFor("fromAt")),
+      ontoAt: normalizeStreetSuffix(valueFor("ontoAt")),
       riderCount: valueFor("riderCount"),
       side: valueFor("side"),
       notes: valueFor("notes"),
