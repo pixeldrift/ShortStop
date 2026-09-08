@@ -311,7 +311,7 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
                       Stop {number}
                       {step.sideOfRoad && (
                         <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
-                          (on {step.sideOfRoad.toLowerCase()}
+                          ({step.sideOfRoad.toLowerCase()}
                           <RoundedTriangleIcon
                             direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
                             className="h-3 w-3"

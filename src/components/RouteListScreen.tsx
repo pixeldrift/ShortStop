@@ -11,6 +11,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   HeartIcon,
+  MailIcon,
   MapPinIcon,
   PlusIcon,
   RouteIcon,
@@ -60,10 +61,12 @@ const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
   departureTime: (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
 };
 
-// Each toggle starts on (blue/"showing") - a route only ever
-// disappears once a toggle covering it is actively switched off, so
-// the default state (nothing tapped yet) always reads as "everything
-// shown," same as the old dropdown's own "All" option used to.
+// Every toggle starts off (gray/"not filtering") - an empty set here
+// means "no filter in this group," so the default state (nothing
+// tapped yet) shows everything, same as the old dropdown's own "All"
+// option used to. Tapping one on narrows the list to routes matching
+// *some* active toggle within that same group; the other group (if
+// it also has something on) still applies independently.
 const TRIP_TYPE_TOGGLES: { value: TripType; label: string }[] = [
   { value: "pickup", label: "AM" },
   { value: "dropoff", label: "PM" },
@@ -156,13 +159,14 @@ export function RouteListScreen({
   onToggleAdminMode: () => void;
   /** Normal navigation - the trip-summary/step flow. Every row's own
    * main tap target outside admin mode - once admin mode is on, the
-   * row instead opens EditRouteScreen directly (see the row rendering
-   * below), so this never fires while adminMode is true. */
+   * row instead just selects itself (see the row rendering below), so
+   * this never fires while adminMode is true. */
   onSelect: (route: Route) => void;
   /** Opens EditRouteScreen directly for this route - fired by the
-   * row itself in admin mode (every route, demo included), by the
-   * per-row/bulk Edit buttons, or by a "Publish" attempt that turns
-   * out not to be ready yet (see handlePublishClick). */
+   * "Edit Selected" bulk button (only enabled for exactly one selected
+   * route, there's only one edit screen), or by a "Publish Selected"
+   * attempt on a single route that turns out not to be ready yet (see
+   * handlePublishClick). */
   onEditRoute: (route: Route) => void;
   onAddRoute: () => void;
   onSetRouteStatus: (route: Route, status: RouteStatus) => void;
@@ -191,14 +195,10 @@ export function RouteListScreen({
   // flight - not surfaced as a spinner anywhere yet, just prevents a
   // second tap on the same row from firing a second check.
   const [checkingRouteId, setCheckingRouteId] = useState<string | null>(null);
-  // Every toggle starts on - see TRIP_TYPE_TOGGLES/SCHOOL_LEVEL_TOGGLES
-  // above for why that's the "show everything" state, not an empty set.
-  const [activeTripTypes, setActiveTripTypes] = useState<ReadonlySet<TripType>>(
-    () => new Set(TRIP_TYPE_TOGGLES.map((t) => t.value)),
-  );
-  const [activeSchoolLevels, setActiveSchoolLevels] = useState<ReadonlySet<SchoolLevel>>(
-    () => new Set(SCHOOL_LEVEL_TOGGLES.map((t) => t.value)),
-  );
+  // Every toggle starts off - see TRIP_TYPE_TOGGLES/SCHOOL_LEVEL_TOGGLES
+  // above for why an empty set is the "show everything" state here.
+  const [activeTripTypes, setActiveTripTypes] = useState<ReadonlySet<TripType>>(() => new Set());
+  const [activeSchoolLevels, setActiveSchoolLevels] = useState<ReadonlySet<SchoolLevel>>(() => new Set());
   function toggleTripType(value: TripType) {
     setActiveTripTypes((prev) => {
       const next = new Set(prev);
@@ -247,13 +247,16 @@ export function RouteListScreen({
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   // Lets a tap outside the red admin-mode box exit it (see the effect
   // below) without also swallowing a tap on the "Exit Edit Mode"/"New
-  // Route" controls themselves, which sit below the box and already
-  // handle their own clicks correctly - those live in `controlsRef`,
-  // specifically excluded so this effect never double-fires alongside
-  // them (Exit Edit Mode) or fights their own action (New Route, which
-  // needs adminMode to stay on across the navigation it triggers).
+  // Route" controls themselves, or the "…Selected" bulk toolbar right
+  // below the box - all three live in these refs, specifically excluded
+  // so this effect never double-fires alongside their own click handler
+  // (Exit Edit Mode, New Route which needs adminMode to stay on across
+  // the navigation it triggers, and Delete/Edit/Publish Selected which
+  // need their own onClick to actually run instead of getting cut off
+  // by admin mode exiting first).
   const boxRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
+  const bulkActionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!adminMode) return;
@@ -265,6 +268,7 @@ export function RouteListScreen({
       const target = e.target as Node;
       if (boxRef.current?.contains(target)) return;
       if (controlsRef.current?.contains(target)) return;
+      if (bulkActionsRef.current?.contains(target)) return;
       onToggleAdminMode();
     }
     // Capture phase - fires even if a row button or dropdown item
@@ -295,7 +299,8 @@ export function RouteListScreen({
       const matchesQuery =
         !q || route.name.toLowerCase().includes(q) || route.routeNumber.includes(q);
       const matchesToggles =
-        activeTripTypes.has(route.tripType) && activeSchoolLevels.has(route.schoolLevel);
+        (activeTripTypes.size === 0 || activeTripTypes.has(route.tripType)) &&
+        (activeSchoolLevels.size === 0 || activeSchoolLevels.has(route.schoolLevel));
       return matchesQuery && matchesToggles;
     });
 
@@ -340,6 +345,26 @@ export function RouteListScreen({
 
   function handleDownloadCsv() {
     downloadCsv("routes.csv", routeListToCsv(routes));
+  }
+
+  // The bulk "Publish/Unpublish Selected" button - unpublishing never
+  // needs a readiness check (see canToggleStatus's own reasoning in
+  // EditRouteScreen.tsx), so that direction always goes straight to
+  // the confirm modal. Publishing exactly one selected route reuses
+  // handlePublishClick's own readiness check/edit-screen redirect
+  // (the common case, now that selecting is a single tap away) - a
+  // real multi-route selection has nowhere sensible to redirect *to*
+  // for just one of several, so that case alone skips the check.
+  function handlePublishSelected() {
+    if (allSelectedPublished) {
+      setConfirmRequest({ type: "unpublish", routes: selectedRoutes });
+      return;
+    }
+    if (selectedRoutes.length === 1) {
+      handlePublishClick(selectedRoutes[0]);
+      return;
+    }
+    setConfirmRequest({ type: "publish", routes: selectedRoutes });
   }
 
   // Backs the "…Selected" toolbar under the table - looked up against
@@ -581,123 +606,83 @@ export function RouteListScreen({
             {filtered.map((route) => {
               const isPublished = isRoutePublished(route, demoHiddenIds);
               const isAdminOnly = !isPublished;
+              const isSelected = adminMode && selectedIds.has(route.id);
               return (
-                <div key={route.id}>
-                  <div
-                    className={`grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left ${
-                      isAdminOnly ? "opacity-50" : ""
-                    }`}
+                <div
+                  key={route.id}
+                  className={`grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left ${
+                    isAdminOnly ? "opacity-50" : ""
+                  } ${isSelected ? "ring-2 ring-inset ring-blue-500" : ""}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!adminMode) {
+                        onSelect(route);
+                        return;
+                      }
+                      // A tap selects this route alone (replacing
+                      // whatever else was selected), or deselects it if
+                      // it was already the only one selected - only the
+                      // checkbox column builds up a multi-route
+                      // selection (see toggleSelected below).
+                      setSelectedIds((prev) =>
+                        prev.size === 1 && prev.has(route.id) ? new Set() : new Set([route.id]),
+                      );
+                    }}
+                    className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-center gap-x-1 text-left active:bg-zinc-100"
                   >
+                    <div
+                      className={`flex gap-1.5 ${
+                        route.tripType === "pickup" ? "items-end" : "items-start"
+                      }`}
+                    >
+                      <span className="font-heading text-2xl leading-none font-black">
+                        {route.routeNumber}
+                      </span>
+                      <div className="flex items-center gap-0.5 text-blue-500">
+                        <span className="font-heading text-xs leading-none font-black">
+                          {route.tripType === "pickup" ? "AM" : "PM"}
+                        </span>
+                        {route.tripType === "pickup" ? (
+                          <SunriseIcon className="h-3 w-3" />
+                        ) : (
+                          <SunIcon className="h-3 w-3" />
+                        )}
+                      </div>
+                    </div>
+                    <span className="min-w-0 pl-3">
+                      <SchoolNameLabel name={route.schoolName} />
+                    </span>
+                    <span className="text-right text-sm font-semibold text-zinc-500">
+                      {route.departureTime}
+                    </span>
+                  </button>
+                  {adminMode ? (
                     <button
                       type="button"
-                      onClick={() => (adminMode ? onEditRoute(route) : onSelect(route))}
-                      className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-center gap-x-1 text-left active:bg-zinc-100"
+                      onClick={() => toggleSelected(route.id)}
+                      aria-label={
+                        selectedIds.has(route.id)
+                          ? `Deselect route ${route.routeNumber}`
+                          : `Select route ${route.routeNumber}`
+                      }
+                      className="justify-self-end p-1 text-blue-600 active:opacity-70"
                     >
-                      <div
-                        className={`flex gap-1.5 ${
-                          route.tripType === "pickup" ? "items-end" : "items-start"
-                        }`}
-                      >
-                        <span className="font-heading text-2xl leading-none font-black">
-                          {route.routeNumber}
-                        </span>
-                        <div className="flex items-center gap-0.5 text-blue-500">
-                          <span className="font-heading text-xs leading-none font-black">
-                            {route.tripType === "pickup" ? "AM" : "PM"}
-                          </span>
-                          {route.tripType === "pickup" ? (
-                            <SunriseIcon className="h-3 w-3" />
-                          ) : (
-                            <SunIcon className="h-3 w-3" />
-                          )}
-                        </div>
-                      </div>
-                      <span className="min-w-0 pl-3">
-                        <SchoolNameLabel name={route.schoolName} />
-                      </span>
-                      <span className="text-right text-sm font-semibold text-zinc-500">
-                        {route.departureTime}
-                      </span>
+                      <CheckboxIcon checked={selectedIds.has(route.id)} className="h-4 w-4" />
                     </button>
-                    {adminMode ? (
-                      <button
-                        type="button"
-                        onClick={() => toggleSelected(route.id)}
-                        aria-label={
-                          selectedIds.has(route.id)
-                            ? `Deselect route ${route.routeNumber}`
-                            : `Select route ${route.routeNumber}`
-                        }
-                        className="justify-self-end p-1 text-blue-600 active:opacity-70"
-                      >
-                        <CheckboxIcon checked={selectedIds.has(route.id)} className="h-4 w-4" />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onToggleFavorite(route)}
-                        aria-label={route.isFavorite ? "Remove favorite" : "Add favorite"}
-                        className="justify-self-end p-1 active:opacity-70"
-                      >
-                        <HeartIcon
-                          filled={route.isFavorite}
-                          className={`h-4 w-4 ${route.isFavorite ? "text-blue-600" : "text-zinc-300"}`}
-                        />
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Admin-only quick actions - shown for every route,
-                      demo included, not just real ones - each one a
-                      confirm-modal request (publish/unpublish/delete),
-                      never fired directly from here, so a stray tap
-                      can't silently flip a route live or delete one.
-                      All three always render now, Delete leftmost -
-                      it's disabled/faded rather than hidden until the
-                      route is actually unpublished first, an extra
-                      safety measure against deleting something still
-                      live. Publish/Unpublish swap in place of each
-                      other depending on the route's own current state. */}
-                  {adminMode && (
-                    <div className="-mt-1 flex items-center gap-2 px-2 pb-2">
-                      <button
-                        type="button"
-                        onClick={() => setConfirmRequest({ type: "delete", routes: [route] })}
-                        disabled={isPublished}
-                        className="flex items-center gap-1 rounded-lg border border-red-300 px-2 py-1 text-xs font-semibold text-red-600 disabled:opacity-30 active:bg-red-50"
-                      >
-                        <TrashIcon className="h-3.5 w-3.5" />
-                        Delete
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onEditRoute(route)}
-                        className="flex items-center gap-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
-                      >
-                        <EditIcon className="h-3.5 w-3.5" />
-                        Edit
-                      </button>
-                      {isPublished ? (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmRequest({ type: "unpublish", routes: [route] })}
-                          className="flex items-center gap-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
-                        >
-                          <EyeOffIcon className="h-3.5 w-3.5" />
-                          Unpublish
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handlePublishClick(route)}
-                          disabled={checkingRouteId === route.id}
-                          className="flex items-center gap-1 rounded-lg border border-zinc-300 px-2 py-1 text-xs font-semibold text-zinc-600 disabled:opacity-50 active:bg-zinc-100"
-                        >
-                          <EyeIcon className="h-3.5 w-3.5" />
-                          {checkingRouteId === route.id ? "Checking…" : "Publish"}
-                        </button>
-                      )}
-                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onToggleFavorite(route)}
+                      aria-label={route.isFavorite ? "Remove favorite" : "Add favorite"}
+                      className="justify-self-end p-1 active:opacity-70"
+                    >
+                      <HeartIcon
+                        filled={route.isFavorite}
+                        className={`h-4 w-4 ${route.isFavorite ? "text-blue-600" : "text-zinc-300"}`}
+                      />
+                    </button>
                   )}
                 </div>
               );
@@ -712,24 +697,21 @@ export function RouteListScreen({
         </div>
       </div>
 
-      {/* The same three per-row actions, applied to every currently
-          selected route (checked via the checkbox column above) at
-          once - "Selected" appended to each label to read as a bulk
-          action rather than a stray fourth per-row button. Delete
-          Selected carries the same safety rule as its per-row
-          counterpart, just applied to the whole selection: disabled
-          unless every selected route already reads unpublished, not
-          just some of them. Edit Selected only ever makes sense for
-          exactly one route at a time (there's only one edit screen),
-          so it's disabled otherwise. Publish/Unpublish Selected reads
-          "Unpublish" only once every selected route is already
-          published; otherwise it publishes whichever selected routes
-          aren't yet (bypassing the per-row readiness redirect to the
-          edit screen, unlike a single Publish tap above - a bulk
-          action has nowhere to redirect *to* for just one of several
-          selected routes). */}
+      {/* The only way left to act on a route in admin mode - select it
+          (a tap, or the checkbox column above) and use one of these.
+          Delete Selected is disabled unless every selected route
+          already reads unpublished. Edit Selected only ever makes
+          sense for exactly one route at a time (there's only one edit
+          screen), so it's disabled otherwise. Publish/Unpublish
+          Selected reads "Unpublish" only once every selected route is
+          already published; otherwise it publishes (see
+          handlePublishSelected - a single selected route still gets
+          the real readiness check/edit-screen redirect, same as the
+          old per-row Publish button did; only an actual multi-route
+          selection skips it, since there's nowhere to redirect *to*
+          for just one of several). */}
       {adminMode && (
-        <div className="flex w-full max-w-md shrink-0 items-center gap-2">
+        <div ref={bulkActionsRef} className="flex w-full max-w-md shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setConfirmRequest({ type: "delete", routes: selectedRoutes })}
@@ -750,13 +732,8 @@ export function RouteListScreen({
           </button>
           <button
             type="button"
-            onClick={() =>
-              setConfirmRequest({
-                type: allSelectedPublished ? "unpublish" : "publish",
-                routes: selectedRoutes,
-              })
-            }
-            disabled={selectedRoutes.length === 0}
+            onClick={handlePublishSelected}
+            disabled={selectedRoutes.length === 0 || checkingRouteId !== null}
             className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-zinc-300 px-2 py-1.5 text-xs font-semibold text-zinc-600 disabled:opacity-30 active:bg-zinc-100"
           >
             {allSelectedPublished ? (
@@ -764,7 +741,11 @@ export function RouteListScreen({
             ) : (
               <EyeIcon className="h-3.5 w-3.5" />
             )}
-            {allSelectedPublished ? "Unpublish Selected" : "Publish Selected"}
+            {checkingRouteId !== null
+              ? "Checking…"
+              : allSelectedPublished
+                ? "Unpublish Selected"
+                : "Publish Selected"}
           </button>
         </div>
       )}
@@ -854,9 +835,10 @@ export function RouteListScreen({
 
       <a
         href="mailto:nathan@pizar.net"
-        className="shrink-0 text-xs text-zinc-400 active:text-zinc-600"
+        className="flex shrink-0 items-center gap-1 text-xs text-zinc-400 active:text-zinc-600"
       >
-        © 2026 Nathan D. B. Pizar 🦊
+        © 2026 Nathan D. B. Pizar
+        <MailIcon className="h-3 w-3" />
       </a>
 
       {confirmRequest && (
