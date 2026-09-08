@@ -1895,7 +1895,13 @@ so far.
   if running `npm run geocode` by hand - see "Maps, part five" above.
   Nothing geocoding-related can actually run for real until this
   exists; once it does, `workflow_dispatch` on `geocode-route.yml` can
-  confirm the OpenRouteService switch works without needing a CSV edit
+  confirm the OpenRouteService switch works without needing a CSV edit.
+  The same key now also gates the road-following route line (see
+  "Maps, part twelve" above) - `/api/route-geometry` needs one real
+  ORS smoke test once this exists too, and the route geometry it
+  returns is worth caching in Postgres (alongside the waypoint cache)
+  rather than re-requested on every map mount, once this is spending
+  real quota in practice
 - The Overpass approach (see "Maps, part nine" above) is now wired into
   the real pipeline, pacing/retry included (see "Maps, part ten" above)
   - `scripts/geocodeRoute.ts` uses it for every route's intersections,
@@ -3403,3 +3409,62 @@ so far.
   leading-none` on the title itself, so a title sized to match a route
   name doesn't drift further from its own label above than the two
   actually need to sit.
+
+## Maps, part twelve: road-following route geometry, not straight lines through the waypoints
+
+  The route line drawn on the map (`RouteMap.tsx`) was always a
+  straight-segment "connect the dots" line through whichever stops/
+  turns/school points the waypoint cache had already resolved - a
+  reasonable stand-in once a turn marker sits at every real
+  intersection where the road actually bends, but never a real routed
+  path, and visibly wrong across anything longer than a short,
+  mid-block curve.
+
+  Added a small provider-agnostic routing abstraction under
+  `src/lib/routing/` (`types.ts`, `route.ts`,
+  `providers/openrouteservice.ts`) - the same swappable-provider shape
+  `src/lib/geocode.ts` already uses for geocoding, not tied to
+  OpenRouteService specifically: a `RoutingProvider` is just one
+  `route(waypoints)` method returning a plain GeoJSON `LineString`
+  (`RouteGeometry`, coordinates in GeoJSON's own `[lon, lat]` order,
+  documented explicitly since every other coordinate in this app is
+  `{lat, lon}`), independent of whichever service or map library ends
+  up drawing it. `providers/openrouteservice.ts` is the one real
+  implementation today, calling ORS's own Directions API
+  (`driving-car` - the closest available profile; ORS has no
+  bus-specific one) with the same `ORS_API_KEY` this app already
+  spends on geocoding, since ORS was picked for geocoding specifically
+  *because* it also covers routing under that one key (see "Maps, part
+  five" above's own reasoning). Adding Valhalla, OSRM, or anything
+  else later is a new file under `providers/` plus a one-line change
+  in `route.ts`'s own active-provider function, not a change anywhere
+  a route is actually requested.
+
+  A new server route, `POST /api/route-geometry`
+  (`src/app/api/route-geometry/route.ts`), is the only thing that
+  actually calls the routing provider - same "the real key stays
+  server-only, never shipped to the browser" reasoning `/api/geocode`
+  already documents for this same `ORS_API_KEY`. `RouteMap.tsx` now
+  builds its own ordered `{lat, lon}` waypoint list (the same stop/
+  turn cache lookups it already did for markers, plus the school
+  spliced in at whichever end its own `tripType` prop says it belongs
+  - first for a dropoff route, last for a pickup one, the same
+  convention `AllStopsModal` already uses for the same reason) and
+  POSTs that list to the new endpoint instead of drawing a polyline
+  through those points directly. The markers themselves are
+  unchanged - still placed straight from the geocoded cache,
+  independent of whether the routed line itself succeeds - a routing
+  failure (no `ORS_API_KEY` configured, a real ORS error, a network
+  blip) just means no line draws that mount, not a fabricated straight
+  one standing in for it.
+
+  Not yet persisted anywhere - unlike the waypoint cache, a route's
+  geometry is re-requested from ORS on every `RouteMap` mount rather
+  than cached in Postgres. Worth revisiting once this is spending real
+  ORS quota in practice (see Next steps). Untested against a real ORS
+  key in this environment (same `ORS_API_KEY` gap "Maps, part five"/
+  "Next steps" have been tracking since before routing needed it too)
+  - verified structurally (types, a missing-key request failing
+  cleanly rather than crashing the map) the same way "Maps, part four"
+  verified the tile map itself under this sandbox's own network
+  restrictions.

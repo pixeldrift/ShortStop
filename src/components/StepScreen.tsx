@@ -108,9 +108,10 @@ export function StepScreen({
     return markers;
   }, [route]);
   // Every step's own waypointKey, in the route's own order - RouteMap
-  // connects whichever of these are actually geocoded into a single
-  // line (its own `path` prop doc comment explains why straight
-  // segments between them already trace the route's real shape).
+  // uses whichever of these are actually geocoded to request a real,
+  // road-following line from /api/route-geometry (its own `path` prop
+  // doc comment has the details, including where the school - passed
+  // separately below - fits into that same ordered list).
   const routePath = useMemo(() => route.steps.map((s) => s.waypointKey), [route]);
   // The school's own geocoded location (School.lat/lon), straight from
   // the route - not a Waypoint cache lookup, so changing a route's
@@ -178,6 +179,7 @@ export function StepScreen({
           turns={turnMarkers}
           path={routePath}
           school={schoolPoint}
+          tripType={route.tripType}
           waypointsUrl={waypointsUrl}
         />
 
