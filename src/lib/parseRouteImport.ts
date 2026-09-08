@@ -38,6 +38,7 @@ export type ImportColumnField =
   | "action"
   | "fromAt"
   | "ontoAt"
+  | "location"
   | "riderCount"
   | "side"
   | "notes"
@@ -46,11 +47,23 @@ export type ImportColumnField =
 // The app's own schema (parseRouteCsvRows) as the canonical header name
 // for each field - what an import's own header is matched against
 // after normalizing away case/spacing/punctuation differences.
+//
+// `location` is a second, newer shape for the same road-tracking data
+// `fromAt`/`ontoAt` hold - one column per row ("action, location") that
+// only ever names the single road that row's action or direction
+// happens on, leaning on deriveWaypoints.ts's existing "derive from
+// whatever road was already tracked" logic for everything else, rather
+// than restating both sides of an intersection every row. Kept as an
+// alternative to `fromAt`/`ontoAt`, not a replacement - see `valueFor`
+// below - since the app's own internal round-trip (rowsToCsvText, read
+// back by this same function whenever an existing route reopens for
+// editing) still writes and reads `from_at`/`onto_at`.
 const CANONICAL_HEADER_NAMES: Record<ImportColumnField, string> = {
   time: "time",
   action: "action",
   fromAt: "from_at",
   ontoAt: "onto_at",
+  location: "location",
   riderCount: "rider_count",
   side: "side",
   notes: "notes",
@@ -308,16 +321,22 @@ export function parseRouteImport(text: string): ImportParseResult {
   );
   const unmatchedSourceHeaders = headers.filter((_, index) => !matchedIndices.has(index));
 
+  const locationResolved = headerMapping.some((m) => m.field === "location" && m.resolved);
+
   const rows: RawRouteRow[] = dataLines.map((line) => {
     const values = line.split(delimiter).map((v) => v.trim());
     const valueFor = (field: ImportColumnField): string => {
       const match = headerMapping.find((m) => m.field === field);
       return match?.sourceIndex != null ? (values[match.sourceIndex] ?? "") : "";
     };
+    // A sheet using the newer single-`location` shape (see
+    // CANONICAL_HEADER_NAMES above) has no `onto_at` of its own at all
+    // - deriveWaypoints.ts derives it from whichever road was already
+    // tracked, the same way it already does for a lone-value turn.
     return {
       action: valueFor("action"),
-      fromAt: normalizeStreetSuffix(valueFor("fromAt")),
-      ontoAt: normalizeStreetSuffix(valueFor("ontoAt")),
+      fromAt: normalizeStreetSuffix(locationResolved ? valueFor("location") : valueFor("fromAt")),
+      ontoAt: locationResolved ? "" : normalizeStreetSuffix(valueFor("ontoAt")),
       riderCount: valueFor("riderCount"),
       side: valueFor("side"),
       notes: valueFor("notes"),
@@ -336,10 +355,21 @@ export function parseRouteImport(text: string): ImportParseResult {
  * not per-sheet - so only these two are worth flagging as a sheet-level
  * problem before a human even looks at individual rows. Always empty
  * for a header-less import - parseHeaderlessLine guarantees both by
- * construction (see `resolved` on ImportColumnMapping). */
+ * construction (see `resolved` on ImportColumnMapping).
+ *
+ * A resolved `location` column (see CANONICAL_HEADER_NAMES) satisfies
+ * `fromAt`'s own requirement too - it's the same road-tracking data
+ * under the newer single-column shape (parseRouteImport feeds it into
+ * every row's own `fromAt`), so a sheet using only `location` shouldn't
+ * be flagged as missing `fromAt` just because it never had a column by
+ * that literal name. */
 export function unresolvedRequiredFields(mapping: ImportColumnMapping[]): ImportColumnField[] {
+  const locationResolved = mapping.some((m) => m.field === "location" && m.resolved);
   const required: ImportColumnField[] = ["action", "fromAt"];
-  return mapping.filter((m) => required.includes(m.field) && !m.resolved).map((m) => m.field);
+  return mapping
+    .filter((m) => required.includes(m.field) && !m.resolved)
+    .filter((m) => !(m.field === "fromAt" && locationResolved))
+    .map((m) => m.field);
 }
 
 /**

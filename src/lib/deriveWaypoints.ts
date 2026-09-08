@@ -50,6 +50,19 @@ function roadNameFromAddress(address: string): string {
   return address.replace(/^\d+\s+/, "");
 }
 
+/** Recognizes a bare road name ("Riverwood Ln") by its own trailing
+ * street-suffix word, the same signal a human reads a road name by.
+ * Deliberately doesn't touch anything else about telling a road name
+ * apart from other one-value stops - a house-numbered address ("216
+ * Lake Forest Dr") ends in a suffix too, so that case is always
+ * checked first (see isStop below); a place name with no suffix at all
+ * ("LaVergne Lake Elementary School") never matches here regardless. */
+function looksLikeRoadName(text: string): boolean {
+  return /\b(rd|road|ln|lane|dr|drive|st|street|ave|avenue|blvd|boulevard|ct|court|cir|circle|way|trl|trail|pl|place|pkwy|parkway|hwy|highway|loop|ter|terrace|sq|square|xing|crossing|cres|crescent)\.?$/i.test(
+    text.trim(),
+  );
+}
+
 function locationFor(
   roadA: string,
   roadB: string,
@@ -88,7 +101,11 @@ function locationFor(
  *    - the cross street (`ontoAt`) is just where along that road the
  *      stop is, not a new heading - except a literal-address stop with
  *      no cross street at all (e.g. "216 Lake Forest Dr"), where the
- *      road name is pulled out of the address itself.
+ *      road name is pulled out of the address itself, or a bare road
+ *      name with no cross street at all (e.g. "Riverwood Ln", the same
+ *      "lone value is the destination" shorthand turns already use),
+ *      derived as the crossroads of that road and whichever road was
+ *      already tracked.
  *
  * Any row that states its own road(s) explicitly always wins over the
  * tracked value (used directly, and also resets it), which also covers
@@ -151,6 +168,17 @@ export function deriveWaypointsWithContext(
       if (row.ontoAt) {
         currentRoad = row.fromAt;
         return locationFor(row.fromAt, row.ontoAt, schoolAddress, stepId);
+      }
+      if (
+        !/^\d/.test(row.fromAt) &&
+        currentRoad &&
+        currentRoad.toLowerCase() !== row.fromAt.toLowerCase() &&
+        looksLikeRoadName(row.fromAt)
+      ) {
+        const destination = row.fromAt;
+        const waypoint = locationFor(currentRoad, destination, schoolAddress, stepId);
+        currentRoad = destination;
+        return waypoint;
       }
       currentRoad = roadNameFromAddress(row.fromAt);
       if (isUnresolvableDescription(row.fromAt)) {
