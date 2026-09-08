@@ -203,7 +203,7 @@ export function StepScreen({
 
       {/* Glossy blue divider between the map/rider region and the rest of
           the pane - a horizontal bar in portrait, vertical in landscape. */}
-      <div className="btn-glossy h-1.5 w-full shrink-0 bg-blue-600 landscape:h-full landscape:w-1.5" />
+      <div className="btn-glossy-blue h-1.5 w-full shrink-0 bg-blue-600 landscape:h-full landscape:w-1.5" />
 
       {/* Everything else - stacked below the top third in portrait, to its
           right (its own column) in landscape. */}
@@ -305,7 +305,7 @@ export function StepScreen({
             onClick={phase === "arrived" ? onEndRoute : onAdvance}
             disabled={paused}
             aria-label={phase === "depot" ? "Start" : phase === "arrived" ? "End" : "Next"}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
           >
             {phase === "depot" ? "Start" : phase === "arrived" ? "End" : "Next"}{" "}
             <TriangleIcon direction="right" className="h-6 w-6" />
@@ -363,7 +363,7 @@ function LeaveRouteConfirmModal({
           <button
             type="button"
             onClick={onCancel}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
           >
             Return <TriangleIcon direction="right" className="h-6 w-6" />
           </button>
@@ -625,7 +625,7 @@ function RiderCheckInBox({
         <button
           type="button"
           onClick={onClose}
-          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+          className="btn-glossy-blue font-heading flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
         >
           <CheckIcon className="h-4 w-4" />
           Check in Riders

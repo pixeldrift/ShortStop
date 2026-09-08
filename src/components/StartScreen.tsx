@@ -173,7 +173,7 @@ export function StartScreen({
       <button
         type="button"
         onClick={onStart}
-        className="btn-glossy font-heading flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
+        className="btn-glossy-blue font-heading flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
       >
         Start Route <TriangleIcon direction="right" className="h-6 w-6" />
       </button>

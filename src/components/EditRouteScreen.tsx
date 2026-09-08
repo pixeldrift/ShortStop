@@ -897,7 +897,7 @@ function FetchCoordinatesModal({
             type="button"
             onClick={onFetchMissing}
             disabled={fetchRunning || counts.unresolved === 0}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           >
             Fetch Missing
           </button>
@@ -1748,7 +1748,7 @@ export function EditRouteScreen({
             type="button"
             onClick={() => handleSave()}
             disabled={saving}
-            className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white disabled:opacity-60"
+            className="btn-glossy-blue font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white disabled:opacity-60"
           >
             Create Route
             <RightArrowIcon className="h-5 w-5" />
@@ -1910,7 +1910,7 @@ export function EditRouteScreen({
               type="button"
               onClick={() => handleSave()}
               disabled={saving}
-              className="btn-glossy font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white disabled:opacity-60"
+              className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-lg font-bold text-white disabled:opacity-60"
             >
               <SaveIcon className="h-5 w-5" />
               Save
@@ -1996,7 +1996,7 @@ export function EditRouteScreen({
         <button
           type="button"
           onClick={() => setSubScreen("stops")}
-          className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-base font-semibold text-white"
+          className="btn-glossy-blue font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-base font-semibold text-white"
         >
           <MapPinIcon className="h-5 w-5" />
           Edit Stops

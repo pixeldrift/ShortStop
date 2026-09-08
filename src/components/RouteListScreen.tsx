@@ -783,7 +783,7 @@ export function RouteListScreen({
             <button
               type="button"
               onClick={onToggleAdminMode}
-              className="btn-glossy flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+              className="btn-glossy-blue flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
             >
               <EditIcon className="h-3 w-3" />
               Edit Routes
@@ -825,7 +825,7 @@ export function RouteListScreen({
           <button
             type="button"
             onClick={onAddRoute}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
           >
             <PlusIcon className="h-5 w-5" />
             New Route
