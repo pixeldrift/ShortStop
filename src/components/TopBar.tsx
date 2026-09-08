@@ -1,5 +1,7 @@
 import { Logo } from "./Logo";
-import { BackArrowIcon, PersonSolidIcon, SunIcon, SunriseIcon } from "./icons";
+import { TripTypeIcon } from "./TripTypeIcon";
+import { BackArrowIcon, PersonSolidIcon } from "./icons";
+import { tripTypeLabel } from "@/lib/tripType";
 import type { TripType } from "@/lib/types";
 
 export function TopBar({
@@ -50,12 +52,8 @@ export function TopBar({
           <p className="font-heading relative -mt-1 text-3xl font-black tracking-tight">
             {routeNumber}
             <span className="absolute top-1/2 left-full ml-1.5 flex -translate-y-1/2 items-center gap-1 text-base text-blue-500">
-              {tripType === "pickup" ? "AM" : "PM"}
-              {tripType === "pickup" ? (
-                <SunriseIcon className="h-4 w-4" />
-              ) : (
-                <SunIcon className="h-4 w-4" />
-              )}
+              {tripTypeLabel(tripType)}
+              <TripTypeIcon tripType={tripType} className="h-4 w-4" />
             </span>
           </p>
         </div>

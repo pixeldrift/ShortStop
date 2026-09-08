@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { ToggleSwitch } from "./ToggleSwitch";
+import { TripTypeIcon } from "./TripTypeIcon";
 import {
   BackArrowIcon,
   CheckCircleIcon,
@@ -17,15 +18,13 @@ import {
   RoundedTriangleIcon,
   SaveIcon,
   SpinnerIcon,
-  SunIcon,
-  SunriseIcon,
   TrashIcon,
   TriangleIcon,
   TurnArrow,
   UploadIcon,
   XCircleIcon,
 } from "./icons";
-import { buildRouteFromRows } from "@/lib/parseRouteCsv";
+import { buildRouteFromRows, formatWaypointInstruction } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
@@ -41,6 +40,7 @@ import {
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import { resolutionCounts, summarizeRouteResolution } from "@/lib/routeResolutionStatus";
 import type { RouteResolutionCounts, RowResolutionStatus } from "@/lib/routeResolutionStatus";
+import { tripTypeFullLabel, tripTypeLabel } from "@/lib/tripType";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -208,7 +208,14 @@ function StepRowView({
   onEdit: () => void;
 }) {
   const isStop = stopNumber !== null;
-  const direction = row.action.toLowerCase() === "left" ? "left" : "right";
+  // Only "Left"/"Right" actually have a direction (and the mirrored
+  // TurnArrow to go with it) - every other action (Proceed, Turn
+  // Around, Pull Over, Return) reads as its own plain label instead,
+  // same as the real driving screen falls back to a text-only heading
+  // once a step's own `direction` is unset (StepContent's own doc
+  // comment).
+  const turnDirection =
+    row.action.toLowerCase() === "left" ? "left" : row.action.toLowerCase() === "right" ? "right" : null;
   // A stop's own from/onto pair reads as an intersection ("Main St &
   // Oak Ave"); a turn's reads as the maneuver itself ("Main St onto
   // Oak Ave") - same shape, different connector word, both set apart
@@ -244,11 +251,13 @@ function StepRowView({
                   </span>
                 )}
               </>
-            ) : (
+            ) : turnDirection ? (
               <>
-                <TurnArrow direction={direction} className="h-4 w-4 shrink-0" />
-                Turn {direction === "left" ? "Left" : "Right"}
+                <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+                Turn {turnDirection === "left" ? "Left" : "Right"}
               </>
+            ) : (
+              row.action || "Turn"
             )}
           </span>
           {isStop && row.riderCount && (
@@ -368,7 +377,13 @@ function StepRowEditor({
   // fields and the subtitle below immediately, not just after Update
   // commits the draft back.
   const isStop = row.action.toLowerCase() === "stop";
-  const turnDirection = row.action.toLowerCase() === "left" ? "left" : "right";
+  // Only "Left"/"Right" actually have a direction (and the mirrored
+  // TurnArrow to go with it) - every other action (Proceed, Turn
+  // Around, Pull Over, Return) reads as its own plain label in the
+  // subtitle below instead, same as StepRowView's own identical
+  // turnDirection derivation for the collapsed row.
+  const turnDirection =
+    row.action.toLowerCase() === "left" ? "left" : row.action.toLowerCase() === "right" ? "right" : null;
 
   // A plain address (a stop with no cross street, its own house number
   // out front) has no "from road" concept at all - the box edits
@@ -438,11 +453,13 @@ function StepRowEditor({
                   <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
                   Stop{stopNumber ? ` ${stopNumber}` : ""}
                 </>
-              ) : (
+              ) : turnDirection ? (
                 <>
                   <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
                   Turn {turnDirection === "left" ? "Left" : "Right"}
                 </>
+              ) : (
+                row.action || "Turn"
               )}
             </p>
           </div>
@@ -466,6 +483,10 @@ function StepRowEditor({
             <option value="Stop">Stop</option>
             <option value="Left">Turn Left</option>
             <option value="Right">Turn Right</option>
+            <option value="Proceed">Proceed</option>
+            <option value="Turn Around">Turn Around</option>
+            <option value="Pull Over">Pull Over</option>
+            <option value="Return">Return</option>
           </select>
         </Field>
         {isStop ? (
@@ -507,6 +528,18 @@ function StepRowEditor({
             <span className="min-w-0 truncate">{status.reason}</span>
           </p>
         )}
+      </div>
+
+      {/* The exact instruction this row now produces, live off Type and
+          the destination box above - "Left onto Main Street," "Stop 5
+          at 123 Elm Street" - so a change to either is visible here
+          immediately rather than only once this screen's own driving
+          preview (or the real turn-by-turn screen) shows it. */}
+      <div className="mt-2 rounded-lg bg-zinc-100 px-3 py-2">
+        <p className={labelClass}>Full Instruction</p>
+        <p className="font-heading text-base leading-tight font-bold text-zinc-800">
+          {formatWaypointInstruction(row, stopNumber)}
+        </p>
       </div>
 
       <div className="mt-2">
@@ -1016,6 +1049,7 @@ function FetchCoordinatesModal({
 export function EditRouteScreen({
   mode,
   route,
+  routes,
   rawStepsText,
   initialWaypointCache,
   schools,
@@ -1025,6 +1059,12 @@ export function EditRouteScreen({
   mode: "add" | "edit";
   /** The route being edited, or null when adding a brand-new one. */
   route: Route | null;
+  /** Every other route (real and demo) - only real, non-demo ones
+   * (anything but `status: "demo"`) are ever eligible "Next Action"
+   * targets below, but this is the same full list RouteListScreen
+   * itself gets, not pre-filtered, so this screen doesn't need its own
+   * separate real-routes-only prop just for this one field. */
+  routes: Route[];
   /** The route's own current steps text - pre-fills `mode: "add"`'s
    * textarea directly, and seeds `mode: "edit"`'s structured row list
    * once on mount (see the `rows` useState below) - always "" for
@@ -1092,6 +1132,45 @@ export function EditRouteScreen({
     return names;
   }, [schools, schoolName]);
   const [tripType, setTripType] = useState<TripType>(route?.tripType ?? "pickup");
+  // Every other real route this bus could plausibly hand off to once
+  // this one's done - same bus (a chain is one bus driving more than
+  // one leg back-to-back) and same trip type (an AM route handing off
+  // into a PM one, or vice versa, would mean the bus sits idle for
+  // hours mid-"trip"), excluding this route itself and every demo/
+  // fabricated filler route (chaining only ever makes sense between
+  // real, scheduled routes - see Route.nextRouteId's own doc comment
+  // in types.ts).
+  const nextRouteOptions = useMemo(
+    () =>
+      routes.filter(
+        (r) => r.status !== "demo" && r.id !== route?.id && r.busNumber === busNumber && r.tripType === tripType,
+      ),
+    [routes, route?.id, busNumber, tripType],
+  );
+  // The dropdown's own default the first time this route's editor opens
+  // (a brand-new route, or an existing one that's never had this field
+  // set by hand) - whichever eligible route above runs the next school
+  // level up from this one (elementary -> middle -> high), if exactly
+  // the kind of route this bus would obviously hand off to next. High
+  // school has nowhere further to go, so it never gets a default -
+  // "smartly infer where possible, or none if it's high school." Only
+  // ever computed once, from this route's *initial* school level - not
+  // re-decided while editing, same "decided once from initial content"
+  // convention every other inferred-from-context field in this screen
+  // already follows (see StepRowEditor's own isPlainAddress).
+  const [nextRouteId, setNextRouteId] = useState<string | null>(() => {
+    // A real, already-linked route keeps exactly that - an admin's own
+    // explicit choice always wins over guessing again. Null covers both
+    // "never set" and "explicitly set to None" (the database can't tell
+    // those apart once saved) - re-suggesting the inferred default in
+    // that second case is an accepted tradeoff for actually being
+    // useful in the far more common first one.
+    if (route?.nextRouteId) return route.nextRouteId;
+    const nextLevel: SchoolLevel | null =
+      schoolLevel === "elementary" ? "middle" : schoolLevel === "middle" ? "high" : null;
+    if (!nextLevel) return null;
+    return nextRouteOptions.find((r) => r.schoolLevel === nextLevel)?.id ?? null;
+  });
   const [departureTime, setDepartureTime] = useState(route?.departureTime ?? "");
   const [driverName, setDriverName] = useState(route?.driverName ?? PLACEHOLDER_DRIVER_NAME);
   // mode "add" only - the paste/upload box. mode "edit" never reads
@@ -1526,7 +1605,7 @@ export function EditRouteScreen({
     (nextStatus: RouteStatus): RouteMeta => ({
       id: `${routeNumber}-${tripType}-${schoolLevel}`,
       status: nextStatus,
-      name: `${schoolName} — ${tripType === "pickup" ? "Morning Pickup" : "Afternoon Drop Off"}`,
+      name: `${schoolName} — ${tripTypeFullLabel(tripType)}`,
       routeNumber,
       driverName,
       busNumber,
@@ -1544,6 +1623,7 @@ export function EditRouteScreen({
       distance: route?.distance ?? PLACEHOLDER_DISTANCE,
       durationMinutes: route?.durationMinutes ?? PLACEHOLDER_DURATION_MINUTES,
       isFavorite: route?.isFavorite ?? false,
+      nextRouteId,
     }),
     [
       routeNumber,
@@ -1557,6 +1637,7 @@ export function EditRouteScreen({
       driverName,
       busNumber,
       route,
+      nextRouteId,
     ],
   );
 
@@ -1598,6 +1679,7 @@ export function EditRouteScreen({
           schoolLevel: built.schoolLevel,
           tripType: built.tripType,
           startTime: built.departureTime,
+          nextRouteId: built.nextRouteId,
           steps: currentRows,
         }),
       });
@@ -1684,6 +1766,7 @@ export function EditRouteScreen({
           >
             <option value="pickup">AM</option>
             <option value="dropoff">PM</option>
+            <option value="fieldtrip">Field Trip</option>
           </select>
         </Field>
         <Field label="Start">
@@ -1750,6 +1833,33 @@ export function EditRouteScreen({
               setDirty(true);
             }}
           />
+        </Field>
+      </div>
+
+      {/* Chains this route straight into another one's own directions
+          once its last step is reached, instead of ending the trip -
+          same bus driving more than one leg back-to-back (elementary,
+          then middle school, say). Defaults to whichever eligible route
+          (nextRouteOptions) runs the next school level up, if there is
+          one - see the nextRouteId state's own doc comment for exactly
+          how. */}
+      <div className="mt-3">
+        <Field label="Next Action">
+          <select
+            className={inputClass}
+            value={nextRouteId ?? ""}
+            onChange={(e) => {
+              setNextRouteId(e.target.value || null);
+              setDirty(true);
+            }}
+          >
+            <option value="">None - end trip here</option>
+            {nextRouteOptions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.routeNumber} — {r.schoolName}
+              </option>
+            ))}
+          </select>
         </Field>
       </div>
     </div>
@@ -1911,12 +2021,8 @@ export function EditRouteScreen({
               </span>
               {routeNumber && (
                 <span className="flex items-center gap-1 text-sm font-bold text-blue-500">
-                  {tripType === "pickup" ? "AM" : "PM"}
-                  {tripType === "pickup" ? (
-                    <SunriseIcon className="h-3.5 w-3.5" />
-                  ) : (
-                    <SunIcon className="h-3.5 w-3.5" />
-                  )}
+                  {tripTypeLabel(tripType)}
+                  <TripTypeIcon tripType={tripType} className="h-3.5 w-3.5" />
                 </span>
               )}
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">

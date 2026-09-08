@@ -118,11 +118,20 @@ export function matchColumns(headerLine: string, delimiter: string): ImportColum
 }
 
 // A line the doc's own schema already recognizes as an action, not a
-// location - "Stop", or a turn's own direction. Matched case-
-// insensitively against a header-less line's first cell to tell "this
-// line names its own action" apart from "this line is just a bare
-// location" (see parseHeaderlessLine).
-const RECOGNIZED_ACTIONS = new Set(["stop", "left", "right"]);
+// location - "Stop", a turn's own direction, or one of the dropdown's
+// other waypoint types (StepRowEditor's own Type select). Matched
+// case-insensitively against a header-less line's first cell to tell
+// "this line names its own action" apart from "this line is just a
+// bare location" (see parseHeaderlessLine).
+const RECOGNIZED_ACTIONS = new Set([
+  "stop",
+  "left",
+  "right",
+  "proceed",
+  "turn around",
+  "pull over",
+  "return",
+]);
 
 /** Splits "Road A & Road B" (or "Road A and Road B") into its two road
  * names - the plain-English way a human would write a cross-street

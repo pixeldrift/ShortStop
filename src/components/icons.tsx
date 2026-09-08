@@ -113,6 +113,12 @@ export function SortIcon({
 export { default as PersonIcon } from "./icons/person-outline.svg";
 export { default as PersonSolidIcon } from "./icons/person-solid.svg";
 export { default as MapPinIcon } from "./icons/map-pin.svg";
+
+/** A small pennant on a pole - the field-trip badge every AM/PM badge's
+ * own SunriseIcon/SunIcon pairs with once a route's trip type is
+ * "fieldtrip" instead (TripTypeIcon, TripTypeIcon.tsx) - a one-off
+ * special trip has no time-of-day to show a sun icon for. */
+export { default as FlagIcon } from "./icons/flag.svg";
 export { default as BackArrowIcon } from "./icons/back-arrow.svg";
 export { default as RightArrowIcon } from "./icons/right-arrow.svg";
 export { default as CheckIcon } from "./icons/check.svg";

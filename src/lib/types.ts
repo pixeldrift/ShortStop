@@ -1,6 +1,10 @@
 export type StepKind = "depart" | "turn" | "stop" | "arrive";
 export type TurnDirection = "left" | "right";
-export type TripType = "pickup" | "dropoff";
+/** "fieldtrip" is a one-off special trip, not a morning/afternoon run -
+ * no inherent AM/PM time-of-day badge (TripTypeIcon shows a flag
+ * instead of a sun icon for it), and no fixed "arriving at"/"leaving
+ * from" the school the way pickup/dropoff each always are. */
+export type TripType = "pickup" | "dropoff" | "fieldtrip";
 /** "Demo" marks the fabricated filler routes (demoRoutes.ts) that pad
  * out the route list - never a real district route, whatever its
  * other fields claim. "Published"/"draft" are both real data,
@@ -96,4 +100,14 @@ export interface Route {
    * placeholderMeta.ts (which always favorites the one real route). */
   isFavorite: boolean;
   steps: NavigationStep[];
+  /** EditRouteScreen's own "Next Action" field - another real route's
+   * own id (never a demo route's), or null for "end the trip here"
+   * (every route's own default). Once this route reaches its last
+   * step, useRouteStepper auto-continues straight into the linked
+   * route's own directions instead of ending the trip - a bus that
+   * drives more than one leg back-to-back (elementary, then middle,
+   * then high school, say) without a driver pulling the next route up
+   * separately. Never set for a demo/fabricated route (demoRoutes.ts) -
+   * chaining only ever makes sense between real, scheduled routes. */
+  nextRouteId: string | null;
 }

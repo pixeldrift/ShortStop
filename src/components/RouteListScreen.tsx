@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
+import { TripTypeIcon } from "./TripTypeIcon";
 import {
   BackArrowIcon,
   CheckboxIcon,
@@ -17,13 +18,12 @@ import {
   RouteIcon,
   SchoolIcon,
   SearchIcon,
-  SunIcon,
-  SunriseIcon,
   TrashIcon,
 } from "./icons";
 import { downloadCsv, routeListToCsv } from "@/lib/exportCsv";
 import { fetchCommittedWaypointCache, isRouteFullyResolved } from "@/lib/routeReadiness";
 import { parseTimeToMinutes } from "@/lib/time";
+import { tripTypeLabel, TRIP_TYPE_ORDER } from "@/lib/tripType";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 import { SortableHeader } from "./SortableHeader";
@@ -56,7 +56,7 @@ type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
 const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
   routeNumber: (a, b) =>
     Number(a.routeNumber) - Number(b.routeNumber) || SORT_COMPARATORS.tripType(a, b),
-  tripType: (a, b) => (a.tripType === b.tripType ? 0 : a.tripType === "pickup" ? -1 : 1),
+  tripType: (a, b) => TRIP_TYPE_ORDER.indexOf(a.tripType) - TRIP_TYPE_ORDER.indexOf(b.tripType),
   schoolName: (a, b) => a.schoolName.localeCompare(b.schoolName),
   departureTime: (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
 };
@@ -70,6 +70,7 @@ const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
 const TRIP_TYPE_TOGGLES: { value: TripType; label: string }[] = [
   { value: "pickup", label: "AM" },
   { value: "dropoff", label: "PM" },
+  { value: "fieldtrip", label: "FT" },
 ];
 const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
   { value: "elementary", label: "EL" },
@@ -731,7 +732,7 @@ export function RouteListScreen({
                   >
                     <div
                       className={`flex gap-1.5 ${
-                        route.tripType === "pickup" ? "items-end" : "items-start"
+                        route.tripType === "dropoff" ? "items-start" : "items-end"
                       }`}
                     >
                       <span className="font-heading text-2xl leading-none font-black">
@@ -739,13 +740,9 @@ export function RouteListScreen({
                       </span>
                       <div className="flex items-center gap-0.5 text-blue-500">
                         <span className="font-heading text-xs leading-none font-black">
-                          {route.tripType === "pickup" ? "AM" : "PM"}
+                          {tripTypeLabel(route.tripType)}
                         </span>
-                        {route.tripType === "pickup" ? (
-                          <SunriseIcon className="h-3 w-3" />
-                        ) : (
-                          <SunIcon className="h-3 w-3" />
-                        )}
+                        <TripTypeIcon tripType={route.tripType} className="h-3 w-3" />
                       </div>
                     </div>
                     <span className="min-w-0 pl-1.5">

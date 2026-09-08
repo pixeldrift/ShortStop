@@ -278,7 +278,11 @@ export function RouteMap({
             if (!entry || entry.status !== "ok") continue;
             routeWaypoints.push({ lat: entry.lat, lon: entry.lon });
           }
-          if (schoolRef.current && tripTypeRef.current === "pickup") {
+          // Pickup and a one-off field trip both default to ending at
+          // the school (not "pickup only" - a fieldtrip route would
+          // otherwise never splice the school pin in at all, having
+          // matched neither this nor the dropoff check above).
+          if (schoolRef.current && tripTypeRef.current !== "dropoff") {
             routeWaypoints.push(schoolRef.current);
           }
           if (routeWaypoints.length > 1) {

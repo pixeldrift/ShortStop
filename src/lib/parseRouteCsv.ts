@@ -27,6 +27,7 @@ export interface RouteMeta {
   distance: string;
   durationMinutes: number;
   isFavorite: boolean;
+  nextRouteId: string | null;
 }
 
 function splitRow(line: string, delimiter: string): string[] {
@@ -107,6 +108,45 @@ export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
   return buildRouteFromRows(parseRouteCsvRows(csvText), meta);
 }
 
+/** The exact reader-facing instruction a row's own action/from/onto
+ * values produce - "Left onto Main Street", "Proceed onto Elm Street",
+ * "Turn Around", "Stop 5 at 123 Elm Street" - not the screen's own
+ * ALL-CAPS heading (stepHeading below) or spoken announcement
+ * (buildRouteFromRows), which both phrase the same row differently for
+ * their own contexts. Shared by StepRowEditor's own live preview (this
+ * exact row, mid-edit) and anywhere else that wants to show what a row
+ * actually says without duplicating this phrasing. Works the same for
+ * every action (Stop aside) rather than special-casing which of the
+ * dropdown's own options genuinely have a destination - "Turn Around"/
+ * "Pull Over" simply never get one typed in, so the fallback to the
+ * bare action label already covers them without a name-by-name list
+ * that'd need updating for any future action added to that dropdown.
+ * `stopNumber` null omits the number rather than printing "Stop null" -
+ * the same graceful fallback every other stop-number display in this
+ * app already uses for a row not actually numbered yet. */
+export function formatWaypointInstruction(row: RawRouteRow, stopNumber: number | null): string {
+  const { action, fromAt, ontoAt } = row;
+  if (action.toLowerCase() === "stop") {
+    const location = ontoAt ? `${fromAt} & ${ontoAt}` : fromAt;
+    const label = stopNumber ? `Stop ${stopNumber}` : "Stop";
+    return location ? `${label} at ${location}` : label;
+  }
+  const actionLabel = action || "Turn";
+  const destination = ontoAt || fromAt;
+  return destination ? `${actionLabel} onto ${destination}` : actionLabel;
+}
+
+/** The big on-screen line for a turn-kind step (StepContent's own `h1`
+ * once `direction` is unset) - "TURN LEFT" keeps its existing "TURN "
+ * prefix (the action word alone, "LEFT", would read as a place name
+ * rather than a maneuver), every other action is distinctive enough
+ * baldly capitalized on its own ("PROCEED", "TURN AROUND", "PULL
+ * OVER", "RETURN"). */
+function stepHeading(action: string): string {
+  const a = action.toLowerCase();
+  return a === "left" || a === "right" ? `TURN ${action.toUpperCase()}` : action.toUpperCase();
+}
+
 export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route {
   let stopCounter = 0;
 
@@ -154,16 +194,29 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
     // sheet for "turn onto this road" rather than a from/onto pair.
     // Treat a lone value as the turn's destination either way.
     const destination = ontoAt || fromAt;
-    const spokenAnnouncement =
-      ontoAt && fromAt
-        ? `Turn ${action.toLowerCase()} from ${speakRoadNames(fromAt)} onto ${speakRoadNames(ontoAt)}.`
-        : `Turn ${action.toLowerCase()} onto ${speakRoadNames(destination)}.`;
     const direction: TurnDirection | undefined =
       action.toLowerCase() === "left"
         ? "left"
         : action.toLowerCase() === "right"
           ? "right"
           : undefined;
+
+    // "Left"/"Right" keep their exact original "Turn left/right (from
+    // X) onto Y" phrasing. Every other action (Proceed, Turn Around,
+    // Pull Over, Return) speaks as its own verb instead of a hardcoded
+    // "Turn" - "Proceed onto Elm Street," not "Turn proceed onto Elm
+    // Street" - and falls back to the bare action ("Turn Around.")
+    // once there's no destination typed in for it to name, the same
+    // "no name-by-name list" reasoning formatWaypointInstruction above
+    // uses for its own, differently-phrased preview of this same row.
+    const spokenAnnouncement =
+      action.toLowerCase() === "left" || action.toLowerCase() === "right"
+        ? ontoAt && fromAt
+          ? `Turn ${action.toLowerCase()} from ${speakRoadNames(fromAt)} onto ${speakRoadNames(ontoAt)}.`
+          : `Turn ${action.toLowerCase()} onto ${speakRoadNames(destination)}.`
+        : destination
+          ? `${action} onto ${speakRoadNames(destination)}.`
+          : `${action}.`;
 
     // A turn's note is spoken too, same as a stop's - e.g. a road
     // renaming partway along with no turn of its own ("Fergus Rd
@@ -178,8 +231,8 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
       id: index,
       kind: "turn",
       direction,
-      heading: `TURN ${action.toUpperCase()}`,
-      subheading: destination,
+      heading: stepHeading(action),
+      subheading: destination || undefined,
       specialInstruction,
       waypointKey,
       announcement,

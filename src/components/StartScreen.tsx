@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RouteMap } from "./RouteMap";
 import type { StopMarker, TurnMarker } from "./RouteMap";
 import { ToggleSwitch } from "./ToggleSwitch";
+import { TripTypeIcon } from "./TripTypeIcon";
 import {
   BackArrowIcon,
   CloseIcon,
@@ -11,12 +12,11 @@ import {
   MapPinIcon,
   PersonSolidIcon,
   RoundedTriangleIcon,
-  SunIcon,
-  SunriseIcon,
   TriangleIcon,
   TurnArrow,
 } from "./icons";
 import { addressWithoutZip } from "@/lib/schoolAddress";
+import { tripTypeLabel } from "@/lib/tripType";
 import type { NavigationStep, Route } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
@@ -208,12 +208,8 @@ export function StartScreen({
             <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
               Route {route.routeNumber}
               <span className="absolute top-1/2 left-full ml-2 flex -translate-y-1/2 items-center gap-1 text-lg text-blue-500">
-                {route.tripType === "pickup" ? "AM" : "PM"}
-                {route.tripType === "pickup" ? (
-                  <SunriseIcon className="h-4 w-4" />
-                ) : (
-                  <SunIcon className="h-4 w-4" />
-                )}
+                {tripTypeLabel(route.tripType)}
+                <TripTypeIcon tripType={route.tripType} className="h-4 w-4" />
               </span>
             </h1>
           </div>
@@ -400,15 +396,11 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
             Route {route.routeNumber}
             <span
               className={`flex items-center gap-1 text-sm text-blue-500 ${
-                route.tripType === "pickup" ? "self-end" : "self-start"
+                route.tripType === "dropoff" ? "self-start" : "self-end"
               }`}
             >
-              {route.tripType === "pickup" ? "AM" : "PM"}
-              {route.tripType === "pickup" ? (
-                <SunriseIcon className="h-3.5 w-3.5" />
-              ) : (
-                <SunIcon className="h-3.5 w-3.5" />
-              )}
+              {tripTypeLabel(route.tripType)}
+              <TripTypeIcon tripType={route.tripType} className="h-3.5 w-3.5" />
             </span>
             <span className="text-zinc-400">-</span>
             All Stops
@@ -469,7 +461,12 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
             return null;
           })}
 
-          {route.tripType === "pickup" && schoolEntry}
+          {/* Dropoff starts at the school (see the "before" branch
+              above); pickup and a one-off field trip both default to
+              ending there instead - not "pickup only" (a fieldtrip
+              route would otherwise show no school entry at all, having
+              matched neither branch). */}
+          {route.tripType !== "dropoff" && schoolEntry}
         </div>
       </div>
     </div>

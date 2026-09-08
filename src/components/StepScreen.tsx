@@ -693,15 +693,18 @@ function DepotContent({ route, departing }: { route: Route; departing: boolean }
           the school name and its address, not the bus/title above. */}
       <div className="flex flex-col items-center gap-1">
         <p className="flex items-center justify-center gap-1.5 text-[clamp(0.875rem,2.5vh,1.25rem)] font-semibold text-zinc-700">
-          {/* Pickup: the bus is heading *to* the school - the arrow
-              leads into the name. Dropoff: it's leaving *from* the
-              school - the arrow trails off after the name, pointing
-              away. Same rightward TriangleIcon either way, just placed
-              on whichever side reads as the right direction of travel. */}
-          {route.tripType === "pickup" && (
+          {/* Dropoff: the bus is leaving *from* the school - the arrow
+              trails off after the name, pointing away. Pickup and a
+              one-off field trip both default to heading *to* the
+              school instead (not "pickup only" - a fieldtrip route
+              would otherwise get no arrow at all, having matched
+              neither branch) - the arrow leads into the name. Same
+              rightward TriangleIcon either way, just placed on
+              whichever side reads as the right direction of travel. */}
+          {route.tripType !== "dropoff" && (
             <TriangleIcon direction="right" className="h-[0.7em] w-[0.7em] shrink-0 text-blue-500" />
           )}
-          {route.tripType === "pickup" ? "To " : "From "}
+          {route.tripType === "dropoff" ? "From " : "To "}
           {route.schoolName}
           {route.tripType === "dropoff" && (
             <TriangleIcon direction="right" className="h-[0.7em] w-[0.7em] shrink-0 text-blue-500" />
