@@ -117,7 +117,7 @@ const inputClass =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
 const labelClass = "text-xs font-semibold tracking-wide text-zinc-500 uppercase";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
       <span className={labelClass}>{label}</span>
@@ -361,8 +361,14 @@ function StepRowEditor({
   onDelete: () => void;
   onUpdate: () => void;
 }) {
-  const isStop = stopNumber !== null;
-  const [showErrorDetail, setShowErrorDetail] = useState(false);
+  // Live off the draft's own Type select, not the `stopNumber` prop
+  // (only recomputed by the parent from the *committed* rows, see
+  // EditRouteScreen's own StepRowEditor call site) - so switching Type
+  // between Stop and Turn Left/Right here updates the Side/Riders
+  // fields and the subtitle below immediately, not just after Update
+  // commits the draft back.
+  const isStop = row.action.toLowerCase() === "stop";
+  const turnDirection = row.action.toLowerCase() === "left" ? "left" : "right";
 
   // A plain address (a stop with no cross street, its own house number
   // out front) has no "from road" concept at all - the box edits
@@ -418,10 +424,28 @@ function StepRowEditor({
         className="animate-popup-pop flex max-h-[85vh] w-full max-w-sm flex-col overflow-y-auto rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="font-heading text-xl font-black tracking-tight">
-            {isStop ? `Edit Stop${stopNumber ? ` ${stopNumber}` : ""}` : "Edit Turn"}
-          </h2>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="font-heading text-xl font-black tracking-tight">Edit Waypoint</h2>
+            {/* Same icon+label the collapsed StepRowView row above shows
+                for this same stop/turn - live off `isStop`/`turnDirection`
+                (the draft's own Type select), not a snapshot from when
+                this editor opened, so flipping Type here updates this
+                line immediately instead of only after Update commits. */}
+            <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-500">
+              {isStop ? (
+                <>
+                  <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
+                  Stop{stopNumber ? ` ${stopNumber}` : ""}
+                </>
+              ) : (
+                <>
+                  <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+                  Turn {turnDirection === "left" ? "Left" : "Right"}
+                </>
+              )}
+            </p>
+          </div>
           <button
             type="button"
             onClick={onCancel}
@@ -481,15 +505,6 @@ function StepRowEditor({
           <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
             <XCircleIcon className="h-3.5 w-3.5 shrink-0" />
             <span className="min-w-0 truncate">{status.reason}</span>
-            {status.detail && (
-              <button
-                type="button"
-                onClick={() => setShowErrorDetail(true)}
-                className="shrink-0 font-semibold underline underline-offset-2"
-              >
-                View Error
-              </button>
-            )}
           </p>
         )}
       </div>
@@ -551,30 +566,35 @@ function StepRowEditor({
         </label>
       </div>
 
-      {showErrorDetail && status?.status === "unresolved" && status.detail && (
-        <ErrorDetailsModal
-          message={status.detail}
-          raw={status.raw}
-          onClose={() => setShowErrorDetail(false)}
-        />
-      )}
-
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        {isStop && (
-          <Field label="Riders">
+      {/* Riders only for a stop (a turn has no one boarding/leaving at
+          it) - live off `isStop` above, so switching Type away from
+          Stop hides this immediately rather than leaving a stale count
+          behind on what's now a turn. Its own full-width line, not
+          sharing a row with Notes - the two aren't related enough to
+          read as a pair, and Notes needs the room on longer entries. */}
+      {isStop && (
+        <div className="mt-2">
+          <Field
+            label={
+              <span className="inline-flex items-center gap-1">
+                <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
+              </span>
+            }
+          >
             <input
               className={inputClass}
               inputMode="numeric"
               value={row.riderCount}
-              onChange={(e) => onChange({ riderCount: e.target.value })}
+              onChange={(e) => onChange({ riderCount: e.target.value.replace(/\D/g, "") })}
             />
           </Field>
-        )}
-        <div className={isStop ? "" : "col-span-2"}>
-          <Field label="Notes">
-            <input className={inputClass} value={row.notes} onChange={(e) => onChange({ notes: e.target.value })} />
-          </Field>
         </div>
+      )}
+
+      <div className="mt-2">
+        <Field label="Notes">
+          <input className={inputClass} value={row.notes} onChange={(e) => onChange({ notes: e.target.value })} />
+        </Field>
       </div>
 
       <div className="mt-3 flex items-center gap-2">
@@ -582,7 +602,7 @@ function StepRowEditor({
           type="button"
           onClick={onDelete}
           aria-label="Delete step"
-          className="flex shrink-0 items-center gap-1 rounded-lg border border-red-300 px-2.5 py-1.5 text-xs font-semibold text-red-600 active:bg-red-50"
+          className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
         >
           <TrashIcon className="h-3.5 w-3.5" />
           Delete
@@ -591,14 +611,14 @@ function StepRowEditor({
         <button
           type="button"
           onClick={onCancel}
-          className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-600 active:bg-zinc-100"
+          className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
         >
           Cancel
         </button>
         <button
           type="button"
           onClick={handleSave}
-          className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+          className="btn-glossy-blue shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
         >
           Save
         </button>
