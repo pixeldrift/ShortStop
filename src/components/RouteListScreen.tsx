@@ -403,10 +403,7 @@ export function RouteListScreen({
               >
                 <BackArrowIcon className="h-5 w-5" />
               </button>
-              <h1 className="font-heading flex items-center gap-2 text-4xl font-black tracking-tight">
-                {adminMode && <EditIcon className="h-5 w-5 shrink-0 text-red-600" />}
-                {title}
-              </h1>
+              <h1 className="font-heading flex items-center gap-2 text-4xl font-black tracking-tight">{title}</h1>
               <span className="h-10 w-10 shrink-0" aria-hidden="true" />
             </div>
             {/* Same MapPinIcon + address convention every other
@@ -421,14 +418,42 @@ export function RouteListScreen({
             )}
           </div>
         ) : (
-          <h1 className="font-heading flex items-center gap-2 text-4xl font-black tracking-tight">
-            {adminMode ? (
-              <EditIcon className="h-5 w-5 shrink-0 text-red-600" />
-            ) : (
-              !title && <RouteIcon className="h-5 w-5 shrink-0 text-blue-600" />
-            )}
-            {title ?? (adminMode ? "Edit Routes" : "Routes")}
-          </h1>
+          <div className="flex w-full flex-col items-center gap-1">
+            <div className="flex w-full max-w-md items-center justify-between">
+              {/* A real back arrow only in admin mode, where it exits
+                  edit mode (same action as the "Exit Edit Mode" button
+                  below, just also reachable the way every other screen's
+                  own back arrow sits) - the top-level route list itself
+                  has nowhere to go back to, so this stays an inert
+                  same-size spacer then, keeping the title centered
+                  either way rather than shifting over once a real button
+                  appears. */}
+              {adminMode ? (
+                <button
+                  type="button"
+                  onClick={onToggleAdminMode}
+                  aria-label="Exit edit mode"
+                  className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+                >
+                  <BackArrowIcon className="h-5 w-5" />
+                </button>
+              ) : (
+                <span className="h-10 w-10 shrink-0" aria-hidden="true" />
+              )}
+              <div>
+                {/* Same small district label SchoolListScreen carries
+                    above its own heading. */}
+                <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+                  Rutherford County
+                </span>
+                <h1 className="font-heading -mt-1 flex items-center justify-center gap-2 text-4xl leading-none font-black tracking-tight">
+                  <RouteIcon className="h-6 w-6 shrink-0 text-blue-600" />
+                  {adminMode ? "Edit Routes" : "Routes"}
+                </h1>
+              </div>
+              <span className="h-10 w-10 shrink-0" aria-hidden="true" />
+            </div>
+          </div>
         )}
 
         <div className="flex w-full max-w-md shrink-0 items-center gap-2">
@@ -506,22 +531,27 @@ export function RouteListScreen({
             adminMode ? "border-2 border-dashed border-blue-400" : "border-zinc-300"
           }`}
         >
-          <div className="grid grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+          <div className="grid grid-cols-[5.75rem_1fr_3.75rem_1.75rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
             {/* The #/School/Start group is its own col-span-3 grid using
-                the exact same grid-cols-[5.75rem_1fr_4.25rem] template
+                the exact same grid-cols-[5.75rem_1fr_3.75rem] template
                 (and gap) as each row's own button below, rather than
                 three independent columns of this outer 4-col grid - that
                 guarantees their boundaries are computed identically, not
                 just hopefully-equal, so the divide lines here land
                 exactly on the row content's own column edges instead of
                 drifting off to the side of them. */}
-            <div className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-stretch gap-x-1 divide-x divide-zinc-200">
+            <div className="col-span-3 grid grid-cols-[5.75rem_1fr_3.75rem] items-stretch gap-x-1 divide-x divide-zinc-200">
               {/* "#" keeps its own cell/divider, separate from AM/PM -
                   AM and PM themselves stack as two lines within that
-                  second cell instead of reading "AM/PM" on one line. */}
+                  second cell instead of reading "AM/PM" on one line. A
+                  bigger label than the rest of this row's own text-xs
+                  (this is the whole table's own primary sort key, and
+                  the tap target every row's own big route-number digits
+                  echo) - easier to actually see/hit than a header cell
+                  this narrow would otherwise read as. */}
               <div className="grid h-full grid-cols-[2.75rem_1fr] items-stretch gap-x-1 divide-x divide-zinc-200">
                 <SortableHeader
-                  label="#"
+                  label={<span className="text-base leading-none">#</span>}
                   field="routeNumber"
                   align="center"
                   fill
@@ -570,10 +600,11 @@ export function RouteListScreen({
                 mode (see the row rendering below, whose own checkbox
                 replaces what used to be a pencil there - editing now
                 happens by tapping the row itself) - same
-                `justify-self-end p-1` positioning as that button too, not
-                just centered in the column generically, so this actually
-                lines up with it instead of merely sitting in the same
-                column. */}
+                `justify-self-center` positioning as that button too, not
+                just sitting in the same column, so this actually lines
+                up with it, evenly centered in its own (wider than the
+                icon itself) column rather than crowding the divider on
+                its left. */}
             {adminMode ? (
               <button
                 type="button"
@@ -589,7 +620,7 @@ export function RouteListScreen({
                     ? "Deselect all routes"
                     : "Select all routes"
                 }
-                className="justify-self-end p-1 text-blue-600 active:opacity-70"
+                className="justify-self-center p-1 text-blue-600 active:opacity-70"
               >
                 <CheckboxIcon
                   checked={filtered.length > 0 && filtered.every((r) => selectedIds.has(r.id))}
@@ -597,7 +628,7 @@ export function RouteListScreen({
                 />
               </button>
             ) : (
-              <span className="justify-self-end p-1">
+              <span className="justify-self-center p-1">
                 <HeartIcon className="h-4 w-4 text-zinc-400" />
               </span>
             )}
@@ -610,7 +641,7 @@ export function RouteListScreen({
               return (
                 <div
                   key={route.id}
-                  className={`grid w-full grid-cols-[5.75rem_1fr_4.25rem_1.25rem] items-center gap-x-1 px-2 py-3 text-left ${
+                  className={`grid w-full grid-cols-[5.75rem_1fr_3.75rem_1.75rem] items-center gap-x-1 px-2 py-3 text-left ${
                     isAdminOnly ? "opacity-50" : ""
                   } ${isSelected ? "ring-2 ring-inset ring-blue-500" : ""}`}
                 >
@@ -630,7 +661,7 @@ export function RouteListScreen({
                         prev.size === 1 && prev.has(route.id) ? new Set() : new Set([route.id]),
                       );
                     }}
-                    className="col-span-3 grid grid-cols-[5.75rem_1fr_4.25rem] items-center gap-x-1 text-left active:bg-zinc-100"
+                    className="col-span-3 grid grid-cols-[5.75rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-zinc-100"
                   >
                     <div
                       className={`flex gap-1.5 ${
@@ -651,7 +682,7 @@ export function RouteListScreen({
                         )}
                       </div>
                     </div>
-                    <span className="min-w-0 pl-3">
+                    <span className="min-w-0 pl-1.5">
                       <SchoolNameLabel name={route.schoolName} />
                     </span>
                     <span className="text-right text-sm font-semibold text-zinc-500">
@@ -667,7 +698,7 @@ export function RouteListScreen({
                           ? `Deselect route ${route.routeNumber}`
                           : `Select route ${route.routeNumber}`
                       }
-                      className="justify-self-end p-1 text-blue-600 active:opacity-70"
+                      className="justify-self-center p-1 text-blue-600 active:opacity-70"
                     >
                       <CheckboxIcon checked={selectedIds.has(route.id)} className="h-4 w-4" />
                     </button>
@@ -676,7 +707,7 @@ export function RouteListScreen({
                       type="button"
                       onClick={() => onToggleFavorite(route)}
                       aria-label={route.isFavorite ? "Remove favorite" : "Add favorite"}
-                      className="justify-self-end p-1 active:opacity-70"
+                      className="justify-self-center p-1 active:opacity-70"
                     >
                       <HeartIcon
                         filled={route.isFavorite}
@@ -819,7 +850,7 @@ export function RouteListScreen({
             onClick={onToggleAdminMode}
             className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
           >
-            <EditIcon className="h-5 w-5" />
+            <BackArrowIcon className="h-5 w-5" />
             Exit Edit Mode
           </button>
           <button
