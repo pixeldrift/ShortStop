@@ -442,25 +442,21 @@ function StepRowEditor({
         <div className="flex items-start justify-between gap-2">
           <div>
             <h2 className="font-heading text-xl font-black tracking-tight">Edit Waypoint</h2>
-            {/* Same icon+label the collapsed StepRowView row above shows
-                for this same stop/turn - live off `isStop`/`turnDirection`
-                (the draft's own Type select), not a snapshot from when
-                this editor opened, so flipping Type here updates this
-                line immediately instead of only after Update commits. */}
+            {/* Same icon the collapsed StepRowView row above shows for
+                this same stop/turn (live off `isStop`/`turnDirection` -
+                the draft's own Type select, not a snapshot from when
+                this editor opened), paired with the exact instruction
+                this row now produces ("Stop 1 at Lake Forest Dr &
+                Davids Way," "Left onto Main Street") instead of just
+                its own type/number - both update immediately as Type/
+                destination change, not only after Update commits. */}
             <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-500">
               {isStop ? (
-                <>
-                  <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
-                  Stop{stopNumber ? ` ${stopNumber}` : ""}
-                </>
+                <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
               ) : turnDirection ? (
-                <>
-                  <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
-                  Turn {turnDirection === "left" ? "Left" : "Right"}
-                </>
-              ) : (
-                row.action || "Turn"
-              )}
+                <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+              ) : null}
+              {formatWaypointInstruction(row, stopNumber)}
             </p>
           </div>
           <button
@@ -530,18 +526,6 @@ function StepRowEditor({
         )}
       </div>
 
-      {/* The exact instruction this row now produces, live off Type and
-          the destination box above - "Left onto Main Street," "Stop 5
-          at 123 Elm Street" - so a change to either is visible here
-          immediately rather than only once this screen's own driving
-          preview (or the real turn-by-turn screen) shows it. */}
-      <div className="mt-2 rounded-lg bg-zinc-100 px-3 py-2">
-        <p className={labelClass}>Full Instruction</p>
-        <p className="font-heading text-base leading-tight font-bold text-zinc-800">
-          {formatWaypointInstruction(row, stopNumber)}
-        </p>
-      </div>
-
       <div className="mt-2">
         <Field label="Latitude, longitude">
           <div className="flex items-center gap-2">
@@ -599,12 +583,23 @@ function StepRowEditor({
         </label>
       </div>
 
+      {/* Notes ahead of Riders - a driver reads this box top to bottom,
+          and the note (a special instruction) matters regardless of
+          whether this row even has riders, so it shouldn't sit below a
+          field that sometimes isn't even shown at all. */}
+      <div className="mt-2">
+        <Field label="Driver Notes">
+          <input className={inputClass} value={row.notes} onChange={(e) => onChange({ notes: e.target.value })} />
+        </Field>
+      </div>
+
       {/* Riders only for a stop (a turn has no one boarding/leaving at
           it) - live off `isStop` above, so switching Type away from
           Stop hides this immediately rather than leaving a stale count
           behind on what's now a turn. Its own full-width line, not
-          sharing a row with Notes - the two aren't related enough to
-          read as a pair, and Notes needs the room on longer entries. */}
+          sharing a row with Driver Notes - the two aren't related
+          enough to read as a pair, and Driver Notes needs the room on
+          longer entries. */}
       {isStop && (
         <div className="mt-2">
           <Field
@@ -623,12 +618,6 @@ function StepRowEditor({
           </Field>
         </div>
       )}
-
-      <div className="mt-2">
-        <Field label="Notes">
-          <input className={inputClass} value={row.notes} onChange={(e) => onChange({ notes: e.target.value })} />
-        </Field>
-      </div>
 
       <div className="mt-3 flex items-center gap-2">
         <button

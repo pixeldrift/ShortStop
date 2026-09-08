@@ -210,6 +210,14 @@ export function RouteListScreen({
   const [activePublishStatuses, setActivePublishStatuses] = useState<ReadonlySet<"published" | "hidden">>(
     () => new Set(),
   );
+  // The fabricated filler rows (buildDemoRoutes, page.tsx) - on by
+  // default, matching how this list always looked before this toggle
+  // existed. Off just hides them from view here; page.tsx keeps
+  // generating the same 24 regardless (nothing else - the school list's
+  // own route counts, a school-scoped reuse of this same screen -
+  // should look different just because this one screen's own toggle is
+  // off).
+  const [showDemoData, setShowDemoData] = useState(true);
   function toggleTripType(value: TripType) {
     setActiveTripTypes((prev) => {
       const next = new Set(prev);
@@ -309,6 +317,11 @@ export function RouteListScreen({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matching = routes.filter((route) => {
+      // "Show Demo Data" off - the fabricated filler rows disappear
+      // outright, regardless of anything else below (published status,
+      // search text, other toggles).
+      if (!showDemoData && route.status === "demo") return false;
+
       // A route that doesn't currently read as published only ever
       // shows up in admin mode - a normal driver never needs to see a
       // route nobody's actually running, whether it's a real draft or
@@ -343,6 +356,7 @@ export function RouteListScreen({
     activeTripTypes,
     activeSchoolLevels,
     activePublishStatuses,
+    showDemoData,
     sortField,
     sortDir,
     adminMode,
@@ -866,6 +880,22 @@ export function RouteListScreen({
             </button>
           ) : (
             <span />
+          )}
+          {/* Plain text, no icon (unlike Schools/Edit Routes either
+              side of it) - a quieter secondary control for hiding the
+              fabricated filler rows, not something that needs to
+              compete with either of those for attention. Only the
+              top-level list (onViewSchools) shows this at all - same
+              gate as Schools itself, since the school-scoped reuse of
+              this screen has nowhere for it to sit opposite. */}
+          {onViewSchools && (
+            <button
+              type="button"
+              onClick={() => setShowDemoData((prev) => !prev)}
+              className="text-sm font-semibold text-blue-600 active:text-blue-800"
+            >
+              {showDemoData ? "Hide Demo Data" : "Show Demo Data"}
+            </button>
           )}
           {/* The Home Screen's own entry point (adminMode off) stays the
               small `btn-glossy` chip this used to be everywhere - a
