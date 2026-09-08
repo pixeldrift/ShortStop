@@ -15,6 +15,34 @@ import {
   TurnArrow,
 } from "./icons";
 import type { NavigationStep, Route } from "@/lib/types";
+import type { WaypointCache } from "@/lib/waypointCache";
+
+/** "Published"/"Draft"/"Demo route" plus its own color - same three
+ * RouteStatus values RouteListScreen's own admin rows already key off
+ * (isRoutePublished), just spelled out here for a driver/admin reading
+ * this one route's own info screen instead of a whole table of them. */
+function routeStatusLabel(status: Route["status"]): { text: string; className: string } {
+  if (status === "published") return { text: "Published", className: "text-green-600" };
+  if (status === "draft") return { text: "Draft", className: "text-amber-600" };
+  return { text: "Demo route", className: "text-zinc-500" };
+}
+
+/** "All coordinates verified" (or a partial "5/7 coordinates verified")
+ * - the same "ok" cache-entry check isRouteFullyResolved (routeReadiness.ts)
+ * uses before RouteListScreen ever lets a route publish, just counted
+ * here instead of reduced to a single pass/fail. A route with nothing
+ * geocodable at all (every step "unresolvable" - pure driver
+ * instructions, no real stops) has nothing to verify in the first
+ * place, so that reads as its own neutral line rather than a
+ * confusing "0/0 verified." */
+function coordinateStatusLabel(route: Route, cache: WaypointCache): { text: string; verified: boolean } {
+  const geocodable = route.steps.filter((s) => !s.waypointKey.startsWith("unresolvable:"));
+  if (geocodable.length === 0) return { text: "No coordinates to verify", verified: true };
+  const resolved = geocodable.filter((s) => cache[s.waypointKey]?.status === "ok").length;
+  return resolved === geocodable.length
+    ? { text: "All coordinates verified", verified: true }
+    : { text: `${resolved}/${geocodable.length} coordinates verified`, verified: false };
+}
 
 // Not currently rendered (see StartScreen below) - kept ready to
 // re-enable later, so it's exported rather than deleted.
@@ -87,6 +115,27 @@ export function StartScreen({
   const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
   const [distanceValue] = splitValueUnit(route.distance);
   const [showStopsModal, setShowStopsModal] = useState(false);
+  // The committed geocode cache (src/app/api/waypoints), fetched fresh
+  // on mount purely to answer "is this route's coordinate data actually
+  // good" (coordinateStatusLabel above) - a real fetch failure just
+  // reads as "0 confirmed" rather than blocking anything else on this
+  // screen, same empty-fallback convention every other cache fetch in
+  // this app already uses (RouteMap.tsx, EditRouteScreen.tsx).
+  const [waypointCache, setWaypointCache] = useState<WaypointCache>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/waypoints")
+      .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
+      .catch(() => ({}) as WaypointCache)
+      .then((data) => {
+        if (!cancelled) setWaypointCache(data);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const status = routeStatusLabel(route.status);
+  const coordStatus = coordinateStatusLabel(route, waypointCache);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-6 text-center">
@@ -111,12 +160,13 @@ export function StartScreen({
           {/* -mt-1/leading-none, matching SchoolListScreen's own
               identical label-above-title pattern - tightens the gap
               the title's own default line box would otherwise leave
-              against the small county label above it. */}
-          <h1
-            className={`font-heading -mt-1 flex gap-2 text-4xl leading-none font-black tracking-tight ${
-              route.tripType === "pickup" ? "items-end" : "items-start"
-            }`}
-          >
+              against the small county label above it. justify-center
+              (not just centered by the row - see the matching spacer
+              on the right below, which is what actually centers this
+              whole block in the row rather than just the text within
+              it) so the AM/PM badge doesn't itself throw the title back
+              off-center. */}
+          <h1 className="font-heading -mt-1 flex items-center justify-center gap-2 text-4xl leading-none font-black tracking-tight">
             Route {route.routeNumber}
             <span className="flex items-center gap-1 text-lg text-blue-500">
               {route.tripType === "pickup" ? "AM" : "PM"}
@@ -127,7 +177,18 @@ export function StartScreen({
               )}
             </span>
           </h1>
+          {/* The route's own start time, right with the title rather
+              than buried in the stats block below - the two other
+              things on this line (route number, AM/PM) are both about
+              *which* route this is; departure time is the other thing
+              worth knowing at a glance before scrolling any further. */}
+          <p className="mt-0.5 text-sm font-semibold text-zinc-500">{route.departureTime}</p>
         </div>
+        {/* Balances the back button's own width so the title block
+            above is genuinely centered in this row, not just left to
+            whatever space happens to be left after a back button on
+            one side and nothing on the other. */}
+        <span className="h-10 w-10 shrink-0" aria-hidden="true" />
       </div>
 
       <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">
@@ -153,13 +214,23 @@ export function StartScreen({
         </div>
 
         <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1 text-lg">
-          <dt className="text-right text-zinc-500">Departure</dt>
-          <dd className="text-left font-medium">{route.departureTime}</dd>
           <dt className="text-right text-zinc-500">Bus</dt>
           <dd className="text-left font-medium">{route.busNumber}</dd>
           <dt className="text-right text-zinc-500">Driver</dt>
           <dd className="text-left font-medium">{route.driverName}</dd>
         </dl>
+
+        {/* Admin-relevant status, not a driver stat - whether this
+            route is actually live (published/draft/demo) and whether
+            its own stops are all real, geocoded locations yet, both
+            things RouteListScreen/EditRouteScreen already track but
+            that were otherwise invisible from this one route's own
+            info screen. */}
+        <p className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-sm font-semibold">
+          <span className={status.className}>{status.text}</span>
+          <span className="text-zinc-300">·</span>
+          <span className={coordStatus.verified ? "text-green-600" : "text-zinc-500"}>{coordStatus.text}</span>
+        </p>
 
         <button
           type="button"
