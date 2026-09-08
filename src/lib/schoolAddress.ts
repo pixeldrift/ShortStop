@@ -32,3 +32,15 @@ export function parseAddress(address: string): SchoolAddress {
 export function formatAddress({ street, city, state, zip }: SchoolAddress): string {
   return `${street}, ${city}, ${state} ${zip}`;
 }
+
+/** Same address, minus the trailing ZIP - display-only contexts
+ * (StepScreen's "Ready to Depart", StartScreen's route summary) don't
+ * need it, and dropping it leaves the line a little shorter for no real
+ * loss of information. A plain trailing-digits regex rather than a full
+ * parseAddress round-trip - not every address this sees is guaranteed to
+ * match schools.csv's strict "street, city, ST zip" shape (a route's own
+ * fabricated demo `schoolAddress` might not), so anything that doesn't
+ * end in a ZIP just passes through unchanged instead of throwing. */
+export function addressWithoutZip(address: string): string {
+  return address.replace(/,?\s*\d{5}(-\d{4})?\s*$/, "");
+}

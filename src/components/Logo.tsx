@@ -8,7 +8,7 @@ export function Logo({ size = "large" }: { size?: "large" | "small" }) {
       width={2172}
       height={724}
       priority={size === "large"}
-      className={size === "large" ? "h-20 w-auto sm:h-28" : "h-8 w-auto"}
+      className={size === "large" ? "h-20 w-auto sm:h-28" : "h-9 w-auto"}
     />
   );
 }

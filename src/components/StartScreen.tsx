@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { RouteMap } from "./RouteMap";
+import type { StopMarker, TurnMarker } from "./RouteMap";
 import { ToggleSwitch } from "./ToggleSwitch";
 import {
   BackArrowIcon,
@@ -14,6 +16,7 @@ import {
   TriangleIcon,
   TurnArrow,
 } from "./icons";
+import { addressWithoutZip } from "@/lib/schoolAddress";
 import type { NavigationStep, Route } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
@@ -137,113 +140,170 @@ export function StartScreen({
   const status = routeStatusLabel(route.status);
   const coordStatus = coordinateStatusLabel(route, waypointCache);
 
+  // Same derivation as StepScreen's own stopMarkers/turnMarkers/
+  // routePath/schoolPoint - this screen's small overview map wants the
+  // exact same markers/line the driving screen's own map draws, just at
+  // a glance rather than tracked live.
+  const stopMarkers = useMemo<StopMarker[]>(() => {
+    let stopCount = 0;
+    return route.steps
+      .filter((s) => s.kind === "stop")
+      .map((s) => ({ waypointKey: s.waypointKey, number: ++stopCount }));
+  }, [route]);
+  const turnMarkers = useMemo<TurnMarker[]>(() => {
+    let stopCount = 0;
+    let turnCount = 0;
+    const markers: TurnMarker[] = [];
+    for (const step of route.steps) {
+      if (step.kind === "stop") {
+        stopCount += 1;
+        turnCount = 0;
+      } else if (step.kind === "turn") {
+        turnCount += 1;
+        markers.push({ waypointKey: step.waypointKey, label: `${stopCount}.${turnCount}` });
+      }
+    }
+    return markers;
+  }, [route]);
+  const routePath = useMemo(() => route.steps.map((s) => s.waypointKey), [route]);
+  const schoolPoint = useMemo(
+    () => (route.schoolLat != null && route.schoolLon != null ? { lat: route.schoolLat, lon: route.schoolLon } : null),
+    [route.schoolLat, route.schoolLon],
+  );
+
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-6 text-center">
-      <div className="flex w-full max-w-md items-center justify-between">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to routes"
-          className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
-        >
-          <BackArrowIcon className="h-5 w-5" />
-        </button>
-        <div>
-          {/* Same small district label SchoolListScreen carries above
-              its own heading - hardcoded for now, every real route
-              here is a Rutherford County one (see that screen's own
-              doc comment for why this isn't folded into the heading
-              itself). */}
-          <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-            Rutherford County
-          </span>
-          {/* -mt-1/leading-none, matching SchoolListScreen's own
-              identical label-above-title pattern - tightens the gap
-              the title's own default line box would otherwise leave
-              against the small county label above it. relative/absolute
-              rather than a flex row - the AM/PM badge floats off the
-              text's own right edge (left-full) so it never shifts the
-              title text itself off-center from the county label above,
-              the way sharing a centered flex row with it used to. */}
-          <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
-            Route {route.routeNumber}
-            <span className="absolute top-1/2 left-full ml-2 flex -translate-y-1/2 items-center gap-1 text-lg text-blue-500">
-              {route.tripType === "pickup" ? "AM" : "PM"}
-              {route.tripType === "pickup" ? (
-                <SunriseIcon className="h-4 w-4" />
-              ) : (
-                <SunIcon className="h-4 w-4" />
-              )}
+    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-6 text-center">
+      {/* Everything that can genuinely grow past the viewport (the
+          overview map especially) lives in this inner, scrollable
+          region - Start Route/Edit Route below stay outside it, pinned
+          to the bottom of the screen instead of scrolling away with a
+          long route. */}
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-4 overflow-y-auto">
+        <div className="flex w-full max-w-md shrink-0 items-center justify-between">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to routes"
+            className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+          >
+            <BackArrowIcon className="h-5 w-5" />
+          </button>
+          <div>
+            {/* Same small district label SchoolListScreen carries above
+                its own heading - hardcoded for now, every real route
+                here is a Rutherford County one (see that screen's own
+                doc comment for why this isn't folded into the heading
+                itself). */}
+            <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+              Rutherford County
             </span>
-          </h1>
-          {/* The route's own start time, right with the title rather
-              than buried in the stats block below - the two other
-              things on this line (route number, AM/PM) are both about
-              *which* route this is; departure time is the other thing
-              worth knowing at a glance before scrolling any further. */}
-          <p className="mt-0.5 text-sm font-semibold text-zinc-500">{route.departureTime}</p>
-        </div>
-        {/* Balances the back button's own width so the title block
-            above is genuinely centered in this row, not just left to
-            whatever space happens to be left after a back button on
-            one side and nothing on the other. */}
-        <span className="h-10 w-10 shrink-0" aria-hidden="true" />
-      </div>
-
-      <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5">
-        <button
-          type="button"
-          onClick={() => onViewSchool(route.schoolName)}
-          className="w-full rounded-lg py-1 active:bg-zinc-100"
-        >
-          <p className="font-heading text-xl leading-tight font-bold text-zinc-700">
-            {route.schoolName}
-          </p>
-          <p className="mt-1 flex items-center justify-center gap-1 text-sm text-zinc-500">
-            <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
-            {route.schoolAddress}
-          </p>
-        </button>
-
-        <div className="mt-4 grid grid-cols-4 gap-2">
-          <StatTile value={distanceValue} label="miles" />
-          <StatTile value={String(route.durationMinutes)} label="minutes" />
-          <StatTile value={String(totalStops)} label="stops" />
-          <StatTile value={String(totalRiders)} label="riders" />
+            {/* -mt-1/leading-none, matching SchoolListScreen's own
+                identical label-above-title pattern - tightens the gap
+                the title's own default line box would otherwise leave
+                against the small county label above it. relative/absolute
+                rather than a flex row - the AM/PM badge floats off the
+                text's own right edge (left-full) so it never shifts the
+                title text itself off-center from the county label above,
+                the way sharing a centered flex row with it used to. */}
+            <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
+              Route {route.routeNumber}
+              <span className="absolute top-1/2 left-full ml-2 flex -translate-y-1/2 items-center gap-1 text-lg text-blue-500">
+                {route.tripType === "pickup" ? "AM" : "PM"}
+                {route.tripType === "pickup" ? (
+                  <SunriseIcon className="h-4 w-4" />
+                ) : (
+                  <SunIcon className="h-4 w-4" />
+                )}
+              </span>
+            </h1>
+          </div>
+          {/* Balances the back button's own width so the title block
+              above is genuinely centered in this row, not just left to
+              whatever space happens to be left after a back button on
+              one side and nothing on the other. */}
+          <span className="h-10 w-10 shrink-0" aria-hidden="true" />
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1 text-lg">
-          <dt className="text-right text-zinc-500">Bus</dt>
-          <dd className="text-left font-medium">{route.busNumber}</dd>
-          <dt className="text-right text-zinc-500">Driver</dt>
-          <dd className="text-left font-medium">{route.driverName}</dd>
-        </dl>
+        <div className="w-full max-w-md shrink-0 rounded-2xl border border-zinc-300 p-5">
+          <button
+            type="button"
+            onClick={() => onViewSchool(route.schoolName)}
+            className="w-full rounded-lg py-1 active:bg-zinc-100"
+          >
+            <p className="font-heading text-xl leading-tight font-bold text-zinc-700">
+              {route.schoolName}
+            </p>
+            <p className="mt-0.5 flex items-center justify-center gap-1 text-sm text-zinc-500">
+              <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+              {addressWithoutZip(route.schoolAddress)}
+            </p>
+          </button>
 
-        {/* Admin-relevant status, not a driver stat - whether this
-            route is actually live (published/draft/demo) and whether
-            its own stops are all real, geocoded locations yet, both
-            things RouteListScreen/EditRouteScreen already track but
-            that were otherwise invisible from this one route's own
-            info screen. */}
-        <p className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-sm font-semibold">
-          <span className={status.className}>{status.text}</span>
-          <span className="text-zinc-300">·</span>
-          <span className={coordStatus.verified ? "text-green-600" : "text-zinc-500"}>{coordStatus.text}</span>
-        </p>
+          {/* The route's own start time - big and bold, between the
+              address above and the stats row below, rather than a small
+              line tucked under the title (its old spot, sharing that
+              row's own centering with the AM/PM badge) - the one thing
+              on this whole card worth reading at a glance before
+              anything else. */}
+          <p className="font-heading mt-3 text-3xl leading-none font-black tracking-tight text-blue-600">
+            {route.departureTime}
+          </p>
 
-        <button
-          type="button"
-          onClick={() => setShowStopsModal(true)}
-          className="btn-glossy-light font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
-        >
-          View All Stops
-        </button>
+          <div className="mt-4 grid grid-cols-4 gap-2">
+            <StatTile value={distanceValue} label="miles" />
+            <StatTile value={String(route.durationMinutes)} label="minutes" />
+            <StatTile value={String(totalStops)} label="stops" />
+            <StatTile value={String(totalRiders)} label="riders" />
+          </div>
+
+          <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1 text-lg">
+            <dt className="text-right text-zinc-500">Bus</dt>
+            <dd className="text-left font-medium">{route.busNumber}</dd>
+            <dt className="text-right text-zinc-500">Driver</dt>
+            <dd className="text-left font-medium">{route.driverName}</dd>
+          </dl>
+
+          {/* Admin-relevant status, not a driver stat - whether this
+              route is actually live (published/draft/demo) and whether
+              its own stops are all real, geocoded locations yet, both
+              things RouteListScreen/EditRouteScreen already track but
+              that were otherwise invisible from this one route's own
+              info screen. */}
+          <p className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-sm font-semibold">
+            <span className={status.className}>{status.text}</span>
+            <span className="text-zinc-300">·</span>
+            <span className={coordStatus.verified ? "text-green-600" : "text-zinc-500"}>{coordStatus.text}</span>
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setShowStopsModal(true)}
+            className="btn-glossy-light font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
+          >
+            View All Stops
+          </button>
+        </div>
+
+        {/* A small, glanceable overview of the whole route - the same
+            stops/turns/school markers and road-following line
+            StepScreen's own map draws while actually driving, just
+            smaller and not yet tracking a live position against any of
+            it. */}
+        <RouteMap
+          className="h-40 w-full max-w-md shrink-0 overflow-hidden rounded-2xl border border-zinc-300"
+          stops={stopMarkers}
+          turns={turnMarkers}
+          path={routePath}
+          school={schoolPoint}
+          tripType={route.tripType}
+          waypointsUrl="/api/waypoints"
+        />
       </div>
 
       <button
         type="button"
         onClick={onStart}
-        className="btn-glossy-blue font-heading flex w-full max-w-xs items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
+        className="btn-glossy-blue font-heading flex w-full max-w-xs shrink-0 items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
       >
         Start Route <TriangleIcon direction="right" className="h-6 w-6" />
       </button>
@@ -251,7 +311,7 @@ export function StartScreen({
       <button
         type="button"
         onClick={onEdit}
-        className="flex items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
+        className="flex shrink-0 items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
       >
         <EditIcon className="h-3 w-3" />
         Edit Route

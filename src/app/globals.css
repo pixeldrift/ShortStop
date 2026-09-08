@@ -283,3 +283,25 @@ body {
 .animate-list-content-enter {
   animation: list-content-enter 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* The depot bus's own send-off - pressing "Start" slides it away to the
+   right and off screen (see StepScreen.tsx's handleStart/BUS_DEPART_MS,
+   which hold off the real step change until this finishes) rather than
+   just cutting straight to the first step the instant it's tapped. A
+   fading-out ease-in (accelerating, like it's actually pulling away)
+   rather than the symmetric ease every other motion in this file uses -
+   the one animation here that's for its own sake, not a state swap. */
+@keyframes bus-depart {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(160%);
+    opacity: 0;
+  }
+}
+
+.animate-bus-depart {
+  animation: bus-depart 0.45s cubic-bezier(0.55, 0, 1, 0.45) both;
+}

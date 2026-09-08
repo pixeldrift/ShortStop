@@ -63,8 +63,8 @@ export function TopBar({
         <div className="col-start-3 justify-self-end text-right">
           <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Bus</p>
           <p
-            className={`font-heading -mt-1 text-xl font-bold tracking-tight ${
-              isAlternateBus ? "rounded border-2 border-red-500 px-1 text-red-600" : ""
+            className={`font-heading -mt-1 text-xl leading-none font-bold tracking-tight ${
+              isAlternateBus ? "rounded-md border border-red-500 px-1 py-0.5" : ""
             }`}
           >
             {busNumber}
