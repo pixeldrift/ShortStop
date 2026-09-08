@@ -399,7 +399,7 @@ export function RouteListScreen({
                 type="button"
                 onClick={onBack}
                 aria-label="Back to schools"
-                className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+                className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
               >
                 <BackArrowIcon className="h-5 w-5" />
               </button>
@@ -817,7 +817,7 @@ export function RouteListScreen({
           <button
             type="button"
             onClick={onToggleAdminMode}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
           >
             <EditIcon className="h-5 w-5" />
             Exit Edit Mode

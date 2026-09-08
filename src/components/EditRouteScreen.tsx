@@ -491,7 +491,7 @@ function StepRowEditor({
               onClick={onFetch}
               disabled={fetchLocked || row.skip}
               aria-label="Fetch coordinates for this location"
-              className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
+              className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
             >
               {fetching ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <GlobeIcon className="h-4 w-4" />}
             </button>
@@ -561,7 +561,7 @@ function StepRowEditor({
         <button
           type="button"
           onClick={handleSave}
-          className="btn-glossy shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+          className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
         >
           Save
         </button>
@@ -585,7 +585,7 @@ function AddStepButton({ onClick, disabled }: { onClick: () => void; disabled: b
         onClick={onClick}
         disabled={disabled}
         aria-label="Add step here"
-        className="btn-glossy relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
+        className="btn-glossy-light relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
@@ -889,7 +889,7 @@ function FetchCoordinatesModal({
             type="button"
             onClick={onRefetchAll}
             disabled={fetchRunning || counts.total === 0}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900 disabled:opacity-50"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900 disabled:opacity-50"
           >
             Re-fetch All
           </button>
@@ -1663,7 +1663,7 @@ export function EditRouteScreen({
             type="button"
             onClick={onCancel}
             aria-label="Cancel"
-            className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+            className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
@@ -1682,7 +1682,7 @@ export function EditRouteScreen({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+                className="btn-glossy-light flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
               >
                 <UploadIcon className="h-3.5 w-3.5" />
                 Upload File
@@ -1770,7 +1770,7 @@ export function EditRouteScreen({
             type="button"
             onClick={() => setSubScreen("hub")}
             aria-label="Back"
-            className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+            className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
@@ -1799,7 +1799,7 @@ export function EditRouteScreen({
               type="button"
               onClick={() => setSubScreen("hub")}
               aria-label="Back"
-              className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+              className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
             >
               <BackArrowIcon className="h-5 w-5" />
             </button>
@@ -1815,7 +1815,7 @@ export function EditRouteScreen({
             <button
               type="button"
               onClick={() => setShowFetchModal(true)}
-              className="btn-glossy flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
+              className="btn-glossy-light flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
             >
               <GlobeIcon className="h-3.5 w-3.5" />
               Fetch Coordinates…
@@ -1902,7 +1902,7 @@ export function EditRouteScreen({
             <button
               type="button"
               onClick={onCancel}
-              className="btn-glossy font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
+              className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
             >
               Cancel
             </button>
@@ -1942,7 +1942,7 @@ export function EditRouteScreen({
           type="button"
           onClick={onCancel}
           aria-label="Cancel"
-          className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+          className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
@@ -1988,7 +1988,7 @@ export function EditRouteScreen({
         <button
           type="button"
           onClick={() => setSubScreen("details")}
-          className="btn-glossy font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
+          className="btn-glossy-light font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
         >
           <EditIcon className="h-5 w-5" />
           Edit Details

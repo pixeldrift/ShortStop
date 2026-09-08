@@ -114,7 +114,7 @@ export function SchoolListScreen({
             type="button"
             onClick={onBack}
             aria-label="Back to routes"
-            className="btn-glossy flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+            className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>

@@ -281,7 +281,7 @@ export function StepScreen({
             onClick={phase === "depot" ? onLogoClick : onBack}
             disabled={paused}
             aria-label={phase === "depot" ? "Routes" : "Back"}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900 disabled:opacity-40"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900 disabled:opacity-40"
           >
             <TriangleIcon direction="left" className="h-6 w-6" />
             {phase === "depot" ? "Routes" : "Back"}
@@ -291,7 +291,7 @@ export function StepScreen({
             type="button"
             onClick={onTogglePause}
             aria-label={paused ? "Resume route" : "Pause route"}
-            className="btn-glossy flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-300 text-zinc-900"
+            className="btn-glossy-light flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-300 text-zinc-900"
           >
             {paused ? (
               <TriangleIcon direction="right" className="h-6 w-6" />
@@ -356,7 +356,7 @@ function LeaveRouteConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
           >
             <TriangleIcon direction="left" className="h-6 w-6" /> End Route
           </button>
@@ -618,7 +618,7 @@ function RiderCheckInBox({
         <button
           type="button"
           onClick={onAddRider}
-          className="btn-glossy font-heading flex items-center gap-1.5 rounded-xl bg-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-900"
+          className="btn-glossy-light font-heading flex items-center gap-1.5 rounded-xl bg-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-900"
         >
           + Add Rider
         </button>

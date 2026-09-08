@@ -27,12 +27,12 @@ body {
 
 /* A little dimensionality on buttons - bevel + drop shadow + a glassy
    highlight across the top - to match the glossy feel of the logo/pin/
-   bus art rather than sitting flat against everything else. The white
-   top-highlight is toned down from its original 0.35/0.55 opacities:
-   on a light gray fill (the Back/Pause buttons) that much white washed
-   the button out to looking almost blank, far lighter than intended -
-   the drop shadow/bottom inset are left close to where they were so
-   there's still real depth, just from less of a glaring highlight. */
+   bus art rather than sitting flat against everything else. Tuned
+   against bg-blue-600's mid-tone fill, where the overlay blend mode's
+   multiply/screen split lands close to its own crossover and reads as
+   a clean sheen. `.btn-glossy-light` below is the same idea rebalanced
+   for a pale fill (bg-zinc-300) - see its own comment for why this one
+   doesn't just scale down onto that too. */
 .btn-glossy {
   background-image: linear-gradient(
     to bottom,
@@ -54,6 +54,42 @@ body {
 }
 
 .btn-glossy:disabled {
+  background-image: none;
+  box-shadow: none;
+}
+
+/* Same gloss/bevel idea as .btn-glossy above, rebalanced for a pale
+   fill (bg-zinc-300, the Cancel/Back/gray buttons) instead of just
+   reusing that recipe at a smaller size. Two things don't scale down
+   together: overlay blend mode is a multiply/screen split around 50%
+   lightness, so on zinc-300 (~87% lightness) the highlight mostly
+   vanishes into the screen branch instead of reading as sheen; and the
+   drop shadow + dark inset, unchanged, no longer have a bright enough
+   highlight to balance against, so what's left reads as a flat, heavy
+   bevel instead of gloss. This drops the blend mode entirely (a plain
+   white gradient reads the same regardless of the base color, instead
+   of vanishing on anything already this light) and scales the whole
+   shadow trio down to match. */
+.btn-glossy-light {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.75),
+    rgba(255, 255, 255, 0) 55%
+  );
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.1s ease-out;
+}
+
+.btn-glossy-light:active {
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.08),
+    inset 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.btn-glossy-light:disabled {
   background-image: none;
   box-shadow: none;
 }

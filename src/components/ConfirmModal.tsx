@@ -53,7 +53,7 @@ export function ConfirmModal({
           <button
             type="button"
             onClick={onCancel}
-            className="btn-glossy font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
           >
             Cancel
           </button>
