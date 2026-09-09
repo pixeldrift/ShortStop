@@ -1328,8 +1328,17 @@ export function EditRouteScreen({
 
   // mode "add" only - parses the paste/upload box's raw text.
   const parseResult = useMemo(() => parseRouteImport(stepsText), [stepsText]);
+  // unresolvedRequiredFields gives back ImportColumnField's own
+  // camelCase identifiers ("fromAt") - meaningless to someone looking
+  // at their own sheet's header row, so this maps each one to the
+  // actual column name(s) they'd need to add instead (see
+  // StopsFormatModal for the same two accepted spellings of "the road
+  // this row happens on").
   const missingRequired = useMemo(
-    () => unresolvedRequiredFields(parseResult.mapping),
+    () =>
+      unresolvedRequiredFields(parseResult.mapping).map((field) =>
+        field === "fromAt" ? "location (or from_at)" : field,
+      ),
     [parseResult],
   );
 

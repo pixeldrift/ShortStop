@@ -75,8 +75,37 @@ export async function POST(request: Request): Promise<NextResponse> {
     nextRouteId,
     steps,
   } = body;
-  if (!id || !routeNumber || !busNumber || !schoolName || !schoolLevel || !tripType || !status || !startTime) {
-    return NextResponse.json({ error: "Missing required route fields." }, { status: 400 });
+  // busNumber/schoolName/startTime are deliberately NOT required here -
+  // EditRouteScreen's own Save/Create Route already only requires a
+  // route number (see its handleSave's own doc comment: "everything
+  // else... can genuinely be filled in later"), and readiness for
+  // publishing is a separate, later concern (routeReadiness.ts's own
+  // geocoding check, gated at Publish time) - a draft stub with
+  // nothing but a route number and its stops should always be
+  // saveable. id/schoolLevel/tripType/status stay required: the first
+  // three are what Route.id itself is built from (see types.ts), and
+  // every one of them already has a real, non-blank value from
+  // EditRouteScreen's own form controls (a select's own default, never
+  // an empty string) whenever this is actually called from the app's
+  // own UI - so listing exactly which of these five is missing, on the
+  // rare request that isn't, stays genuinely informative rather than a
+  // blanket "something's missing" a person has to guess at.
+  const missingFields = (
+    [
+      ["id", id],
+      ["routeNumber", routeNumber],
+      ["schoolLevel", schoolLevel],
+      ["tripType", tripType],
+      ["status", status],
+    ] as const
+  )
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (missingFields.length > 0) {
+    return NextResponse.json(
+      { error: `Missing required route fields: ${missingFields.join(", ")}.` },
+      { status: 400 },
+    );
   }
   if (status !== "published" && status !== "draft") {
     return NextResponse.json({ error: `Invalid status "${status}" - must be "published" or "draft".` }, {
