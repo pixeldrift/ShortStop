@@ -243,11 +243,11 @@ function StepRowView({
 }) {
   const isStop = stopNumber !== null;
   // Only "Left"/"Right" actually have a direction (and the mirrored
-  // TurnArrow to go with it) - every other action (Proceed, Turn
-  // Around, Pull Over, Return) reads as its own plain label instead,
-  // same as the real driving screen falls back to a text-only heading
-  // once a step's own `direction` is unset (StepContent's own doc
-  // comment).
+  // TurnArrow to go with it) - every other action (Continue, U-Turn,
+  // Turn Around, Proceed, Pull Over, Return) reads as its own plain
+  // label instead, same as the real driving screen falls back to a
+  // text-only heading once a step's own `direction` is unset
+  // (StepContent's own doc comment).
   const turnDirection =
     row.action.toLowerCase() === "left" ? "left" : row.action.toLowerCase() === "right" ? "right" : null;
   // A stop's own from/onto pair reads as an intersection ("Main St &
@@ -412,10 +412,10 @@ function StepRowEditor({
   // commits the draft back.
   const isStop = row.action.toLowerCase() === "stop";
   // Only "Left"/"Right" actually have a direction (and the mirrored
-  // TurnArrow to go with it) - every other action (Proceed, Turn
-  // Around, Pull Over, Return) reads as its own plain label in the
-  // subtitle below instead, same as StepRowView's own identical
-  // turnDirection derivation for the collapsed row.
+  // TurnArrow to go with it) - every other action (Continue, U-Turn,
+  // Turn Around, Proceed, Pull Over, Return) reads as its own plain
+  // label in the subtitle below instead, same as StepRowView's own
+  // identical turnDirection derivation for the collapsed row.
   const turnDirection =
     row.action.toLowerCase() === "left" ? "left" : row.action.toLowerCase() === "right" ? "right" : null;
 
@@ -513,8 +513,10 @@ function StepRowEditor({
             <option value="Stop">Stop</option>
             <option value="Left">Turn Left</option>
             <option value="Right">Turn Right</option>
-            <option value="Proceed">Proceed</option>
+            <option value="Continue">Continue</option>
+            <option value="U-Turn">U-Turn</option>
             <option value="Turn Around">Turn Around</option>
+            <option value="Proceed">Proceed</option>
             <option value="Pull Over">Pull Over</option>
             <option value="Return">Return</option>
           </select>
@@ -552,16 +554,14 @@ function StepRowEditor({
             placeholder={isPlainAddress ? "123 Maple Dr" : "Elm St"}
           />
         </Field>
-        {status?.status === "unresolved" && (
-          <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
-            <XCircleIcon className="h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 truncate">{status.reason}</span>
-          </p>
-        )}
       </div>
 
       <div className="mt-2">
-        <Field label="Latitude, longitude">
+        <Field
+          label={
+            <span className={row.skip ? "text-zinc-300" : undefined}>Latitude, longitude</span>
+          }
+        >
           <div className="flex items-center gap-2">
             <input
               className={`${inputClass} flex-1 font-mono disabled:opacity-50 ${
@@ -589,16 +589,25 @@ function StepRowEditor({
             </button>
           </div>
         </Field>
-        {/* Same status the collapsed row's own summary line already
-            shows (ResolutionIcon) - repeated here so it's visible while
-            actually editing too, not just before/after. coordsError (a
-            locally malformed manual entry) takes priority over the
-            row's own geocoded status, since it's about to replace it
-            the moment Save runs. */}
+        {/* Every status message this row can have, right under the box
+            it's actually about - coordsError (a locally malformed
+            manual entry) takes priority over the row's own geocoded
+            status, since it's about to replace it the moment Save
+            runs; the real routing/geocoding failure (moved down here
+            from the destination field above, where it used to sit
+            disconnected from the coordinates it's actually about) is
+            never truncated - a "No shared node found in the search
+            box"-length explanation needs to be read whole, not
+            guessed at from its first few words. */}
         {coordsError ? (
-          <p className="mt-1 flex items-center gap-1 text-xs text-red-600">
-            <XCircleIcon className="h-3.5 w-3.5 shrink-0" />
-            Enter latitude and longitude, separated by a space, comma, or tab.
+          <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
+            <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>Enter latitude and longitude, separated by a space, comma, or tab.</span>
+          </p>
+        ) : status?.status === "unresolved" ? (
+          <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
+            <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{status.reason}</span>
           </p>
         ) : status?.status === "resolved" ? (
           <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
@@ -627,31 +636,35 @@ function StepRowEditor({
         </Field>
       </div>
 
-      {/* Riders only for a stop (a turn has no one boarding/leaving at
-          it) - live off `isStop` above, so switching Type away from
-          Stop hides this immediately rather than leaving a stale count
-          behind on what's now a turn. Its own full-width line, not
-          sharing a row with Driver Notes - the two aren't related
-          enough to read as a pair, and Driver Notes needs the room on
-          longer entries. */}
-      {isStop && (
-        <div className="mt-2">
-          <Field
-            label={
-              <span className="inline-flex items-center gap-1">
-                <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
-              </span>
-            }
-          >
-            <input
-              className={inputClass}
-              inputMode="numeric"
-              value={row.riderCount}
-              onChange={(e) => onChange({ riderCount: e.target.value.replace(/\D/g, "") })}
-            />
-          </Field>
-        </div>
-      )}
+      {/* Riders only really means anything for a stop (a turn has no
+          one boarding/leaving at it) - live off `isStop` above, so
+          switching Type away from Stop fades it immediately rather
+          than leaving it looking just as active as every other field.
+          Faded rather than hidden outright (unlike Side, above,
+          which still disappears) - a non-stop row can still carry a
+          leftover count from before its Type changed, and hiding the
+          field entirely would hide that stale value too, instead of
+          showing it grayed out as the "this isn't being read for this
+          row" it now is. Its own full-width line, not sharing a row
+          with Driver Notes - the two aren't related enough to read as
+          a pair, and Driver Notes needs the room on longer entries. */}
+      <div className={`mt-2 ${isStop ? "" : "opacity-40"}`}>
+        <Field
+          label={
+            <span className="inline-flex items-center gap-1">
+              <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
+            </span>
+          }
+        >
+          <input
+            className={inputClass}
+            inputMode="numeric"
+            value={row.riderCount}
+            onChange={(e) => onChange({ riderCount: e.target.value.replace(/\D/g, "") })}
+            disabled={!isStop}
+          />
+        </Field>
+      </div>
 
       <div className="mt-3 flex items-center gap-2">
         <button
@@ -1412,6 +1425,27 @@ export function EditRouteScreen({
     [waypoints, cache],
   );
   const counts = useMemo(() => resolutionCounts(resolutionRows), [resolutionRows]);
+
+  // The row currently open in StepRowEditor's own waypoint, re-derived
+  // from `draftRow` rather than read off `waypoints[expandedIndex]`
+  // above - that array only ever reflects the last *committed* rows,
+  // so a destination typed here but not yet saved via Update would
+  // otherwise still fetch/show status for whatever this row used to
+  // say. Recomputing the whole list (rather than just this one row) is
+  // what deriveWaypointsWithContext already does for free, and it's
+  // the only way to get this row's own `previousRoad` context exactly
+  // right too. Same guard as `waypoints` above, so this stays undefined
+  // in exactly the situations that array would have been empty in.
+  const draftWaypoint = useMemo(() => {
+    if (expandedIndex === null || !draftRow) return undefined;
+    if (mode !== "edit" || hasIncompleteRow || !hasRealSchoolAddress || rows.length === 0) return undefined;
+    const draftRows = rows.map((r, i) => (i === expandedIndex ? draftRow : r));
+    return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[expandedIndex];
+  }, [expandedIndex, draftRow, rows, schoolAddress, mode, hasIncompleteRow, hasRealSchoolAddress]);
+  const draftStatus = useMemo(
+    () => (draftWaypoint ? summarizeRouteResolution([draftWaypoint], cache)[0] : undefined),
+    [draftWaypoint, cache],
+  );
 
   // Opens row `index`'s full editor - always switches straight to it
   // even if a different row's editor is already open (that row's own
@@ -2178,30 +2212,36 @@ export function EditRouteScreen({
             in for its StepRowView above - only ever rendered for
             `expandedIndex`, so it's hoisted out of the map above (a
             single instance, not one possible instance per row) rather
-            than an inline ternary inside it. The IIFE below just gives
-            `index`/`waypoint` their own real const bindings, so the
-            callbacks passed to StepRowEditor close over a value that
-            can't have changed out from under them by the time a click
-            actually fires - same guarantee the map callback's own
-            per-row consts already gave the old inline version. */}
+            than an inline ternary inside it. Uses draftWaypoint/
+            draftStatus above (re-derived from `draftRow` on every
+            change), never `waypoints[index]`/`resolutionRows[index]` -
+            those only reflect the last *committed* row, so Fetch would
+            otherwise look up whatever this row said before this edit
+            even opened. The IIFE below just gives `index` its own real
+            const binding, so the callbacks passed to StepRowEditor
+            close over a value that can't have changed out from under
+            them by the time a click actually fires. */}
         {expandedIndex !== null &&
           draftRow &&
           (() => {
             const index = expandedIndex;
             const isStop = rows[index].action.toLowerCase() === "stop";
-            const waypoint = waypoints[index];
             return (
               <StepRowEditor
                 row={draftRow}
                 stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
                 previousRoad={previousRoads[index] ?? null}
-                status={waypoint ? resolutionRows[index] : undefined}
-                fetching={waypoint ? fetchingStepIds.has(waypoint.stepId) : false}
+                status={draftStatus}
+                fetching={draftWaypoint ? fetchingStepIds.has(draftWaypoint.stepId) : false}
                 fetchLocked={singleFetchCoolingDown}
                 onChange={handleDraftChange}
-                onFetch={() => waypoint && waypoint.kind !== "unresolvable" && fetchLocation(waypoint)}
+                onFetch={() =>
+                  draftWaypoint && draftWaypoint.kind !== "unresolvable" && fetchLocation(draftWaypoint)
+                }
                 onManualCoordinates={(lat, lon) =>
-                  waypoint && waypoint.kind !== "unresolvable" && setManualCoordinates(waypoint, lat, lon)
+                  draftWaypoint &&
+                  draftWaypoint.kind !== "unresolvable" &&
+                  setManualCoordinates(draftWaypoint, lat, lon)
                 }
                 onCancel={handleCancelRow}
                 onDelete={() => handleDeleteRow(index)}
