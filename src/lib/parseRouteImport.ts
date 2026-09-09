@@ -202,13 +202,14 @@ const RECOGNIZED_ACTIONS = new Set([
   "stop",
   "left",
   "right",
-  "proceed",
+  "continue",
+  "u-turn",
   "turn around",
+  "proceed",
   "pull over",
   "return",
   "depart",
   "arrive",
-  "continue",
   "complete",
 ]);
 
