@@ -1,79 +1,41 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import type { SchoolLevelDb, TripTypeDb } from "@prisma/client";
+import type { MasterListRoute } from "@/lib/parseRouteMasterList";
+import { tripTypeFullLabel } from "@/lib/tripType";
+import { durationBetween24HourTimes, format24HourAsAmPm } from "@/lib/time";
 
 /**
- * Regenerates route-master-list.csv's exact tab-separated schema
- * (route_id, route_number, bus_number, am_pm, school_type, school_name,
- * start_time, end_time, stop_count, rider_count, status), plus one
- * column the district's real sheet never had - next_route_id, this
- * route's own addition, carrying EditRouteScreen's "Next Action" field
- * (Route.nextRouteId) through to parseRouteMasterList.ts the same way
- * every other real column already does - from Postgres. page.tsx
- * fetches this instead of the static file now, and hands the response
- * straight to that same parser, so this route's only job is to produce
- * text it still recognizes.
- *
- * stop_count/rider_count are recomputed from each route's own steps
- * (rather than stored) purely so this text stays informative to a
- * human reading it directly - parseRouteMasterList.ts ignores both
- * columns already (see its own doc comment on why: the app derives
- * both, live, from the steps sheet itself).
+ * Every route's own metadata, straight from Postgres as real
+ * MasterListRoute objects - route_id/route_number/bus_number/am_pm/
+ * school_type/school_name/start_time/end_time/status was the district's
+ * original tab-separated master list's own schema (see
+ * parseRouteMasterList.ts, kept for prisma/seed.ts's own real read of
+ * that file at import time); this is the same data, already typed and
+ * shaped the way page.tsx actually consumes it, rather than a CSV-text
+ * response it immediately re-parses back into this exact shape. Route's
+ * own tripType/schoolLevel columns are already exactly SchoolLevel/
+ * TripType (see prisma/schema.prisma's SchoolLevelDb/TripTypeDb), so
+ * there's no am_pm/school_type letter-code round-trip needed here
+ * either - stop_count/rider_count don't appear at all, same as
+ * MasterListRoute never carried them (the app derives both, live, from
+ * each route's own steps).
  */
-
-const LEVEL_TO_SCHOOL_TYPE: Record<SchoolLevelDb, string> = {
-  elementary: "EL",
-  middle: "MS",
-  high: "HS",
-};
-
-const TRIP_TYPE_TO_AM_PM: Record<TripTypeDb, string> = {
-  pickup: "AM",
-  dropoff: "PM",
-  fieldtrip: "FT",
-};
-
 export async function GET(): Promise<NextResponse> {
-  const routes = await prisma.route.findMany({
-    include: { steps: true },
-    orderBy: { id: "asc" },
-  });
+  const routes = await prisma.route.findMany({ orderBy: { id: "asc" } });
 
-  const header = [
-    "route_id",
-    "route_number",
-    "bus_number",
-    "am_pm",
-    "school_type",
-    "school_name",
-    "start_time",
-    "end_time",
-    "stop_count",
-    "rider_count",
-    "status",
-    "next_route_id",
-  ].join("\t");
+  const rows: MasterListRoute[] = routes.map((route) => ({
+    id: route.id,
+    status: route.status,
+    routeNumber: route.routeNumber,
+    name: `${route.schoolName} — ${tripTypeFullLabel(route.tripType)}`,
+    busNumber: route.busNumber,
+    schoolName: route.schoolName,
+    schoolLevel: route.schoolLevel,
+    tripType: route.tripType,
+    departureTime: format24HourAsAmPm(route.startTime),
+    durationMinutes: route.endTime ? durationBetween24HourTimes(route.startTime, route.endTime) : undefined,
+    nextRouteId: route.nextRouteId,
+  }));
 
-  const lines = routes.map((route) => {
-    const stopSteps = route.steps.filter((step) => step.action.toLowerCase() === "stop");
-    const riderCount = stopSteps.reduce((sum, step) => sum + (Number(step.riderCount) || 0), 0);
-    return [
-      route.id,
-      route.routeNumber,
-      route.busNumber,
-      TRIP_TYPE_TO_AM_PM[route.tripType],
-      LEVEL_TO_SCHOOL_TYPE[route.schoolLevel],
-      route.schoolName,
-      route.startTime,
-      route.endTime ?? "",
-      stopSteps.length || "",
-      riderCount || "",
-      route.status,
-      route.nextRouteId ?? "",
-    ].join("\t");
-  });
-
-  return new NextResponse([header, ...lines].join("\n"), {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
+  return NextResponse.json(rows);
 }

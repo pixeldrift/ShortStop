@@ -30,7 +30,7 @@ import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
-import { parseRouteImport, rowsToCsvText, unresolvedRequiredFields } from "@/lib/parseRouteImport";
+import { parseRouteImport, unresolvedRequiredFields } from "@/lib/parseRouteImport";
 import {
   PLACEHOLDER_DISTANCE,
   PLACEHOLDER_DRIVER_NAME,
@@ -1039,7 +1039,7 @@ export function EditRouteScreen({
   mode,
   route,
   routes,
-  rawStepsText,
+  initialSteps,
   initialWaypointCache,
   schools,
   onCancel,
@@ -1054,11 +1054,12 @@ export function EditRouteScreen({
    * itself gets, not pre-filtered, so this screen doesn't need its own
    * separate real-routes-only prop just for this one field. */
   routes: Route[];
-  /** The route's own current steps text - pre-fills `mode: "add"`'s
-   * textarea directly, and seeds `mode: "edit"`'s structured row list
-   * once on mount (see the `rows` useState below) - always "" for
-   * `mode: "add"`. */
-  rawStepsText: string;
+  /** The route's own current steps, straight from Postgres (or a prior
+   * edit this session) - seeds `mode: "edit"`'s structured row list
+   * once on mount (see the `rows` useState below). Always `[]` for
+   * `mode: "add"`, which starts from its own empty paste/upload box
+   * instead (see `stepsText`). */
+  initialSteps: RawRouteRow[];
   /** A previous edit session's own fetched cache for this exact route,
    * if page.tsx has one - takes priority over fetching the real
    * committed sidecar file, so coordinates fetched and saved earlier
@@ -1066,30 +1067,31 @@ export function EditRouteScreen({
    * (see page.tsx's adminWaypointCaches). Undefined for `mode: "add"`
    * and for a route that's never had one fetched. */
   initialWaypointCache?: WaypointCache;
-  /** School name -> address/level, from schools.csv - the school
-   * picker below (`schoolOptions`) is built from this table's own keys
-   * rather than free text, so a route's address and level are always
-   * looked up here instead of typed or picked separately by an admin. */
+  /** School name -> address/level, from Postgres - the school picker
+   * below (`schoolOptions`) is built from this table's own keys rather
+   * than free text, so a route's address and level are always looked
+   * up here instead of typed or picked separately by an admin. */
   schools: Record<string, SchoolInfo>;
   onCancel: () => void;
-  /** `rawStepsText` here is always the *current* content - `mode:
-   * "add"`'s pasted/uploaded text as-is, or `mode: "edit"`'s edited row
-   * list serialized back to the same CSV shape (rowsToCsvText) so
-   * page.tsx's storage doesn't need its own separate structured-row
-   * format. `cache` is this session's complete waypoint cache for the
-   * route (whatever was loaded plus anything freshly fetched) - kept
+  /** `steps` here is always the *current* row list - `mode: "add"`'s
+   * pasted/uploaded rows as parsed, or `mode: "edit"`'s edited row list
+   * as-is - so page.tsx's own storage stays the same structured shape
+   * this screen already edits, with no CSV text round-trip in between.
+   * `cache` is this session's complete waypoint cache for the route
+   * (whatever was loaded plus anything freshly fetched) - kept
    * alongside the route itself so a later re-open of this same route
    * (or the list's own "Publish" readiness check) sees it too, instead
    * of every fetched coordinate vanishing the moment this screen
    * closes. */
-  onSave: (route: Route, rawStepsText: string, cache: WaypointCache) => void;
+  onSave: (route: Route, steps: RawRouteRow[], cache: WaypointCache) => void;
 }) {
   const [routeNumber, setRouteNumber] = useState(route?.routeNumber ?? "");
   const [busNumber, setBusNumber] = useState(route?.busNumber ?? "");
   // School address and level are never typed or picked separately -
-  // both are looked up from `schools` (schools.csv) by whichever name
-  // is selected here, below. Real address/level data belongs in that
-  // one table, not duplicated into every route that references it.
+  // both are looked up from `schools` (Postgres, via /api/schools) by
+  // whichever name is selected here, below. Real address/level data
+  // belongs in that one table, not duplicated into every route that
+  // references it.
   const [schoolName, setSchoolName] = useState(route?.schoolName ?? "");
   const schoolInfo: SchoolInfo | undefined = schools[schoolName];
   // A route already being edited whose school isn't in `schools` yet
@@ -1113,8 +1115,8 @@ export function EditRouteScreen({
   const hasRealSchoolAddress = Boolean(schoolInfo) || isOriginalUnmatchedSchool;
   // Every known school, plus - only if it wouldn't otherwise be a real
   // option - whatever school this route already had, so re-opening an
-  // existing route never silently drops or blanks out a school
-  // schools.csv doesn't have a row for yet.
+  // existing route never silently drops or blanks out a school the
+  // schools table doesn't have a row for yet.
   const schoolOptions = useMemo(() => {
     const names = Object.keys(schools).sort((a, b) => a.localeCompare(b));
     if (schoolName && !schools[schoolName]) names.push(schoolName);
@@ -1162,18 +1164,18 @@ export function EditRouteScreen({
   });
   const [departureTime, setDepartureTime] = useState(route?.departureTime ?? "");
   const [driverName, setDriverName] = useState(route?.driverName ?? PLACEHOLDER_DRIVER_NAME);
-  // mode "add" only - the paste/upload box. mode "edit" never reads
-  // this again after its own one-time seed below; it's the structured
-  // `rows` state that's authoritative from then on.
-  const [stepsText, setStepsText] = useState(rawStepsText);
+  // mode "add" only - the paste/upload box, the one place this screen
+  // still deals in CSV/TSV text at all (a human pasting or uploading a
+  // route sheet - see parseRouteImport.ts). mode "edit" never reads
+  // this; it's the structured `rows` state that's authoritative there.
+  const [stepsText, setStepsText] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stepsTextareaRef = useRef<HTMLTextAreaElement>(null);
-  // mode "edit" only - seeded once from rawStepsText (whatever CSV
-  // shape it came in as, real committed file or a prior edit's own
-  // rowsToCsvText output - parseRouteImport reads either fine), then
-  // edited structurally (add/remove/change a row) from here on, never
-  // re-derived from text again.
-  const [rows, setRows] = useState<RawRouteRow[]>(() => parseRouteImport(rawStepsText).rows);
+  // mode "edit" only - seeded once from initialSteps (the route's own
+  // already-structured rows, straight from Postgres or a prior edit
+  // this session), then edited structurally (add/remove/change a row)
+  // from here on, never re-derived from initialSteps again.
+  const [rows, setRows] = useState<RawRouteRow[]>(initialSteps);
   // Defaults to on here (unlike StartScreen's own "View All Stops",
   // which defaults to stops-only) - reviewing a route for editing is
   // exactly when seeing every turn in its real place matters most.
@@ -1644,7 +1646,6 @@ export function EditRouteScreen({
     if (saving) return;
     const currentRows = mode === "add" ? parseResult.rows : rows;
     const built = buildRouteFromRows(currentRows, buildMetaFields(nextStatus));
-    const textToPersist = mode === "add" ? stepsText : rowsToCsvText(rows);
 
     setSaving(true);
     setMessage(null);
@@ -1686,7 +1687,7 @@ export function EditRouteScreen({
 
     setStatus(nextStatus);
     setDirty(false);
-    onSave(built, textToPersist, cache);
+    onSave(built, currentRows, cache);
   }
 
   // A live snapshot of the route as currently edited (not just as last
@@ -1773,7 +1774,7 @@ export function EditRouteScreen({
 
       {/* School level and address are never picked or typed separately
           - both come from whichever school is chosen here, looked up
-          in `schools` (schools.csv). */}
+          in `schools` (Postgres, via /api/schools). */}
       <div className="mt-3">
         <Field label="School">
           <select

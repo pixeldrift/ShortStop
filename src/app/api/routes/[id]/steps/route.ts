@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import type { RawRouteRow } from "@/lib/parseRouteCsv";
 
 /**
- * Regenerates one route's steps sheet - the tab-separated schema
- * parseRouteCsvRows already auto-detects (time, action, from_at,
- * onto_at, rider_count, side, notes) - from Postgres. page.tsx fetches
- * this per route id instead of the old hardcoded
- * ROUTE_STEPS_CSV_PATHS map of static files; a route id with no steps
- * committed yet comes back 404, same "skip it" case that map's own
- * missing entries used to be.
+ * One route's own turn-by-turn steps, straight from Postgres - real
+ * RawRouteRow objects, not the tab-separated steps-sheet text every
+ * real district route sheet used to arrive as (see parseRouteImport.ts
+ * for where that format still belongs - a human pasting/uploading a
+ * sheet, not this app's own data plumbing). page.tsx fetches this per
+ * route id; a route id with no steps committed yet comes back 404, same
+ * "skip it" case a missing sidecar file used to be.
  */
 export async function GET(
   _request: Request,
@@ -23,21 +24,15 @@ export async function GET(
     return NextResponse.json({ error: `No steps sheet for route "${id}".` }, { status: 404 });
   }
 
-  const header = ["time", "action", "from_at", "onto_at", "rider_count", "side", "notes", "skip"].join("\t");
-  const lines = route.steps.map((step) =>
-    [
-      "",
-      step.action,
-      step.fromAt,
-      step.ontoAt,
-      step.riderCount,
-      step.side,
-      step.notes,
-      step.skip ? "true" : "false",
-    ].join("\t"),
-  );
+  const steps: RawRouteRow[] = route.steps.map((step) => ({
+    action: step.action,
+    fromAt: step.fromAt,
+    ontoAt: step.ontoAt,
+    riderCount: step.riderCount,
+    side: step.side,
+    notes: step.notes,
+    skip: step.skip,
+  }));
 
-  return new NextResponse([header, ...lines].join("\n"), {
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
+  return NextResponse.json(steps);
 }

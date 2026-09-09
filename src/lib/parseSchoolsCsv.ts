@@ -19,13 +19,13 @@ const VALID_SCHOOL_LEVELS = new Set<SchoolLevel>(["elementary", "middle", "high"
 
 /**
  * Parses the tab-separated schools sheet (school_name, address,
- * school_level - one header row plus one row per school) into a
- * lookup by school name, for merging into route metadata alongside
- * whatever the master list and each route's own steps CSV provide
- * (see page.tsx and scripts/geocodeRoute.ts), and for populating
- * EditRouteScreen's own school picker directly - a route's school is
- * chosen from this table, not typed freehand, so its address and
- * level always come from here rather than an admin's own guess.
+ * school_level - one header row plus one row per school) into the same
+ * by-name lookup src/app/api/schools builds straight from Postgres for
+ * the running app itself - this reader's own callers now are
+ * prisma/seed.ts (populating that table from the real district file at
+ * import time) and the geocoding scripts (scripts/geocodeRoute.ts,
+ * scripts/prototypeOverpassGeocode.ts), which still work against the
+ * real file directly.
  *
  * A row whose school_level isn't one of SchoolLevel's own three real
  * values is dropped (logged, not silently miscategorized) rather than
