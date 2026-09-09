@@ -247,7 +247,10 @@ export function StartScreen({
 
           <div className="mt-4 grid grid-cols-4 gap-2">
             <StatTile value={distanceValue} label="miles" />
-            <StatTile value={String(route.durationMinutes)} label="minutes" />
+            <StatTile
+              value={route.durationMinutes != null ? String(route.durationMinutes) : "—"}
+              label="minutes"
+            />
             <StatTile value={String(totalStops)} label="stops" />
             <StatTile value={String(totalRiders)} label="riders" />
           </div>

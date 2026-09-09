@@ -103,7 +103,7 @@ function routeRow(route: Route): (string | number)[] {
     totalStops,
     totalRiders,
     route.distance,
-    route.durationMinutes,
+    route.durationMinutes ?? "",
   ];
 }
 

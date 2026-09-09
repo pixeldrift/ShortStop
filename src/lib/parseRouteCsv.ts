@@ -25,7 +25,12 @@ export interface RouteMeta {
   schoolLon: number | null;
   tripType: TripType;
   distance: string;
-  durationMinutes: number;
+  /** Undefined when there's no way to compute a trip length yet - no
+   * end_time on the real master list's own row (see page.tsx), or an
+   * admin-created route, which has no form field to set one at all.
+   * Never faked as 0 or hidden behind skipping the route entirely -
+   * see StartScreen's own "—" fallback. */
+  durationMinutes: number | undefined;
   isFavorite: boolean;
   nextRouteId: string | null;
 }

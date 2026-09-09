@@ -253,21 +253,11 @@ export default function Home() {
 
         const built = await Promise.all(
           allRows.map(async (row) => {
-            // A row with no computable duration (blank end_time) means
-            // the master list hasn't recorded when this route ends yet
-            // - a data problem worth surfacing rather than silently
-            // showing a fake "0 min" trip, whatever its status.
-            if (row.durationMinutes == null) {
-              console.warn(`Route ${row.id} has no end_time in the master list - skipped`);
-              return null;
-            }
-
             const steps = await fetchSteps(row.id);
             if (!steps) return null;
 
             const meta: RouteMeta = {
               ...row,
-              durationMinutes: row.durationMinutes,
               driverName: PLACEHOLDER_DRIVER_NAME,
               schoolAddress: schoolsTable[row.schoolName]?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
               schoolLat: schoolsTable[row.schoolName]?.lat ?? null,

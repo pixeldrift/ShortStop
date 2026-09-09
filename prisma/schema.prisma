@@ -28,6 +28,7 @@ enum TripTypeDb {
   pickup
   dropoff
   fieldtrip
+  other
 }
 
 // Only "published"/"draft" - the app's own third status, "demo", marks
