@@ -71,6 +71,7 @@ const TRIP_TYPE_TOGGLES: { value: TripType; label: string }[] = [
   { value: "pickup", label: "AM" },
   { value: "dropoff", label: "PM" },
   { value: "fieldtrip", label: "FT" },
+  { value: "other", label: "OT" },
 ];
 const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
   { value: "elementary", label: "EL" },

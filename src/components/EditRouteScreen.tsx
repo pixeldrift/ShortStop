@@ -33,7 +33,6 @@ import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
 import { parseRouteImport, unresolvedRequiredFields } from "@/lib/parseRouteImport";
 import {
   PLACEHOLDER_DISTANCE,
-  PLACEHOLDER_DRIVER_NAME,
   PLACEHOLDER_DURATION_MINUTES,
   SCHOOL_ADDRESS_NOT_YET_PROVIDED,
 } from "@/lib/placeholderMeta";
@@ -113,14 +112,49 @@ const BLANK_ROW: RawRouteRow = {
   skip: false,
 };
 
+// placeholder:text-zinc-300 - much lighter than the browser/Tailwind
+// default placeholder color, so a hint never reads as though it were
+// an actual typed-in value at a glance (see each field's own
+// placeholder text below, deliberately example-shaped rather than
+// real-looking - "123", not "125", an actual route/bus number already
+// in use elsewhere in this app's own real data).
 const inputClass =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
+  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base placeholder:text-zinc-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
 const labelClass = "text-xs font-semibold tracking-wide text-zinc-500 uppercase";
 
-function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+/** Same shape as inputClass, swapped to a red border/focus ring - a
+ * required field (Route #, Trip, School - see requiredFieldErrors)
+ * still blank the moment a submit attempt is actually made, so it's
+ * obvious *which* of the three needs attention rather than just the
+ * one summary message. Never shown before that first attempt (see
+ * `showRequiredErrors`) - a blank required field on first paint isn't
+ * an error yet, just unfilled. */
+const errorInputClass =
+  "w-full rounded-lg border border-red-500 bg-white px-3 py-2 text-base placeholder:text-zinc-300 focus:border-red-500 focus:ring-1 focus:ring-red-500 focus:outline-none";
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: React.ReactNode;
+  /** Shows a red asterisk after the label - only while this field is
+   * still genuinely unset, per the caller's own check (e.g.
+   * `!routeNumber.trim()`), so it disappears the moment a value is
+   * actually there rather than nagging permanently. */
+  required?: boolean;
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1">
-      <span className={labelClass}>{label}</span>
+      <span className={labelClass}>
+        {label}
+        {required && (
+          <span className="ml-0.5 text-red-500" aria-hidden="true">
+            *
+          </span>
+        )}
+      </span>
       {children}
     </label>
   );
@@ -1139,7 +1173,12 @@ export function EditRouteScreen({
     if (schoolName && !schools[schoolName]) names.push(schoolName);
     return names;
   }, [schools, schoolName]);
-  const [tripType, setTripType] = useState<TripType>(route?.tripType ?? "pickup");
+  // Blank (never "pickup" by default) for a brand-new route - Trip is
+  // one of the three fields this screen actually requires (see
+  // requiredFieldErrors below), so it needs a genuine "not chosen yet"
+  // state to require *into*, the same way School already has one via
+  // its own blank "Select a school" option.
+  const [tripType, setTripType] = useState<TripType | "">(route?.tripType ?? "");
   // Every other real route this bus could plausibly hand off to once
   // this one's done - same bus (a chain is one bus driving more than
   // one leg back-to-back) and same trip type (an AM route handing off
@@ -1180,7 +1219,14 @@ export function EditRouteScreen({
     return nextRouteOptions.find((r) => r.schoolLevel === nextLevel)?.id ?? null;
   });
   const [departureTime, setDepartureTime] = useState(route?.departureTime ?? "");
-  const [driverName, setDriverName] = useState(route?.driverName ?? PLACEHOLDER_DRIVER_NAME);
+  // Genuinely blank for a brand-new route now, not pre-filled with
+  // PLACEHOLDER_DRIVER_NAME ("Otto Mann") - that placeholder is still
+  // the right stand-in for every *real* route loaded without a driver
+  // on file yet (see page.tsx), but pre-filling a brand-new route's own
+  // editable field with a fake name read as real data risked getting
+  // saved as-is if never noticed; an actual "First Last" hint (see the
+  // input's own placeholder below) can't be mistaken for a real value.
+  const [driverName, setDriverName] = useState(route?.driverName ?? "");
   // mode "add" only - the paste/upload box, the one place this screen
   // still deals in CSV/TSV text at all (a human pasting or uploading a
   // route sheet - see parseRouteImport.ts). mode "edit" never reads
@@ -1231,6 +1277,12 @@ export function EditRouteScreen({
   // flight - same "one at a time" guard fetchLocation's own
   // singleFetchCoolingDown already uses for Fetch Location.
   const [saving, setSaving] = useState(false);
+  // True once a Save/Create Route attempt has actually been blocked by
+  // a missing required field - a blank Route #/Trip/School isn't an
+  // error on first paint, only once someone's tried to submit past it
+  // (see handleSave and requiredFieldErrors below, and each field's own
+  // `required`/errorInputClass use of these).
+  const [showRequiredErrors, setShowRequiredErrors] = useState(false);
   // Whether mode "edit" has any real change since this screen opened
   // (or since the last successful Save) - every Details field's own
   // onChange, plus adding/updating/deleting a stop, sets this true;
@@ -1619,29 +1671,38 @@ export function EditRouteScreen({
   // useMemo can depend on it without recomputing on every unrelated
   // render.
   const buildMetaFields = useCallback(
-    (nextStatus: RouteStatus): RouteMeta => ({
-      id: `${routeNumber}-${tripType}-${schoolLevel}`,
-      status: nextStatus,
-      name: `${schoolName} — ${tripTypeFullLabel(tripType)}`,
-      routeNumber,
-      driverName,
-      busNumber,
-      departureTime,
-      schoolName,
-      schoolAddress,
-      schoolLevel,
-      schoolLat,
-      schoolLon,
-      tripType,
-      // Real mileage/timing needs actual routing calculation, not an
-      // admin's own guess - these stay flat placeholders here the same
-      // way they already do for every route loaded from the master
-      // list (see page.tsx), filled in for real on the backend later.
-      distance: route?.distance ?? PLACEHOLDER_DISTANCE,
-      durationMinutes: route?.durationMinutes ?? PLACEHOLDER_DURATION_MINUTES,
-      isFavorite: route?.isFavorite ?? false,
-      nextRouteId,
-    }),
+    (nextStatus: RouteStatus): RouteMeta => {
+      // Trip is required (see requiredFieldErrors below), so by the
+      // time handleSave actually calls this, it's always a real
+      // TripType - this fallback only ever shows up in exportableRoute's
+      // own live preview of a still-incomplete form, never in anything
+      // that actually gets saved.
+      const effectiveTripType: TripType = tripType || "pickup";
+      return {
+        id: `${routeNumber}-${effectiveTripType}-${schoolLevel}`,
+        status: nextStatus,
+        name: `${schoolName} — ${tripTypeFullLabel(effectiveTripType)}`,
+        routeNumber,
+        driverName,
+        busNumber,
+        departureTime,
+        schoolName,
+        schoolAddress,
+        schoolLevel,
+        schoolLat,
+        schoolLon,
+        tripType: effectiveTripType,
+        // Real mileage/timing needs actual routing calculation, not an
+        // admin's own guess - these stay flat placeholders here the
+        // same way they already do for every route loaded from the
+        // master list (see page.tsx), filled in for real on the
+        // backend later.
+        distance: route?.distance ?? PLACEHOLDER_DISTANCE,
+        durationMinutes: route?.durationMinutes ?? PLACEHOLDER_DURATION_MINUTES,
+        isFavorite: route?.isFavorite ?? false,
+        nextRouteId,
+      };
+    },
     [
       routeNumber,
       tripType,
@@ -1658,15 +1719,21 @@ export function EditRouteScreen({
     ],
   );
 
+  // The only three fields this screen actually requires - a route
+  // number (what gives a draft its own identity, see `id` above), a
+  // trip type, and a school - everything else (bus number, driver,
+  // start time, stops, whether they're geocoded) can genuinely be
+  // filled in later. This deliberately lets a stub with just these
+  // three get saved - readiness/publishing is the route list screen's
+  // own concern now, not Save's.
+  const routeNumberMissing = !routeNumber.trim();
+  const tripTypeMissing = !tripType;
+  const schoolNameMissing = !schoolName.trim();
+
   async function handleSave(nextStatus: RouteStatus = status) {
-    // The only real requirement to save at all - a route number is
-    // what gives a draft its own identity (see `id` above), and
-    // everything else (school, stops, whether they're geocoded) can
-    // genuinely be filled in later. This deliberately lets a stub with
-    // nothing but a route number get saved - readiness/publishing is
-    // the route list screen's own concern now, not Save's.
-    if (!routeNumber.trim()) {
-      setMessage("Route number is required.");
+    if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
+      setShowRequiredErrors(true);
+      setMessage("Route #, Trip, and School are required.");
       return;
     }
     if (saving) return;
@@ -1760,29 +1827,31 @@ export function EditRouteScreen({
   const routeDetailsForm = (
     <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
       <div className="grid grid-cols-3 gap-2">
-        <Field label="Route #">
+        <Field label="Route #" required={routeNumberMissing}>
           <input
-            className={inputClass}
+            className={showRequiredErrors && routeNumberMissing ? errorInputClass : inputClass}
             value={routeNumber}
             onChange={(e) => {
               setRouteNumber(e.target.value);
               setDirty(true);
             }}
-            placeholder="125"
+            placeholder="123"
           />
         </Field>
-        <Field label="Trip">
+        <Field label="Trip" required={tripTypeMissing}>
           <select
-            className={inputClass}
+            className={showRequiredErrors && tripTypeMissing ? errorInputClass : inputClass}
             value={tripType}
             onChange={(e) => {
-              setTripType(e.target.value as TripType);
+              setTripType(e.target.value as TripType | "");
               setDirty(true);
             }}
           >
-            <option value="pickup">AM</option>
-            <option value="dropoff">PM</option>
+            <option value="">Select…</option>
+            <option value="pickup">AM pickup</option>
+            <option value="dropoff">PM drop off</option>
             <option value="fieldtrip">Field Trip</option>
+            <option value="other">Other</option>
           </select>
         </Field>
         <Field label="Start">
@@ -1793,7 +1862,7 @@ export function EditRouteScreen({
               setDepartureTime(e.target.value);
               setDirty(true);
             }}
-            placeholder="6:30 AM"
+            placeholder="H:MM AM"
           />
         </Field>
       </div>
@@ -1802,9 +1871,9 @@ export function EditRouteScreen({
           - both come from whichever school is chosen here, looked up
           in `schools` (Postgres, via /api/schools). */}
       <div className="mt-3">
-        <Field label="School">
+        <Field label="School" required={schoolNameMissing}>
           <select
-            className={inputClass}
+            className={showRequiredErrors && schoolNameMissing ? errorInputClass : inputClass}
             value={schoolName}
             onChange={(e) => {
               setSchoolName(e.target.value);
@@ -1837,7 +1906,7 @@ export function EditRouteScreen({
               setBusNumber(e.target.value);
               setDirty(true);
             }}
-            placeholder="125"
+            placeholder="123"
           />
         </Field>
         <Field label="Driver">
@@ -1848,6 +1917,7 @@ export function EditRouteScreen({
               setDriverName(e.target.value);
               setDirty(true);
             }}
+            placeholder="First Last"
           />
         </Field>
       </div>
@@ -2035,7 +2105,7 @@ export function EditRouteScreen({
               <span className="font-heading text-lg font-black tracking-tight">
                 {routeNumber || <span className="text-zinc-400 italic">No route number</span>}
               </span>
-              {routeNumber && (
+              {routeNumber && tripType && (
                 <span className="flex items-center gap-1 text-sm font-bold text-blue-500">
                   {tripTypeLabel(tripType)}
                   <TripTypeIcon tripType={tripType} className="h-3.5 w-3.5" />

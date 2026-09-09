@@ -18,16 +18,17 @@ const LEVEL_TO_SCHOOL_TYPE: Record<SchoolLevel, string> = {
   high: "HS",
 };
 
-// "FT" is unreachable in practice - the real master list's own am_pm
-// column below only ever parses as "AM"/"PM" (a route ever needs this
-// derived the other way, route -> file-naming convention, only for a
-// route this same parse already produced) - filled in purely so this
-// Record<TripType, string> stays exhaustive once TripType has a third
-// value.
+// "FT"/"OT" are unreachable in practice - the real master list's own
+// am_pm column below only ever parses as "AM"/"PM" (a route ever needs
+// this derived the other way, route -> file-naming convention, only
+// for a route this same parse already produced) - filled in purely so
+// this Record<TripType, string> stays exhaustive now that TripType has
+// more than two values.
 const TRIP_TYPE_TO_AM_PM: Record<TripType, string> = {
   pickup: "AM",
   dropoff: "PM",
   fieldtrip: "FT",
+  other: "OT",
 };
 
 /** Fields the master list actually provides - everything on RouteMeta
@@ -80,13 +81,14 @@ export function parseRouteMasterList(csvText: string): MasterListRoute[] {
       const values = line.split("\t").map((v) => v.trim());
       const row = Object.fromEntries(headers.map((header, i) => [header, values[i] ?? ""]));
 
-      // "FT" round-trips a field-trip route back out of
-      // /api/route-master-list's own am_pm column (see that route's
-      // own TRIP_TYPE_TO_AM_PM) - the district's real sheet only ever
-      // has "AM"/"PM" here today, but a real admin-created field-trip
-      // route now can too, once it's gone through Postgres.
+      // "FT"/"OT" are TRIP_TYPE_TO_AM_PM's own inverse - unreachable
+      // against the real district file this function actually reads
+      // now (prisma/seed.ts, the geocoding scripts), which only ever
+      // has "AM"/"PM" here, but kept for the same completeness reason
+      // that Record stays exhaustive.
       const amPm = row.am_pm.toUpperCase();
-      const tripType: TripType = amPm === "AM" ? "pickup" : amPm === "FT" ? "fieldtrip" : "dropoff";
+      const tripType: TripType =
+        amPm === "AM" ? "pickup" : amPm === "FT" ? "fieldtrip" : amPm === "OT" ? "other" : "dropoff";
       const schoolLevel = SCHOOL_TYPE_TO_LEVEL[row.school_type.toUpperCase()];
       const id = row.route_id || `${row.route_number}-${tripType}-${schoolLevel}`;
 

@@ -1,10 +1,14 @@
 export type StepKind = "depart" | "turn" | "stop" | "arrive";
 export type TurnDirection = "left" | "right";
-/** "fieldtrip" is a one-off special trip, not a morning/afternoon run -
- * no inherent AM/PM time-of-day badge (TripTypeIcon shows a flag
- * instead of a sun icon for it), and no fixed "arriving at"/"leaving
- * from" the school the way pickup/dropoff each always are. */
-export type TripType = "pickup" | "dropoff" | "fieldtrip";
+/** "fieldtrip" and "other" are both one-off trips, not a morning/
+ * afternoon run - neither has an inherent AM/PM time-of-day badge
+ * (TripTypeIcon shows a flag instead of a sun icon for either), and
+ * neither has a fixed "arriving at"/"leaving from" the school the way
+ * pickup/dropoff each always are. "other" is the catch-all for
+ * anything that isn't a normal pickup/dropoff/field trip run - a
+ * special activity bus, a one-off late run, whatever doesn't fit the
+ * other three. */
+export type TripType = "pickup" | "dropoff" | "fieldtrip" | "other";
 /** "Demo" marks the fabricated filler routes (demoRoutes.ts) that pad
  * out the route list - never a real district route, whatever its
  * other fields claim. "Published"/"draft" are both real data,
@@ -93,7 +97,9 @@ export interface Route {
    * yet, since none exists for this route. See RouteMeta in
    * parseRouteCsv.ts. */
   distance: string;
-  durationMinutes: number;
+  /** Undefined when there's no way to compute a trip length yet - see
+   * RouteMeta's own doc comment in parseRouteCsv.ts. */
+  durationMinutes: number | undefined;
   /** Drives the heart icon on RouteListScreen's rows and the
    * "Favorites" option in its View dropdown - see demoRoutes.ts (which
    * randomly picks a handful of the fabricated routes) and
