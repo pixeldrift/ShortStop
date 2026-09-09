@@ -26,20 +26,20 @@ function isGenericPlaceholder(road: string): boolean {
 }
 
 /** Route-sheet road descriptions that read like a name but never are -
- * a highway ramp/connector described the way a driver would say it out
- * loud ("Ramp toward Murfreesboro"), not anything with its own real
- * name to look up. Caught here, before ever reaching a geocoder, so it
- * comes back "unresolvable" (skipped entirely - see WaypointQuery
- * above) instead of spending a query only to land on "no match",
- * indistinguishable from a real miss (see README, "Maps, part nine" -
- * this exact case is what that prototype's one genuinely-expected
- * empty result turned out to be). Narrow on purpose - a false positive
- * here silently drops a real, resolvable stop, which is worse than an
- * unresolvable one occasionally still getting queried and failing
- * loudly. Expand the pattern only against another confirmed real
- * case, not preemptively. */
+ * a highway ramp/connector or a roundabout described the way a driver
+ * would say it out loud ("Ramp toward Murfreesboro", "Roundabout, take
+ * 3rd exit"), not anything with its own real name to look up. Caught
+ * here, before ever reaching a geocoder, so it comes back
+ * "unresolvable" (skipped entirely - see WaypointQuery above) instead
+ * of spending a query only to land on "no match", indistinguishable
+ * from a real miss (see README, "Maps, part nine" - this exact case is
+ * what that prototype's one genuinely-expected empty result turned out
+ * to be). Narrow on purpose - a false positive here silently drops a
+ * real, resolvable stop, which is worse than an unresolvable one
+ * occasionally still getting queried and failing loudly. Expand the
+ * pattern only against another confirmed real case, not preemptively. */
 function isUnresolvableDescription(road: string): boolean {
-  return /\bramp\b/i.test(road);
+  return /\b(ramp|roundabout)\b/i.test(road);
 }
 
 /** Strips a leading house number off a literal street address, e.g.
@@ -51,17 +51,49 @@ function roadNameFromAddress(address: string): string {
 }
 
 /** Recognizes a bare road name ("Riverwood Ln") by its own trailing
- * street-suffix word, the same signal a human reads a road name by.
- * Deliberately doesn't touch anything else about telling a road name
- * apart from other one-value stops - a house-numbered address ("216
- * Lake Forest Dr") ends in a suffix too, so that case is always
- * checked first (see isStop below); a place name with no suffix at all
- * ("LaVergne Lake Elementary School") never matches here regardless. */
+ * street-suffix word, the same signal a human reads a road name by -
+ * "Cr" (this district's own real abbreviation for "Circle", not the
+ * USPS-standard "Cir" - see normalizeStreetSuffix's own STREET_SUFFIX_
+ * ABBREVIATIONS) included alongside "Cir" itself, so either spelling is
+ * still recognized as a road even though only "Cr" is ever normalized
+ * to. Deliberately doesn't touch anything else about telling a road
+ * name apart from other one-value rows - a house-numbered address
+ * ("216 Lake Forest Dr") ends in a suffix too, so that case is always
+ * checked first (see isPlaceAction below); a place name with no suffix
+ * at all ("LaVergne Lake Elementary School", "D&R Transportation
+ * Headquarters") never matches here regardless. */
 function looksLikeRoadName(text: string): boolean {
-  return /\b(rd|road|ln|lane|dr|drive|st|street|ave|avenue|blvd|boulevard|ct|court|cir|circle|way|trl|trail|pl|place|pkwy|parkway|hwy|highway|loop|ter|terrace|sq|square|xing|crossing|cres|crescent)\.?$/i.test(
+  return /\b(rd|road|ln|lane|dr|drive|st|street|ave|avenue|blvd|boulevard|ct|court|cir|cr|circle|way|trl|trail|pl|place|pkwy|parkway|hwy|highway|loop|ter|terrace|sq|square|xing|crossing|cres|crescent|cv|cove)\.?$/i.test(
     text.trim(),
   );
 }
+
+/** A row's own lone value, turned into a road worth tracking as
+ * `currentRoad` going forward - a house-numbered address's road
+ * ("216 Lake Forest Dr" -> "Lake Forest Dr"), or the text itself when
+ * it already reads as a bare road name (see looksLikeRoadName above) -
+ * or null for neither (a business/school/place name with no road of
+ * its own to extract, "D&R Transportation Headquarters", "LaVergne
+ * Lake Elementary School"), so a literal place like that is never
+ * mistaken for a road a later turn could cross. Used only for
+ * PLACE_ACTIONS rows (see below) - a turn's own destination is always
+ * trusted as a road outright, precisely because naming one is the
+ * whole point of a turn action, suffix or not ("Right, Bill Stewart" is
+ * still a real road even with no "Rd"/"St" on the end). */
+function trackableRoadFrom(text: string): string | null {
+  if (/^\d/.test(text)) return roadNameFromAddress(text);
+  if (looksLikeRoadName(text)) return text;
+  return null;
+}
+
+/** Actions whose own lone value names a literal place - somewhere the
+ * bus stops, starts, or ends, not a road it turns onto - so their
+ * current-road tracking works the opposite way a turn's does (see
+ * trackableRoadFrom above): trusted directly only when it actually
+ * reads as a road or a house-numbered address, left untouched
+ * otherwise, rather than corrupting `currentRoad` with a business or
+ * school name a later turn would otherwise be crossed against. */
+const PLACE_ACTIONS = new Set(["stop", "depart", "arrive", "complete"]);
 
 function locationFor(
   roadA: string,
@@ -96,21 +128,33 @@ function locationFor(
  * "Current road" tracking rule, applied while walking the rows in
  * order:
  *  - A turn row's current road becomes whichever road it turns onto
- *    (`ontoAt` if given, otherwise `fromAt` per the same shorthand).
- *  - A stop row's current road is the road it's stopped *on* (`fromAt`)
+ *    (`ontoAt` if given, otherwise `fromAt` per the same shorthand) -
+ *    always trusted outright, since naming that road is the whole
+ *    point of a turn action, real street suffix or not ("Right, Bill
+ *    Stewart" is still a real road even with no "Rd"/"St" typed after
+ *    it) - except when it's an unresolvable driver description (a
+ *    ramp, a roundabout - see isUnresolvableDescription), which was
+ *    never a real road name to track in the first place, so the
+ *    previously-tracked road is left standing through it instead.
+ *  - A PLACE_ACTIONS row's current road is the road it's *on* (`fromAt`)
  *    - the cross street (`ontoAt`) is just where along that road the
- *      stop is, not a new heading - except a literal-address stop with
+ *      row is, not a new heading - except a literal-address row with
  *      no cross street at all (e.g. "216 Lake Forest Dr"), where the
- *      road name is pulled out of the address itself. A stop's own
- *      single bare road name with no cross street given at all (e.g.
- *      "Oak St") is read the other way around from that - it's *the*
- *      cross street, of whichever road is already tracked (the one the
- *      route last turned onto), not a new road of its own - so it
- *      derives the crossroads of the tracked road and that name, and
- *      leaves the tracked road itself untouched. A route sheet's own
- *      row order always keeps a stop on the road it's already tracking
- *      before the turn that leaves it, never after - so this never has
- *      to guess which of two different roads a bare stop value means.
+ *      road name is pulled out of the address itself, and a bare place
+ *      name with no road of its own at all (a business or school name,
+ *      "D&R Transportation Headquarters"), which leaves the tracked
+ *      road untouched rather than corrupting it with non-road text a
+ *      later turn would otherwise be wrongly crossed against. A row's
+ *      own single bare road name with no cross street given at all
+ *      (e.g. "Oak St") is read the other way around from either of
+ *      those - it's *the* cross street, of whichever road is already
+ *      tracked (the one the route last turned onto), not a new road of
+ *      its own - so it derives the crossroads of the tracked road and
+ *      that name, and leaves the tracked road itself untouched too. A
+ *      route sheet's own row order always keeps a stop on the road
+ *      it's already tracking before the turn that leaves it, never
+ *      after - so this never has to guess which of two different roads
+ *      a bare value like that means.
  *
  * Any row that states its own road(s) explicitly always wins over the
  * tracked value (used directly, and also resets it), which also covers
@@ -151,37 +195,40 @@ export function deriveWaypointsWithContext(
 
   const waypoints = rows.map((row, stepId): WaypointQuery => {
     previousRoads.push(currentRoad);
-    const isStop = row.action.toLowerCase() === "stop";
+    const isPlaceAction = PLACE_ACTIONS.has(row.action.toLowerCase());
+
+    // A bare road name with no cross street (a PLACE_ACTIONS row's own
+    // "lone value" shorthand, see above) names the cross street of the
+    // road already tracked, not a new road of its own - so, unlike
+    // every other case here, it leaves `currentRoad` exactly as it
+    // found it. Non-null only when that applies, so it also doubles as
+    // the tracked road itself (TypeScript can't narrow `currentRoad`
+    // from a separate boolean, so this carries the narrowed value
+    // directly instead).
+    const trackedCrossStreet =
+      isPlaceAction && !row.ontoAt && !/^\d/.test(row.fromAt) && currentRoad && looksLikeRoadName(row.fromAt)
+        ? currentRoad
+        : null;
 
     // A manually-skipped row (EditRouteScreen's own Skip checkbox) is
     // never queried at all, same as a pattern-detected "unresolvable"
     // one - but it still has to update `currentRoad` the same way an
     // ordinary row would have, so a later row that leans on "the road
     // we're already on" (a lone-value turn, an intersection-based
-    // stop) isn't left tracking whatever road was current before this
-    // skipped row instead.
-    // A bare road name with no cross street (a stop's own "lone value"
-    // shorthand, see above) names the cross street of the road already
-    // tracked, not a new road of its own - so, unlike every other case
-    // here, it leaves `currentRoad` exactly as it found it. Non-null
-    // only when that applies, so it also doubles as the tracked road
-    // itself (TypeScript can't narrow `currentRoad` from a separate
-    // boolean, so this carries the narrowed value directly instead).
-    const trackedCrossStreet =
-      isStop && !row.ontoAt && !/^\d/.test(row.fromAt) && currentRoad && looksLikeRoadName(row.fromAt)
-        ? currentRoad
-        : null;
-
+    // PLACE_ACTIONS row) isn't left tracking whatever road was current
+    // before this skipped row instead.
     if (row.skip) {
-      currentRoad = isStop
+      currentRoad = isPlaceAction
         ? row.ontoAt
           ? row.fromAt
-          : (trackedCrossStreet ?? roadNameFromAddress(row.fromAt))
-        : row.ontoAt || row.fromAt || currentRoad;
+          : (trackedCrossStreet ?? trackableRoadFrom(row.fromAt) ?? currentRoad)
+        : isUnresolvableDescription(row.ontoAt || row.fromAt)
+          ? currentRoad
+          : row.ontoAt || row.fromAt || currentRoad;
       return { stepId, kind: "unresolvable", description: "Marked as instructions only" };
     }
 
-    if (isStop) {
+    if (isPlaceAction) {
       if (row.ontoAt) {
         currentRoad = row.fromAt;
         return locationFor(row.fromAt, row.ontoAt, schoolAddress, stepId);
@@ -189,7 +236,7 @@ export function deriveWaypointsWithContext(
       if (trackedCrossStreet) {
         return locationFor(trackedCrossStreet, row.fromAt, schoolAddress, stepId);
       }
-      currentRoad = roadNameFromAddress(row.fromAt);
+      currentRoad = trackableRoadFrom(row.fromAt) ?? currentRoad;
       if (isUnresolvableDescription(row.fromAt)) {
         return { stepId, kind: "unresolvable", description: row.fromAt };
       }
@@ -197,7 +244,7 @@ export function deriveWaypointsWithContext(
     }
 
     if (row.ontoAt) {
-      currentRoad = row.ontoAt;
+      currentRoad = isUnresolvableDescription(row.ontoAt) ? currentRoad : row.ontoAt;
       return locationFor(row.fromAt, row.ontoAt, schoolAddress, stepId);
     }
 
@@ -209,8 +256,8 @@ export function deriveWaypointsWithContext(
       waypoint = currentRoad
         ? locationFor(currentRoad, destination, schoolAddress, stepId)
         : { stepId, kind: "address", text: destination };
+      currentRoad = destination;
     }
-    currentRoad = destination;
     return waypoint;
   });
 

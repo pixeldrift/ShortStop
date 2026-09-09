@@ -96,11 +96,16 @@ export function detectDelimiter(headerLine: string): string {
 // hundred. No period on the abbreviated side, matching this app's
 // existing house style (every real address already in schools.csv and
 // each route's own steps sheet is already written this way - see the
-// README/project doc's own conformity note).
+// README/project doc's own conformity note). `circle` is the one
+// deliberate deviation from the USPS standard ("Cir") - every real
+// steps sheet already committed abbreviates it "Cr" instead (see
+// public/data/120-*.csv's own "Rocky Ridge Cr"), so this matches that
+// existing real data over the style guide, same conformity note.
 const STREET_SUFFIX_ABBREVIATIONS: Record<string, string> = {
   avenue: "Ave",
   boulevard: "Blvd",
-  circle: "Cir",
+  circle: "Cr",
+  cove: "Cv",
   court: "Ct",
   crescent: "Cres",
   crossing: "Xing",
@@ -201,6 +206,10 @@ const RECOGNIZED_ACTIONS = new Set([
   "turn around",
   "pull over",
   "return",
+  "depart",
+  "arrive",
+  "continue",
+  "complete",
 ]);
 
 /** Splits "Road A & Road B" (or "Road A and Road B") into its two road
