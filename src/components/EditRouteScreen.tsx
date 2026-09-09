@@ -676,13 +676,21 @@ function AddStepButton({ onClick, disabled }: { onClick: () => void; disabled: b
 /** The paste box's own quick reference - what column headers this
  * screen's import (parseRouteImport.ts) recognizes and a few example
  * rows, so a pasted/uploaded sheet's shape doesn't have to be guessed
- * at. Same modal shell as StartScreen's AllStopsModal (full-screen dim,
- * centered card, backdrop tap or the corner X to close). */
+ * at. Leads with the newer, simpler `location` shape (one road per
+ * row, action or direction first - the same "derive from whatever
+ * road was already tracked" logic a lone-value turn already used, now
+ * extended to every row) since that's the one worth recommending to
+ * someone building a sheet from scratch; the older `from_at`/`onto_at`
+ * pair (spelling out both sides of every intersection by hand) is
+ * still fully supported too, just called out as the alternative it now
+ * is rather than shown as the only shape. Same modal shell as
+ * StartScreen's AllStopsModal (full-screen dim, centered card,
+ * backdrop tap or the corner X to close). */
 function StopsFormatModal({ onClose }: { onClose: () => void }) {
   const exampleRows: string[][] = [
-    ["Stop", "Main St & Oak Ave", "", "3", "Right", ""],
-    ["Left", "Main St", "Elm St", "", "", ""],
-    ["Stop", "123 Maple Dr", "", "1", "Left", "Ring doorbell"],
+    ["Stop", "123 Maple Dr", "1", "Left", "Ring doorbell"],
+    ["Left", "Oak Ave", "", "", ""],
+    ["Stop", "Elm St", "3", "Right", ""],
   ];
 
   return (
@@ -709,14 +717,16 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
         <div className="overflow-y-auto p-5 text-left">
           <p className="text-sm text-zinc-600">
             Only <code className="font-mono text-xs">action</code> and{" "}
-            <code className="font-mono text-xs">from_at</code> are required - every other column
-            can be left blank.
+            <code className="font-mono text-xs">location</code> are required - every other column
+            can be left blank. Each row names the one road that action or direction happens on;
+            anything else (the road it crosses, say) is figured out from whichever road the route
+            was already on.
           </p>
           <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-            <table className="w-full min-w-[32rem] border-collapse text-xs">
+            <table className="w-full min-w-[28rem] border-collapse text-xs">
               <thead>
                 <tr className="bg-zinc-100 text-zinc-500 uppercase">
-                  {["action", "from_at", "onto_at", "rider_count", "side", "notes"].map((header) => (
+                  {["action", "location", "rider_count", "side", "notes"].map((header) => (
                     <th
                       key={header}
                       className="border-b border-zinc-200 px-2 py-1.5 text-left font-semibold"
@@ -739,6 +749,13 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
               </tbody>
             </table>
           </div>
+          <p className="mt-3 text-sm text-zinc-600">
+            Prefer to spell out both sides of every intersection yourself? A sheet with{" "}
+            <code className="font-mono text-xs">from_at</code> and{" "}
+            <code className="font-mono text-xs">onto_at</code> columns instead of{" "}
+            <code className="font-mono text-xs">location</code> (e.g.{" "}
+            <code className="font-mono text-xs">Stop, Main St, Oak Ave, 3</code>) still works too.
+          </p>
           <p className="mt-3 text-sm text-zinc-600">
             No header row works too - one stop or turn per line, same as the paste box&apos;s own
             placeholder shows.
