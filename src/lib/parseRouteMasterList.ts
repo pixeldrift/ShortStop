@@ -60,10 +60,15 @@ export type MasterListRoute = Omit<
  *
  * stop_count/rider_count are columns here too, but aren't parsed into
  * anything - the app already derives both, live, from each route's own
- * steps CSV (parseRouteCsv), which stays correct if a stop is ever
+ * steps (buildRouteFromRows), which stays correct if a stop is ever
  * added or removed there - re-deriving the same numbers from this
  * sheet's own copy would just be a second source that could drift out
  * of sync with it.
+ *
+ * Only prisma/seed.ts and the geocoding scripts read the real
+ * district file through this anymore - src/app/api/route-master-list
+ * builds the exact same MasterListRoute shape straight from Postgres
+ * for the running app itself, with no CSV text in between.
  */
 export function parseRouteMasterList(csvText: string): MasterListRoute[] {
   const [headerLine, ...dataLines] = csvText.trim().split(/\r?\n/);

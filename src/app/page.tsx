@@ -9,10 +9,9 @@ import { ScreenTransition } from "@/components/ScreenTransition";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
 import { buildDemoRoutes } from "@/lib/demoRoutes";
-import { parseRouteCsv } from "@/lib/parseRouteCsv";
-import type { RouteMeta } from "@/lib/parseRouteCsv";
-import { parseRouteMasterList } from "@/lib/parseRouteMasterList";
-import { parseSchoolsCsv } from "@/lib/parseSchoolsCsv";
+import { buildRouteFromRows } from "@/lib/parseRouteCsv";
+import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
+import type { MasterListRoute } from "@/lib/parseRouteMasterList";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import {
   FAVORITE_ROUTE_IDS,
@@ -31,23 +30,23 @@ import type { WaypointCache } from "@/lib/waypointCache";
 // and search filtering - see demoRoutes.ts.
 const DEMO_ROUTE_COUNT = 24;
 
-async function fetchText(path: string): Promise<string> {
+async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${path}`);
-  return res.text();
+  return res.json();
 }
 
-/** Fetches one route's own turn-by-turn steps sheet from Postgres (see
+/** Fetches one route's own turn-by-turn steps from Postgres (see
  * src/app/api/routes/[id]/steps) - null for a master-list row with no
- * steps sheet committed yet (e.g. 120-PM-HS, whose sheet came in
- * visibly incomplete, cutting off mid-neighborhood, so the master list
- * marks it "draft"), same skip-not-crash handling the old hardcoded
- * ROUTE_STEPS_CSV_PATHS file map gave a missing entry. */
-async function fetchStepsText(routeId: string): Promise<string | null> {
+ * steps committed yet (e.g. 120-PM-HS, whose sheet came in visibly
+ * incomplete, cutting off mid-neighborhood, so the master list marks it
+ * "draft"), same skip-not-crash handling a missing sidecar file used to
+ * get. */
+async function fetchSteps(routeId: string): Promise<RawRouteRow[] | null> {
   const res = await fetch(`/api/routes/${routeId}/steps`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`${res.status} ${res.statusText} for /api/routes/${routeId}/steps`);
-  return res.text();
+  return res.json();
 }
 
 /** Which screen is showing, replacing a plain `selectedRoute: Route |
@@ -113,10 +112,10 @@ export default function Home() {
   // Flips back to false shortly after (matching that animation's own
   // duration) so it never replays on a later visit to the list.
   const [justLoaded, setJustLoaded] = useState(false);
-  // Each loaded real route's own source steps text, alongside the
-  // parsed Route itself - EditRouteScreen needs the raw text to
-  // pre-fill its textarea, not just the already-derived NavigationSteps.
-  const [rawStepsById, setRawStepsById] = useState<Record<string, string>>({});
+  // Each loaded real route's own source steps, alongside the parsed
+  // Route itself - EditRouteScreen needs these raw rows to seed its own
+  // editable row list, not just the already-derived NavigationSteps.
+  const [stepsById, setStepsById] = useState<Record<string, RawRouteRow[]>>({});
   const [schools, setSchools] = useState<Record<string, SchoolInfo>>({});
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "list" });
@@ -199,14 +198,14 @@ export default function Home() {
   const showsPinnedLogo = screen.kind !== "trip" || !tripStarted;
 
   // Session-only admin edits/new routes, keyed by route id - overlaid
-  // on top of whatever realRoutes loaded from the committed CSVs (see
+  // on top of whatever realRoutes loaded from Postgres (see
   // effectiveRoutes below). Not persisted anywhere real yet: a page
   // reload loses it, same known-gap honesty this app already applies
   // to rider check-in state (see useRiderRoster.ts) - see
   // EditRouteScreen's own doc comment for why saving here can't write
   // back to real files yet.
   const [adminRoutes, setAdminRoutes] = useState<Record<string, Route>>({});
-  const [adminRawStepsById, setAdminRawStepsById] = useState<Record<string, string>>({});
+  const [adminStepsById, setAdminStepsById] = useState<Record<string, RawRouteRow[]>>({});
   // This session's own fetched-coordinates overlay per route id, from
   // EditRouteScreen's "Fetch Location"/"Fetch All Locations" - kept
   // alongside adminRoutes so a route made ready this session (but
@@ -217,9 +216,9 @@ export default function Home() {
   const [adminWaypointCaches, setAdminWaypointCaches] = useState<Record<string, WaypointCache>>({});
   // Deleted this session (see RouteListScreen's "Delete" action, and
   // its own confirm modal) - filtered out of every screen below,
-  // whether the route came from a real committed CSV or was itself
-  // only ever an admin draft. Same session-only honesty as the rest of
-  // this admin store: nothing is actually removed from any real file.
+  // whether the route came from Postgres or was itself only ever an
+  // admin draft. Same session-only honesty as the rest of this admin
+  // store: nothing is actually removed from the real database.
   const [deletedRouteIds, setDeletedRouteIds] = useState<ReadonlySet<string>>(new Set());
   // The route list's own heart toggle (RouteListScreen) - a separate
   // overlay from adminRoutes since it needs to apply to fabricated demo
@@ -245,10 +244,11 @@ export default function Home() {
   const [adminMode, setAdminMode] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetchText("/api/route-master-list"), fetchText("/api/schools")])
-      .then(async ([masterListCsv, schoolsCsv]) => {
-        const allRows = parseRouteMasterList(masterListCsv);
-        const schoolsTable = parseSchoolsCsv(schoolsCsv);
+    Promise.all([
+      fetchJson<MasterListRoute[]>("/api/route-master-list"),
+      fetchJson<Record<string, SchoolInfo>>("/api/schools"),
+    ])
+      .then(async ([allRows, schoolsTable]) => {
         setSchools(schoolsTable);
 
         const built = await Promise.all(
@@ -262,8 +262,8 @@ export default function Home() {
               return null;
             }
 
-            const stepsCsv = await fetchStepsText(row.id);
-            if (!stepsCsv) return null;
+            const steps = await fetchSteps(row.id);
+            if (!steps) return null;
 
             const meta: RouteMeta = {
               ...row,
@@ -275,13 +275,13 @@ export default function Home() {
               distance: PLACEHOLDER_DISTANCE,
               isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
             };
-            return { route: parseRouteCsv(stepsCsv, meta), rawStepsText: stepsCsv };
+            return { route: buildRouteFromRows(steps, meta), steps };
           }),
         );
 
-        const loaded = built.filter((r): r is { route: Route; rawStepsText: string } => r !== null);
+        const loaded = built.filter((r): r is { route: Route; steps: RawRouteRow[] } => r !== null);
         setRealRoutes(loaded.map((l) => l.route));
-        setRawStepsById(Object.fromEntries(loaded.map((l) => [l.route.id, l.rawStepsText])));
+        setStepsById(Object.fromEntries(loaded.map((l) => [l.route.id, l.steps])));
         setJustLoaded(true);
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)));
@@ -333,7 +333,7 @@ export default function Home() {
     setFavoriteOverrides((prev) => ({ ...prev, [route.id]: !route.isFavorite }));
   }
 
-  function handleSaveRoute(route: Route, rawStepsText: string, waypointCache: WaypointCache) {
+  function handleSaveRoute(route: Route, steps: RawRouteRow[], waypointCache: WaypointCache) {
     // A demo route (see demoRoutes.ts) is fabricated filler, not a real
     // entity of its own - folding it into adminRoutes here would merge
     // it into effectiveRealRoutes below (double-counting it, since
@@ -347,7 +347,7 @@ export default function Home() {
       return;
     }
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
-    setAdminRawStepsById((prev) => ({ ...prev, [route.id]: rawStepsText }));
+    setAdminStepsById((prev) => ({ ...prev, [route.id]: steps }));
     setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
     replaceScreen({ kind: "edit-route", route });
   }
@@ -422,13 +422,13 @@ export default function Home() {
         // from this add screen into editing the just-created route
         // below - without a key, React sees the same <EditRouteScreen>
         // element at the same position and reuses the instance, so its
-        // `rows` state (lazily seeded from rawStepsText once on mount)
-        // would never re-seed with the route just saved.
+        // `rows` state (seeded from initialSteps once on mount) would
+        // never re-seed with the route just saved.
         key="add"
         mode="add"
         route={null}
         routes={routes}
-        rawStepsText=""
+        initialSteps={[]}
         schools={schools}
         onCancel={goBack}
         onSave={handleSaveRoute}
@@ -436,21 +436,21 @@ export default function Home() {
     );
   } else if (screen.kind === "edit-route") {
     // A demo route (see demoRoutes.ts) never has its own real committed
-    // steps sheet - it borrows realRoutes[0]'s exact steps as its base,
-    // so its edit screen borrows that same route's raw CSV text too,
-    // rather than opening to a stops list that looks empty next to the
+    // steps - it borrows realRoutes[0]'s exact steps as its base, so
+    // its edit screen borrows that same route's raw rows too, rather
+    // than opening to a stops list that looks empty next to the
     // (borrowed) steps it already shows when actually run as a trip.
-    const rawStepsText =
-      adminRawStepsById[screen.route.id] ??
-      rawStepsById[screen.route.id] ??
-      (screen.route.status === "demo" ? (rawStepsById[realRoutes[0]?.id ?? ""] ?? "") : "");
+    const initialSteps =
+      adminStepsById[screen.route.id] ??
+      stepsById[screen.route.id] ??
+      (screen.route.status === "demo" ? (stepsById[realRoutes[0]?.id ?? ""] ?? []) : []);
     content = (
       <EditRouteScreen
         key={`edit-${screen.route.id}`}
         mode="edit"
         route={screen.route}
         routes={routes}
-        rawStepsText={rawStepsText}
+        initialSteps={initialSteps}
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schools={schools}
         onCancel={goBack}

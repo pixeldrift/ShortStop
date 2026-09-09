@@ -90,24 +90,6 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
     });
 }
 
-/**
- * Turns the doc's proposed CSV schema
- * (time,action,from_at,onto_at,rider_count,side,notes) into route steps.
- * Built for the real Bus 125 route sheet, which only records
- * turn-by-turn directions and stop locations - no times or special
- * instructions yet, so those fields come through empty. The sheet's own
- * leading sequence-number column was dropped entirely (unneeded - each
- * row's position in the file already gives it an order). A thin
- * wrapper over buildRouteFromRows below - the real work, split out so
- * a caller that already has RawRouteRow[] from somewhere other than a
- * strict CSV file (see parseRouteImport.ts's graceful column/header
- * matching, used by the route-import/edit UI) can build a Route
- * without round-tripping back through CSV text first.
- */
-export function parseRouteCsv(csvText: string, meta: RouteMeta): Route {
-  return buildRouteFromRows(parseRouteCsvRows(csvText), meta);
-}
-
 /** The exact reader-facing instruction a row's own action/from/onto
  * values produce - "Left onto Main Street", "Proceed onto Elm Street",
  * "Turn Around", "Stop 5 at 123 Elm Street" - not the screen's own
@@ -147,6 +129,11 @@ function stepHeading(action: string): string {
   return a === "left" || a === "right" ? `TURN ${action.toUpperCase()}` : action.toUpperCase();
 }
 
+/** Turns a route's own RawRouteRow[] - straight from Postgres
+ * (page.tsx), a saved edit (EditRouteScreen.tsx), or a parsed import
+ * (parseRouteImport.ts) - into real NavigationSteps, spoken
+ * announcements included. The one place any of those three sources
+ * ever needs to become a Route. */
 export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route {
   let stopCounter = 0;
 

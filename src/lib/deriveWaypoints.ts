@@ -101,11 +101,16 @@ function locationFor(
  *    - the cross street (`ontoAt`) is just where along that road the
  *      stop is, not a new heading - except a literal-address stop with
  *      no cross street at all (e.g. "216 Lake Forest Dr"), where the
- *      road name is pulled out of the address itself, or a bare road
- *      name with no cross street at all (e.g. "Riverwood Ln", the same
- *      "lone value is the destination" shorthand turns already use),
- *      derived as the crossroads of that road and whichever road was
- *      already tracked.
+ *      road name is pulled out of the address itself. A stop's own
+ *      single bare road name with no cross street given at all (e.g.
+ *      "Oak St") is read the other way around from that - it's *the*
+ *      cross street, of whichever road is already tracked (the one the
+ *      route last turned onto), not a new road of its own - so it
+ *      derives the crossroads of the tracked road and that name, and
+ *      leaves the tracked road itself untouched. A route sheet's own
+ *      row order always keeps a stop on the road it's already tracking
+ *      before the turn that leaves it, never after - so this never has
+ *      to guess which of two different roads a bare stop value means.
  *
  * Any row that states its own road(s) explicitly always wins over the
  * tracked value (used directly, and also resets it), which also covers
@@ -155,11 +160,23 @@ export function deriveWaypointsWithContext(
     // we're already on" (a lone-value turn, an intersection-based
     // stop) isn't left tracking whatever road was current before this
     // skipped row instead.
+    // A bare road name with no cross street (a stop's own "lone value"
+    // shorthand, see above) names the cross street of the road already
+    // tracked, not a new road of its own - so, unlike every other case
+    // here, it leaves `currentRoad` exactly as it found it. Non-null
+    // only when that applies, so it also doubles as the tracked road
+    // itself (TypeScript can't narrow `currentRoad` from a separate
+    // boolean, so this carries the narrowed value directly instead).
+    const trackedCrossStreet =
+      isStop && !row.ontoAt && !/^\d/.test(row.fromAt) && currentRoad && looksLikeRoadName(row.fromAt)
+        ? currentRoad
+        : null;
+
     if (row.skip) {
       currentRoad = isStop
         ? row.ontoAt
           ? row.fromAt
-          : roadNameFromAddress(row.fromAt)
+          : (trackedCrossStreet ?? roadNameFromAddress(row.fromAt))
         : row.ontoAt || row.fromAt || currentRoad;
       return { stepId, kind: "unresolvable", description: "Marked as instructions only" };
     }
@@ -169,16 +186,8 @@ export function deriveWaypointsWithContext(
         currentRoad = row.fromAt;
         return locationFor(row.fromAt, row.ontoAt, schoolAddress, stepId);
       }
-      if (
-        !/^\d/.test(row.fromAt) &&
-        currentRoad &&
-        currentRoad.toLowerCase() !== row.fromAt.toLowerCase() &&
-        looksLikeRoadName(row.fromAt)
-      ) {
-        const destination = row.fromAt;
-        const waypoint = locationFor(currentRoad, destination, schoolAddress, stepId);
-        currentRoad = destination;
-        return waypoint;
+      if (trackedCrossStreet) {
+        return locationFor(trackedCrossStreet, row.fromAt, schoolAddress, stepId);
       }
       currentRoad = roadNameFromAddress(row.fromAt);
       if (isUnresolvableDescription(row.fromAt)) {

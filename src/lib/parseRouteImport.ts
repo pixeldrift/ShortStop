@@ -55,9 +55,8 @@ export type ImportColumnField =
 // whatever road was already tracked" logic for everything else, rather
 // than restating both sides of an intersection every row. Kept as an
 // alternative to `fromAt`/`ontoAt`, not a replacement - see `valueFor`
-// below - since the app's own internal round-trip (rowsToCsvText, read
-// back by this same function whenever an existing route reopens for
-// editing) still writes and reads `from_at`/`onto_at`.
+// below - since a district sheet already written the older two-column
+// way should keep importing exactly as it always has.
 const CANONICAL_HEADER_NAMES: Record<ImportColumnField, string> = {
   time: "time",
   action: "action",
@@ -370,25 +369,4 @@ export function unresolvedRequiredFields(mapping: ImportColumnMapping[]): Import
     .filter((m) => required.includes(m.field) && !m.resolved)
     .filter((m) => !(m.field === "fromAt" && locationResolved))
     .map((m) => m.field);
-}
-
-/**
- * The inverse of parsing - turns RawRouteRow[] back into the app's own
- * comma-separated schema, header row included. Used by
- * EditRouteScreen.tsx to persist its structured, editable stop list
- * (added/removed/edited rows, not raw text) through the same
- * text-shaped storage page.tsx already uses for every route's steps -
- * round-tripping through this rather than changing that storage shape
- * itself. Re-parsing this output (parseRouteImport) always finds a
- * real header (every one of these column names matches exactly), so
- * it never takes the header-less path back.
- */
-export function rowsToCsvText(rows: RawRouteRow[]): string {
-  const header = "action,from_at,onto_at,rider_count,side,notes,skip";
-  const lines = rows.map((row) =>
-    [row.action, row.fromAt, row.ontoAt, row.riderCount, row.side, row.notes, row.skip ? "true" : "false"].join(
-      ",",
-    ),
-  );
-  return [header, ...lines].join("\n");
 }
