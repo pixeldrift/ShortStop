@@ -349,6 +349,25 @@ export function StartScreen({
   );
 }
 
+/** A stop's own "Road A & Road B" subheading, with the "&" set apart
+ * from the two road names (smaller, gray, italic) the same way
+ * EditRouteScreen's own StepRowView already styles its identical
+ * connector, so a stop reads the same whether it's being viewed here
+ * or edited there. Splits on " & " (the exact separator
+ * buildRouteFromRows/parseRouteCsv.ts joins fromLocation/location
+ * with) - anything that doesn't split into exactly two parts (a plain
+ * address, no cross street) passes through unstyled. */
+function StopSubheading({ subheading }: { subheading: string }) {
+  const parts = subheading.split(" & ");
+  if (parts.length !== 2) return <>{subheading}</>;
+  const [roadA, roadB] = parts;
+  return (
+    <>
+      {roadA} <span className="text-sm font-normal text-zinc-400 italic">&</span> {roadB}
+    </>
+  );
+}
+
 /** The school row in AllStopsModal - no stop number, since it isn't one
  * of the route's actual numbered stops. Styled like every other
  * school-address callout in the app (MapPinIcon + address, under the
@@ -477,7 +496,9 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
                       </span>
                     )}
                   </div>
-                  <p className="text-zinc-700">{step.subheading}</p>
+                  <p className="text-zinc-700">
+                    {step.subheading && <StopSubheading subheading={step.subheading} />}
+                  </p>
                   {step.specialInstruction && (
                     <p className="mt-0.5 text-sm text-zinc-500">{step.specialInstruction}</p>
                   )}

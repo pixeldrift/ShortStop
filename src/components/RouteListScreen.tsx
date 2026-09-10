@@ -68,9 +68,9 @@ const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
 const TRIP_TYPE_TOGGLES: { value: TripType; label: string }[] = [
   { value: "pickup", label: "AM" },
   { value: "dropoff", label: "PM" },
-  { value: "fieldtrip", label: "FT" },
+  { value: "fieldtrip", label: "SP" },
   // "other" has no toggle of its own for now - dropped rather than
-  // grown the column past the three rows the mockup's own AM/PM/FT
+  // grown the column past the three rows the mockup's own AM/PM/SP
   // group shows (see the school-level group right beside it, same
   // three-tall shape). An "other" route still shows up fine (an empty
   // active set means "show everything"), it just can't be isolated by
