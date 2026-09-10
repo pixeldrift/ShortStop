@@ -57,7 +57,7 @@ export function TopBar({
           <p className="font-heading relative -mt-1 text-3xl font-black tracking-tight">
             {routeNumber}
             <span
-              className={`absolute left-full ml-1.5 flex items-center gap-1 text-base text-blue-500 ${
+              className={`absolute left-full ml-1.5 flex items-center gap-1 text-base leading-none text-blue-500 ${
                 tripType === "dropoff" ? "top-0" : "bottom-0"
               }`}
             >

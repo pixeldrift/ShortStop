@@ -69,7 +69,12 @@ const TRIP_TYPE_TOGGLES: { value: TripType; label: string }[] = [
   { value: "pickup", label: "AM" },
   { value: "dropoff", label: "PM" },
   { value: "fieldtrip", label: "FT" },
-  { value: "other", label: "OT" },
+  // "other" has no toggle of its own for now - dropped rather than
+  // grown the column past the three rows the mockup's own AM/PM/FT
+  // group shows (see the school-level group right beside it, same
+  // three-tall shape). An "other" route still shows up fine (an empty
+  // active set means "show everything"), it just can't be isolated by
+  // this toggle group the way the other three trip types can yet.
 ];
 const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
   { value: "elementary", label: "ES" },
@@ -498,15 +503,13 @@ export function RouteListScreen({
               starts on/blue ("showing"); tapping one off fades it,
               excluding that trip type/level from the list below rather
               than picking a single exclusive view the old "View"
-              dropdown did. The whole cluster stays shrink-0 and
-              right-aligned next to the search box (flex-1, above),
-              which is what actually gives it room to grow past its own
-              old cramped width - these buttons read easily at a normal
-              tap-target size now instead of needing to be squeezed
-              down to fit two full rows beside the search box's own
-              height. */}
-          <div className="flex shrink-0 items-stretch gap-1.5">
-            <div className="flex flex-col gap-1">
+              dropdown did. Sized small enough that a full three-tall
+              column sits within the search box's own height beside it,
+              not taller than it - same constraint the old two-row
+              layout was built around, just stacked instead of spread
+              sideways now. */}
+          <div className="flex shrink-0 items-stretch gap-1">
+            <div className="flex flex-col gap-0.5">
               {TRIP_TYPE_TOGGLES.map((toggle) => {
                 const active = activeTripTypes.has(toggle.value);
                 return (
@@ -515,7 +518,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleTripType(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
+                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
                       active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
                     }`}
                   >
@@ -525,7 +528,7 @@ export function RouteListScreen({
               })}
             </div>
             <div className="w-px self-stretch bg-zinc-300" aria-hidden="true" />
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-0.5">
               {SCHOOL_LEVEL_TOGGLES.map((toggle) => {
                 const active = activeSchoolLevels.has(toggle.value);
                 return (
@@ -534,7 +537,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleSchoolLevel(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
+                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
                       active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
                     }`}
                   >
@@ -550,7 +553,7 @@ export function RouteListScreen({
             {adminMode && (
               <>
                 <div className="w-px self-stretch bg-zinc-300" aria-hidden="true" />
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-0.5">
                   {PUBLISH_STATUS_TOGGLES.map((toggle) => {
                     const active = activePublishStatuses.has(toggle.value);
                     return (
@@ -559,7 +562,7 @@ export function RouteListScreen({
                         type="button"
                         onClick={() => togglePublishStatus(toggle.value)}
                         aria-pressed={active}
-                        className={`rounded-md px-2.5 py-1 text-xs font-bold ${
+                        className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
                           active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
                         }`}
                       >
@@ -677,6 +680,24 @@ export function RouteListScreen({
                     onClick={() => (adminMode ? onEditRoute(route) : onSelect(route))}
                     className="col-span-3 grid grid-cols-[5.75rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-zinc-100"
                   >
+                    {/* items-start/items-end alone only ever gets the
+                        AM/PM badge flush against the ROUTE NUMBER's own
+                        edge (items-start/items-end align to the tallest
+                        flex child's own box, which is this number, not
+                        the row's real outer edge) - that box already
+                        sits inset from the row's true top/bottom by
+                        exactly this row's own py-3 (see the row's
+                        className above), so the badge was landing a
+                        whole 12px short of the row's real edge (the
+                        divider) no matter which side it was already
+                        flush against. translate-y-3 (the same 0.75rem
+                        as py-3, not a coincidence) nudges it the rest
+                        of the way so it actually touches that edge -
+                        stretching the surrounding boxes to reach it
+                        properly (the "correct" CSS answer) doesn't
+                        work here since stretch only ever fills a
+                        parent's *content* box, never bleeds into its
+                        padding the way an explicit translate can. */}
                     <div
                       className={`flex gap-1.5 ${
                         route.tripType === "dropoff" ? "items-start" : "items-end"
@@ -685,7 +706,11 @@ export function RouteListScreen({
                       <span className="font-heading text-2xl leading-none font-black">
                         {route.routeNumber}
                       </span>
-                      <div className="flex items-center gap-0.5 text-blue-500">
+                      <div
+                        className={`flex items-center gap-0.5 text-blue-500 ${
+                          route.tripType === "dropoff" ? "-translate-y-3" : "translate-y-3"
+                        }`}
+                      >
                         <span className="font-heading text-xs leading-none font-black">
                           {tripTypeLabel(route.tripType)}
                         </span>
