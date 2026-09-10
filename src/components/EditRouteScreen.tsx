@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
@@ -16,6 +16,7 @@ import {
   PersonSolidIcon,
   PlusIcon,
   RightArrowIcon,
+  RoundedTriangleIcon,
   SaveIcon,
   SpinnerIcon,
   TrashIcon,
@@ -234,10 +235,7 @@ function ResolutionIcon({ status, className }: { status: RowResolutionStatus["st
  * into StepRowEditor below) and, right of it, a drag handle for
  * reordering the row within the route. Deliberately no inputs and no
  * trash can here - editing or deleting a row both only ever happen
- * one at a time, inside the expanded editor. No left/right
- * side-of-street indicator here either - useful in the expanded
- * editor and the driver-facing views, just noise on this already
- * dense collapsed row.
+ * one at a time, inside the expanded editor.
  */
 function StepRowView({
   row,
@@ -246,6 +244,7 @@ function StepRowView({
   locked,
   onEdit,
   onDragStart,
+  onDragMove,
   onDragEnd,
 }: {
   row: RawRouteRow;
@@ -257,13 +256,21 @@ function StepRowView({
    * the other row's Update/Cancel. */
   locked: boolean;
   onEdit: () => void;
-  /** Starts a reorder drag from this row - see EditRouteScreen's own
-   * handleReorderRow for how the drop target actually moves it.
-   * Fired by the drag handle icon alone (that's the only element
-   * marked `draggable`), not the row as a whole, so grabbing anywhere
-   * else in the row still just taps normally. */
-  onDragStart: () => void;
-  onDragEnd: () => void;
+  /** Pointer Events, not native HTML5 drag-and-drop - the native
+   * `draggable` attribute this used at first never fires a single drag
+   * event on a touch screen (no polyfill, and this app's own real
+   * device is a tablet/phone, not a mouse), so reordering silently did
+   * nothing there. Pointer Events fire identically for mouse and touch
+   * input, so the same three handlers below drive the whole gesture on
+   * either: onDragStart captures the pointer (so the handle keeps
+   * getting events even once the finger/cursor moves off its own tiny
+   * hit target), onDragMove reports the live pointer position up to
+   * EditRouteScreen so it can tell which row is currently underneath
+   * it, onDragEnd releases capture and commits whatever row that was.
+   */
+  onDragStart: (e: ReactPointerEvent) => void;
+  onDragMove: (e: ReactPointerEvent) => void;
+  onDragEnd: (e: ReactPointerEvent) => void;
 }) {
   const isStop = stopNumber !== null;
   // Only "Left"/"Right" actually have a direction (and the mirrored
@@ -290,19 +297,24 @@ function StepRowView({
   );
 
   return (
-    <div className="flex items-start gap-2 py-1 text-left">
+    <div className="flex items-start gap-2 py-0.5 text-left">
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1.5">
-          {/* The street/intersection now reads right after the
-              pin+stop number (or turn arrow+label) on this same
-              line, not its own line below - shrink-0 on the label so
-              a long street name truncates instead of pushing it or
-              the rider count out. */}
-          <span className="font-heading flex shrink-0 items-center gap-1.5 text-base font-black">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="font-heading flex items-center gap-1.5 text-base font-black">
             {isStop ? (
               <>
                 <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
                 Stop {stopNumber}
+                {row.side && (
+                  <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
+                    ({row.side.toLowerCase()}
+                    <RoundedTriangleIcon
+                      direction={row.side.toLowerCase() === "left" ? "left" : "right"}
+                      className="h-3 w-3"
+                    />
+                    )
+                  </span>
+                )}
               </>
             ) : turnDirection ? (
               <>
@@ -313,16 +325,16 @@ function StepRowView({
               row.action || "Turn"
             )}
           </span>
-          <span className="min-w-0 flex-1 truncate text-zinc-700">
-            {subheading || <span className="text-zinc-400 italic">No location yet</span>}
-          </span>
           {isStop && row.riderCount && (
             <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
               <PersonSolidIcon className="h-4 w-4" />
-              {row.riderCount}
+              {row.riderCount} rider{row.riderCount === "1" ? "" : "s"}
             </span>
           )}
         </div>
+        <p className="truncate text-zinc-700">
+          {subheading || <span className="text-zinc-400 italic">No location yet</span>}
+        </p>
         {row.notes && <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>}
         {/* The row's own real geocoding outcome - actual coordinates
             once resolved (green check), the specific miss/error reason
@@ -340,7 +352,12 @@ function StepRowView({
           </p>
         )}
       </div>
-      <div className="mt-0.5 flex shrink-0 items-center gap-2">
+      {/* -mr-2 pulls this pair in closer to the row's own right edge
+          (half its old gap to the list's own px-4) than a plain
+          shrink-0 flex would leave it - the pencil/handle read as
+          hugging the edge, not floating a full padding-width in from
+          it. */}
+      <div className="mt-0.5 flex shrink-0 items-center gap-2 -mr-2">
         <button
           type="button"
           onClick={onEdit}
@@ -351,12 +368,14 @@ function StepRowView({
           <EditIcon className="h-4 w-4" />
         </button>
         <span
-          draggable={!locked}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
+          onPointerDown={locked ? undefined : onDragStart}
+          onPointerMove={locked ? undefined : onDragMove}
+          onPointerUp={locked ? undefined : onDragEnd}
+          onPointerCancel={locked ? undefined : onDragEnd}
           aria-label={isStop ? `Reorder stop ${stopNumber}` : "Reorder turn"}
           role="button"
-          className={`text-zinc-400 ${locked ? "opacity-30" : "cursor-grab active:cursor-grabbing"}`}
+          style={{ touchAction: "none" }}
+          className={`p-1 text-zinc-400 ${locked ? "opacity-30" : "cursor-grab active:cursor-grabbing"}`}
         >
           <DragHandleIcon className="h-4 w-4" />
         </span>
@@ -1287,7 +1306,13 @@ export function EditRouteScreen({
   // `visibleRowIndices` position) a drag-handle-initiated reorder
   // started from - null whenever nothing's being dragged. See
   // handleReorderRow below for what a drop actually does with it.
+  // dragOverIndex tracks whichever row the pointer is currently over
+  // mid-drag (updated from document.elementFromPoint on every
+  // pointermove, since Pointer Capture keeps routing move/up events to
+  // the handle itself regardless of where the finger/cursor actually
+  // is) - that's what a release actually reorders to.
   const [dragRowIndex, setDragRowIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   // Defaults to on here (unlike StartScreen's own "View All Stops",
   // which defaults to stops-only) - reviewing a route for editing is
   // exactly when seeing every turn in its real place matters most.
@@ -2219,12 +2244,12 @@ export function EditRouteScreen({
               opens this screen to check, without having to count green
               checks down the list themselves. */}
           <div className="flex w-full max-w-md shrink-0 flex-col items-center gap-0.5">
-            <p className="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-0.5">
+            <p className="flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0.5">
               <span className="font-heading text-lg font-black tracking-tight">
                 {routeNumber || <span className="text-zinc-400 italic">No route number</span>}
               </span>
               {routeNumber && tripType && (
-                <span className="flex items-center gap-1 text-sm font-bold text-blue-500">
+                <span className="flex items-center gap-0.5 text-sm font-bold text-blue-500">
                   {tripTypeLabel(tripType)}
                   <TripTypeIcon tripType={tripType} className="h-3.5 w-3.5" />
                 </span>
@@ -2278,16 +2303,14 @@ export function EditRouteScreen({
                 return (
                   <div
                     key={index}
-                    onDragOver={(e) => {
-                      if (dragRowIndex === null) return;
-                      e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      if (dragRowIndex === null) return;
-                      e.preventDefault();
-                      handleReorderRow(dragRowIndex, index);
-                      setDragRowIndex(null);
-                    }}
+                    data-row-index={index}
+                    className={
+                      dragRowIndex === index
+                        ? "opacity-40"
+                        : dragOverIndex === index && dragRowIndex !== null
+                          ? "border-t-2 border-blue-500"
+                          : ""
+                    }
                   >
                     <StepRowView
                       row={row}
@@ -2295,8 +2318,28 @@ export function EditRouteScreen({
                       status={waypoint ? resolutionRows[index] : undefined}
                       locked={expandedIndex !== null}
                       onEdit={() => openRowEditor(index)}
-                      onDragStart={() => setDragRowIndex(index)}
-                      onDragEnd={() => setDragRowIndex(null)}
+                      onDragStart={(e) => {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        setDragRowIndex(index);
+                        setDragOverIndex(index);
+                      }}
+                      onDragMove={(e) => {
+                        const target = document
+                          .elementFromPoint(e.clientX, e.clientY)
+                          ?.closest("[data-row-index]");
+                        const overIndex = target ? Number(target.getAttribute("data-row-index")) : null;
+                        if (overIndex !== null && !Number.isNaN(overIndex)) setDragOverIndex(overIndex);
+                      }}
+                      onDragEnd={(e) => {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                          e.currentTarget.releasePointerCapture(e.pointerId);
+                        }
+                        if (dragRowIndex !== null && dragOverIndex !== null) {
+                          handleReorderRow(dragRowIndex, dragOverIndex);
+                        }
+                        setDragRowIndex(null);
+                        setDragOverIndex(null);
+                      }}
                     />
                     <AddStepButton onClick={() => addRow(index + 1)} disabled={expandedIndex !== null} />
                   </div>
@@ -2414,9 +2457,33 @@ export function EditRouteScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        <h1 className="font-heading text-2xl font-black tracking-tight">
-          Edit Route {route?.routeNumber ?? ""}
-        </h1>
+        <div>
+          {/* Same small district label StartScreen/RouteListScreen/
+              SchoolListScreen each carry above their own heading - see
+              StartScreen's own doc comment for why this isn't folded
+              into the heading itself. */}
+          <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            Rutherford County
+          </span>
+          {/* mt-[1.5px] - same leading-[0.7083]-collapses-the-gap fix as
+              StartScreen's own title (see that h1's doc comment for the
+              full canvas-metrics explanation), just re-measured at this
+              smaller text-2xl size since the fix is a pixel value, not a
+              ratio - it doesn't carry over from the 4xl title unchanged. */}
+          <h1 className="font-heading relative mt-[1.5px] text-2xl leading-[0.7083] font-black tracking-tight">
+            {route?.routeNumber ?? ""}
+            {route?.routeNumber && tripType && (
+              <span
+                className={`absolute left-full ml-2 flex items-center gap-1 text-sm leading-[0.75] text-blue-500 ${
+                  tripType === "dropoff" ? "top-0" : "bottom-0"
+                }`}
+              >
+                {tripTypeLabel(tripType)}
+                <TripTypeIcon tripType={tripType} className="h-3.5 w-3.5" />
+              </span>
+            )}
+          </h1>
+        </div>
         <span className="w-10" />
       </div>
 
