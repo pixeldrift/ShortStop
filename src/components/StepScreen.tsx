@@ -206,6 +206,8 @@ export function StepScreen({
           school={schoolPoint}
           tripType={route.tripType}
           waypointsUrl={waypointsUrl}
+          mode={phase === "depot" ? "overview" : "driving"}
+          activeWaypointKey={step.waypointKey}
         />
 
         {showRoster && (
