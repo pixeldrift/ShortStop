@@ -518,9 +518,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleTripType(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
-                      active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
-                    }`}
+                    className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
                   >
                     {toggle.label}
                   </button>
@@ -537,9 +535,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleSchoolLevel(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
-                      active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
-                    }`}
+                    className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
                   >
                     {toggle.label}
                   </button>
@@ -562,9 +558,7 @@ export function RouteListScreen({
                         type="button"
                         onClick={() => togglePublishStatus(toggle.value)}
                         aria-pressed={active}
-                        className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
-                          active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
-                        }`}
+                        className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
                       >
                         {toggle.label}
                       </button>
@@ -694,6 +688,19 @@ export function RouteListScreen({
                         value - and were confirmed against the live
                         rendered box (not just canvas metrics) before
                         landing here. */}
+                    {/* items-start/items-end alone still only reaches
+                        the ROUTE NUMBER's own box (the tallest flex
+                        sibling, 24px) - that box sits well short of the
+                        row's own true top/bottom (this row's py-3, plus
+                        the badge's own icon being taller than its now-
+                        trimmed text, see the badge span's own leading-
+                        [0.75] below), so the badge was still landing
+                        ~16px short of the row's real edge even once its
+                        own text stopped carrying dead space. translate-
+                        y-4 closes that measured gap (confirmed against
+                        the live rendered box, not guessed) so the badge
+                        actually touches the row's real edge instead of
+                        floating inside it. */}
                     <div
                       className={`flex gap-1.5 ${
                         route.tripType === "dropoff" ? "items-start" : "items-end"
@@ -702,7 +709,11 @@ export function RouteListScreen({
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
-                      <div className="flex items-center gap-0.5 text-blue-500">
+                      <div
+                        className={`flex items-center gap-0.5 text-blue-500 ${
+                          route.tripType === "dropoff" ? "-translate-y-4" : "translate-y-4"
+                        }`}
+                      >
                         <span className="font-heading text-xs leading-[0.75] font-black">
                           {tripTypeLabel(route.tripType)}
                         </span>
