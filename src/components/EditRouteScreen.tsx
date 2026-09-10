@@ -30,7 +30,8 @@ import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
-import { parseRouteImport, unresolvedRequiredFields } from "@/lib/parseRouteImport";
+import { matchSchoolFromRows, parseRouteImport, unresolvedRequiredFields } from "@/lib/parseRouteImport";
+import { parseRouteFilename } from "@/lib/parseRouteMasterList";
 import {
   PLACEHOLDER_DISTANCE,
   PLACEHOLDER_DURATION_MINUTES,
@@ -1578,11 +1579,37 @@ export function EditRouteScreen({
     const file = e.target.files?.[0];
     e.target.value = ""; // lets the same file be re-selected later
     if (!file) return;
+    const filename = file.name;
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === "string") setStepsText(reader.result);
+      if (typeof reader.result !== "string") return;
+      setStepsText(reader.result);
+      prefillFromImport(filename, reader.result);
     };
     reader.readAsText(file);
+  }
+
+  // Only ever called right after a real file upload (this screen's own
+  // "Or paste manually" box has no filename of its own to read) - fills
+  // in whichever of Route #/Trip this screen doesn't already have a
+  // real value for from the filename itself, this district's own
+  // "<routeNumber>-<AM/PM/FT/OT>-<school level>" naming convention (see
+  // parseRouteFilename), then School from the sheet's own Depart/Arrive
+  // rows (matchSchoolFromRows) - the school's own name or address
+  // there is far more reliable than trusting the filename's own school-
+  // level segment for that, and picking School this way already brings
+  // schoolLevel along with it (schoolInfo lookup above, not a field of
+  // its own). Never overwrites a field an admin already filled in by
+  // hand before choosing a file.
+  function prefillFromImport(filename: string, text: string) {
+    const parsedName = parseRouteFilename(filename);
+    if (parsedName.routeNumber && !routeNumber) setRouteNumber(parsedName.routeNumber);
+    if (parsedName.tripType && !tripType) setTripType(parsedName.tripType);
+
+    if (!schoolName) {
+      const matchedSchool = matchSchoolFromRows(parseRouteImport(text).rows, schools);
+      if (matchedSchool) setSchoolName(matchedSchool);
+    }
   }
 
   async function callGeocodeApi(query: GeocodableQuery): Promise<GeocodeResponseBody> {

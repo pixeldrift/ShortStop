@@ -129,3 +129,58 @@ export function stepsCsvBaseName(
 ): string {
   return `${route.routeNumber}-${TRIP_TYPE_TO_AM_PM[route.tripType]}-${LEVEL_TO_SCHOOL_TYPE[route.schoolLevel]}`;
 }
+
+const AM_PM_TO_TRIP_TYPE: Record<string, TripType> = {
+  AM: "pickup",
+  PM: "dropoff",
+  FT: "fieldtrip",
+  OT: "other",
+};
+
+// SCHOOL_TYPE_TO_LEVEL above is the master list's own real column
+// convention ("EL"), but an admin uploading a route file by hand is
+// just as likely to write it "ES" - matching how this app's own UI
+// abbreviates elementary everywhere else (RouteListScreen's own
+// school-level toggle). Both are accepted here without changing what
+// the master list itself produces.
+const SCHOOL_TYPE_ALIASES: Record<string, SchoolLevel> = {
+  ...SCHOOL_TYPE_TO_LEVEL,
+  ES: "elementary",
+};
+
+export interface ParsedRouteFilename {
+  routeNumber: string | null;
+  tripType: TripType | null;
+  schoolLevel: SchoolLevel | null;
+}
+
+/**
+ * The reverse of stepsCsvBaseName above - a district file named the
+ * way this app's own steps sheets are ("130-PM-ES.csv", "120-AM-MS.tsv")
+ * already carries its own route number, trip, and school level right
+ * in the name, so EditRouteScreen's "Add New Route" upload
+ * (handleFileChosen) can prefill those fields from it instead of
+ * asking an admin to retype what's already right there in the file
+ * they just picked.
+ *
+ * Each field parses independently and comes back null on its own if
+ * that segment isn't recognized - a filename close to but not exactly
+ * this convention (or one that doesn't follow it at all) still yields
+ * whatever pieces genuinely did parse, rather than discarding a
+ * perfectly good route number just because the trailing segment was
+ * spelled unexpectedly or missing.
+ */
+export function parseRouteFilename(filename: string): ParsedRouteFilename {
+  const base = filename.replace(/\.[^./]+$/, "");
+  const match = base.match(/^(\d+)\s*-\s*([A-Za-z]+)\s*-\s*([A-Za-z]+)/);
+  if (!match) {
+    const numberOnly = base.match(/^(\d+)/);
+    return { routeNumber: numberOnly?.[1] ?? null, tripType: null, schoolLevel: null };
+  }
+  const [, routeNumber, amPm, schoolType] = match;
+  return {
+    routeNumber,
+    tripType: AM_PM_TO_TRIP_TYPE[amPm.toUpperCase()] ?? null,
+    schoolLevel: SCHOOL_TYPE_ALIASES[schoolType.toUpperCase()] ?? null,
+  };
+}
