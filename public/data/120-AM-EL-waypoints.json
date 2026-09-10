@@ -87,12 +87,44 @@
     "source": "Forest Ridge Dr and Pine Ridge Ln, La Vergne, TN",
     "provider": "overpass"
   },
+  "intersection:Forest Ridge Dr & Rocky Ridge Cr": {
+    "status": "ok",
+    "lat": 36.0494581,
+    "lon": -86.5496186,
+    "displayName": "Forest Ridge Dr & Rocky Ridge Cr",
+    "source": "Forest Ridge Dr and Rocky Ridge Cr, La Vergne, TN",
+    "provider": "overpass"
+  },
   "intersection:Holland Ridge Dr & Riverwood Ct": {
     "status": "ok",
     "lat": 36.0474846,
     "lon": -86.5460576,
     "displayName": "Holland Ridge Dr & Riverwood Ct",
     "source": "Holland Ridge Dr and Riverwood Ct, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Laurel Cv & Rocky Ridge Cr": {
+    "status": "ok",
+    "lat": 36.0520231,
+    "lon": -86.5513355,
+    "displayName": "Rocky Ridge Cr & Laurel Cv",
+    "source": "Rocky Ridge Cr and Laurel Cv, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Meagan Cv & Rocky Ridge Cr": {
+    "status": "ok",
+    "lat": 36.0511855,
+    "lon": -86.5497252,
+    "displayName": "Rocky Ridge Cr & Meagan Cv",
+    "source": "Rocky Ridge Cr and Meagan Cv, La Vergne, TN",
+    "provider": "overpass"
+  },
+  "intersection:Rocky Ridge Cr & Sherry Cv": {
+    "status": "ok",
+    "lat": 36.0517467,
+    "lon": -86.5503159,
+    "displayName": "Rocky Ridge Cr & Sherry Cv",
+    "source": "Rocky Ridge Cr and Sherry Cv, La Vergne, TN",
     "provider": "overpass"
   }
 }
