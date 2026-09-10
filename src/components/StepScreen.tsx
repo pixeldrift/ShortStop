@@ -266,6 +266,7 @@ export function StepScreen({
             steps={route.steps}
             currentIndex={stepNumber - 1}
             phase={phase}
+            entering={busDeparting}
             onSeek={onSeek}
             disabled={paused}
           />

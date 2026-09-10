@@ -1,4 +1,5 @@
 import type { RawRouteRow } from "./parseRouteCsv";
+import type { SchoolInfo } from "./parseSchoolsCsv";
 
 /**
  * The route-import tool's column-resolution layer (see README, "Next
@@ -379,4 +380,70 @@ export function unresolvedRequiredFields(mapping: ImportColumnMapping[]): Import
     .filter((m) => required.includes(m.field) && !m.resolved)
     .filter((m) => !(m.field === "fromAt" && locationResolved))
     .map((m) => m.field);
+}
+
+/** Down to just letters/digits/spaces, lowercased and collapsed - a
+ * school's own name and address, and whatever text a Depart/Arrive row
+ * carries for either, all normalize the same way regardless of
+ * punctuation or casing differences between the district's sheet and
+ * this app's own schools table. */
+function normalizeForSchoolMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Guesses which of this app's known schools an imported sheet's own
+ * Depart/Arrive rows describe - deriveWaypoints.ts already treats
+ * those two actions as "a literal place, not a road" (PLACE_ACTIONS),
+ * and a district's real sheet backs that up: their lone value is
+ * either the school's street address or its plain name ("LaVergne Lake
+ * Elementary School"), never a road. Matched against both the name and
+ * address this app already has on file for every school (`schools`,
+ * from Postgres) - whichever the sheet happens to use - so
+ * EditRouteScreen's "Add New Route" upload can prefill the School
+ * dropdown instead of leaving an admin to notice and pick it by hand
+ * from data that's already sitting right there in the file.
+ *
+ * Deliberately conservative: only ever returns a name when every
+ * matching Depart/Arrive row agrees on exactly one school - a sheet
+ * with no recognizable place text, or text that's ambiguous enough to
+ * match more than one school, comes back null rather than guessing
+ * wrong and silently mis-tagging a route's own school.
+ */
+export function matchSchoolFromRows(
+  rows: RawRouteRow[],
+  schools: Record<string, SchoolInfo>,
+): string | null {
+  const candidates = rows
+    .filter((r) => ["depart", "arrive"].includes(r.action.trim().toLowerCase()))
+    .map((r) => normalizeForSchoolMatch(r.fromAt || r.ontoAt))
+    .filter((text) => text.length >= 4);
+  if (candidates.length === 0) return null;
+
+  const schoolEntries = Object.entries(schools).map(([name, info]) => ({
+    name,
+    normalizedName: normalizeForSchoolMatch(name),
+    normalizedAddress: normalizeForSchoolMatch(info.address),
+  }));
+
+  const matchedNames = new Set<string>();
+  for (const candidate of candidates) {
+    for (const school of schoolEntries) {
+      const nameMatch =
+        school.normalizedName.length >= 4 &&
+        (candidate === school.normalizedName ||
+          candidate.includes(school.normalizedName) ||
+          school.normalizedName.includes(candidate));
+      const addressMatch =
+        school.normalizedAddress.length >= 4 &&
+        (candidate === school.normalizedAddress ||
+          candidate.includes(school.normalizedAddress) ||
+          school.normalizedAddress.includes(candidate));
+      if (nameMatch || addressMatch) matchedNames.add(school.name);
+    }
+  }
+  return matchedNames.size === 1 ? [...matchedNames][0] : null;
 }

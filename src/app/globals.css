@@ -305,3 +305,24 @@ body {
 .animate-bus-depart {
   animation: bus-depart 0.45s cubic-bezier(0.55, 0, 1, 0.45) both;
 }
+
+/* The progress bar's own small bus mirrors the depot bus's send-off -
+   hidden entirely while parked at the depot (RouteProgressBar.tsx), then
+   sliding in from the left the instant the depot bus starts its own
+   send-off (same 0.45s, so both finish right as the real step change
+   lands). A decelerating ease-out (pulling in and settling) rather than
+   bus-depart's accelerating ease-in - arriving, not leaving. */
+@keyframes bus-arrive {
+  from {
+    transform: translateX(-160%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-bus-arrive {
+  animation: bus-arrive 0.45s cubic-bezier(0, 0.55, 0.45, 1) both;
+}

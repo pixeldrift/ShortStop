@@ -9,13 +9,13 @@ import {
   CheckCircleIcon,
   CloseIcon,
   DownloadIcon,
+  DragHandleIcon,
   EditIcon,
   GlobeIcon,
   MapPinIcon,
   PersonSolidIcon,
   PlusIcon,
   RightArrowIcon,
-  RoundedTriangleIcon,
   SaveIcon,
   SpinnerIcon,
   TrashIcon,
@@ -30,7 +30,8 @@ import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
-import { parseRouteImport, unresolvedRequiredFields } from "@/lib/parseRouteImport";
+import { matchSchoolFromRows, parseRouteImport, unresolvedRequiredFields } from "@/lib/parseRouteImport";
+import { parseRouteFilename } from "@/lib/parseRouteMasterList";
 import {
   PLACEHOLDER_DISTANCE,
   PLACEHOLDER_DURATION_MINUTES,
@@ -101,6 +102,15 @@ interface BatchProgress {
 // spelled out here anymore now that Upload File, above, is the
 // primary path and this is the secondary one.
 const STEPS_PLACEHOLDER = "One stop or turn per line, or delimited fields with headers.";
+
+// "Next Action" own third choice, alongside ending the trip
+// (nextRouteId null) or chaining into a real other route (nextRouteId
+// set to that route's own id) - stored in that same Route.nextRouteId
+// field as a fixed string no real route id could ever collide with
+// (every real one is `${routeNumber}-${tripType}-${schoolLevel}`,
+// always hyphenated - see types.ts). See the Next Action field's own
+// doc comment below for what this does and doesn't mean yet.
+const DEPOT_NEXT_ACTION = "depot";
 
 const BLANK_ROW: RawRouteRow = {
   action: "Stop",
@@ -219,11 +229,15 @@ function ResolutionIcon({ status, className }: { status: RowResolutionStatus["st
  * rows (numbered pin for a stop, turn arrow for a turn, rider count,
  * notes) so the edit list reads as the same at-a-glance ordered list,
  * not a form. A small resolution icon stands in for the fuller
- * status line the expanded editor shows, and a pencil icon on the far
- * right is the only thing this adds beyond that read-only view -
- * tapping it is the sole way into StepRowEditor below. Deliberately no
- * inputs and no trash can here - editing or deleting a row both only
- * ever happen one at a time, inside the expanded editor.
+ * status line the expanded editor shows. Two tap targets sit on the
+ * far right beyond that read-only view: a blue pencil (the sole way
+ * into StepRowEditor below) and, right of it, a drag handle for
+ * reordering the row within the route. Deliberately no inputs and no
+ * trash can here - editing or deleting a row both only ever happen
+ * one at a time, inside the expanded editor. No left/right
+ * side-of-street indicator here either - useful in the expanded
+ * editor and the driver-facing views, just noise on this already
+ * dense collapsed row.
  */
 function StepRowView({
   row,
@@ -231,15 +245,25 @@ function StepRowView({
   status,
   locked,
   onEdit,
+  onDragStart,
+  onDragEnd,
 }: {
   row: RawRouteRow;
   stopNumber: number | null;
   status: RowResolutionStatus | undefined;
   /** True while a different row's editor is open - this row's own
-   * pencil is disabled rather than hidden, so it's still clear editing
-   * is possible here, just not until the other row's Update/Cancel. */
+   * pencil (and drag handle) are disabled rather than hidden, so it's
+   * still clear editing/reordering is possible here, just not until
+   * the other row's Update/Cancel. */
   locked: boolean;
   onEdit: () => void;
+  /** Starts a reorder drag from this row - see EditRouteScreen's own
+   * handleReorderRow for how the drop target actually moves it.
+   * Fired by the drag handle icon alone (that's the only element
+   * marked `draggable`), not the row as a whole, so grabbing anywhere
+   * else in the row still just taps normally. */
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }) {
   const isStop = stopNumber !== null;
   // Only "Left"/"Right" actually have a direction (and the mirrored
@@ -268,22 +292,17 @@ function StepRowView({
   return (
     <div className="flex items-start gap-2 py-1 text-left">
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="font-heading flex items-center gap-1.5 text-base font-black">
+        <div className="flex items-baseline gap-1.5">
+          {/* The street/intersection now reads right after the
+              pin+stop number (or turn arrow+label) on this same
+              line, not its own line below - shrink-0 on the label so
+              a long street name truncates instead of pushing it or
+              the rider count out. */}
+          <span className="font-heading flex shrink-0 items-center gap-1.5 text-base font-black">
             {isStop ? (
               <>
                 <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
                 Stop {stopNumber}
-                {row.side && (
-                  <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
-                    ({row.side.toLowerCase()}
-                    <RoundedTriangleIcon
-                      direction={row.side.toLowerCase() === "left" ? "left" : "right"}
-                      className="h-3 w-3"
-                    />
-                    )
-                  </span>
-                )}
               </>
             ) : turnDirection ? (
               <>
@@ -294,16 +313,16 @@ function StepRowView({
               row.action || "Turn"
             )}
           </span>
+          <span className="min-w-0 flex-1 truncate text-zinc-700">
+            {subheading || <span className="text-zinc-400 italic">No location yet</span>}
+          </span>
           {isStop && row.riderCount && (
             <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
               <PersonSolidIcon className="h-4 w-4" />
-              {row.riderCount} rider{row.riderCount === "1" ? "" : "s"}
+              {row.riderCount}
             </span>
           )}
         </div>
-        <p className="truncate text-zinc-700">
-          {subheading || <span className="text-zinc-400 italic">No location yet</span>}
-        </p>
         {row.notes && <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>}
         {/* The row's own real geocoding outcome - actual coordinates
             once resolved (green check), the specific miss/error reason
@@ -321,15 +340,27 @@ function StepRowView({
           </p>
         )}
       </div>
-      <button
-        type="button"
-        onClick={onEdit}
-        disabled={locked}
-        aria-label={isStop ? `Edit stop ${stopNumber}` : "Edit turn"}
-        className="mt-0.5 shrink-0 text-zinc-400 active:text-blue-600 disabled:opacity-30"
-      >
-        <EditIcon className="h-4 w-4" />
-      </button>
+      <div className="mt-0.5 flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={locked}
+          aria-label={isStop ? `Edit stop ${stopNumber}` : "Edit turn"}
+          className="text-blue-600 active:text-blue-800 disabled:opacity-30"
+        >
+          <EditIcon className="h-4 w-4" />
+        </button>
+        <span
+          draggable={!locked}
+          onDragStart={onDragStart}
+          onDragEnd={onDragEnd}
+          aria-label={isStop ? `Reorder stop ${stopNumber}` : "Reorder turn"}
+          role="button"
+          className={`text-zinc-400 ${locked ? "opacity-30" : "cursor-grab active:cursor-grabbing"}`}
+        >
+          <DragHandleIcon className="h-4 w-4" />
+        </span>
+      </div>
     </div>
   );
 }
@@ -1252,6 +1283,11 @@ export function EditRouteScreen({
   // this session), then edited structurally (add/remove/change a row)
   // from here on, never re-derived from initialSteps again.
   const [rows, setRows] = useState<RawRouteRow[]>(initialSteps);
+  // Which row (a real index into `rows`, not the filtered
+  // `visibleRowIndices` position) a drag-handle-initiated reorder
+  // started from - null whenever nothing's being dragged. See
+  // handleReorderRow below for what a drop actually does with it.
+  const [dragRowIndex, setDragRowIndex] = useState<number | null>(null);
   // Defaults to on here (unlike StartScreen's own "View All Stops",
   // which defaults to stops-only) - reviewing a route for editing is
   // exactly when seeing every turn in its real place matters most.
@@ -1493,6 +1529,22 @@ export function EditRouteScreen({
     if (newlyAddedIndex === index) setNewlyAddedIndex(null);
     setDirty(true);
   }
+  // Moves the row at `from` to sit at `to`, both real `rows` indices -
+  // works the same regardless of "Show turns" (visibleRowIndices only
+  // changes which rows are *offered* as a drop target here, never
+  // what index dropping one actually moves to). No-op past the drag
+  // handle's own `locked` guard when nothing dragged, or a drop back
+  // onto its own starting row.
+  function handleReorderRow(from: number, to: number) {
+    if (from === to) return;
+    setRows((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+    setDirty(true);
+  }
   // Inserts a blank row at `index` (`rows.length` appends, same as the
   // old always-at-the-end behavior this replaces) and opens it for
   // editing immediately - a new stop or turn always needs its details
@@ -1527,11 +1579,37 @@ export function EditRouteScreen({
     const file = e.target.files?.[0];
     e.target.value = ""; // lets the same file be re-selected later
     if (!file) return;
+    const filename = file.name;
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === "string") setStepsText(reader.result);
+      if (typeof reader.result !== "string") return;
+      setStepsText(reader.result);
+      prefillFromImport(filename, reader.result);
     };
     reader.readAsText(file);
+  }
+
+  // Only ever called right after a real file upload (this screen's own
+  // "Or paste manually" box has no filename of its own to read) - fills
+  // in whichever of Route #/Trip this screen doesn't already have a
+  // real value for from the filename itself, this district's own
+  // "<routeNumber>-<AM/PM/FT/OT>-<school level>" naming convention (see
+  // parseRouteFilename), then School from the sheet's own Depart/Arrive
+  // rows (matchSchoolFromRows) - the school's own name or address
+  // there is far more reliable than trusting the filename's own school-
+  // level segment for that, and picking School this way already brings
+  // schoolLevel along with it (schoolInfo lookup above, not a field of
+  // its own). Never overwrites a field an admin already filled in by
+  // hand before choosing a file.
+  function prefillFromImport(filename: string, text: string) {
+    const parsedName = parseRouteFilename(filename);
+    if (parsedName.routeNumber && !routeNumber) setRouteNumber(parsedName.routeNumber);
+    if (parsedName.tripType && !tripType) setTripType(parsedName.tripType);
+
+    if (!schoolName) {
+      const matchedSchool = matchSchoolFromRows(parseRouteImport(text).rows, schools);
+      if (matchedSchool) setSchoolName(matchedSchool);
+    }
   }
 
   async function callGeocodeApi(query: GeocodableQuery): Promise<GeocodeResponseBody> {
@@ -1956,13 +2034,26 @@ export function EditRouteScreen({
         </Field>
       </div>
 
-      {/* Chains this route straight into another one's own directions
-          once its last step is reached, instead of ending the trip -
-          same bus driving more than one leg back-to-back (elementary,
-          then middle school, say). Defaults to whichever eligible route
-          (nextRouteOptions) runs the next school level up, if there is
-          one - see the nextRouteId state's own doc comment for exactly
-          how. */}
+      {/* What happens once this route's last step is reached, instead
+          of always just ending the trip - either a real chained route
+          (same bus driving more than one leg back-to-back - elementary,
+          then middle school, say - see nextRouteOptions above, grouped
+          here under "Begin Next Route" since picking one of those is
+          what actually sets this), or DEPOT_NEXT_ACTION, a fixed
+          sentinel this app recognizes but no real Route.id could ever
+          collide with (every real one is `${routeNumber}-${tripType}-
+          ${schoolLevel}`, always hyphenated) - "the driver heads back
+          to base," not "hand off into another route's own directions"
+          the way a real chain does (handleRouteArrived in page.tsx),
+          which still ends the trip exactly like leaving this blank
+          does. Genuinely distinguishing an actual return-to-depot leg
+          (its own real stops/navigation) is a later step - see the
+          README's own Next steps - this is just the honest label for
+          "ends the trip, but the driver isn't just stopping wherever
+          the last stop happened to be." Defaults to whichever eligible
+          chained route (nextRouteOptions) runs the next school level
+          up, if there is one - see the nextRouteId state's own doc
+          comment for exactly how. */}
       <div className="mt-3">
         <Field label="Next Action">
           <select
@@ -1973,12 +2064,17 @@ export function EditRouteScreen({
               setDirty(true);
             }}
           >
-            <option value="">None - end trip here</option>
-            {nextRouteOptions.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.routeNumber} — {r.schoolName}
-              </option>
-            ))}
+            <option value="">Nothing - End Route</option>
+            <option value={DEPOT_NEXT_ACTION}>Return to Depot</option>
+            {nextRouteOptions.length > 0 && (
+              <optgroup label="Begin Next Route">
+                {nextRouteOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.routeNumber} — {r.schoolName}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </Field>
       </div>
@@ -1997,13 +2093,7 @@ export function EditRouteScreen({
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
-          {/* relative/absolute rather than a flex row - the pencil
-              icon floats off the text's own left edge (right-full) so
-              it never shifts the title text itself off true center. */}
-          <h1 className="font-heading relative text-2xl font-black tracking-tight">
-            <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
-            Add New Route
-          </h1>
+          <h1 className="font-heading text-2xl font-black tracking-tight">Add New Route</h1>
           <span className="w-10" />
         </div>
 
@@ -2115,13 +2205,7 @@ export function EditRouteScreen({
             >
               <BackArrowIcon className="h-5 w-5" />
             </button>
-            {/* relative/absolute rather than a flex row - the pencil
-                icon floats off the text's own left edge (right-full) so
-                it never shifts the title text itself off true center. */}
-            <h1 className="font-heading relative text-2xl font-black tracking-tight">
-              <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
-              Stops and Turns
-            </h1>
+            <h1 className="font-heading text-2xl font-black tracking-tight">Stops and Turns</h1>
             <span className="w-10" />
           </div>
 
@@ -2192,13 +2276,27 @@ export function EditRouteScreen({
                 const waypoint = waypoints[index];
 
                 return (
-                  <div key={index}>
+                  <div
+                    key={index}
+                    onDragOver={(e) => {
+                      if (dragRowIndex === null) return;
+                      e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      if (dragRowIndex === null) return;
+                      e.preventDefault();
+                      handleReorderRow(dragRowIndex, index);
+                      setDragRowIndex(null);
+                    }}
+                  >
                     <StepRowView
                       row={row}
                       stopNumber={stopNumber}
                       status={waypoint ? resolutionRows[index] : undefined}
                       locked={expandedIndex !== null}
                       onEdit={() => openRowEditor(index)}
+                      onDragStart={() => setDragRowIndex(index)}
+                      onDragEnd={() => setDragRowIndex(null)}
                     />
                     <AddStepButton onClick={() => addRow(index + 1)} disabled={expandedIndex !== null} />
                   </div>
@@ -2316,11 +2414,7 @@ export function EditRouteScreen({
         >
           <BackArrowIcon className="h-5 w-5" />
         </button>
-        {/* relative/absolute rather than a flex row - the pencil icon
-            floats off the text's own left edge (right-full) so it
-            never shifts the title text itself off true center. */}
-        <h1 className="font-heading relative text-2xl font-black tracking-tight">
-          <EditIcon className="absolute top-1/2 right-full mr-2 h-5 w-5 -translate-y-1/2 text-red-600" />
+        <h1 className="font-heading text-2xl font-black tracking-tight">
           Edit Route {route?.routeNumber ?? ""}
         </h1>
         <span className="w-10" />
