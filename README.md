@@ -68,7 +68,11 @@ A route's stops can also be built by pasting or uploading a CSV/TSV
 directly into the admin **Add/Edit Route** screen — column headers are
 matched loosely (case, spacing, common synonyms), and a header-less
 paste is read as a plain ordered list of stops. The recognized columns
-are `action`, `from_at`, `onto_at`, `rider_count`, `side`, and `notes`
+are `action`, `location`, `from_location`, `rider_count`, `side`, and
+`notes` — only `action` and `location` are ever required; `location`
+is this row's own real position (a turn's destination road, or a
+stop's own road/intersection/address), and `from_location` is an
+optional "coming from" road, inferred from context when left blank
 (see the **Details** link next to Upload File in that screen, or
 `src/lib/parseRouteImport.ts` for the exact rules).
 
