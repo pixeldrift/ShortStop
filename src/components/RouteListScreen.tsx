@@ -688,19 +688,19 @@ export function RouteListScreen({
                         value - and were confirmed against the live
                         rendered box (not just canvas metrics) before
                         landing here. */}
-                    {/* items-start/items-end alone still only reaches
-                        the ROUTE NUMBER's own box (the tallest flex
-                        sibling, 24px) - that box sits well short of the
-                        row's own true top/bottom (this row's py-3, plus
-                        the badge's own icon being taller than its now-
-                        trimmed text, see the badge span's own leading-
-                        [0.75] below), so the badge was still landing
-                        ~16px short of the row's real edge even once its
-                        own text stopped carrying dead space. translate-
-                        y-4 closes that measured gap (confirmed against
-                        the live rendered box, not guessed) so the badge
-                        actually touches the row's real edge instead of
-                        floating inside it. */}
+                    {/* items-start/items-end on the outer row aligns the
+                        badge's own div to the route number's own top/
+                        bottom edge - but that div also has to stop
+                        centering its own two children (items-center) to
+                        actually deliver "flush," since the icon (h-3,
+                        12px) is taller than the now-trimmed text (~9px,
+                        leading-[0.75] below); items-center would leave
+                        the text itself sitting short of the div's own
+                        edge by half that difference even once the div
+                        itself is correctly placed. Matching the same
+                        start/end here instead puts the *text* flush
+                        against the number, icon included, not just the
+                        div loosely centered around it. */}
                     <div
                       className={`flex gap-1.5 ${
                         route.tripType === "dropoff" ? "items-start" : "items-end"
@@ -710,8 +710,8 @@ export function RouteListScreen({
                         {route.routeNumber}
                       </span>
                       <div
-                        className={`flex items-center gap-0.5 text-blue-500 ${
-                          route.tripType === "dropoff" ? "-translate-y-4" : "translate-y-4"
+                        className={`flex gap-0.5 text-blue-500 ${
+                          route.tripType === "dropoff" ? "items-start" : "items-end"
                         }`}
                       >
                         <span className="font-heading text-xs leading-[0.75] font-black">
