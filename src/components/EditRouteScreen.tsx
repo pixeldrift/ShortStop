@@ -2412,12 +2412,44 @@ export function EditRouteScreen({
                 {schoolName || "No school selected"}
               </span>
             </p>
-            {counts.total - counts.skipped > 0 && (
-              <p className="text-xs font-semibold text-zinc-500">
-                {counts.resolved}/{counts.total - counts.skipped} location
-                {counts.total - counts.skipped === 1 ? "" : "s"} confirmed
-              </p>
-            )}
+            {counts.total - counts.skipped > 0 &&
+              (() => {
+                // Every waypoint that actually needs a real coordinate -
+                // every row except one deriveWaypoints.ts flagged as
+                // "unresolvable" (a driver instruction, not a real
+                // road) or an admin marked Skip on by hand - neither of
+                // which this count (or the meter below) should ever
+                // penalize a route for not having geocoded, since
+                // neither one is ever going to get a coordinate at all.
+                const geocodable = counts.total - counts.skipped;
+                const allVerified = counts.resolved === geocodable;
+                const percentVerified = (counts.resolved / geocodable) * 100;
+                return (
+                  <div className="flex w-full max-w-[16rem] flex-col items-center gap-1">
+                    <p className="flex items-center gap-1 text-xs font-semibold text-zinc-500">
+                      {allVerified ? (
+                        <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                      ) : (
+                        <XCircleIcon className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                      )}
+                      {allVerified
+                        ? `All ${geocodable} location${geocodable === 1 ? "" : "s"} verified`
+                        : `${counts.unresolved} of ${geocodable} coordinate${geocodable === 1 ? "" : "s"} could not be verified`}
+                    </p>
+                    {/* A thin at-a-glance ratio of confirmed vs. not -
+                        green width scales with percentVerified over a
+                        solid red track, so the meter still reads
+                        correctly (a sliver of green, mostly red) well
+                        before an admin has read the count above it. */}
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-red-400">
+                      <div
+                        className="h-full rounded-full bg-green-500"
+                        style={{ width: `${percentVerified}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
           </div>
 
           <div className="flex w-full max-w-md shrink-0 items-center justify-between gap-3">
@@ -2605,51 +2637,74 @@ export function EditRouteScreen({
 
   // subScreen "hub"
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-y-auto px-6 pb-10 text-center">
-      <div className="flex w-full max-w-md items-center justify-between">
-        <button
-          type="button"
-          onClick={onCancel}
-          aria-label="Cancel"
-          className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
-        >
-          <BackArrowIcon className="h-5 w-5" />
-        </button>
-        <div>
-          {/* Same small district label StartScreen/RouteListScreen/
-              SchoolListScreen each carry above their own heading - see
-              StartScreen's own doc comment for why this isn't folded
-              into the heading itself. */}
-          <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
-            Rutherford County
-          </span>
-          {/* mt-[1.5px] - same leading-[0.7083]-collapses-the-gap fix as
-              StartScreen's own title (see that h1's doc comment for the
-              full canvas-metrics explanation), just re-measured at this
-              smaller text-2xl size since the fix is a pixel value, not a
-              ratio - it doesn't carry over from the 4xl title unchanged. */}
-          <h1 className="font-heading relative mt-[1.5px] text-2xl leading-[0.7083] font-black tracking-tight">
-            Route {route?.routeNumber ?? ""}
-            {route?.routeNumber && tripType && (
-              <span
-                className={`absolute left-full ml-2 flex items-center gap-1 text-sm leading-[0.75] text-blue-500 ${
-                  tripType === "dropoff" ? "top-0" : "bottom-0"
-                }`}
-              >
-                {tripTypeLabel(tripType)}
-                <TripTypeIcon tripType={tripType} className="h-3.5 w-3.5" />
-              </span>
-            )}
-          </h1>
+    <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
+      {/* Everything that can genuinely grow past the viewport (the
+          Route Details form especially) lives in this inner, scrollable
+          region - Edit Stops/Cancel/Save below stay outside it, pinned
+          to the bottom of the screen instead of scrolling away, same
+          pattern subScreen "stops" already uses for its own footer. */}
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-4 overflow-y-auto">
+        <div className="flex w-full max-w-md items-center justify-between">
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel"
+            className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+          >
+            <BackArrowIcon className="h-5 w-5" />
+          </button>
+          <div>
+            {/* Same small district label StartScreen/RouteListScreen/
+                SchoolListScreen each carry above their own heading - see
+                StartScreen's own doc comment for why this isn't folded
+                into the heading itself. Same text-4xl size as that
+                screen's own title now too, not the smaller text-2xl
+                this used to be - this is the same "Route N" callout,
+                just reached from Edit Mode instead of tapping a row, so
+                it reads the same size either way. */}
+            <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+              Rutherford County
+            </span>
+            {/* mt-[1.25px] - the exact same leading-[0.7083]-collapses-
+                the-gap fix as StartScreen's own title (see that h1's
+                own doc comment for the full canvas-metrics
+                explanation) - reused unchanged, not re-measured, since
+                this is now literally the same text-4xl size that value
+                was tuned against. */}
+            <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
+              Route {route?.routeNumber ?? ""}
+              {route?.routeNumber && tripType && (
+                <span
+                  className={`absolute left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500 ${
+                    tripType === "dropoff" ? "top-0" : "bottom-0"
+                  }`}
+                >
+                  {tripTypeLabel(tripType)}
+                  <TripTypeIcon tripType={tripType} className="h-4 w-4" />
+                </span>
+              )}
+            </h1>
+          </div>
+          <span className="w-10" />
         </div>
-        <span className="w-10" />
+
+        {routeDetailsForm}
+
+        {message && <p className="text-sm text-zinc-500">{message}</p>}
       </div>
 
-      {routeDetailsForm}
+      <div className="w-full max-w-md shrink-0">
+        <button
+          type="button"
+          onClick={() => setSubScreen("stops")}
+          className="btn-glossy-light font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
+        >
+          <MapPinIcon className="h-5 w-5" />
+          Edit Stops
+        </button>
+      </div>
 
-      {message && <p className="text-sm text-zinc-500">{message}</p>}
-
-      <div className="flex w-full max-w-md items-center gap-3">
+      <div className="flex w-full max-w-md shrink-0 items-center gap-3">
         <button
           type="button"
           onClick={onCancel}
@@ -2665,17 +2720,6 @@ export function EditRouteScreen({
         >
           <SaveIcon className="h-5 w-5" />
           Save
-        </button>
-      </div>
-
-      <div className="w-full max-w-md">
-        <button
-          type="button"
-          onClick={() => setSubScreen("stops")}
-          className="btn-glossy-light font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
-        >
-          <MapPinIcon className="h-5 w-5" />
-          Edit Stops
         </button>
       </div>
     </div>

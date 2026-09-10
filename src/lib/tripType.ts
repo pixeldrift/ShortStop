@@ -1,14 +1,16 @@
 import type { TripType } from "./types";
 
-/** "AM"/"PM"/"Field Trip"/"Other" - the short label every trip-type
- * badge across the app (TopBar, StartScreen, RouteListScreen,
+/** "AM"/"PM"/"SP"/"Other" - the short label every trip-type badge
+ * across the app (TopBar, StartScreen, RouteListScreen,
  * EditRouteScreen) shows next to its own icon (TripTypeIcon), kept in
  * one place so a future TripType doesn't need updating in every one of
- * those files' own ternaries by hand. */
+ * those files' own ternaries by hand. "SP" (Special) matches AM/PM's
+ * own two-letter brevity - RouteListScreen's filter toggle uses the
+ * same abbreviation for the same trip type, see TRIP_TYPE_TOGGLES. */
 export function tripTypeLabel(tripType: TripType): string {
   if (tripType === "pickup") return "AM";
   if (tripType === "dropoff") return "PM";
-  if (tripType === "fieldtrip") return "Field Trip";
+  if (tripType === "fieldtrip") return "SP";
   return "Other";
 }
 
