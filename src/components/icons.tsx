@@ -1,11 +1,19 @@
 import Image from "next/image";
 import type { TurnDirection } from "@/lib/types";
+import ArriveSvg from "./icons/arrive.svg";
 import CheckboxCheckedSvg from "./icons/checkbox-checked.svg";
 import CheckboxUncheckedSvg from "./icons/checkbox-unchecked.svg";
+import ContinueSvg from "./icons/continue.svg";
+import DepartSvg from "./icons/depart.svg";
 import HeartFilledSvg from "./icons/heart-filled.svg";
 import HeartOutlineSvg from "./icons/heart-outline.svg";
+import ProceedSvg from "./icons/proceed.svg";
+import PullOverSvg from "./icons/pull-over.svg";
+import ReturnSvg from "./icons/return.svg";
 import TriangleRoundedSvg from "./icons/triangle-rounded.svg";
 import TriangleSvg from "./icons/triangle.svg";
+import TurnAroundSvg from "./icons/turn-around.svg";
+import UTurnSvg from "./icons/u-turn.svg";
 
 /** The turn-sign image, mirrored for a left turn (the source art is a
  * right turn). Still a raster PNG, not one of the vector icons below -
@@ -113,6 +121,41 @@ export function SortIcon({
 export { default as PersonIcon } from "./icons/person-outline.svg";
 export { default as PersonSolidIcon } from "./icons/person-solid.svg";
 export { default as MapPinIcon } from "./icons/map-pin.svg";
+
+export { default as ContinueIcon } from "./icons/continue.svg";
+export { default as ProceedIcon } from "./icons/proceed.svg";
+export { default as UTurnIcon } from "./icons/u-turn.svg";
+export { default as TurnAroundIcon } from "./icons/turn-around.svg";
+export { default as PullOverIcon } from "./icons/pull-over.svg";
+export { default as ReturnIcon } from "./icons/return.svg";
+export { default as DepartIcon } from "./icons/depart.svg";
+export { default as ArriveIcon } from "./icons/arrive.svg";
+
+// Every non-Stop, non-Left/Right action (StepRowEditor's own Type
+// select) used to fall through to plain text with no icon at all in
+// both the admin row list and the real driving screen - this maps each
+// one to its own glyph so every action reads as distinctly as Stop's
+// pin or a turn's arrow already did. Left/Right aren't included here -
+// they keep using the mirrored TurnArrow image instead, unchanged.
+const ACTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  continue: ContinueSvg,
+  proceed: ProceedSvg,
+  "u-turn": UTurnSvg,
+  "turn around": TurnAroundSvg,
+  "pull over": PullOverSvg,
+  return: ReturnSvg,
+  depart: DepartSvg,
+  arrive: ArriveSvg,
+};
+
+/** Looks up `ACTION_ICONS` by action name (case-insensitive) - null for
+ * Stop/Left/Right/Complete or anything else not in the map, so a caller
+ * can fall back to its own icon (or none) for those rather than this
+ * needing to know about every action that isn't one of its own eight. */
+export function ActionIcon({ action, className }: { action: string; className?: string }) {
+  const Svg = ACTION_ICONS[action.trim().toLowerCase()];
+  return Svg ? <Svg className={className} /> : null;
+}
 
 /** A small pennant on a pole - the field-trip badge every AM/PM badge's
  * own SunriseIcon/SunIcon pairs with once a route's trip type is

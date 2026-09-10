@@ -2,17 +2,16 @@ import type { RawRouteRow } from "./parseRouteCsv";
 import type { SchoolInfo } from "./parseSchoolsCsv";
 
 /**
- * The route-import tool's column-resolution layer (see README, "Next
- * steps" - "A route import tool"): takes whatever a district actually
- * sends - a CSV/TSV paste, or a file's raw text - and tries to line its
- * header row up with the app's own schema
- * (time,action,from_at,onto_at,rider_count,side,notes, the same one
- * parseRouteCsvRows already reads) by header *name*, not position - so
- * a sheet with the columns in a different order, extra columns the app
- * doesn't use, or a differently-spelled/spaced header
- * ("From At" vs "from_at") still resolves, rather than requiring the
- * schema verbatim. Only `action` and `from_at` are ever required -
- * every other column (time, onto_at, rider_count, side, notes) is
+ * The route-import tool's column-resolution layer: takes whatever a
+ * district actually sends - a CSV/TSV paste, or a file's raw text -
+ * and tries to line its header row up with the app's own schema
+ * (time,action,location,from_location,rider_count,side,notes, the same
+ * one parseRouteCsvRows already reads) by header *name*, not position -
+ * so a sheet with the columns in a different order, extra columns the
+ * app doesn't use, or a differently-spelled/spaced header ("From
+ * Location" vs "from_location") still resolves, rather than requiring
+ * the schema verbatim. Only `action` and `location` are ever required -
+ * every other column (time, from_location, rider_count, side, notes) is
  * happily left blank, same as the app's own real steps sheets already
  * leave some of these blank (see parseRouteCsvRows) - so a sheet that's
  * just a plain list of stops, or stops and turns with nothing else,
@@ -37,9 +36,8 @@ import type { SchoolInfo } from "./parseSchoolsCsv";
 export type ImportColumnField =
   | "time"
   | "action"
-  | "fromAt"
-  | "ontoAt"
   | "location"
+  | "fromLocation"
   | "riderCount"
   | "side"
   | "notes"
@@ -47,23 +45,17 @@ export type ImportColumnField =
 
 // The app's own schema (parseRouteCsvRows) as the canonical header name
 // for each field - what an import's own header is matched against
-// after normalizing away case/spacing/punctuation differences.
-//
-// `location` is a second, newer shape for the same road-tracking data
-// `fromAt`/`ontoAt` hold - one column per row ("action, location") that
-// only ever names the single road that row's action or direction
-// happens on, leaning on deriveWaypoints.ts's existing "derive from
-// whatever road was already tracked" logic for everything else, rather
-// than restating both sides of an intersection every row. Kept as an
-// alternative to `fromAt`/`ontoAt`, not a replacement - see `valueFor`
-// below - since a district sheet already written the older two-column
-// way should keep importing exactly as it always has.
+// after normalizing away case/spacing/punctuation differences. The
+// older two-column from_at/onto_at shape (and location as merely an
+// alternative to it) is gone - `location` (this row's own real
+// position, always required) and `from_location` (optional context,
+// blank means "infer it") are the only names an import's header row is
+// ever matched against now.
 const CANONICAL_HEADER_NAMES: Record<ImportColumnField, string> = {
   time: "time",
   action: "action",
-  fromAt: "from_at",
-  ontoAt: "onto_at",
   location: "location",
+  fromLocation: "from_location",
   riderCount: "rider_count",
   side: "side",
   notes: "notes",
@@ -75,9 +67,9 @@ const CANONICAL_HEADER_NAMES: Record<ImportColumnField, string> = {
 const CANONICAL_FIELDS = Object.keys(CANONICAL_HEADER_NAMES) as ImportColumnField[];
 
 /** Reduces a header to just its letters and digits, lowercased - "From
- * At", "from_at", "From-At", and "FROMAT" all normalize identically, so
- * matching only cares whether the same words are present, not how a
- * given sheet chose to case or separate them. */
+ * Location", "from_location", "From-Location", and "FROMLOCATION" all
+ * normalize identically, so matching only cares whether the same words
+ * are present, not how a given sheet chose to case or separate them. */
 function normalizeHeaderName(header: string): string {
   return header.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -139,7 +131,7 @@ const STREET_SUFFIX_CANONICAL: Record<string, string> = Object.fromEntries(
 /** Normalizes a road name's own trailing suffix ("Road"/"Rd."/"RD" all
  * become "Rd") to this app's existing address style. Only ever touches
  * the very last word - an intersection's second road ("Main St & Oak
- * Ave") is already its own separate fromAt/ontoAt value (see
+ * Ave") is already its own separate location/fromLocation value (see
  * RawRouteRow), so each call here only ever sees one road name - which
  * leaves the house number, the road's own name, and anything else
  * about the string untouched. A last word this doesn't recognize as a
@@ -219,11 +211,11 @@ const RECOGNIZED_ACTIONS = new Set([
  * pair with nothing else around it. Returns null for a line that isn't
  * that shape at all (a plain single address, say), so the caller can
  * fall back to treating the whole line as one literal address. */
-function splitIntersectionText(text: string): { fromAt: string; ontoAt: string } | null {
+function splitIntersectionText(text: string): { from: string; location: string } | null {
   const ampersand = text.split(/\s+&\s+/);
-  if (ampersand.length === 2) return { fromAt: ampersand[0].trim(), ontoAt: ampersand[1].trim() };
+  if (ampersand.length === 2) return { from: ampersand[0].trim(), location: ampersand[1].trim() };
   const and = text.split(/\s+and\s+/i);
-  if (and.length === 2) return { fromAt: and[0].trim(), ontoAt: and[1].trim() };
+  if (and.length === 2) return { from: and[0].trim(), location: and[1].trim() };
   return null;
 }
 
@@ -244,10 +236,17 @@ function parseHeaderlessLine(line: string, delimiter: string): RawRouteRow {
   const firstWord = cells[0]?.toLowerCase();
 
   if (cells.length >= 2 && RECOGNIZED_ACTIONS.has(firstWord)) {
+    // A second value (a cross street/context road) makes the *first*
+    // one the from-context and the second the row's own real location
+    // ("Left, Main St, Oak Ave" reads as "from Main St, onto Oak Ave")
+    // - with only one value given, that lone value is this row's own
+    // location outright (the destination-only shorthand), and
+    // fromLocation is left blank for deriveWaypoints.ts to infer.
+    const hasCrossStreet = Boolean(cells[2]);
     return {
       action: cells[0],
-      fromAt: normalizeStreetSuffix(cells[1] ?? ""),
-      ontoAt: normalizeStreetSuffix(cells[2] ?? ""),
+      location: normalizeStreetSuffix(hasCrossStreet ? (cells[2] ?? "") : (cells[1] ?? "")),
+      fromLocation: hasCrossStreet ? normalizeStreetSuffix(cells[1] ?? "") : "",
       riderCount: "",
       side: "",
       notes: "",
@@ -258,8 +257,8 @@ function parseHeaderlessLine(line: string, delimiter: string): RawRouteRow {
   const intersection = splitIntersectionText(line.trim());
   return {
     action: "Stop",
-    fromAt: normalizeStreetSuffix(intersection?.fromAt ?? line.trim()),
-    ontoAt: normalizeStreetSuffix(intersection?.ontoAt ?? ""),
+    location: normalizeStreetSuffix(intersection?.location ?? line.trim()),
+    fromLocation: normalizeStreetSuffix(intersection?.from ?? ""),
     riderCount: "",
     side: "",
     notes: "",
@@ -279,7 +278,7 @@ export interface ImportParseResult {
   unmatchedSourceHeaders: string[];
   /** True if no real header row was found and every line (including
    * what would otherwise be line one) was parsed as data via
-   * parseHeaderlessLine - lets a caller explain *why* onto_at/
+   * parseHeaderlessLine - lets a caller explain *why* from_location/
    * rider_count/side/notes came through blank, rather than that just
    * looking like a failed import. */
   headerless: boolean;
@@ -317,9 +316,9 @@ export function parseRouteImport(text: string): ImportParseResult {
       sourceHeader: null,
       sourceIndex: null,
       // parseHeaderlessLine always fills these two in (defaulting
-      // action to "Stop" and fromAt to the whole line) - every other
+      // action to "Stop" and location to the whole line) - every other
       // field genuinely has no source in a header-less paste.
-      resolved: field === "action" || field === "fromAt",
+      resolved: field === "action" || field === "location",
     }));
     return { delimiter, mapping, rows, unmatchedSourceHeaders: [], headerless: true };
   }
@@ -331,22 +330,16 @@ export function parseRouteImport(text: string): ImportParseResult {
   );
   const unmatchedSourceHeaders = headers.filter((_, index) => !matchedIndices.has(index));
 
-  const locationResolved = headerMapping.some((m) => m.field === "location" && m.resolved);
-
   const rows: RawRouteRow[] = dataLines.map((line) => {
     const values = line.split(delimiter).map((v) => v.trim());
     const valueFor = (field: ImportColumnField): string => {
       const match = headerMapping.find((m) => m.field === field);
       return match?.sourceIndex != null ? (values[match.sourceIndex] ?? "") : "";
     };
-    // A sheet using the newer single-`location` shape (see
-    // CANONICAL_HEADER_NAMES above) has no `onto_at` of its own at all
-    // - deriveWaypoints.ts derives it from whichever road was already
-    // tracked, the same way it already does for a lone-value turn.
     return {
       action: valueFor("action"),
-      fromAt: normalizeStreetSuffix(locationResolved ? valueFor("location") : valueFor("fromAt")),
-      ontoAt: locationResolved ? "" : normalizeStreetSuffix(valueFor("ontoAt")),
+      location: normalizeStreetSuffix(valueFor("location")),
+      fromLocation: normalizeStreetSuffix(valueFor("fromLocation")),
       riderCount: valueFor("riderCount"),
       side: valueFor("side"),
       notes: valueFor("notes"),
@@ -358,28 +351,18 @@ export function parseRouteImport(text: string): ImportParseResult {
 }
 
 /** Which of the two columns every row genuinely needs (`action`,
- * `fromAt` - see parseRouteCsv.ts) didn't resolve at all. `time` and
+ * `location` - see parseRouteCsv.ts) didn't resolve at all. `time` and
  * `side` are optional even on the app's own real schemas (route-120
  * has no `side` column at all; route-125's `time` is always blank), and
- * `ontoAt`/`riderCount`/`notes` are only conditionally needed per-row,
- * not per-sheet - so only these two are worth flagging as a sheet-level
- * problem before a human even looks at individual rows. Always empty
- * for a header-less import - parseHeaderlessLine guarantees both by
- * construction (see `resolved` on ImportColumnMapping).
- *
- * A resolved `location` column (see CANONICAL_HEADER_NAMES) satisfies
- * `fromAt`'s own requirement too - it's the same road-tracking data
- * under the newer single-column shape (parseRouteImport feeds it into
- * every row's own `fromAt`), so a sheet using only `location` shouldn't
- * be flagged as missing `fromAt` just because it never had a column by
- * that literal name. */
+ * `fromLocation`/`riderCount`/`notes` are only conditionally needed
+ * per-row, not per-sheet - so only these two are worth flagging as a
+ * sheet-level problem before a human even looks at individual rows.
+ * Always empty for a header-less import - parseHeaderlessLine
+ * guarantees both by construction (see `resolved` on
+ * ImportColumnMapping). */
 export function unresolvedRequiredFields(mapping: ImportColumnMapping[]): ImportColumnField[] {
-  const locationResolved = mapping.some((m) => m.field === "location" && m.resolved);
-  const required: ImportColumnField[] = ["action", "fromAt"];
-  return mapping
-    .filter((m) => required.includes(m.field) && !m.resolved)
-    .filter((m) => !(m.field === "fromAt" && locationResolved))
-    .map((m) => m.field);
+  const required: ImportColumnField[] = ["action", "location"];
+  return mapping.filter((m) => required.includes(m.field) && !m.resolved).map((m) => m.field);
 }
 
 /** Down to just letters/digits/spaces, lowercased and collapsed - a
@@ -419,7 +402,7 @@ export function matchSchoolFromRows(
 ): string | null {
   const candidates = rows
     .filter((r) => ["depart", "arrive"].includes(r.action.trim().toLowerCase()))
-    .map((r) => normalizeForSchoolMatch(r.fromAt || r.ontoAt))
+    .map((r) => normalizeForSchoolMatch(r.location))
     .filter((text) => text.length >= 4);
   if (candidates.length === 0) return null;
 

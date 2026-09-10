@@ -5,6 +5,7 @@ import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
+  ActionIcon,
   BackArrowIcon,
   CheckCircleIcon,
   CloseIcon,
@@ -115,8 +116,8 @@ const DEPOT_NEXT_ACTION = "depot";
 
 const BLANK_ROW: RawRouteRow = {
   action: "Stop",
-  fromAt: "",
-  ontoAt: "",
+  location: "",
+  fromLocation: "",
   riderCount: "",
   side: "",
   notes: "",
@@ -240,6 +241,8 @@ function ResolutionIcon({ status, className }: { status: RowResolutionStatus["st
 function StepRowView({
   row,
   stopNumber,
+  previousRoad,
+  schools,
   status,
   locked,
   onEdit,
@@ -249,6 +252,18 @@ function StepRowView({
 }: {
   row: RawRouteRow;
   stopNumber: number | null;
+  /** The road deriveWaypoints.ts already has tracked as "current"
+   * heading into this row - shown as this row's own effective from-
+   * road whenever it doesn't have an explicit `fromLocation` of its
+   * own, the same inferred value StepRowEditor's own placeholder
+   * shows. */
+  previousRoad: string | null;
+  /** Every known school, by name - same lookup StepRowEditor uses, so
+   * this collapsed row's own subheading agrees with the expanded
+   * editor about whether `location` is a school (see isPlainLocation
+   * below) rather than showing a stray "& <previous road>" next to a
+   * school name the editor itself already treats as its own address. */
+  schools: Record<string, SchoolInfo>;
   status: RowResolutionStatus | undefined;
   /** True while a different row's editor is open - this row's own
    * pencil (and drag handle) are disabled rather than hidden, so it's
@@ -273,27 +288,40 @@ function StepRowView({
   onDragEnd: (e: ReactPointerEvent) => void;
 }) {
   const isStop = stopNumber !== null;
+  const actionLower = row.action.toLowerCase();
+  const isPlaceAction = actionLower === "stop" || actionLower === "depart" || actionLower === "arrive";
   // Only "Left"/"Right" actually have a direction (and the mirrored
   // TurnArrow to go with it) - every other action (Continue, U-Turn,
-  // Turn Around, Proceed, Pull Over, Return) reads as its own plain
-  // label instead, same as the real driving screen falls back to a
-  // text-only heading once a step's own `direction` is unset
-  // (StepContent's own doc comment).
-  const turnDirection =
-    row.action.toLowerCase() === "left" ? "left" : row.action.toLowerCase() === "right" ? "right" : null;
-  // A stop's own from/onto pair reads as an intersection ("Main St &
-  // Oak Ave"); a turn's reads as the maneuver itself ("Main St onto
-  // Oak Ave") - same shape, different connector word, both set apart
-  // from the road names themselves (smaller, gray, italic) so neither
-  // reads as though it were part of a name.
-  const connector = isStop ? "&" : "onto";
-  const subheading = row.ontoAt ? (
+  // Turn Around, Proceed, Pull Over, Return, Depart, Arrive) gets its
+  // own icon instead (ActionIcon, icons.tsx) rather than reading as
+  // plain, icon-less text the way it used to, same as the real driving
+  // screen now does too (StepContent's own doc comment).
+  const turnDirection = actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
+  // A place action's own from/location pair reads as an intersection
+  // ("Main St & Oak Ave"); a turn's reads as the maneuver itself ("Main
+  // St onto Oak Ave") - same shape, different connector word, both set
+  // apart from the road names themselves (smaller, gray, italic) so
+  // neither reads as though it were part of a name. `effectiveFrom`
+  // falls back to the tracked `previousRoad` when this row has no
+  // explicit `fromLocation` of its own, so the subheading previews the
+  // real intersection this row will actually resolve to - except for a
+  // plain address (a house number out front) or a location matching a
+  // known school by name, neither of which has a "from" road to pair
+  // with at all (same isPlainLocation reasoning as StepRowEditor's
+  // own), so this never shows a stray "& <inherited road>" next to
+  // what the expanded editor already treats as its own address.
+  const isPlainLocation =
+    /^\d/.test(row.location.trim()) ||
+    Object.keys(schools).some((name) => name.trim().toLowerCase() === row.location.trim().toLowerCase());
+  const effectiveFrom = isPlainLocation ? null : row.fromLocation || previousRoad;
+  const connector = isPlaceAction ? "&" : "onto";
+  const subheading = effectiveFrom ? (
     <>
-      {row.fromAt} <span className="text-sm font-normal text-zinc-400 italic">{connector}</span>{" "}
-      {row.ontoAt}
+      {effectiveFrom} <span className="text-sm font-normal text-zinc-400 italic">{connector}</span>{" "}
+      {row.location}
     </>
   ) : (
-    row.fromAt || null
+    row.location || null
   );
 
   return (
@@ -316,13 +344,21 @@ function StepRowView({
                   </span>
                 )}
               </>
+            ) : actionLower === "depart" || actionLower === "arrive" ? (
+              <>
+                <ActionIcon action={row.action} className="h-4 w-4 shrink-0 text-blue-600" />
+                {row.action}
+              </>
             ) : turnDirection ? (
               <>
                 <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
                 Turn {turnDirection === "left" ? "Left" : "Right"}
               </>
             ) : (
-              row.action || "Turn"
+              <>
+                <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
+                {row.action || "Turn"}
+              </>
             )}
           </span>
           {isStop && row.riderCount && (
@@ -403,26 +439,25 @@ function StepRowView({
  * Stop/Turn Left/Turn Right changes how this row's own location gets
  * resolved, not just how it displays.
  *
- * One location box, not two: a road name a driver would type again
- * for every row ("from Main St, onto Elm St, from Elm St, onto Oak
- * Ave, ...") is already implied by whatever the *previous* row ended
- * up naming as its own road (deriveWaypoints.ts's own "current road"
- * tracking - see `previousRoad` below) - so this box only ever asks
- * for the one new thing about this row: the destination road/cross
- * street, or a literal address for a stop that's genuinely just an
- * address (detected by its own leading house number, the one reliable
- * signal telling "123 Maple Dr" apart from a bare road name). Which
- * mode a given row opens in is decided once, from its own existing
- * content, not re-decided while typing - so a fresh Add Step row
- * (blank, no `ontoAt`) with a real `previousRoad` already known opens
- * in destination mode with that road shown as read-only context above
- * the box, matching how EditRouteScreen's `addRow` already pre-fills a
- * new row's `fromAt` with it.
+ * Two real fields, not one: `location` (always required - this row's
+ * own real position) and `fromLocation` (optional - the road it's
+ * approached from, used to pair with `location` as an intersection).
+ * `fromLocation` shows the tracked `previousRoad` as its own
+ * placeholder whenever it's blank, so a road name a driver would
+ * otherwise retype for every row is still implied rather than asked
+ * for again - but unlike the single-box version this replaced, it's a
+ * real, always-editable input, not a read-only label. That distinction
+ * matters for real data: a district's own sheet can (and did - see
+ * 120-AM-HS.csv's "David Way" for what should be "Davids Way") type an
+ * explicit fromLocation with its own typo, which the old read-only
+ * label had no way to ever fix.
  */
 function StepRowEditor({
   row,
   stopNumber,
   previousRoad,
+  schools,
+  routeSchoolName,
   status,
   fetching,
   fetchLocked,
@@ -440,6 +475,17 @@ function StepRowEditor({
    * the very first row, or when nothing earlier has named a real road
    * yet. */
   previousRoad: string | null;
+  /** Every known school, by name - the same lookup the Route Details
+   * form's own School <select> uses. Lets a Depart/Arrive row (or any
+   * row whose typed location happens to match) show that school's real
+   * address underneath, and offers a quick-pick shortcut for Depart/
+   * Arrive rows instead of having to type a school's exact name. */
+  schools: Record<string, SchoolInfo>;
+  /** This route's own school (Route Details form) - defaults a fresh
+   * Depart/Arrive row's location the moment its Type is picked, since
+   * arriving at or departing from *some other* school is the rare case
+   * (a field trip, say), not the default one. */
+  routeSchoolName: string;
   status: RowResolutionStatus | undefined;
   /** This row's own request is actually in flight right now - drives
    * the globe button's spinner specifically. */
@@ -467,33 +513,51 @@ function StepRowEditor({
   // between Stop and Turn Left/Right here updates the Side/Riders
   // fields and the subtitle below immediately, not just after Update
   // commits the draft back.
-  const isStop = row.action.toLowerCase() === "stop";
+  const actionLower = row.action.toLowerCase();
+  const isStop = actionLower === "stop";
+  const isSchoolAction = actionLower === "depart" || actionLower === "arrive";
   // Only "Left"/"Right" actually have a direction (and the mirrored
   // TurnArrow to go with it) - every other action (Continue, U-Turn,
-  // Turn Around, Proceed, Pull Over, Return) reads as its own plain
-  // label in the subtitle below instead, same as StepRowView's own
-  // identical turnDirection derivation for the collapsed row.
-  const turnDirection =
-    row.action.toLowerCase() === "left" ? "left" : row.action.toLowerCase() === "right" ? "right" : null;
+  // Turn Around, Proceed, Pull Over, Return, Depart, Arrive) gets its
+  // own icon instead (ActionIcon) in the subtitle below, same as
+  // StepRowView's own identical derivation for the collapsed row.
+  const turnDirection = actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
 
-  // A plain address (a stop with no cross street, its own house number
-  // out front) has no "from road" concept at all - the box edits
-  // `fromAt` directly and no from-context line shows. Everything else
-  // (an intersection-based stop, any turn) edits `ontoAt`, with
-  // `fromAt` supplied from the row's own existing value or, once
-  // that's empty, `previousRoad` - never re-typed by hand.
-  const [isPlainAddress] = useState(() => isStop && !row.ontoAt && /^\d/.test(row.fromAt.trim()));
-  const [derivedFrom] = useState(() => (row.ontoAt ? row.fromAt : previousRoad) || row.fromAt || "");
-  const [destination, setDestination] = useState(() =>
-    isPlainAddress ? row.fromAt : row.ontoAt || row.fromAt,
-  );
+  // A school this row's own `location` text matches by name (exact,
+  // case/space-insensitive) - true for a Depart/Arrive row defaulted or
+  // quick-picked below, but checked for every action, not just those
+  // two, so a plain Stop whose typed text happens to already name a
+  // known school (an admin typing a route by hand, not importing one)
+  // gets the same address-underneath confirmation for free. A matched
+  // school reads as its own specific point, not part of an
+  // intersection - same as a house-numbered address - so it also
+  // suppresses the "From" field below the same way isPlainLocation
+  // already does for one.
+  const matchedSchool = useMemo(() => {
+    const target = row.location.trim().toLowerCase();
+    if (!target) return null;
+    const entry = Object.entries(schools).find(([name]) => name.trim().toLowerCase() === target);
+    return entry ? { name: entry[0], info: entry[1] } : null;
+  }, [row.location, schools]);
 
-  function handleDestinationChange(value: string) {
-    setDestination(value);
-    if (isPlainAddress) {
-      onChange({ fromAt: value, ontoAt: "" });
+  // A plain address (a house number out front) or a matched school
+  // (see above) each name one specific point on their own - neither has
+  // a "from road" concept the way an intersection does, so the From
+  // field below stays hidden for either rather than asking for context
+  // that wouldn't mean anything.
+  const isPlainLocation = /^\d/.test(row.location.trim()) || matchedSchool !== null;
+
+  function handleTypeChange(nextAction: string) {
+    const nextIsSchoolAction = nextAction.toLowerCase() === "depart" || nextAction.toLowerCase() === "arrive";
+    // Defaults a fresh Depart/Arrive row straight to this route's own
+    // school - overridable by picking a different one from the quick-
+    // pick below or just typing over it - rather than opening on a
+    // blank field for what's almost always the same one school every
+    // time.
+    if (nextIsSchoolAction && !row.location && routeSchoolName) {
+      onChange({ action: nextAction, location: routeSchoolName });
     } else {
-      onChange({ fromAt: derivedFrom, ontoAt: value });
+      onChange({ action: nextAction });
     }
   }
 
@@ -502,10 +566,42 @@ function StepRowEditor({
   // (handleSave below) rather than live on every keystroke, so a
   // half-typed number is never mistaken for a real coordinate. Accepts
   // a space, comma, or tab between the two values.
+  const resolvedLat = status?.status === "resolved" ? status.lat : null;
+  const resolvedLon = status?.status === "resolved" ? status.lon : null;
   const [coordsText, setCoordsText] = useState(() =>
-    status?.status === "resolved" ? `${status.lat}, ${status.lon}` : "",
+    resolvedLat != null && resolvedLon != null ? `${resolvedLat}, ${resolvedLon}` : "",
   );
   const [coordsError, setCoordsError] = useState(false);
+
+  // Re-syncs the box the moment a Fetch actually lands - `status` is
+  // derived from the shared cache (EditRouteScreen's own `cache` state),
+  // which fetchLocation already updates as soon as the response comes
+  // back, but coordsText above only ever seeded itself once, on mount.
+  // Without this, a successful fetch was invisible in this box until
+  // Save closed and reopened the editor (Save reads straight from the
+  // cache, not from coordsText, so the coordinates were never actually
+  // lost - just not shown here yet). Adjusting state directly during
+  // render (React's own documented pattern for this, guarded so it only
+  // runs when the resolved value actually changed) rather than in a
+  // `useEffect` - an effect here would still land the update, just one
+  // extra render late, and set-state-in-effect is a real lint error in
+  // this project. Tracking the coordinates themselves, not `status` as
+  // a whole, means this only fires when a fetch (or another row's own
+  // resolution) actually changes the real value - never on every
+  // render, and never clobbering a coordinate the admin is still
+  // mid-typing by hand.
+  const [lastSyncedCoords, setLastSyncedCoords] = useState<[number, number] | null>(
+    resolvedLat != null && resolvedLon != null ? [resolvedLat, resolvedLon] : null,
+  );
+  if (
+    resolvedLat != null &&
+    resolvedLon != null &&
+    (lastSyncedCoords?.[0] !== resolvedLat || lastSyncedCoords?.[1] !== resolvedLon)
+  ) {
+    setLastSyncedCoords([resolvedLat, resolvedLon]);
+    setCoordsText(`${resolvedLat}, ${resolvedLon}`);
+    setCoordsError(false);
+  }
 
   function handleSave() {
     const trimmed = coordsText.trim();
@@ -544,10 +640,14 @@ function StepRowEditor({
             <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-500">
               {isStop ? (
                 <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
+              ) : isSchoolAction ? (
+                <ActionIcon action={row.action} className="h-4 w-4 shrink-0 text-blue-600" />
               ) : turnDirection ? (
                 <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
-              ) : null}
-              {formatWaypointInstruction(row, stopNumber)}
+              ) : (
+                <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
+              )}
+              {formatWaypointInstruction(row, stopNumber, isPlainLocation ? "" : row.fromLocation || previousRoad || "")}
             </p>
           </div>
           <button
@@ -562,11 +662,7 @@ function StepRowEditor({
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Field label="Type">
-          <select
-            className={inputClass}
-            value={row.action}
-            onChange={(e) => onChange({ action: e.target.value })}
-          >
+          <select className={inputClass} value={row.action} onChange={(e) => handleTypeChange(e.target.value)}>
             <option value="Stop">Stop</option>
             <option value="Left">Turn Left</option>
             <option value="Right">Turn Right</option>
@@ -576,6 +672,8 @@ function StepRowEditor({
             <option value="Proceed">Proceed</option>
             <option value="Pull Over">Pull Over</option>
             <option value="Return">Return</option>
+            <option value="Depart">Depart</option>
+            <option value="Arrive">Arrive</option>
           </select>
         </Field>
         {isStop ? (
@@ -595,22 +693,77 @@ function StepRowEditor({
         )}
       </div>
 
-      <div className="mt-2">
-        {!isPlainAddress && (
-          <p className="mb-1 text-xs text-zinc-400">
-            From <span className="font-semibold text-zinc-500">{derivedFrom || "start of route"}</span>
-          </p>
+      {/* Depart/Arrive's own quick-pick - fills Location with a
+          chosen school's exact name (below) rather than requiring one
+          typed out by hand. Left out for every other action - a turn
+          or a plain stop names a road or address, never a school. */}
+      {isSchoolAction && Object.keys(schools).length > 0 && (
+        <div className="mt-2">
+          <Field label="School">
+            <select
+              className={inputClass}
+              value={matchedSchool?.name ?? ""}
+              onChange={(e) => {
+                if (e.target.value) onChange({ location: e.target.value });
+              }}
+            >
+              <option value="">
+                {matchedSchool ? "— Other (type below) —" : "— Not a listed school (type below) —"}
+              </option>
+              {Object.keys(schools)
+                .sort((a, b) => a.localeCompare(b))
+                .map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+            </select>
+          </Field>
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-col gap-2">
+        {/* Comes before Location, not after - reads in real driving
+            order ("from Main St, onto Elm St"), and doubles as this
+            row's only escape hatch for fixing a bad inference or an
+            explicit typo (e.g. 120-AM-HS.csv's real "David Way," which
+            should be "Davids Way") - the old single-box editor never
+            exposed this at all, only a read-only label. Hidden for a
+            plain address or a matched school (see isPlainLocation
+            above) - neither is part of an intersection, so there's no
+            "from" road to name. */}
+        {!isPlainLocation && (
+          <Field label="From (optional)">
+            <input
+              className={inputClass}
+              value={row.fromLocation}
+              onChange={(e) => onChange({ fromLocation: e.target.value })}
+              placeholder={previousRoad || "start of route"}
+            />
+          </Field>
         )}
-        <Field label={isPlainAddress ? "Address" : "Destination / cross street"}>
+        <Field label="Location">
           <input
             className={`${inputClass} ${
               status?.status === "unresolved" ? "border-red-400 focus:border-red-500 focus:ring-red-500" : ""
             }`}
-            value={destination}
-            onChange={(e) => handleDestinationChange(e.target.value)}
-            placeholder={isPlainAddress ? "123 Maple Dr" : "Elm St"}
+            value={row.location}
+            onChange={(e) => onChange({ location: e.target.value })}
+            placeholder={isSchoolAction ? "LaVergne High School" : /^\d/.test(row.location) ? "123 Maple Dr" : "Elm St"}
           />
         </Field>
+        {/* A location that matches a known school by name - typed by
+            hand, quick-picked above, or defaulted from this route's
+            own school - reads as linked to that real school entity,
+            not just a text string a geocoder has to guess at: its
+            actual street address shows right underneath as
+            confirmation. */}
+        {matchedSchool && (
+          <p className="-mt-1 flex items-center gap-1 text-xs text-zinc-500">
+            <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+            {matchedSchool.info.address}
+          </p>
+        )}
       </div>
 
       <div className="mt-2">
@@ -780,16 +933,14 @@ function AddStepButton({ onClick, disabled }: { onClick: () => void; disabled: b
 /** The paste box's own quick reference - what column headers this
  * screen's import (parseRouteImport.ts) recognizes and a few example
  * rows, so a pasted/uploaded sheet's shape doesn't have to be guessed
- * at. Leads with the newer, simpler `location` shape (one road per
- * row, action or direction first - the same "derive from whatever
- * road was already tracked" logic a lone-value turn already used, now
- * extended to every row) since that's the one worth recommending to
- * someone building a sheet from scratch; the older `from_at`/`onto_at`
- * pair (spelling out both sides of every intersection by hand) is
- * still fully supported too, just called out as the alternative it now
- * is rather than shown as the only shape. Same modal shell as
- * StartScreen's AllStopsModal (full-screen dim, centered card,
- * backdrop tap or the corner X to close). */
+ * at. Leads with `location` alone (one road per row, action or
+ * direction first) - the road it crosses is figured out from whichever
+ * road the route was already on, the same "current road" tracking
+ * deriveWaypoints.ts always did - and calls out the optional
+ * `from_location` column for spelling out both sides of an
+ * intersection by hand instead. Same modal shell as StartScreen's
+ * AllStopsModal (full-screen dim, centered card, backdrop tap or the
+ * corner X to close). */
 function StopsFormatModal({ onClose }: { onClose: () => void }) {
   const exampleRows: string[][] = [
     ["Stop", "123 Maple Dr", "1", "Left", "Ring doorbell"],
@@ -854,11 +1005,11 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
             </table>
           </div>
           <p className="mt-3 text-sm text-zinc-600">
-            Prefer to spell out both sides of every intersection yourself? A sheet with{" "}
-            <code className="font-mono text-xs">from_at</code> and{" "}
-            <code className="font-mono text-xs">onto_at</code> columns instead of{" "}
+            Prefer to spell out both sides of every intersection yourself? Add a{" "}
+            <code className="font-mono text-xs">from_location</code> column alongside{" "}
             <code className="font-mono text-xs">location</code> (e.g.{" "}
-            <code className="font-mono text-xs">Stop, Main St, Oak Ave, 3</code>) still works too.
+            <code className="font-mono text-xs">Stop, Main St, Oak Ave, 3</code>) - only needed
+            where the road can&apos;t already be figured out from context.
           </p>
           <p className="mt-3 text-sm text-zinc-600">
             No header row works too - one stop or turn per line, same as the paste box&apos;s own
@@ -1462,24 +1613,23 @@ export function EditRouteScreen({
   // mode "add" only - parses the paste/upload box's raw text.
   const parseResult = useMemo(() => parseRouteImport(stepsText), [stepsText]);
   // unresolvedRequiredFields gives back ImportColumnField's own
-  // camelCase identifiers ("fromAt") - meaningless to someone looking
-  // at their own sheet's header row, so this maps each one to the
-  // actual column name(s) they'd need to add instead (see
-  // StopsFormatModal for the same two accepted spellings of "the road
-  // this row happens on").
+  // camelCase identifiers ("fromLocation") - meaningless to someone
+  // looking at their own sheet's header row, so this maps each one to
+  // the actual column name they'd need to add instead (see
+  // StopsFormatModal for the sheet's own real header names).
   const missingRequired = useMemo(
     () =>
       unresolvedRequiredFields(parseResult.mapping).map((field) =>
-        field === "fromAt" ? "location (or from_at)" : field,
+        field === "fromLocation" ? "from_location" : field,
       ),
     [parseResult],
   );
 
   // mode "edit" only - every row needs at least an action and a
-  // from_at before deriveWaypoints can make sense of any of them (it
+  // location before deriveWaypoints can make sense of any of them (it
   // tracks "current road" across the whole list in order).
   const hasIncompleteRow = useMemo(
-    () => rows.some((r) => !r.action.trim() || !r.fromAt.trim()),
+    () => rows.some((r) => !r.action.trim() || !r.location.trim()),
     [rows],
   );
   const { waypoints, previousRoads } = useMemo(() => {
@@ -1588,21 +1738,18 @@ export function EditRouteScreen({
   // of this specific row does differently from canceling an edit to
   // one that already existed.
   function addRow(index: number) {
-    // Pre-fills the new row's own `fromAt` with whatever road was
-    // already tracked heading into this exact position - not shown as
-    // an editable "From" box (StepRowEditor's own destination-mode
-    // logic reads this straight off the row), just there so the row
-    // doesn't silently regress to "no from-context at all" the moment
-    // it's created, before its own StepRowEditor instance has even
-    // mounted to compute it fresh.
-    const inheritedRoad = previousRoads[index] ?? "";
+    // fromLocation starts blank, same as every other new row - the
+    // road already tracked heading into this exact position shows
+    // live as StepRowEditor's own "From" placeholder (its own
+    // `previousRoad` prop), so there's nothing to pre-fill into the
+    // row's real data just to avoid a moment of "no context shown."
     setRows((prev) => {
       const next = [...prev];
-      next.splice(index, 0, { ...BLANK_ROW, fromAt: inheritedRoad });
+      next.splice(index, 0, BLANK_ROW);
       return next;
     });
     setExpandedIndex(index);
-    setDraftRow({ ...BLANK_ROW, fromAt: inheritedRoad });
+    setDraftRow(BLANK_ROW);
     setNewlyAddedIndex(index);
     setDirty(true);
   }
@@ -2322,6 +2469,8 @@ export function EditRouteScreen({
                     <StepRowView
                       row={row}
                       stopNumber={stopNumber}
+                      previousRoad={previousRoads[index] ?? null}
+                      schools={schools}
                       status={waypoint ? resolutionRows[index] : undefined}
                       locked={expandedIndex !== null}
                       onEdit={() => openRowEditor(index)}
@@ -2379,6 +2528,8 @@ export function EditRouteScreen({
                 row={draftRow}
                 stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
                 previousRoad={previousRoads[index] ?? null}
+                schools={schools}
+                routeSchoolName={schoolName}
                 status={draftStatus}
                 fetching={draftWaypoint ? fetchingStepIds.has(draftWaypoint.stepId) : false}
                 fetchLocked={singleFetchCoolingDown}

@@ -26,8 +26,8 @@ export async function GET(
 
   const steps: RawRouteRow[] = route.steps.map((step) => ({
     action: step.action,
-    fromAt: step.fromAt,
-    ontoAt: step.ontoAt,
+    location: step.location,
+    fromLocation: step.fromLocation,
     riderCount: step.riderCount,
     side: step.side,
     notes: step.notes,

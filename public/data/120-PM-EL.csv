@@ -1,21 +1,21 @@
-time	action	from_at	onto_at	rider_count	notes
-14:30:00	stop	LaVergne Lake Elementary School
-14:45:00	stop	Lake Forest Dr	Davids Way
-14:45:00	stop	Davids Way	Randall Ln
-14:46:00	stop	Davids Way	Little John Cv
-14:46:00	stop	Davids Way	Forest Ridge Dr
-14:47:00	stop	606 Rocky Ridge Cr
-14:48:00	stop	Rocky Ridge Cr	Laurel Cv
-14:48:00	stop	Rocky Ridge Cr	Sherry Cv
-14:49:00	stop	Rocky Ridge Cr	Meagan Cv
-14:49:00	stop	Forest Ridge Dr	Rocky Ridge Cr
-14:49:00	stop	Forest Ridge Dr	Pine Ridge Ln
-14:50:00	stop	Blue Lake Ln	Forest Ridge Dr
-14:50:00	stop	Forest Ridge Dr	Hollandale Rd
-14:51:00	stop	Cedar Bend Ct	Holland Ridge Dr
-14:52:00	stop	Cedar Bend Ln	Lake Ridge Dr
-14:54:00	stop	Riverwood Dr	Lake Ridge Dr
-14:55:00	stop	Holland Ridge Dr	Riverwood Ct
-14:56:00	stop	Lake Forest Dr	Holland Ridge Dr
-14:57:00	stop	310 Lake Forest Dr
-14:57:00	stop	Lake Forest Dr	Alisa Cv
+time	action	location	from_location	rider_count	notes
+14:30:00	stop	LaVergne Lake Elementary School			
+14:45:00	stop	Davids Way	Lake Forest Dr		
+14:45:00	stop	Randall Ln	Davids Way		
+14:46:00	stop	Little John Cv	Davids Way		
+14:46:00	stop	Forest Ridge Dr	Davids Way		
+14:47:00	stop	606 Rocky Ridge Cr			
+14:48:00	stop	Laurel Cv	Rocky Ridge Cr		
+14:48:00	stop	Sherry Cv	Rocky Ridge Cr		
+14:49:00	stop	Meagan Cv	Rocky Ridge Cr		
+14:49:00	stop	Rocky Ridge Cr	Forest Ridge Dr		
+14:49:00	stop	Pine Ridge Ln	Forest Ridge Dr		
+14:50:00	stop	Forest Ridge Dr	Blue Lake Ln		
+14:50:00	stop	Hollandale Rd	Forest Ridge Dr		
+14:51:00	stop	Holland Ridge Dr	Cedar Bend Ct		
+14:52:00	stop	Lake Ridge Dr	Cedar Bend Ln		
+14:54:00	stop	Lake Ridge Dr	Riverwood Dr		
+14:55:00	stop	Riverwood Ct	Holland Ridge Dr		
+14:56:00	stop	Holland Ridge Dr	Lake Forest Dr		
+14:57:00	stop	310 Lake Forest Dr			
+14:57:00	stop	Alisa Cv	Lake Forest Dr		

@@ -6,6 +6,7 @@ import { RouteProgressBar } from "./RouteProgressBar";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
 import {
+  ActionIcon,
   CheckCircleIcon,
   CheckIcon,
   MapPinIcon,
@@ -434,9 +435,19 @@ function TurnContent({ step }: { step: NavigationStep }) {
           className="h-[clamp(3.25rem,12vh,8rem)] w-[clamp(3.25rem,12vh,8rem)]"
         />
       ) : (
-        <h1 className="font-heading text-[clamp(1.25rem,4vh,2.25rem)] font-black tracking-tight">
-          {step.heading}
-        </h1>
+        <div className="flex flex-col items-center gap-1">
+          {/* Every non-Left/Right action (Continue, Proceed, Pull Over,
+              Depart, Arrive, ...) used to fall back to bare text with
+              no icon at all, unlike a real left/right turn's own big
+              TurnArrow - ActionIcon (icons.tsx) gives each one its own
+              glyph instead, same mapping StepRowEditor's row list uses
+              admin-side, so a driver and an admin read the same action
+              the same way. */}
+          <ActionIcon action={step.heading ?? ""} className="h-[clamp(2rem,7vh,4rem)] w-[clamp(2rem,7vh,4rem)]" />
+          <h1 className="font-heading text-[clamp(1.25rem,4vh,2.25rem)] font-black tracking-tight">
+            {step.heading}
+          </h1>
+        </div>
       )}
 
       {step.subheading && (

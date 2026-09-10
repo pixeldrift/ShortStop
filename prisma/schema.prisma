@@ -134,8 +134,27 @@ model RouteStep {
   route      Route   @relation(fields: [routeId], references: [id], onDelete: Cascade)
   sequence   Int
   action     String
-  fromAt     String
-  ontoAt     String
+  // The row's own real position - a turn's destination road, or a
+  // stop's own road/intersection/address - always required, always
+  // exactly what the district's sheet (or an admin) says this row is
+  // at. Replaces the old ontoAt (see the "location + from_location
+  // rename" migration) - that name never distinguished "this row's own
+  // real place" from fromLocation's "context road," and the ambiguity
+  // meant a row whose own from-road had a typo (the district's sheet
+  // literally wrote "David Way" for a real "Davids Way") had no field
+  // to fix it in at all - EditRouteScreen.tsx only ever showed
+  // fromLocation as a read-only label, never an input.
+  location   String
+  // Optional context: which road this row's own location is being
+  // approached from, used to build an intersection pair together with
+  // `location` when that alone isn't a full address. Blank means
+  // "infer it" - deriveWaypoints.ts still tracks whichever road the
+  // route was last known to be on, the same "current road" logic as
+  // before, and uses that when this is empty - but unlike the old
+  // fromAt, this is a real, always-editable field now, not a read-only
+  // inference with no way to override a bad guess or fix a typo in an
+  // explicitly-given value.
+  fromLocation String
   riderCount String
   side       String
   notes      String
