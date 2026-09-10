@@ -212,10 +212,10 @@ export function StartScreen({
                 AllStopsModal's title, TopBar's route badge), rather than
                 this one staying vertically centered regardless of trip
                 type. */}
-            <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
+            <h1 className="font-heading relative -mt-1 text-4xl leading-[0.7083] font-black tracking-tight">
               Route {route.routeNumber}
               <span
-                className={`absolute left-full ml-2 flex items-center gap-1 text-lg leading-none text-blue-500 ${
+                className={`absolute left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500 ${
                   route.tripType === "dropoff" ? "top-0" : "bottom-0"
                 }`}
               >
@@ -416,7 +416,7 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
           <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
             Route {route.routeNumber}
             <span
-              className={`flex items-center gap-1 text-sm leading-none text-blue-500 ${
+              className={`flex items-center gap-1 text-sm leading-[0.75] text-blue-500 ${
                 route.tripType === "dropoff" ? "self-start" : "self-end"
               }`}
             >

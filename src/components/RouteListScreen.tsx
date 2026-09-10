@@ -680,38 +680,30 @@ export function RouteListScreen({
                     onClick={() => (adminMode ? onEditRoute(route) : onSelect(route))}
                     className="col-span-3 grid grid-cols-[5.75rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-zinc-100"
                   >
-                    {/* items-start/items-end alone only ever gets the
-                        AM/PM badge flush against the ROUTE NUMBER's own
-                        edge (items-start/items-end align to the tallest
-                        flex child's own box, which is this number, not
-                        the row's real outer edge) - that box already
-                        sits inset from the row's true top/bottom by
-                        exactly this row's own py-3 (see the row's
-                        className above), so the badge was landing a
-                        whole 12px short of the row's real edge (the
-                        divider) no matter which side it was already
-                        flush against. translate-y-3 (the same 0.75rem
-                        as py-3, not a coincidence) nudges it the rest
-                        of the way so it actually touches that edge -
-                        stretching the surrounding boxes to reach it
-                        properly (the "correct" CSS answer) doesn't
-                        work here since stretch only ever fills a
-                        parent's *content* box, never bleeds into its
-                        padding the way an explicit translate can. */}
+                    {/* leading-none (line-height: 1) still isn't tight -
+                        Ubuntu at this weight reports a font-box taller
+                        than any digit or all-caps letter actually needs
+                        (no ascenders/descenders in "120" or "AM" to make
+                        room for), so a 24px line still measured 24px
+                        tall around 17px of real digit ink, ~3.5px of
+                        dead space above and below - same story for the
+                        12px AM/PM label around its own 9px of cap-height
+                        ink. leading-[0.7083]/leading-[0.75] are exactly
+                        those two ratios (17/24, 9/12) - unitless so they
+                        keep scaling correctly, not a magic one-off pixel
+                        value - and were confirmed against the live
+                        rendered box (not just canvas metrics) before
+                        landing here. */}
                     <div
                       className={`flex gap-1.5 ${
                         route.tripType === "dropoff" ? "items-start" : "items-end"
                       }`}
                     >
-                      <span className="font-heading text-2xl leading-none font-black">
+                      <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
-                      <div
-                        className={`flex items-center gap-0.5 text-blue-500 ${
-                          route.tripType === "dropoff" ? "-translate-y-3" : "translate-y-3"
-                        }`}
-                      >
-                        <span className="font-heading text-xs leading-none font-black">
+                      <div className="flex items-center gap-0.5 text-blue-500">
+                        <span className="font-heading text-xs leading-[0.75] font-black">
                           {tripTypeLabel(route.tripType)}
                         </span>
                         <TripTypeIcon tripType={route.tripType} className="h-3 w-3" />

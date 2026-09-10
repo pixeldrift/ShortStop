@@ -54,10 +54,10 @@ export function TopBar({
               AM/PM badge in the app now shares (RouteListScreen's own
               rows, StartScreen's title, AllStopsModal's title), rather
               than this one badge alone staying vertically centered. */}
-          <p className="font-heading relative -mt-1 text-3xl font-black tracking-tight">
+          <p className="font-heading relative -mt-1 text-3xl leading-[0.7083] font-black tracking-tight">
             {routeNumber}
             <span
-              className={`absolute left-full ml-1.5 flex items-center gap-1 text-base leading-none text-blue-500 ${
+              className={`absolute left-full ml-1.5 flex items-center gap-1 text-base leading-[0.75] text-blue-500 ${
                 tripType === "dropoff" ? "top-0" : "bottom-0"
               }`}
             >
