@@ -518,9 +518,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleTripType(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
-                      active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
-                    }`}
+                    className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
                   >
                     {toggle.label}
                   </button>
@@ -537,9 +535,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleSchoolLevel(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
-                      active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
-                    }`}
+                    className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
                   >
                     {toggle.label}
                   </button>
@@ -562,9 +558,7 @@ export function RouteListScreen({
                         type="button"
                         onClick={() => togglePublishStatus(toggle.value)}
                         aria-pressed={active}
-                        className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
-                          active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
-                        }`}
+                        className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
                       >
                         {toggle.label}
                       </button>
@@ -694,6 +688,19 @@ export function RouteListScreen({
                         value - and were confirmed against the live
                         rendered box (not just canvas metrics) before
                         landing here. */}
+                    {/* items-start/items-end on the outer row aligns the
+                        badge's own div to the route number's own top/
+                        bottom edge - but that div also has to stop
+                        centering its own two children (items-center) to
+                        actually deliver "flush," since the icon (h-3,
+                        12px) is taller than the now-trimmed text (~9px,
+                        leading-[0.75] below); items-center would leave
+                        the text itself sitting short of the div's own
+                        edge by half that difference even once the div
+                        itself is correctly placed. Matching the same
+                        start/end here instead puts the *text* flush
+                        against the number, icon included, not just the
+                        div loosely centered around it. */}
                     <div
                       className={`flex gap-1.5 ${
                         route.tripType === "dropoff" ? "items-start" : "items-end"
@@ -702,7 +709,11 @@ export function RouteListScreen({
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
-                      <div className="flex items-center gap-0.5 text-blue-500">
+                      <div
+                        className={`flex gap-0.5 text-blue-500 ${
+                          route.tripType === "dropoff" ? "items-start" : "items-end"
+                        }`}
+                      >
                         <span className="font-heading text-xs leading-[0.75] font-black">
                           {tripTypeLabel(route.tripType)}
                         </span>
