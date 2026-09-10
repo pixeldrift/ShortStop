@@ -32,6 +32,9 @@ export type TurnMarker = { waypointKey: string; label: string };
 // town" starting view.
 const LA_VERGNE_CENTER: [number, number] = [36.0134, -86.5581];
 const DEFAULT_ZOOM = 13;
+// Roughly "which side of the street" zoom - what driving mode flies to
+// for the current step, once its own coordinates are known.
+const STREET_ZOOM = 17;
 
 // CARTO's free Voyager basemap rather than tile.openstreetmap.org
 // directly: same OSM data underneath (styled to look close to the
@@ -108,6 +111,23 @@ function schoolMarkerHtml(): string {
   );
 }
 
+// Driving mode's own "follow the current step" camera move - a plain
+// function (not a component method) so it can be called both from the
+// small reactive effect below (on every step change) and directly from
+// the mount effect's own cache-resolution callback (for the very first
+// frame), without needing a ref-stored closure to reach it from render.
+function recenterOnActive(
+  map: LeafletMap | null,
+  cache: WaypointCache | null,
+  mode: "overview" | "driving",
+  activeWaypointKey: string | null | undefined,
+) {
+  if (!map || !cache || mode !== "driving" || !activeWaypointKey) return;
+  const entry = cache[activeWaypointKey];
+  if (!entry || entry.status !== "ok") return;
+  map.flyTo([entry.lat, entry.lon], STREET_ZOOM, { duration: 0.75 });
+}
+
 /**
  * A real, pannable/zoomable OpenStreetMap tile map - replaces the
  * static "Demo only placeholder, not actual map" JPEG that used to sit
@@ -135,6 +155,8 @@ export function RouteMap({
   school,
   tripType,
   waypointsUrl,
+  mode = "driving",
+  activeWaypointKey,
 }: {
   className?: string;
   /** A pin per stop, at whatever position the geocode cache
@@ -185,8 +207,29 @@ export function RouteMap({
    * `path`/`school` entry (nothing's geocoded it yet) is simply
    * skipped, same as a fetch failure resolving to an empty cache below. */
   waypointsUrl: string;
+  /** "overview" shows just the route path and a single starting-location
+   * pin (the school for a dropoff route, otherwise the first stop),
+   * framed to fit the whole route - the route-info screen and the
+   * depot/Ready-to-Depart phase, before the driver has started stepping
+   * through anything. "driving" (the default, matching every caller's
+   * behavior before this prop existed) shows every stop/turn pin and
+   * follows `activeWaypointKey` at street level instead of framing the
+   * whole route at once. */
+  mode?: "overview" | "driving";
+  /** The current step's own waypointKey - driving mode only. The map
+   * flies to this location's cache entry (street zoom) whenever it
+   * changes, rather than refitting bounds, so advancing through steps
+   * feels like following along instead of repeatedly reframing the
+   * whole route. Ignored in overview mode. */
+  activeWaypointKey?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Populated once the mount effect below actually creates the map/
+  // resolves the waypoint cache - lets the small reactive effect further
+  // down (recenterOnActive) reach them without being part of the mount
+  // effect's own (deliberately empty) dependency array.
+  const mapRef = useRef<LeafletMap | null>(null);
+  const cacheRef = useRef<WaypointCache | null>(null);
   // Read inside the mount effect's async callback below rather than
   // added as that effect's own dependency - `stops`/`turns`/`path` are
   // fresh arrays every render, and re-running the whole effect on every
@@ -221,6 +264,24 @@ export function RouteMap({
   useEffect(() => {
     waypointsUrlRef.current = waypointsUrl;
   }, [waypointsUrl]);
+  const modeRef = useRef(mode);
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+  const activeWaypointKeyRef = useRef(activeWaypointKey);
+  useEffect(() => {
+    activeWaypointKeyRef.current = activeWaypointKey;
+  }, [activeWaypointKey]);
+
+  // Fires on every step advance (and on the depot->driving mode switch)
+  // - the imperative flyTo is the whole point of keeping the mount
+  // effect below itself untouched by any of this. Also called directly
+  // (not through this effect) once the mount effect's own cache fetch
+  // resolves, so the very first frame in driving mode is already
+  // centered on step 0 rather than waiting for a second step change.
+  useEffect(() => {
+    recenterOnActive(mapRef.current, cacheRef.current, mode, activeWaypointKey);
+  }, [mode, activeWaypointKey]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -236,6 +297,7 @@ export function RouteMap({
       // bail rather than initializing a map nothing will ever clean up.
       if (cancelled) return;
       map = L.map(container, { center: LA_VERGNE_CENTER, zoom: DEFAULT_ZOOM });
+      mapRef.current = map;
       L.tileLayer(TILE_URL, {
         maxZoom: 20,
         subdomains: TILE_SUBDOMAINS,
@@ -253,7 +315,13 @@ export function RouteMap({
         .catch(() => ({}) as WaypointCache)
         .then((cache) => {
           if (cancelled || !map) return;
-          const pinLatLngs: [number, number][] = [];
+          cacheRef.current = cache;
+          // Every waypoint's own {lat, lon}, in route order, school
+          // spliced in at whichever end `tripType` puts it - used both
+          // for the road-geometry request below and (overview mode
+          // only) as the fallback "fit the whole route" bounds until
+          // that request's own, tighter road-following bounds resolve.
+          const overviewLatLngs: [number, number][] = [];
 
           // The road-following line itself - a real routed path, not a
           // connect-the-dots line through the cache's own points (see
@@ -272,11 +340,13 @@ export function RouteMap({
           const routeWaypoints: RouteWaypoint[] = [];
           if (schoolRef.current && tripTypeRef.current === "dropoff") {
             routeWaypoints.push(schoolRef.current);
+            overviewLatLngs.push([schoolRef.current.lat, schoolRef.current.lon]);
           }
           for (const key of pathRef.current) {
             const entry = cache[key];
             if (!entry || entry.status !== "ok") continue;
             routeWaypoints.push({ lat: entry.lat, lon: entry.lon });
+            overviewLatLngs.push([entry.lat, entry.lon]);
           }
           // Pickup and a one-off field trip both default to ending at
           // the school (not "pickup only" - a fieldtrip route would
@@ -284,6 +354,7 @@ export function RouteMap({
           // matched neither this nor the dropoff check above).
           if (schoolRef.current && tripTypeRef.current !== "dropoff") {
             routeWaypoints.push(schoolRef.current);
+            overviewLatLngs.push([schoolRef.current.lat, schoolRef.current.lon]);
           }
           if (routeWaypoints.length > 1) {
             fetch("/api/route-geometry", {
@@ -304,15 +375,66 @@ export function RouteMap({
                   lineJoin: "round",
                   interactive: false,
                 }).addTo(map);
+                // The road can bow out well past a straight line between
+                // waypoints (a river crossing, a one-way detour) - once
+                // the actual road geometry is in, it's a tighter, truer
+                // "fit the whole route" frame than the raw waypoint
+                // dots the map was fit to below while this was loading.
+                if (modeRef.current === "overview" && roadLatLngs.length > 0) {
+                  map.fitBounds(L.latLngBounds(roadLatLngs), { padding: [40, 40], maxZoom: 16 });
+                }
               })
               .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+          }
+
+          if (modeRef.current === "overview") {
+            // Just one pin marking where the route begins - every
+            // individual stop/turn pin below is deliberately left off
+            // this zoomed-out view (see this component's own `mode`
+            // doc comment).
+            if (schoolRef.current && tripTypeRef.current === "dropoff") {
+              const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
+              L.marker(latLng, {
+                icon: L.divIcon({
+                  className: "",
+                  html: schoolMarkerHtml(),
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 30],
+                }),
+                interactive: false,
+              }).addTo(map);
+            } else {
+              const firstStop = stopsRef.current.find(
+                (s) => cache[s.waypointKey]?.status === "ok",
+              );
+              const entry = firstStop && cache[firstStop.waypointKey];
+              if (firstStop && entry && entry.status === "ok") {
+                const latLng: [number, number] = [entry.lat, entry.lon];
+                L.marker(latLng, {
+                  icon: L.divIcon({
+                    className: "",
+                    html: stopMarkerHtml(firstStop.number),
+                    iconSize: [28, 44],
+                    iconAnchor: [14, 44],
+                  }),
+                  interactive: false,
+                }).addTo(map);
+              }
+            }
+            // Frame the whole route right away - the road-geometry fetch
+            // above will tighten this once it resolves, but that's a
+            // network round trip away and shouldn't leave the map
+            // sitting on the La Vergne placeholder center until then.
+            if (overviewLatLngs.length > 0) {
+              map.fitBounds(L.latLngBounds(overviewLatLngs), { padding: [40, 40], maxZoom: 16 });
+            }
+            return;
           }
 
           for (const stop of stopsRef.current) {
             const entry = cache[stop.waypointKey];
             if (!entry || entry.status !== "ok") continue;
             const latLng: [number, number] = [entry.lat, entry.lon];
-            pinLatLngs.push(latLng);
             L.marker(latLng, {
               icon: L.divIcon({
                 className: "",
@@ -327,7 +449,6 @@ export function RouteMap({
             const entry = cache[turn.waypointKey];
             if (!entry || entry.status !== "ok") continue;
             const latLng: [number, number] = [entry.lat, entry.lon];
-            pinLatLngs.push(latLng);
             L.marker(latLng, {
               icon: L.divIcon({
                 className: "",
@@ -340,7 +461,6 @@ export function RouteMap({
           }
           if (schoolRef.current) {
             const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
-            pinLatLngs.push(latLng);
             L.marker(latLng, {
               icon: L.divIcon({
                 className: "",
@@ -351,15 +471,10 @@ export function RouteMap({
               interactive: false,
             }).addTo(map);
           }
-          // Once the route's own stops are geocoded, they're a far more
-          // useful default view than the fixed La Vergne town-center
-          // placeholder above (or the driver's own live position,
-          // deliberately left out of this - see recenteredOnFirstFix's
-          // removal below) - frame the whole route, not wherever the bus
-          // happens to be sitting when the map first mounts.
-          if (pinLatLngs.length > 0) {
-            map.fitBounds(L.latLngBounds(pinLatLngs), { padding: [40, 40], maxZoom: 16 });
-          }
+          // Driving mode follows the current step instead of framing
+          // every pin at once - see recenterOnActive above, and the
+          // dedicated effect that calls it again on every step advance.
+          recenterOnActive(map, cache, modeRef.current, activeWaypointKeyRef.current);
         });
 
       // The bus is moving for the whole trip, so this tracks the
@@ -404,6 +519,8 @@ export function RouteMap({
       cancelled = true;
       if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
       map?.remove();
+      mapRef.current = null;
+      cacheRef.current = null;
     };
   }, []);
 

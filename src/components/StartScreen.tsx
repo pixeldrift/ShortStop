@@ -322,6 +322,7 @@ export function StartScreen({
           school={schoolPoint}
           tripType={route.tripType}
           waypointsUrl="/api/waypoints"
+          mode="overview"
         />
       </div>
 

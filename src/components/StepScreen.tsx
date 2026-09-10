@@ -20,7 +20,7 @@ import { addressWithoutZip } from "@/lib/schoolAddress";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
-import type { NavigationStep, Route } from "@/lib/types";
+import type { NavigationStep, Route, TripType } from "@/lib/types";
 
 // How long the depot bus's own slide-off animation runs (matches
 // animate-bus-depart in globals.css) - handleStart below holds off the
@@ -206,6 +206,8 @@ export function StepScreen({
           school={schoolPoint}
           tripType={route.tripType}
           waypointsUrl={waypointsUrl}
+          mode={phase === "depot" ? "overview" : "driving"}
+          activeWaypointKey={step.waypointKey}
         />
 
         {showRoster && (
@@ -219,6 +221,7 @@ export function StepScreen({
             <div className="absolute inset-0 z-10 flex items-center justify-center p-3">
               <RiderCheckInBox
                 roster={roster}
+                tripType={route.tripType}
                 onRiderTap={onRiderTap}
                 onAddRider={onAddRider}
                 onClose={() => setDismissedStepId(step.id)}
@@ -525,17 +528,24 @@ function StopContent({
 
 function RiderCheckInBox({
   roster,
+  tripType,
   onRiderTap,
   onAddRider,
   onClose,
 }: {
   roster: boolean[];
+  /** Only ever used to pick "check in"/"check off" wording below - a
+   * dropoff route's own riders all boarded back at the school, so
+   * tapping through this same roster at each stop is really marking
+   * who's gotten *off* it, not who's freshly on. */
+  tripType: TripType;
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
   /** Dismisses the card - the driver still has to tap the step content
    * itself (or Next) to actually advance, same as any other step. */
   onClose: () => void;
 }) {
+  const isDropoff = tripType === "dropoff";
   // Sized to its own content (a handful of riders shouldn't force a
   // card that fills most of the map, especially on a tablet's much
   // bigger map area) - max-h/max-w only cap it, they don't force it to
@@ -616,6 +626,9 @@ function RiderCheckInBox({
       className="animate-popup-pop flex max-h-[78%] max-w-[86%] flex-col items-center justify-center gap-[calc(0.75rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
+      <h2 className="font-heading text-sm font-black tracking-tight text-zinc-700">
+        {isDropoff ? "Riders Dropped Off" : "Riders Picked Up"}
+      </h2>
       <div
         ref={gridRef}
         className="flex flex-wrap items-start justify-center gap-[calc(0.5rem*var(--fit-scale,1))]"
@@ -633,7 +646,11 @@ function RiderCheckInBox({
               type="button"
               onClick={() => onRiderTap(i)}
               aria-pressed={checked}
-              aria-label={`Check in through rider ${i + 1}${checked ? " (checked in)" : ""}`}
+              aria-label={
+                isDropoff
+                  ? `Check off through rider ${i + 1}${checked ? " (checked off)" : ""}`
+                  : `Check in through rider ${i + 1}${checked ? " (checked in)" : ""}`
+              }
               className="flex flex-col items-center gap-[calc(0.125rem*var(--fit-scale,1))]"
             >
               <span
@@ -666,7 +683,7 @@ function RiderCheckInBox({
           className="btn-glossy-blue font-heading flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
         >
           <CheckIcon className="h-4 w-4" />
-          Check in Riders
+          {isDropoff ? "Check Off Riders" : "Check in Riders"}
         </button>
       </div>
     </div>
