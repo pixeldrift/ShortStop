@@ -297,7 +297,7 @@ function StepRowView({
   );
 
   return (
-    <div className="flex items-start gap-2 py-0.5 text-left">
+    <div className="flex items-center gap-2 py-0.5 text-left">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-heading flex items-center gap-1.5 text-base font-black">
@@ -335,7 +335,6 @@ function StepRowView({
         <p className="truncate text-zinc-700">
           {subheading || <span className="text-zinc-400 italic">No location yet</span>}
         </p>
-        {row.notes && <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>}
         {/* The row's own real geocoding outcome - actual coordinates
             once resolved (green check), the specific miss/error reason
             otherwise (red X), or "- Instructions Only -" for a row
@@ -351,13 +350,21 @@ function StepRowView({
                 : status.reason}
           </p>
         )}
+        {/* Driver hints (wheelchair assistance, wait-inside notes, etc.)
+            read last - after the row's own location is established, not
+            competing with it for the reader's attention right under the
+            cross streets. */}
+        {row.notes && <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>}
       </div>
       {/* -mr-2 pulls this pair in closer to the row's own right edge
           (half its old gap to the list's own px-4) than a plain
           shrink-0 flex would leave it - the pencil/handle read as
           hugging the edge, not floating a full padding-width in from
-          it. */}
-      <div className="mt-0.5 flex shrink-0 items-center gap-2 -mr-2">
+          it. items-center on the row itself (above) centers this
+          group against the row's full height, whatever that ends up
+          being once notes/coordinates add extra lines below the
+          header. */}
+      <div className="flex shrink-0 items-center gap-2 -mr-2">
         <button
           type="button"
           onClick={onEdit}
@@ -2471,7 +2478,7 @@ export function EditRouteScreen({
               smaller text-2xl size since the fix is a pixel value, not a
               ratio - it doesn't carry over from the 4xl title unchanged. */}
           <h1 className="font-heading relative mt-[1.5px] text-2xl leading-[0.7083] font-black tracking-tight">
-            {route?.routeNumber ?? ""}
+            Route {route?.routeNumber ?? ""}
             {route?.routeNumber && tripType && (
               <span
                 className={`absolute left-full ml-2 flex items-center gap-1 text-sm leading-[0.75] text-blue-500 ${
