@@ -101,7 +101,14 @@ export function TopBar({
         </button>
         <div className="col-start-3 flex items-center justify-self-end gap-1 text-sm font-bold text-zinc-700">
           <PersonSolidIcon className="h-4 w-4" />
-          {totalOnboard} onboard
+          {/* Same running tally either way (useRiderRoster.ts's own
+              totalOnboard - a sum of check-ins across every stop so
+              far, never decremented) - only the word changes. For a
+              dropoff route every rider already boarded back at the
+              school, so what's actually being counted stop by stop is
+              how many have now gotten *off*, not how many are freshly
+              "onboard." */}
+          {totalOnboard} {tripType === "dropoff" ? "dropped off" : "onboard"}
         </div>
       </div>
     </div>
