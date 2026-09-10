@@ -2666,6 +2666,23 @@ so far.
   list itself. Bigger than a single field: schools and routes would both
   need to scope to a district, and the county label sprinkled across
   those three screens would need to read from real data instead.
+- **Auto map/marker zoom and scale by proximity.** `RouteMap.tsx`'s
+  stop/turn markers are a fixed size regardless of zoom level, so the
+  route overview (zoomed out to show the whole trip) reads as cluttered
+  - markers sized for street-level zoom crowd each other out at that
+  scale. Once turn-by-turn actually starts, the map should zoom in to
+  street level to match (it currently doesn't zoom at all based on
+  phase/progress). Worth its own pass once the map is otherwise
+  stable - likely a zoom-level-driven marker scale plus a phase-driven
+  `setView`/`flyTo` between the route overview and a driving step.
+- **Post-route trip summary.** Ending a route (`onEndRoute`, "arrived"
+  phase) currently drops straight back to the route list - a real trip
+  debrief screen in between could show expected vs. actual times (a
+  chart comparing how well each stop hit its target), how many riders
+  were actually picked up vs. expected, and similar trip-level stats.
+  Needs real per-stop timestamps captured as the trip runs (nothing
+  today records when a step was actually reached, only that it was)
+  before there's anything to compare against the schedule.
 
 ## Maps, part ten
 

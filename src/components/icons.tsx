@@ -128,6 +128,7 @@ export { default as WarningIcon } from "./icons/warning.svg";
 export { default as PlusIcon } from "./icons/plus.svg";
 export { default as EditIcon } from "./icons/edit.svg";
 export { default as TrashIcon } from "./icons/trash.svg";
+export { default as DragHandleIcon } from "./icons/drag-handle.svg";
 export { default as SaveIcon } from "./icons/save.svg";
 export { default as UploadIcon } from "./icons/upload.svg";
 export { default as DownloadIcon } from "./icons/download.svg";

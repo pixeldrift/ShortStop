@@ -16,6 +16,9 @@ export function ConfirmModal({
   confirmLabel,
   confirmIcon,
   destructive = false,
+  secondaryLabel,
+  secondaryIcon,
+  onSecondary,
   onConfirm,
   onCancel,
 }: {
@@ -29,6 +32,17 @@ export function ConfirmModal({
   /** Red confirm button for delete - amber/blue destructive-lite isn't
    * needed for publish/unpublish, which are always reversible. */
   destructive?: boolean;
+  /** A third, always-red/destructive button alongside Cancel and the
+   * (blue) confirm button - RouteListScreen's own "this route is in
+   * Draft" popup uses it for "Delete", offered right next to
+   * "Activate" so both ways out of that popup are a single tap rather
+   * than nesting a second confirm-of-a-confirm inside this one. Reads
+   * leftmost, same "destructive reads leftmost" convention the plain
+   * two-button case already follows via flex-row-reverse below. Omit
+   * for the ordinary Cancel/confirm case - most callers. */
+  secondaryLabel?: string;
+  secondaryIcon?: React.ReactNode;
+  onSecondary?: () => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -48,21 +62,37 @@ export function ConfirmModal({
             already applies everywhere else a delete button sits next
             to a safe one - away from where a thumb instinctively taps
             the "main" action, not toward it. Publish/unpublish keep
-            the ordinary Cancel-then-confirm reading order. */}
-        <div className={`mt-4 flex gap-3 ${destructive ? "flex-row-reverse" : ""}`}>
+            the ordinary Cancel-then-confirm reading order. The
+            secondary button (when given) is always that same
+            leftmost-destructive slot, so a plain destructive confirm
+            (flex-row-reverse) and a Delete-then-Cancel-then-Activate
+            three-button row both read the same left-to-right. */}
+        <div className={`mt-4 flex gap-2 ${destructive && !secondaryLabel ? "flex-row-reverse" : ""}`}>
+          {secondaryLabel && onSecondary && (
+            <button
+              type="button"
+              onClick={onSecondary}
+              className="btn-glossy-red font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-600 py-3 text-sm font-semibold text-white"
+            >
+              {secondaryIcon}
+              {secondaryLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onCancel}
-            className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
+            className={`btn-glossy-light font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 font-semibold text-zinc-900 ${
+              secondaryLabel ? "py-3 text-sm" : "py-3 text-base"
+            }`}
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className={`font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 text-base font-semibold text-white ${
-              destructive ? "btn-glossy-red bg-red-600" : "btn-glossy-blue bg-blue-600"
-            }`}
+            className={`font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl py-3 font-semibold text-white ${
+              secondaryLabel ? "text-sm" : "text-base"
+            } ${destructive && !secondaryLabel ? "btn-glossy-red bg-red-600" : "btn-glossy-blue bg-blue-600"}`}
           >
             {confirmIcon}
             {confirmLabel}

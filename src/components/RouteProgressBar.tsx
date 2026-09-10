@@ -81,12 +81,20 @@ export function RouteProgressBar({
   steps,
   currentIndex,
   phase,
+  entering,
   onSeek,
   disabled,
 }: {
   steps: NavigationStep[];
   currentIndex: number;
   phase: StepPhase;
+  /** True for the one moment DepotContent's own large bus is playing
+   * its own send-off (StepScreen's busDeparting) - this small bus
+   * stays hidden for the rest of "depot" (a driver hasn't gone
+   * anywhere yet; nothing for it to mark), then plays its own
+   * animate-bus-arrive send-in exactly then, timed to land together
+   * with the real step change (see StepScreen's BUS_DEPART_MS). */
+  entering?: boolean;
   /** Tapping a marker or dragging anywhere along the track jumps
    * straight there - fires live as the pointer moves, not just on
    * release, so scrubbing reads the steps go by rather than only
@@ -285,18 +293,22 @@ export function RouteProgressBar({
             right as it should be pulling into the end cul-de-sac.
             width: max-content sizes to the image's own content instead,
             ignoring that (nonexistent) available space. */}
-        <div
-          className="absolute bottom-2 z-10 w-max -translate-x-1/2 translate-y-1/2 transition-[left] duration-300 ease-out"
-          style={{ left: busPx }}
-        >
-          <Image
-            src="/assets/bus.png"
-            alt=""
-            width={780}
-            height={465}
-            className="h-[1.5rem] w-auto drop-shadow-sm sm:h-[1.875rem]"
-          />
-        </div>
+        {(phase !== "depot" || entering) && (
+          <div
+            className="absolute bottom-2 z-10 w-max -translate-x-1/2 translate-y-1/2 transition-[left] duration-300 ease-out"
+            style={{ left: busPx }}
+          >
+            <Image
+              src="/assets/bus.png"
+              alt=""
+              width={780}
+              height={465}
+              className={`h-[1.5rem] w-auto drop-shadow-sm sm:h-[1.875rem] ${
+                entering ? "animate-bus-arrive" : ""
+              }`}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
