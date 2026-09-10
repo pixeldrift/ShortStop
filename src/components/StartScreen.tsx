@@ -204,10 +204,21 @@ export function StartScreen({
                 rather than a flex row - the AM/PM badge floats off the
                 text's own right edge (left-full) so it never shifts the
                 title text itself off-center from the county label above,
-                the way sharing a centered flex row with it used to. */}
+                the way sharing a centered flex row with it used to.
+                Pinned to the title's own top edge for a dropoff (PM)
+                route, bottom edge otherwise (AM/FT/OT) - same
+                top/bottom-by-trip-type baseline every AM/PM badge in the
+                app now shares (RouteListScreen's own rows,
+                AllStopsModal's title, TopBar's route badge), rather than
+                this one staying vertically centered regardless of trip
+                type. */}
             <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
               Route {route.routeNumber}
-              <span className="absolute top-1/2 left-full ml-2 flex -translate-y-1/2 items-center gap-1 text-lg text-blue-500">
+              <span
+                className={`absolute left-full ml-2 flex items-center gap-1 text-lg text-blue-500 ${
+                  route.tripType === "dropoff" ? "top-0" : "bottom-0"
+                }`}
+              >
                 {tripTypeLabel(route.tripType)}
                 <TripTypeIcon tripType={route.tripType} className="h-4 w-4" />
               </span>
@@ -287,9 +298,16 @@ export function StartScreen({
             stops/turns/school markers and road-following line
             StepScreen's own map draws while actually driving, just
             smaller and not yet tracking a live position against any of
-            it. */}
+            it. relative z-0 gives Leaflet's own internal panes/controls
+            (tile pane, zoom control, attribution - several carry their
+            own explicit, fairly high z-index) a stacking context of
+            their own to escalate within, same reasoning as StepScreen's
+            own map - without it they escape to the page's root stacking
+            context and can paint above a z-20 overlay like
+            AllStopsModal below despite being earlier in the DOM and
+            visually "behind" it. */}
         <RouteMap
-          className="h-40 w-full max-w-md shrink-0 overflow-hidden rounded-2xl border border-zinc-300"
+          className="relative z-0 h-40 w-full max-w-md shrink-0 overflow-hidden rounded-2xl border border-zinc-300"
           stops={stopMarkers}
           turns={turnMarkers}
           path={routePath}

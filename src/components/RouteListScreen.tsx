@@ -72,7 +72,7 @@ const TRIP_TYPE_TOGGLES: { value: TripType; label: string }[] = [
   { value: "other", label: "OT" },
 ];
 const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
-  { value: "elementary", label: "EL" },
+  { value: "elementary", label: "ES" },
   { value: "middle", label: "MS" },
   { value: "high", label: "HS" },
 ];
@@ -491,15 +491,22 @@ export function RouteListScreen({
               </button>
             )}
           </div>
-          {/* Two stacked toggle rows, not a dropdown - time of day on
-              top, school level below. Every toggle starts on/blue
-              ("showing"); tapping one off fades it, excluding that
-              trip type/level from the list below rather than picking a
-              single exclusive view the old "View" dropdown did. Sized
-              small enough that both rows together sit within the
-              search box's own height beside them, not taller than it. */}
-          <div className="flex shrink-0 flex-col gap-0.5">
-            <div className="flex items-center gap-0.5">
+          {/* Two (three in admin mode) grouped columns, not stacked
+              rows - trip type on the left, school level next to it,
+              each its own vertical stack of toggle buttons, divided by
+              a plain vertical rule rather than boxed. Every toggle
+              starts on/blue ("showing"); tapping one off fades it,
+              excluding that trip type/level from the list below rather
+              than picking a single exclusive view the old "View"
+              dropdown did. The whole cluster stays shrink-0 and
+              right-aligned next to the search box (flex-1, above),
+              which is what actually gives it room to grow past its own
+              old cramped width - these buttons read easily at a normal
+              tap-target size now instead of needing to be squeezed
+              down to fit two full rows beside the search box's own
+              height. */}
+          <div className="flex shrink-0 items-stretch gap-1.5">
+            <div className="flex flex-col gap-1">
               {TRIP_TYPE_TOGGLES.map((toggle) => {
                 const active = activeTripTypes.has(toggle.value);
                 return (
@@ -508,7 +515,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleTripType(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
+                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
                       active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
                     }`}
                   >
@@ -517,7 +524,8 @@ export function RouteListScreen({
                 );
               })}
             </div>
-            <div className="flex items-center gap-0.5">
+            <div className="w-px self-stretch bg-zinc-300" aria-hidden="true" />
+            <div className="flex flex-col gap-1">
               {SCHOOL_LEVEL_TOGGLES.map((toggle) => {
                 const active = activeSchoolLevels.has(toggle.value);
                 return (
@@ -526,7 +534,7 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleSchoolLevel(toggle.value)}
                     aria-pressed={active}
-                    className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
+                    className={`rounded-md px-2.5 py-1 text-xs font-bold ${
                       active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
                     }`}
                   >
@@ -536,28 +544,31 @@ export function RouteListScreen({
               })}
             </div>
             {/* Published/Hidden - admin mode only, same empty-set-shows-
-                everything convention as the two rows above. A normal
+                everything convention as the two groups above. A normal
                 driver's list already excludes hidden routes outright, so
                 this toggle would have nothing to do there. */}
             {adminMode && (
-              <div className="flex items-center gap-0.5">
-                {PUBLISH_STATUS_TOGGLES.map((toggle) => {
-                  const active = activePublishStatuses.has(toggle.value);
-                  return (
-                    <button
-                      key={toggle.value}
-                      type="button"
-                      onClick={() => togglePublishStatus(toggle.value)}
-                      aria-pressed={active}
-                      className={`rounded px-1.5 py-0.5 text-[10px] leading-tight font-bold ${
-                        active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
-                      }`}
-                    >
-                      {toggle.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <>
+                <div className="w-px self-stretch bg-zinc-300" aria-hidden="true" />
+                <div className="flex flex-col gap-1">
+                  {PUBLISH_STATUS_TOGGLES.map((toggle) => {
+                    const active = activePublishStatuses.has(toggle.value);
+                    return (
+                      <button
+                        key={toggle.value}
+                        type="button"
+                        onClick={() => togglePublishStatus(toggle.value)}
+                        aria-pressed={active}
+                        className={`rounded-md px-2.5 py-1 text-xs font-bold ${
+                          active ? "bg-blue-600 text-white" : "bg-zinc-200 text-zinc-400"
+                        }`}
+                      >
+                        {toggle.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         </div>

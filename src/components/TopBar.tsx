@@ -48,10 +48,19 @@ export function TopBar({
           {/* relative/absolute rather than a flex row - the AM/PM badge
               floats off the route number's own right edge (left-full)
               so it never shifts the number itself off-center from the
-              "ROUTE" label above. */}
+              "ROUTE" label above. Pinned to the number's own top edge
+              for a dropoff (PM) route, bottom edge otherwise (AM/FT/OT)
+              - the same top/bottom-by-trip-type baseline every other
+              AM/PM badge in the app now shares (RouteListScreen's own
+              rows, StartScreen's title, AllStopsModal's title), rather
+              than this one badge alone staying vertically centered. */}
           <p className="font-heading relative -mt-1 text-3xl font-black tracking-tight">
             {routeNumber}
-            <span className="absolute top-1/2 left-full ml-1.5 flex -translate-y-1/2 items-center gap-1 text-base text-blue-500">
+            <span
+              className={`absolute left-full ml-1.5 flex items-center gap-1 text-base text-blue-500 ${
+                tripType === "dropoff" ? "top-0" : "bottom-0"
+              }`}
+            >
               {tripTypeLabel(tripType)}
               <TripTypeIcon tripType={tripType} className="h-4 w-4" />
             </span>
