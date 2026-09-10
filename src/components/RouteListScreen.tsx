@@ -203,8 +203,8 @@ export function RouteListScreen({
   const scopedSchoolAddress = routes[0]?.schoolAddress;
   const [query, setQuery] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
-  // Only set while handleEyeClick's own readiness check is in
-  // flight - not surfaced as a spinner anywhere yet, just prevents a
+  // Only set while handleActivateFromModal's own readiness check is
+  // in flight - not surfaced as a spinner anywhere yet, just prevents a
   // second tap on the same row from firing a second check.
   const [checkingRouteId, setCheckingRouteId] = useState<string | null>(null);
   // Every toggle starts off - see TRIP_TYPE_TOGGLES/SCHOOL_LEVEL_TOGGLES
@@ -351,28 +351,40 @@ export function RouteListScreen({
     demoHiddenIds,
   ]);
 
-  // The eyeball icon's own click handler - a published route always
-  // goes straight to the one-button "Deactivate" confirm (hiding never
-  // needs a readiness check, see canToggleStatus's own reasoning in
-  // EditRouteScreen.tsx). A draft route first has to clear the same
-  // "every geocodable stop has to actually resolve first" rule
-  // EditRouteScreen.tsx enforces before it can activate - checked
-  // against the route's own committed sidecar cache merged with this
-  // session's own fetched-but-not-yet-committed overlay
-  // (adminWaypointCaches). Not ready yet skips the popup entirely and
-  // goes straight to the edit screen instead, where the real warning UI
-  // (and the Fetch/Fetch All buttons that actually fix this) already
-  // lives - no separate warning needed here. A demo route has no real
-  // committed sidecar file of its own to check (it's fabricated), so it
-  // skips the readiness check entirely and always goes straight to the
-  // draft-options popup.
-  async function handleEyeClick(route: Route) {
+  // The eyeball icon's own click handler - always opens the matching
+  // popup immediately, published or draft, so a tap never silently
+  // does something other than what tapping the eye reads as. A
+  // published route gets the one-button "Deactivate" confirm (hiding
+  // never needs a readiness check, see canToggleStatus's own reasoning
+  // in EditRouteScreen.tsx); a draft one gets the Delete/Activate
+  // popup - readiness is only checked once "Activate" is actually
+  // pressed inside it (handleActivateFromModal below), not before the
+  // popup can even open, which used to skip the popup entirely for a
+  // not-yet-ready route and land on the edit screen with no visible
+  // confirmation the eye tap had done anything at all.
+  function handleEyeClick(route: Route) {
     if (isRoutePublished(route, demoHiddenIds)) {
       setConfirmRequest({ type: "deactivate", route });
-      return;
-    }
-    if (route.status === "demo") {
+    } else {
       setConfirmRequest({ type: "draft-options", route });
+    }
+  }
+
+  // The draft-options popup's own "Activate" button - checks the same
+  // "every geocodable stop has to actually resolve first" rule
+  // EditRouteScreen.tsx enforces, against the route's own committed
+  // sidecar cache merged with this session's own fetched-but-not-yet-
+  // committed overlay (adminWaypointCaches). Ready: activates and
+  // closes the popup. Not ready: closes the popup and goes to the edit
+  // screen instead, where the real warning UI (and the Fetch/Fetch All
+  // buttons that actually fix this) already lives - no separate
+  // warning needed here. A demo route has no real committed sidecar
+  // file of its own to check (it's fabricated), so it skips the
+  // readiness check entirely and always just activates.
+  async function handleActivateFromModal(route: Route) {
+    if (route.status === "demo") {
+      onSetRouteStatus(route, "published");
+      setConfirmRequest(null);
       return;
     }
     setCheckingRouteId(route.id);
@@ -380,8 +392,10 @@ export function RouteListScreen({
       const committed = await fetchCommittedWaypointCache();
       const merged = { ...committed, ...(adminWaypointCaches[route.id] ?? {}) };
       if (isRouteFullyResolved(route, merged)) {
-        setConfirmRequest({ type: "draft-options", route });
+        onSetRouteStatus(route, "published");
+        setConfirmRequest(null);
       } else {
+        setConfirmRequest(null);
         onEditRoute(route);
       }
     } finally {
@@ -905,8 +919,7 @@ export function RouteListScreen({
           }}
           onCancel={() => setConfirmRequest(null)}
           onConfirm={() => {
-            onSetRouteStatus(confirmRequest.route, "published");
-            setConfirmRequest(null);
+            void handleActivateFromModal(confirmRequest.route);
           }}
         />
       )}

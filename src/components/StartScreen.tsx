@@ -197,11 +197,19 @@ export function StartScreen({
             <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
               Rutherford County
             </span>
-            {/* -mt-1/leading-none, matching SchoolListScreen's own
-                identical label-above-title pattern - tightens the gap
-                the title's own default line box would otherwise leave
-                against the small county label above it. relative/absolute
-                rather than a flex row - the AM/PM badge floats off the
+            {/* mt-[1.25px] - once leading-[0.7083] below trimmed this
+                h1's own line box down to the digits' true ink height (see
+                that class's own doc comment), the -mt-1 tuned against the
+                old leading-none box collapsed the gap against the county
+                label above to nothing (leading-none's line box carried
+                enough of its own top padding to read as a gap on its
+                own). Re-measured via canvas actualBoundingBoxAscent
+                against the live rendered box so the visual gap here
+                matches RouteListScreen's own "Routes" title - which still
+                uses leading-none/-mt-1 and never needed retuning - to
+                1.5px, rather than guessing a value against this tighter
+                line-height. relative/absolute rather than a flex row -
+                the AM/PM badge floats off the
                 text's own right edge (left-full) so it never shifts the
                 title text itself off-center from the county label above,
                 the way sharing a centered flex row with it used to.
@@ -212,7 +220,7 @@ export function StartScreen({
                 AllStopsModal's title, TopBar's route badge), rather than
                 this one staying vertically centered regardless of trip
                 type. */}
-            <h1 className="font-heading relative -mt-1 text-4xl leading-[0.7083] font-black tracking-tight">
+            <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
               Route {route.routeNumber}
               <span
                 className={`absolute left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500 ${
