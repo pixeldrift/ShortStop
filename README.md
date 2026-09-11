@@ -104,8 +104,6 @@ Vercel value).
   screen.
 - Rider check-in state resets on page reload (it's in-memory only, not
   persisted).
-- Drop-off stops/routes aren't modeled yet, so the onboard rider count
-  can only ever go up.
 - GPS-based auto-advance as stops are reached, rather than only manual
   button/remote advance.
 - `driverName`, `distance`, and `durationMinutes` are still placeholder

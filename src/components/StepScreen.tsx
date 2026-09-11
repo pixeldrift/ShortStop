@@ -94,27 +94,18 @@ export function StepScreen({
       .filter((s) => s.kind === "stop")
       .map((s) => ({ waypointKey: s.waypointKey, number: ++stopCount }));
   }, [route]);
-  // Every turn's own "<preceding stop>.<turn count since that stop>"
-  // label - the turns before the route's first stop count as stop 0
-  // (so its first turn reads "0.1"), and the count resets to 1 right
-  // after each stop (so the third turn after stop 5 reads "5.3").
-  // Empty for a stops-only steps sheet (every 120 route today) - there
-  // are simply no "turn" kind steps to map over.
-  const turnMarkers = useMemo<TurnMarker[]>(() => {
-    let stopCount = 0;
-    let turnCount = 0;
-    const markers: TurnMarker[] = [];
-    for (const step of route.steps) {
-      if (step.kind === "stop") {
-        stopCount += 1;
-        turnCount = 0;
-      } else if (step.kind === "turn") {
-        turnCount += 1;
-        markers.push({ waypointKey: step.waypointKey, label: `${stopCount}.${turnCount}` });
-      }
-    }
-    return markers;
-  }, [route]);
+  // Every turn step's own direction/heading, straight off the step
+  // itself - the same pair TurnContent below renders, so RouteMap's own
+  // turn markers show the exact same icon. Empty for a stops-only
+  // steps sheet (every 120 route today) - there are simply no "turn"
+  // kind steps to map over.
+  const turnMarkers = useMemo<TurnMarker[]>(
+    () =>
+      route.steps
+        .filter((s) => s.kind === "turn")
+        .map((s) => ({ waypointKey: s.waypointKey, direction: s.direction, heading: s.heading })),
+    [route],
+  );
   // Every step's own waypointKey, in the route's own order - RouteMap
   // uses whichever of these are actually geocoded to request a real,
   // road-following line from /api/route-geometry (its own `path` prop

@@ -19,6 +19,7 @@
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "leaflet": "^1.9.4",
+    "leaflet-rotate": "^0.2.8",
     "next": "16.3.4",
     "pg": "^8.23.0",
     "react": "19.2.8",
