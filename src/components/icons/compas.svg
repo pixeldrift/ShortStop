@@ -8,10 +8,15 @@
         stroke: #000;
         stroke-linecap: round;
         stroke-linejoin: round;
-        stroke-width: 2.5px;
+        stroke-width: 2px;
       }
     </style>
   </defs>
   <circle class="st0" cx="12" cy="12" r="10"/>
-  <path class="st0" d="M8.5,8.5l7,7M15.5,8.5l-7,7"/>
+  <polygon class="st0" points="7.35 16.65 10.18 10.18 16.65 7.35 13.82 13.82 7.35 16.65"/>
+  <line class="st0" x1="20.34" y1="12.33" x2="21.28" y2="12.33"/>
+  <line class="st0" x1="2.72" y1="12.33" x2="3.66" y2="12.33"/>
+  <line class="st0" x1="12" y1="3.98" x2="12" y2="3.05"/>
+  <line class="st0" x1="12" y1="21.61" x2="12" y2="20.67"/>
+  <polygon points="10.18 10.18 16.65 7.35 13.82 13.82 10.18 10.18"/>
 </svg>

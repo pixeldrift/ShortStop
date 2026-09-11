@@ -1,4 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-  <rect x="4" y="2" width="2" height="20" rx="1" />
-  <path d="M6 3 L19 7 L6 11 Z" />
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 24">
+  <!-- Generator: Adobe Illustrator 30.0.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 123)  -->
+  <path d="M7,2h0c.55,0,1,.45,1,1v18c0,.55-.45,1-1,1h0c-.55,0-1-.45-1-1V3c0-.55.45-1,1-1Z"/>
+  <path d="M8,3l11,3.39c.6.19.6,1.04,0,1.23l-11,3.39V3Z"/>
 </svg>
