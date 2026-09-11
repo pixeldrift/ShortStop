@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import "leaflet/dist/leaflet.css";
 import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
+import { ActionIcon } from "./icons";
 import type { RoutingResult } from "@/lib/routing/types";
-import type { TripType } from "@/lib/types";
+import type { TripType, TurnDirection } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 /** One "stop" step's marker: waypointKey looks it up in the route's own
@@ -15,14 +17,16 @@ import type { WaypointCache } from "@/lib/waypointCache";
 export type StopMarker = { waypointKey: string; number: number };
 
 /** One "turn" step's marker - waypointKey looks it up the same way a
- * StopMarker does, `label` is "<preceding stop's number>.<turn's own
- * position since that stop>" (StepScreen.tsx derives this): the turns
- * before the route's first stop count as stop 0, so its first turn
- * reads "0.1", and the third turn after stop 5 reads "5.3". Route 125's
- * own steps sheet is the only one with real turn-by-turn data today
- * (every 120 route sheet is stops only) - this only ever renders
- * something there, but nothing here is specific to that route. */
-export type TurnMarker = { waypointKey: string; label: string };
+ * StopMarker does. `direction`/`heading` are the same step's own
+ * NavigationStep fields (StepScreen.tsx's TurnContent renders this
+ * exact pair the exact same way): a left/right turn draws the same
+ * mirrored turn-arrow sign the driver's own screen shows for it,
+ * anything else (Proceed, Depart, Arrive, ...) draws its own ActionIcon
+ * glyph - the real per-step icon, not a generic "here's a turn" marker.
+ * Route 125's own steps sheet is the only one with real turn-by-turn
+ * data today (every 120 route sheet is stops only) - this only ever
+ * renders something there, but nothing here is specific to that route. */
+export type TurnMarker = { waypointKey: string; direction?: TurnDirection; heading?: string };
 
 // La Vergne, TN's approximate town center - a placeholder anchor until
 // the route's own geocoded waypoints (deriveWaypoints.ts, and each
@@ -84,14 +88,34 @@ function stopMarkerHtml(stopNumber: number): string {
   );
 }
 
-// A plain dot rather than a pin (unlike stopMarkerHtml above) - a turn
-// isn't "at" a building or curb the way a stop is, just a point along
-// the road, so it doesn't need a pin's downward-pointing anchor.
-function turnMarkerHtml(label: string): string {
+// A turn's own on-map marker - the same mirrored turn-arrow sign
+// (`direction`) or ActionIcon glyph (`heading`) StepScreen's own
+// TurnContent shows for this exact step, not a generic "here's a turn"
+// placeholder - reusing the real icon (ActionIcon's own SVG rendered to
+// a plain HTML string via renderToStaticMarkup, same as any other
+// divIcon here) so a driver glancing at the map sees the same shape
+// they're about to see full-size. The arrow sign is already a
+// self-contained graphic (its own border/shadow baked into the PNG,
+// same as RouteProgressBar's own bare use of it) so it needs no extra
+// wrapper; the ActionIcon glyphs are bare stroke lines with no
+// background of their own, so those get a small white plate for
+// contrast against the tiles underneath. Null if a turn step somehow
+// has neither (shouldn't happen for real data, but nothing enforces
+// it) - the caller skips drawing a marker for it rather than showing
+// an empty one.
+function turnMarkerHtml(direction: TurnDirection | undefined, heading: string | undefined): string | null {
+  if (direction) {
+    const mirror = direction === "left" ? ' style="transform: scaleX(-1)"' : "";
+    return `<img src="/assets/turn-arrow.png" class="h-8 w-8" alt=""${mirror} />`;
+  }
+  const icon = heading
+    ? renderToStaticMarkup(<ActionIcon action={heading} className="h-4 w-4 text-zinc-800" />)
+    : "";
+  if (!icon) return null;
   return (
-    '<div class="font-heading flex h-6 w-6 items-center justify-center rounded-full ' +
-    'border-2 border-black bg-yellow-400 text-[10px] font-black text-black shadow-sm">' +
-    label +
+    '<div class="flex h-8 w-8 items-center justify-center rounded-full ' +
+    'border-2 border-zinc-700 bg-white shadow-md">' +
+    icon +
     "</div>"
   );
 }
@@ -496,14 +520,11 @@ export function RouteMap({
               for (const turn of turnsRef.current) {
                 const entry = cache[turn.waypointKey];
                 if (!entry || entry.status !== "ok") continue;
+                const html = turnMarkerHtml(turn.direction, turn.heading);
+                if (!html) continue;
                 const latLng: [number, number] = [entry.lat, entry.lon];
                 L.marker(latLng, {
-                  icon: L.divIcon({
-                    className: "",
-                    html: turnMarkerHtml(turn.label),
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12],
-                  }),
+                  icon: L.divIcon({ className: "", html, iconSize: [32, 32], iconAnchor: [16, 16] }),
                   interactive: false,
                 }).addTo(pinsGroup);
               }

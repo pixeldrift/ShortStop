@@ -150,21 +150,13 @@ export function StartScreen({
       .filter((s) => s.kind === "stop")
       .map((s) => ({ waypointKey: s.waypointKey, number: ++stopCount }));
   }, [route]);
-  const turnMarkers = useMemo<TurnMarker[]>(() => {
-    let stopCount = 0;
-    let turnCount = 0;
-    const markers: TurnMarker[] = [];
-    for (const step of route.steps) {
-      if (step.kind === "stop") {
-        stopCount += 1;
-        turnCount = 0;
-      } else if (step.kind === "turn") {
-        turnCount += 1;
-        markers.push({ waypointKey: step.waypointKey, label: `${stopCount}.${turnCount}` });
-      }
-    }
-    return markers;
-  }, [route]);
+  const turnMarkers = useMemo<TurnMarker[]>(
+    () =>
+      route.steps
+        .filter((s) => s.kind === "turn")
+        .map((s) => ({ waypointKey: s.waypointKey, direction: s.direction, heading: s.heading })),
+    [route],
+  );
   const routePath = useMemo(() => route.steps.map((s) => s.waypointKey), [route]);
   const schoolPoint = useMemo(
     () => (route.schoolLat != null && route.schoolLon != null ? { lat: route.schoolLat, lon: route.schoolLon } : null),
