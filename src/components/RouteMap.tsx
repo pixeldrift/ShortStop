@@ -2,8 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
-import type { Map as LeafletMap, Marker } from "leaflet";
-import type { RouteWaypoint, RoutingResult } from "@/lib/routing/types";
+import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
+import type { RoutingResult } from "@/lib/routing/types";
 import type { TripType } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
@@ -111,21 +111,40 @@ function schoolMarkerHtml(): string {
   );
 }
 
-// Driving mode's own "follow the current step" camera move - a plain
-// function (not a component method) so it can be called both from the
-// small reactive effect below (on every step change) and directly from
-// the mount effect's own cache-resolution callback (for the very first
-// frame), without needing a ref-stored closure to reach it from render.
-function recenterOnActive(
-  map: LeafletMap | null,
-  cache: WaypointCache | null,
-  mode: "overview" | "driving",
-  activeWaypointKey: string | null | undefined,
-) {
-  if (!map || !cache || mode !== "driving" || !activeWaypointKey) return;
-  const entry = cache[activeWaypointKey];
-  if (!entry || entry.status !== "ok") return;
-  map.flyTo([entry.lat, entry.lon], STREET_ZOOM, { duration: 0.75 });
+// The route's own ordered {lat, lon} sequence - every `path` step that
+// resolved in the cache, school spliced in at whichever end `tripType`
+// puts it (see `tripType`'s own prop doc) - built once when the cache
+// resolves and reused for the road-geometry request, overview mode's
+// "fit the whole route" bounds, and driving mode's bearing (below).
+// `key` is the step's own waypointKey for anything that came from
+// `path` - null for the school, which is a real leg of the trip but
+// never itself an active step a driver can be "at".
+type OrderedWaypoint = { key: string | null; lat: number; lon: number };
+
+// Standard great-circle initial bearing (forward azimuth) from one
+// point to another, in degrees clockwise from north.
+function initialBearing(from: { lat: number; lon: number }, to: { lat: number; lon: number }): number {
+  const phi1 = (from.lat * Math.PI) / 180;
+  const phi2 = (to.lat * Math.PI) / 180;
+  const deltaLambda = ((to.lon - from.lon) * Math.PI) / 180;
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+// Driving mode's own "which way is the bus facing" - the bearing
+// toward the NEXT waypoint after the active one, so the map faces where
+// the bus is about to go, falling back to the bearing FROM the previous
+// waypoint at the route's own last stop, where there's no "next" to
+// face. Null if there's nothing to compute a direction from (the active
+// key isn't in `ordered`, or it's the route's only waypoint).
+function bearingAt(ordered: OrderedWaypoint[], activeWaypointKey: string | null | undefined): number | null {
+  if (!activeWaypointKey) return null;
+  const index = ordered.findIndex((w) => w.key === activeWaypointKey);
+  if (index === -1) return null;
+  if (index + 1 < ordered.length) return initialBearing(ordered[index], ordered[index + 1]);
+  if (index - 1 >= 0) return initialBearing(ordered[index - 1], ordered[index]);
+  return null;
 }
 
 /**
@@ -145,7 +164,11 @@ function recenterOnActive(
  * one SSR pass for their first paint) and throw "window is not
  * defined" there. The CSS import above is fine at the top level even
  * so - it's just style rules, nothing that touches `window` - only the
- * JS module needs deferring to a browser-only effect.
+ * JS module needs deferring to a browser-only effect. `leaflet-rotate`
+ * (driving mode's own direction-of-travel rotation, below) is imported
+ * the same way, right after `leaflet` itself - it's a side-effect-only
+ * patch onto the same shared `leaflet` module instance, so it has to
+ * load after `leaflet` does and before this map is created.
  */
 export function RouteMap({
   className,
@@ -212,24 +235,41 @@ export function RouteMap({
    * framed to fit the whole route - the route-info screen and the
    * depot/Ready-to-Depart phase, before the driver has started stepping
    * through anything. "driving" (the default, matching every caller's
-   * behavior before this prop existed) shows every stop/turn pin and
-   * follows `activeWaypointKey` at street level instead of framing the
-   * whole route at once. */
+   * behavior before this prop existed) follows `activeWaypointKey` at
+   * street level instead of framing the whole route at once, rotated so
+   * the direction of travel always faces up - every stop/turn pin only
+   * appears once the map actually arrives there, not the moment driving
+   * mode starts (see `activeWaypointKey`'s own doc comment). */
   mode?: "overview" | "driving";
   /** The current step's own waypointKey - driving mode only. The map
-   * flies to this location's cache entry (street zoom) whenever it
-   * changes, rather than refitting bounds, so advancing through steps
-   * feels like following along instead of repeatedly reframing the
-   * whole route. Ignored in overview mode. */
+   * flies to this location's cache entry (street zoom, rotated to face
+   * the next waypoint) whenever it changes, rather than refitting
+   * bounds, so advancing through steps feels like following along
+   * instead of repeatedly reframing the whole route. Every stop/turn/
+   * school pin is held back until the very first of these flights
+   * actually arrives, so they appear at street level alongside the
+   * driver rather than popping in back at the overview's zoomed-out
+   * framing. Ignored in overview mode. */
   activeWaypointKey?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Populated once the mount effect below actually creates the map/
   // resolves the waypoint cache - lets the small reactive effect further
-  // down (recenterOnActive) reach them without being part of the mount
+  // down (syncToModeRef) reach them without being part of the mount
   // effect's own (deliberately empty) dependency array.
   const mapRef = useRef<LeafletMap | null>(null);
   const cacheRef = useRef<WaypointCache | null>(null);
+  const orderedWaypointsRef = useRef<OrderedWaypoint[]>([]);
+  // The one layer every stop/turn/school pin (or overview's single
+  // starting pin) lives in - letting a mode switch swap what's shown by
+  // clearing and redrawing this one group, rather than tracking every
+  // individual marker it ever added.
+  const pinsGroupRef = useRef<LayerGroup | null>(null);
+  // Driving mode's full pin set is drawn exactly once, the first time
+  // the map actually arrives somewhere (see syncToModeRef below) - this
+  // is what "exactly once" is checked against, so later step advances
+  // don't redraw (and briefly re-flash) pins that are already showing.
+  const drivingPinsRevealedRef = useRef(false);
   // Read inside the mount effect's async callback below rather than
   // added as that effect's own dependency - `stops`/`turns`/`path` are
   // fresh arrays every render, and re-running the whole effect on every
@@ -273,14 +313,18 @@ export function RouteMap({
     activeWaypointKeyRef.current = activeWaypointKey;
   }, [activeWaypointKey]);
 
+  // Assigned once the mount effect below has a map/cache to work with -
+  // brings the current mode/active step's camera (and, in driving mode,
+  // pins + bearing) up to date. Called once right after that assignment
+  // (the very first sync), and again by the small effect just below on
+  // every later mode/step change - see its own comment.
+  const syncToModeRef = useRef<() => void>(() => {});
   // Fires on every step advance (and on the depot->driving mode switch)
-  // - the imperative flyTo is the whole point of keeping the mount
-  // effect below itself untouched by any of this. Also called directly
-  // (not through this effect) once the mount effect's own cache fetch
-  // resolves, so the very first frame in driving mode is already
-  // centered on step 0 rather than waiting for a second step change.
+  // - the imperative flyTo/setBearing/marker calls inside
+  // syncToModeRef are the whole point of keeping the mount effect below
+  // itself untouched by any of this.
   useEffect(() => {
-    recenterOnActive(mapRef.current, cacheRef.current, mode, activeWaypointKey);
+    syncToModeRef.current();
   }, [mode, activeWaypointKey]);
 
   useEffect(() => {
@@ -291,122 +335,130 @@ export function RouteMap({
     let cancelled = false;
     let watchId: number | undefined;
 
-    void import("leaflet").then((L) => {
-      // The effect's cleanup can fire before this promise resolves
-      // (e.g. React StrictMode's dev-only mount/unmount/remount) -
-      // bail rather than initializing a map nothing will ever clean up.
-      if (cancelled) return;
-      map = L.map(container, { center: LA_VERGNE_CENTER, zoom: DEFAULT_ZOOM });
-      mapRef.current = map;
-      L.tileLayer(TILE_URL, {
-        maxZoom: 20,
-        subdomains: TILE_SUBDOMAINS,
-        attribution: TILE_ATTRIBUTION,
-        detectRetina: true,
-      }).addTo(map);
+    void import("leaflet").then((L) =>
+      // Side-effect only (patches L.Map to add rotation) - must resolve
+      // before L.map() below so `rotate`/`bearing` are real options and
+      // `setBearing` exists on the instance it creates.
+      import("leaflet-rotate").then(() => {
+        // The effect's cleanup can fire before this promise resolves
+        // (e.g. React StrictMode's dev-only mount/unmount/remount) -
+        // bail rather than initializing a map nothing will ever clean up.
+        if (cancelled) return;
+        map = L.map(container, {
+          center: LA_VERGNE_CENTER,
+          zoom: DEFAULT_ZOOM,
+          rotate: true,
+          bearing: 0,
+          // The plugin's own compass-dial widget - off since bearing is
+          // driven programmatically (direction of travel) here, not by
+          // a control the driver would touch.
+          rotateControl: false,
+        });
+        mapRef.current = map;
+        L.tileLayer(TILE_URL, {
+          maxZoom: 20,
+          subdomains: TILE_SUBDOMAINS,
+          attribution: TILE_ATTRIBUTION,
+          detectRetina: true,
+        }).addTo(map);
+        const pinsGroup = L.layerGroup().addTo(map);
+        pinsGroupRef.current = pinsGroup;
 
-      // A 404 (the common case right now - see the `stops` prop doc
-      // above) resolves to {} rather than rejecting, same as any other
-      // fetch/parse failure via the .catch below - either way, that
-      // just means every stop below is a no-op cache miss, not an
-      // error worth surfacing over a map that's otherwise working fine.
-      void fetch(waypointsUrlRef.current)
-        .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
-        .catch(() => ({}) as WaypointCache)
-        .then((cache) => {
-          if (cancelled || !map) return;
-          cacheRef.current = cache;
-          // Every waypoint's own {lat, lon}, in route order, school
-          // spliced in at whichever end `tripType` puts it - used both
-          // for the road-geometry request below and (overview mode
-          // only) as the fallback "fit the whole route" bounds until
-          // that request's own, tighter road-following bounds resolve.
-          const overviewLatLngs: [number, number][] = [];
+        // A 404 (the common case right now - see the `stops` prop doc
+        // above) resolves to {} rather than rejecting, same as any other
+        // fetch/parse failure via the .catch below - either way, that
+        // just means every stop below is a no-op cache miss, not an
+        // error worth surfacing over a map that's otherwise working fine.
+        void fetch(waypointsUrlRef.current)
+          .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
+          .catch(() => ({}) as WaypointCache)
+          .then((cache) => {
+            if (cancelled || !map) return;
+            cacheRef.current = cache;
 
-          // The road-following line itself - a real routed path, not a
-          // connect-the-dots line through the cache's own points (see
-          // this component's own doc comment on `path` for why that
-          // changed). `routeWaypoints` is the same ordered list of
-          // {lat, lon} points the old straight-line version built,
-          // just handed to /api/route-geometry instead of drawn
-          // directly - the school spliced in at whichever end its own
-          // trip type puts it (see `tripType`'s own prop doc), since
-          // it's a real leg of the trip but isn't one of `path`'s own
-          // steps. A request/response failure (no ORS key configured,
-          // a real ORS error, a network blip) just means no line draws
-          // at all - same "quietly do without it" fallback every other
-          // cache/fetch failure on this map already gets, never a
-          // fabricated straight line standing in for it.
-          const routeWaypoints: RouteWaypoint[] = [];
-          if (schoolRef.current && tripTypeRef.current === "dropoff") {
-            routeWaypoints.push(schoolRef.current);
-            overviewLatLngs.push([schoolRef.current.lat, schoolRef.current.lon]);
-          }
-          for (const key of pathRef.current) {
-            const entry = cache[key];
-            if (!entry || entry.status !== "ok") continue;
-            routeWaypoints.push({ lat: entry.lat, lon: entry.lon });
-            overviewLatLngs.push([entry.lat, entry.lon]);
-          }
-          // Pickup and a one-off field trip both default to ending at
-          // the school (not "pickup only" - a fieldtrip route would
-          // otherwise never splice the school pin in at all, having
-          // matched neither this nor the dropoff check above).
-          if (schoolRef.current && tripTypeRef.current !== "dropoff") {
-            routeWaypoints.push(schoolRef.current);
-            overviewLatLngs.push([schoolRef.current.lat, schoolRef.current.lon]);
-          }
-          if (routeWaypoints.length > 1) {
-            fetch("/api/route-geometry", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ waypoints: routeWaypoints }),
-            })
-              .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
-              .then((result) => {
-                if (cancelled || !map || !result) return;
-                const roadLatLngs: [number, number][] = result.geometry.coordinates.map(
-                  ([lon, lat]) => [lat, lon],
-                );
-                L.polyline(roadLatLngs, {
-                  color: "#2563eb",
-                  weight: 4,
-                  opacity: 0.7,
-                  lineJoin: "round",
-                  interactive: false,
-                }).addTo(map);
-                // The road can bow out well past a straight line between
-                // waypoints (a river crossing, a one-way detour) - once
-                // the actual road geometry is in, it's a tighter, truer
-                // "fit the whole route" frame than the raw waypoint
-                // dots the map was fit to below while this was loading.
-                if (modeRef.current === "overview" && roadLatLngs.length > 0) {
-                  map.fitBounds(L.latLngBounds(roadLatLngs), { padding: [40, 40], maxZoom: 16 });
-                }
-              })
-              .catch((err) => console.warn("Couldn't fetch route geometry:", err));
-          }
-
-          if (modeRef.current === "overview") {
-            // Just one pin marking where the route begins - every
-            // individual stop/turn pin below is deliberately left off
-            // this zoomed-out view (see this component's own `mode`
-            // doc comment).
+            const orderedWaypoints: OrderedWaypoint[] = [];
             if (schoolRef.current && tripTypeRef.current === "dropoff") {
-              const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
-              L.marker(latLng, {
-                icon: L.divIcon({
-                  className: "",
-                  html: schoolMarkerHtml(),
-                  iconSize: [32, 32],
-                  iconAnchor: [16, 30],
+              orderedWaypoints.push({ key: null, lat: schoolRef.current.lat, lon: schoolRef.current.lon });
+            }
+            for (const key of pathRef.current) {
+              const entry = cache[key];
+              if (!entry || entry.status !== "ok") continue;
+              orderedWaypoints.push({ key, lat: entry.lat, lon: entry.lon });
+            }
+            // Pickup and a one-off field trip both default to ending at
+            // the school (not "pickup only" - a fieldtrip route would
+            // otherwise never splice the school pin in at all, having
+            // matched neither this nor the dropoff check above).
+            if (schoolRef.current && tripTypeRef.current !== "dropoff") {
+              orderedWaypoints.push({ key: null, lat: schoolRef.current.lat, lon: schoolRef.current.lon });
+            }
+            orderedWaypointsRef.current = orderedWaypoints;
+
+            // The road-following line itself - a real routed path, not a
+            // connect-the-dots line through the cache's own points (see
+            // this component's own doc comment on `path` for why that
+            // changed). A request/response failure (no ORS key
+            // configured, a real ORS error, a network blip) just means
+            // no line draws at all - same "quietly do without it"
+            // fallback every other cache/fetch failure on this map
+            // already gets, never a fabricated straight line standing
+            // in for it.
+            if (orderedWaypoints.length > 1) {
+              fetch("/api/route-geometry", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  waypoints: orderedWaypoints.map(({ lat, lon }) => ({ lat, lon })),
                 }),
-                interactive: false,
-              }).addTo(map);
-            } else {
-              const firstStop = stopsRef.current.find(
-                (s) => cache[s.waypointKey]?.status === "ok",
-              );
+              })
+                .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+                .then((result) => {
+                  if (cancelled || !map || !result) return;
+                  const roadLatLngs: [number, number][] = result.geometry.coordinates.map(
+                    ([lon, lat]) => [lat, lon],
+                  );
+                  L.polyline(roadLatLngs, {
+                    color: "#2563eb",
+                    weight: 4,
+                    opacity: 0.7,
+                    lineJoin: "round",
+                    interactive: false,
+                  }).addTo(map);
+                  // The road can bow out well past a straight line
+                  // between waypoints (a river crossing, a one-way
+                  // detour) - once the actual road geometry is in, it's
+                  // a tighter, truer "fit the whole route" frame than
+                  // the raw waypoint dots the map was fit to below
+                  // while this was loading.
+                  if (modeRef.current === "overview" && roadLatLngs.length > 0) {
+                    map.fitBounds(L.latLngBounds(roadLatLngs), { padding: [40, 40], maxZoom: 16 });
+                  }
+                })
+                .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+            }
+
+            // Just one pin marking where the route begins - every
+            // individual stop/turn pin is deliberately left off this
+            // zoomed-out view (see this component's own `mode` doc
+            // comment). clearLayers() first makes this safe to call
+            // more than once (syncToModeRef can fire again before mode
+            // ever actually changes).
+            function drawOverviewPin() {
+              pinsGroup.clearLayers();
+              if (schoolRef.current && tripTypeRef.current === "dropoff") {
+                const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
+                L.marker(latLng, {
+                  icon: L.divIcon({
+                    className: "",
+                    html: schoolMarkerHtml(),
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 30],
+                  }),
+                  interactive: false,
+                }).addTo(pinsGroup);
+                return;
+              }
+              const firstStop = stopsRef.current.find((s) => cache[s.waypointKey]?.status === "ok");
               const entry = firstStop && cache[firstStop.waypointKey];
               if (firstStop && entry && entry.status === "ok") {
                 const latLng: [number, number] = [entry.lat, entry.lon];
@@ -418,102 +470,142 @@ export function RouteMap({
                     iconAnchor: [14, 44],
                   }),
                   interactive: false,
-                }).addTo(map);
+                }).addTo(pinsGroup);
               }
             }
-            // Frame the whole route right away - the road-geometry fetch
-            // above will tighten this once it resolves, but that's a
-            // network round trip away and shouldn't leave the map
-            // sitting on the La Vergne placeholder center until then.
-            if (overviewLatLngs.length > 0) {
-              map.fitBounds(L.latLngBounds(overviewLatLngs), { padding: [40, 40], maxZoom: 16 });
+
+            // Every stop/turn/school pin - driving mode's full picture,
+            // drawn once the map has actually arrived somewhere (see
+            // syncToModeRef below), not the instant driving mode starts.
+            function drawDrivingPins() {
+              pinsGroup.clearLayers();
+              for (const stop of stopsRef.current) {
+                const entry = cache[stop.waypointKey];
+                if (!entry || entry.status !== "ok") continue;
+                const latLng: [number, number] = [entry.lat, entry.lon];
+                L.marker(latLng, {
+                  icon: L.divIcon({
+                    className: "",
+                    html: stopMarkerHtml(stop.number),
+                    iconSize: [28, 44],
+                    iconAnchor: [14, 44],
+                  }),
+                  interactive: false,
+                }).addTo(pinsGroup);
+              }
+              for (const turn of turnsRef.current) {
+                const entry = cache[turn.waypointKey];
+                if (!entry || entry.status !== "ok") continue;
+                const latLng: [number, number] = [entry.lat, entry.lon];
+                L.marker(latLng, {
+                  icon: L.divIcon({
+                    className: "",
+                    html: turnMarkerHtml(turn.label),
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12],
+                  }),
+                  interactive: false,
+                }).addTo(pinsGroup);
+              }
+              if (schoolRef.current) {
+                const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
+                L.marker(latLng, {
+                  icon: L.divIcon({
+                    className: "",
+                    html: schoolMarkerHtml(),
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 30],
+                  }),
+                  interactive: false,
+                }).addTo(pinsGroup);
+              }
             }
-            return;
-          }
 
-          for (const stop of stopsRef.current) {
-            const entry = cache[stop.waypointKey];
-            if (!entry || entry.status !== "ok") continue;
-            const latLng: [number, number] = [entry.lat, entry.lon];
-            L.marker(latLng, {
-              icon: L.divIcon({
-                className: "",
-                html: stopMarkerHtml(stop.number),
-                iconSize: [28, 44],
-                iconAnchor: [14, 44],
-              }),
-              interactive: false,
-            }).addTo(map);
-          }
-          for (const turn of turnsRef.current) {
-            const entry = cache[turn.waypointKey];
-            if (!entry || entry.status !== "ok") continue;
-            const latLng: [number, number] = [entry.lat, entry.lon];
-            L.marker(latLng, {
-              icon: L.divIcon({
-                className: "",
-                html: turnMarkerHtml(turn.label),
-                iconSize: [24, 24],
-                iconAnchor: [12, 12],
-              }),
-              interactive: false,
-            }).addTo(map);
-          }
-          if (schoolRef.current) {
-            const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
-            L.marker(latLng, {
-              icon: L.divIcon({
-                className: "",
-                html: schoolMarkerHtml(),
-                iconSize: [32, 32],
-                iconAnchor: [16, 30],
-              }),
-              interactive: false,
-            }).addTo(map);
-          }
-          // Driving mode follows the current step instead of framing
-          // every pin at once - see recenterOnActive above, and the
-          // dedicated effect that calls it again on every step advance.
-          recenterOnActive(map, cache, modeRef.current, activeWaypointKeyRef.current);
+            syncToModeRef.current = () => {
+              if (!map) return;
+              if (modeRef.current === "overview") {
+                drawOverviewPin();
+                // Frame the whole route right away - the road-geometry
+                // fetch above will tighten this once it resolves, but
+                // that's a network round trip away and shouldn't leave
+                // the map sitting on the La Vergne placeholder center
+                // until then.
+                if (orderedWaypointsRef.current.length > 0) {
+                  const bounds = orderedWaypointsRef.current.map(
+                    (w): [number, number] => [w.lat, w.lon],
+                  );
+                  map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: 16 });
+                }
+                return;
+              }
+
+              // Driving mode: face the direction of travel and fly to
+              // the active step, revealing every stop/turn/school pin
+              // the first time that flight actually lands somewhere -
+              // if the active step itself has no resolved coordinate to
+              // fly to, reveal immediately instead of waiting on a
+              // flight that will never happen (a later step advance
+              // that does resolve still gets its own gated reveal).
+              const bearing = bearingAt(orderedWaypointsRef.current, activeWaypointKeyRef.current);
+              if (bearing != null) map.setBearing(bearing);
+              const key = activeWaypointKeyRef.current;
+              const entry = key ? cache[key] : undefined;
+              if (!entry || entry.status !== "ok") {
+                if (!drivingPinsRevealedRef.current) {
+                  drawDrivingPins();
+                  drivingPinsRevealedRef.current = true;
+                }
+                return;
+              }
+              if (!drivingPinsRevealedRef.current) {
+                map.once("moveend", () => {
+                  drawDrivingPins();
+                  drivingPinsRevealedRef.current = true;
+                });
+              }
+              map.flyTo([entry.lat, entry.lon], STREET_ZOOM, { duration: 0.75 });
+            };
+            syncToModeRef.current();
+          });
+
+        // The bus is moving for the whole trip, so this tracks the
+        // driver's live position (watchPosition) rather than fetching it
+        // once - a single getCurrentPosition call would go stale the
+        // moment the bus pulls away. No permission-denied UI here beyond
+        // the console warning: the app is still fully usable via the
+        // turn-by-turn steps without it, same as if the browser/device
+        // simply doesn't have a GPS fix yet.
+        if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
+
+        const locationIcon = L.divIcon({
+          className: "",
+          html: LOCATION_DOT_HTML,
+          iconSize: [16, 16],
+          iconAnchor: [8, 8],
         });
+        let locationMarker: Marker | undefined;
 
-      // The bus is moving for the whole trip, so this tracks the
-      // driver's live position (watchPosition) rather than fetching it
-      // once - a single getCurrentPosition call would go stale the
-      // moment the bus pulls away. No permission-denied UI here beyond
-      // the console warning: the app is still fully usable via the
-      // turn-by-turn steps without it, same as if the browser/device
-      // simply doesn't have a GPS fix yet.
-      if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
-
-      const locationIcon = L.divIcon({
-        className: "",
-        html: LOCATION_DOT_HTML,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-      });
-      let locationMarker: Marker | undefined;
-
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          if (cancelled || !map) return;
-          const latLng: [number, number] = [position.coords.latitude, position.coords.longitude];
-          if (!locationMarker) {
-            locationMarker = L.marker(latLng, {
-              icon: locationIcon,
-              zIndexOffset: 1000,
-              interactive: false,
-            }).addTo(map);
-          } else {
-            locationMarker.setLatLng(latLng);
-          }
-        },
-        (error) => {
-          console.warn("Geolocation unavailable:", error.message);
-        },
-        { enableHighAccuracy: true },
-      );
-    });
+        watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            if (cancelled || !map) return;
+            const latLng: [number, number] = [position.coords.latitude, position.coords.longitude];
+            if (!locationMarker) {
+              locationMarker = L.marker(latLng, {
+                icon: locationIcon,
+                zIndexOffset: 1000,
+                interactive: false,
+              }).addTo(map);
+            } else {
+              locationMarker.setLatLng(latLng);
+            }
+          },
+          (error) => {
+            console.warn("Geolocation unavailable:", error.message);
+          },
+          { enableHighAccuracy: true },
+        );
+      }),
+    );
 
     return () => {
       cancelled = true;
@@ -521,6 +613,10 @@ export function RouteMap({
       map?.remove();
       mapRef.current = null;
       cacheRef.current = null;
+      orderedWaypointsRef.current = [];
+      pinsGroupRef.current = null;
+      drivingPinsRevealedRef.current = false;
+      syncToModeRef.current = () => {};
     };
   }, []);
 
