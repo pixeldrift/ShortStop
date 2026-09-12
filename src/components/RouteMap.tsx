@@ -26,7 +26,11 @@ export type StopMarker = { waypointKey: string; number: number };
  * Route 125's own steps sheet is the only one with real turn-by-turn
  * data today (every 120 route sheet is stops only) - this only ever
  * renders something there, but nothing here is specific to that route. */
-export type TurnMarker = { waypointKey: string; direction?: TurnDirection; heading?: string };
+export type TurnMarker = {
+  waypointKey: string;
+  direction?: TurnDirection;
+  heading?: string;
+};
 
 // La Vergne, TN's approximate town center - a placeholder anchor until
 // the route's own geocoded waypoints (deriveWaypoints.ts, and each
@@ -34,7 +38,7 @@ export type TurnMarker = { waypointKey: string; direction?: TurnDirection; headi
 // real, route-derived center (or bounds) instead. Not tied to any
 // specific address in the route data - just a general "somewhere in
 // town" starting view.
-const LA_VERGNE_CENTER: [number, number] = [36.0134, -86.5581];
+export const LA_VERGNE_CENTER: [number, number] = [36.0134, -86.5581];
 const DEFAULT_ZOOM = 13;
 // Roughly "which side of the street" zoom - what driving mode flies to
 // for the current step, once its own coordinates are known.
@@ -56,11 +60,11 @@ const STREET_ZOOM = 17;
 // browser, never through a server route of this app's own - same
 // public-but-domain/rate-limited model any map tile provider's own
 // client-side key uses, not a secret that needs hiding.
-const TILE_URL = process.env.NEXT_PUBLIC_CARTO_API_KEY
+export const TILE_URL = process.env.NEXT_PUBLIC_CARTO_API_KEY
   ? `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?api_key=${process.env.NEXT_PUBLIC_CARTO_API_KEY}`
   : "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
-const TILE_SUBDOMAINS = "abcd";
-const TILE_ATTRIBUTION =
+export const TILE_SUBDOMAINS = "abcd";
+export const TILE_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors ' +
   '&copy; <a href="https://carto.com/attributions">CARTO</a>';
 
@@ -103,13 +107,18 @@ function stopMarkerHtml(stopNumber: number): string {
 // has neither (shouldn't happen for real data, but nothing enforces
 // it) - the caller skips drawing a marker for it rather than showing
 // an empty one.
-function turnMarkerHtml(direction: TurnDirection | undefined, heading: string | undefined): string | null {
+function turnMarkerHtml(
+  direction: TurnDirection | undefined,
+  heading: string | undefined,
+): string | null {
   if (direction) {
     const mirror = direction === "left" ? ' style="transform: scaleX(-1)"' : "";
     return `<img src="/assets/turn-arrow.png" class="h-8 w-8" alt=""${mirror} />`;
   }
   const icon = heading
-    ? renderToStaticMarkup(<ActionIcon action={heading} className="h-4 w-4 text-zinc-800" />)
+    ? renderToStaticMarkup(
+        <ActionIcon action={heading} className="h-4 w-4 text-zinc-800" />,
+      )
     : "";
   if (!icon) return null;
   return (
@@ -147,12 +156,17 @@ type OrderedWaypoint = { key: string | null; lat: number; lon: number };
 
 // Standard great-circle initial bearing (forward azimuth) from one
 // point to another, in degrees clockwise from north.
-function initialBearing(from: { lat: number; lon: number }, to: { lat: number; lon: number }): number {
+function initialBearing(
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+): number {
   const phi1 = (from.lat * Math.PI) / 180;
   const phi2 = (to.lat * Math.PI) / 180;
   const deltaLambda = ((to.lon - from.lon) * Math.PI) / 180;
   const y = Math.sin(deltaLambda) * Math.cos(phi2);
-  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) -
+    Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
@@ -162,11 +176,15 @@ function initialBearing(from: { lat: number; lon: number }, to: { lat: number; l
 // waypoint at the route's own last stop, where there's no "next" to
 // face. Null if there's nothing to compute a direction from (the active
 // key isn't in `ordered`, or it's the route's only waypoint).
-function bearingAt(ordered: OrderedWaypoint[], activeWaypointKey: string | null | undefined): number | null {
+function bearingAt(
+  ordered: OrderedWaypoint[],
+  activeWaypointKey: string | null | undefined,
+): number | null {
   if (!activeWaypointKey) return null;
   const index = ordered.findIndex((w) => w.key === activeWaypointKey);
   if (index === -1) return null;
-  if (index + 1 < ordered.length) return initialBearing(ordered[index], ordered[index + 1]);
+  if (index + 1 < ordered.length)
+    return initialBearing(ordered[index], ordered[index + 1]);
   if (index - 1 >= 0) return initialBearing(ordered[index - 1], ordered[index]);
   return null;
 }
@@ -394,7 +412,9 @@ export function RouteMap({
         // just means every stop below is a no-op cache miss, not an
         // error worth surfacing over a map that's otherwise working fine.
         void fetch(waypointsUrlRef.current)
-          .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
+          .then((res): Promise<WaypointCache> | WaypointCache =>
+            res.ok ? res.json() : {},
+          )
           .catch(() => ({}) as WaypointCache)
           .then((cache) => {
             if (cancelled || !map) return;
@@ -402,7 +422,11 @@ export function RouteMap({
 
             const orderedWaypoints: OrderedWaypoint[] = [];
             if (schoolRef.current && tripTypeRef.current === "dropoff") {
-              orderedWaypoints.push({ key: null, lat: schoolRef.current.lat, lon: schoolRef.current.lon });
+              orderedWaypoints.push({
+                key: null,
+                lat: schoolRef.current.lat,
+                lon: schoolRef.current.lon,
+              });
             }
             for (const key of pathRef.current) {
               const entry = cache[key];
@@ -414,7 +438,11 @@ export function RouteMap({
             // otherwise never splice the school pin in at all, having
             // matched neither this nor the dropoff check above).
             if (schoolRef.current && tripTypeRef.current !== "dropoff") {
-              orderedWaypoints.push({ key: null, lat: schoolRef.current.lat, lon: schoolRef.current.lon });
+              orderedWaypoints.push({
+                key: null,
+                lat: schoolRef.current.lat,
+                lon: schoolRef.current.lon,
+              });
             }
             orderedWaypointsRef.current = orderedWaypoints;
 
@@ -432,15 +460,19 @@ export function RouteMap({
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  waypoints: orderedWaypoints.map(({ lat, lon }) => ({ lat, lon })),
+                  waypoints: orderedWaypoints.map(({ lat, lon }) => ({
+                    lat,
+                    lon,
+                  })),
                 }),
               })
-                .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+                .then((res): Promise<RoutingResult> | null =>
+                  res.ok ? res.json() : null,
+                )
                 .then((result) => {
                   if (cancelled || !map || !result) return;
-                  const roadLatLngs: [number, number][] = result.geometry.coordinates.map(
-                    ([lon, lat]) => [lat, lon],
-                  );
+                  const roadLatLngs: [number, number][] =
+                    result.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
                   L.polyline(roadLatLngs, {
                     color: "#2563eb",
                     weight: 4,
@@ -454,11 +486,19 @@ export function RouteMap({
                   // a tighter, truer "fit the whole route" frame than
                   // the raw waypoint dots the map was fit to below
                   // while this was loading.
-                  if (modeRef.current === "overview" && roadLatLngs.length > 0) {
-                    map.fitBounds(L.latLngBounds(roadLatLngs), { padding: [40, 40], maxZoom: 16 });
+                  if (
+                    modeRef.current === "overview" &&
+                    roadLatLngs.length > 0
+                  ) {
+                    map.fitBounds(L.latLngBounds(roadLatLngs), {
+                      padding: [40, 40],
+                      maxZoom: 16,
+                    });
                   }
                 })
-                .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+                .catch((err) =>
+                  console.warn("Couldn't fetch route geometry:", err),
+                );
             }
 
             // Just one pin marking where the route begins - every
@@ -470,7 +510,10 @@ export function RouteMap({
             function drawOverviewPin() {
               pinsGroup.clearLayers();
               if (schoolRef.current && tripTypeRef.current === "dropoff") {
-                const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
+                const latLng: [number, number] = [
+                  schoolRef.current.lat,
+                  schoolRef.current.lon,
+                ];
                 L.marker(latLng, {
                   icon: L.divIcon({
                     className: "",
@@ -482,7 +525,9 @@ export function RouteMap({
                 }).addTo(pinsGroup);
                 return;
               }
-              const firstStop = stopsRef.current.find((s) => cache[s.waypointKey]?.status === "ok");
+              const firstStop = stopsRef.current.find(
+                (s) => cache[s.waypointKey]?.status === "ok",
+              );
               const entry = firstStop && cache[firstStop.waypointKey];
               if (firstStop && entry && entry.status === "ok") {
                 const latLng: [number, number] = [entry.lat, entry.lon];
@@ -524,12 +569,20 @@ export function RouteMap({
                 if (!html) continue;
                 const latLng: [number, number] = [entry.lat, entry.lon];
                 L.marker(latLng, {
-                  icon: L.divIcon({ className: "", html, iconSize: [32, 32], iconAnchor: [16, 16] }),
+                  icon: L.divIcon({
+                    className: "",
+                    html,
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16],
+                  }),
                   interactive: false,
                 }).addTo(pinsGroup);
               }
               if (schoolRef.current) {
-                const latLng: [number, number] = [schoolRef.current.lat, schoolRef.current.lon];
+                const latLng: [number, number] = [
+                  schoolRef.current.lat,
+                  schoolRef.current.lon,
+                ];
                 L.marker(latLng, {
                   icon: L.divIcon({
                     className: "",
@@ -555,7 +608,10 @@ export function RouteMap({
                   const bounds = orderedWaypointsRef.current.map(
                     (w): [number, number] => [w.lat, w.lon],
                   );
-                  map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: 16 });
+                  map.fitBounds(L.latLngBounds(bounds), {
+                    padding: [40, 40],
+                    maxZoom: 16,
+                  });
                 }
                 return;
               }
@@ -567,7 +623,10 @@ export function RouteMap({
               // fly to, reveal immediately instead of waiting on a
               // flight that will never happen (a later step advance
               // that does resolve still gets its own gated reveal).
-              const bearing = bearingAt(orderedWaypointsRef.current, activeWaypointKeyRef.current);
+              const bearing = bearingAt(
+                orderedWaypointsRef.current,
+                activeWaypointKeyRef.current,
+              );
               if (bearing != null) map.setBearing(bearing);
               const key = activeWaypointKeyRef.current;
               const entry = key ? cache[key] : undefined;
@@ -584,7 +643,9 @@ export function RouteMap({
                   drivingPinsRevealedRef.current = true;
                 });
               }
-              map.flyTo([entry.lat, entry.lon], STREET_ZOOM, { duration: 0.75 });
+              map.flyTo([entry.lat, entry.lon], STREET_ZOOM, {
+                duration: 0.75,
+              });
             };
             syncToModeRef.current();
           });
@@ -596,7 +657,8 @@ export function RouteMap({
         // the console warning: the app is still fully usable via the
         // turn-by-turn steps without it, same as if the browser/device
         // simply doesn't have a GPS fix yet.
-        if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
+        if (typeof navigator === "undefined" || !("geolocation" in navigator))
+          return;
 
         const locationIcon = L.divIcon({
           className: "",
@@ -609,7 +671,10 @@ export function RouteMap({
         watchId = navigator.geolocation.watchPosition(
           (position) => {
             if (cancelled || !map) return;
-            const latLng: [number, number] = [position.coords.latitude, position.coords.longitude];
+            const latLng: [number, number] = [
+              position.coords.latitude,
+              position.coords.longitude,
+            ];
             if (!locationMarker) {
               locationMarker = L.marker(latLng, {
                 icon: locationIcon,
