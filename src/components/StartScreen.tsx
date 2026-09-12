@@ -22,36 +22,50 @@ import { addressWithoutZip } from "@/lib/schoolAddress";
 import type { NavigationStep, Route } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
-/** "Published"/"Draft"/"Demo route" plus its own color - same three
- * RouteStatus values RouteListScreen's own admin rows already key off
- * (isRoutePublished), just spelled out here for a driver/admin reading
- * this one route's own info screen instead of a whole table of them. */
+/** "Published"/"Draft"/"Demo route" plus the color its own status
+ * icon (not the text itself - see the render below) should carry -
+ * same three RouteStatus values RouteListScreen's own admin rows
+ * already key off (isRoutePublished), just spelled out here for a
+ * driver/admin reading this one route's own info screen instead of a
+ * whole table of them. */
 function routeStatusLabel(status: Route["status"]): {
   text: string;
-  className: string;
+  iconClassName: string;
 } {
   if (status === "published")
-    return { text: "Published", className: "text-green-600" };
-  if (status === "draft") return { text: "Draft", className: "text-amber-600" };
-  return { text: "Demo route", className: "text-zinc-500" };
+    return { text: "Published", iconClassName: "text-green-600" };
+  if (status === "draft")
+    return { text: "Draft", iconClassName: "text-amber-600" };
+  return { text: "Demo route", iconClassName: "text-zinc-400" };
 }
 
-/** Whether every geocodable step on this route has a resolved
- * coordinate - the same "ok" cache-entry check isRouteFullyResolved
- * (routeReadiness.ts) uses before RouteListScreen ever lets a route
- * publish. The screen itself only shows a plain "Coordinates" label
- * colored/iconed by this boolean (check vs. X) - the actual count
- * only matters once View All Stops is open, where each stop's own
- * resolved/unresolved state is visible directly. A route with nothing
- * geocodable at all (every step "unresolvable" - pure driver
- * instructions, no real stops) has nothing to verify in the first
- * place, so that reads as verified rather than a false alarm. */
-function coordinatesVerified(route: Route, cache: WaypointCache): boolean {
+/** "X/Y coordinates" plus whether every geocodable step on the route
+ * has a resolved one - the same "ok" cache-entry check
+ * isRouteFullyResolved (routeReadiness.ts) uses before RouteListScreen
+ * ever lets a route publish, just counted here instead of reduced to
+ * a single pass/fail. `verified` only drives the check/X icon's own
+ * color (see the render below, same treatment as routeStatusLabel's
+ * own iconClassName) - the count itself is plain gray text either
+ * way. A route with nothing geocodable at all (every step
+ * "unresolvable" - pure driver instructions, no real stops) has
+ * nothing to verify in the first place, so that reads as its own
+ * neutral line rather than a confusing "0/0." */
+function coordinateCountLabel(
+  route: Route,
+  cache: WaypointCache,
+): { text: string; verified: boolean } {
   const geocodable = route.steps.filter(
     (s) => !s.waypointKey.startsWith("unresolvable:"),
   );
-  if (geocodable.length === 0) return true;
-  return geocodable.every((s) => cache[s.waypointKey]?.status === "ok");
+  if (geocodable.length === 0)
+    return { text: "No coordinates to verify", verified: true };
+  const resolved = geocodable.filter(
+    (s) => cache[s.waypointKey]?.status === "ok",
+  ).length;
+  return {
+    text: `${resolved}/${geocodable.length} coordinates`,
+    verified: resolved === geocodable.length,
+  };
 }
 
 // Not currently rendered (see StartScreen below) - kept ready to
@@ -134,7 +148,7 @@ export function StartScreen({
   const [showStopsModal, setShowStopsModal] = useState(false);
   // The committed geocode cache (src/app/api/waypoints), fetched fresh
   // on mount purely to answer "is this route's coordinate data actually
-  // good" (coordinatesVerified above) - a real fetch failure just
+  // good" (coordinateCountLabel above) - a real fetch failure just
   // reads as "0 confirmed" rather than blocking anything else on this
   // screen, same empty-fallback convention every other cache fetch in
   // this app already uses (RouteMap.tsx, EditRouteScreen.tsx).
@@ -154,7 +168,7 @@ export function StartScreen({
     };
   }, []);
   const status = routeStatusLabel(route.status);
-  const verified = coordinatesVerified(route, waypointCache);
+  const coordStatus = coordinateCountLabel(route, waypointCache);
 
   // Same derivation as StepScreen's own stopMarkers/turnMarkers/
   // routePath/schoolPoint - this screen's small overview map wants the
@@ -315,26 +329,22 @@ export function StartScreen({
               button - the two rarely change, so they don't need a full
               row each. */}
           <div className="mt-3 flex items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left text-xs font-semibold">
-              <span className={`flex w-full items-center gap-1 ${status.className}`}>
-                <EyeIcon className="h-3 w-3 shrink-0" />
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left text-xs font-semibold text-zinc-500">
+              {/* Only the icon carries the status color - published/
+                  draft/demo, and resolved/unresolved below - the text
+                  itself stays plain gray both places, same weight as
+                  each other rather than one drawing more attention. */}
+              <span className="flex w-full items-center gap-1">
+                <EyeIcon className={`h-3 w-3 shrink-0 ${status.iconClassName}`} />
                 <span className="min-w-0 truncate">{status.text}</span>
               </span>
-              <span
-                className={`flex w-full items-center gap-1 ${
-                  verified ? "text-green-600" : "text-red-500"
-                }`}
-              >
-                {verified ? (
-                  <CheckCircleIcon className="h-3 w-3 shrink-0" />
+              <span className="flex w-full items-center gap-1">
+                {coordStatus.verified ? (
+                  <CheckCircleIcon className="h-3 w-3 shrink-0 text-green-600" />
                 ) : (
-                  <XCircleIcon className="h-3 w-3 shrink-0" />
+                  <XCircleIcon className="h-3 w-3 shrink-0 text-red-500" />
                 )}
-                {/* Just "Coordinates" - the icon/color above already say
-                    resolved or not; the actual count is one tap away via
-                    View All Stops, where each stop's own status shows
-                    directly, so it'd only be redundant here. */}
-                <span className="min-w-0 truncate">Coordinates</span>
+                <span className="min-w-0 truncate">{coordStatus.text}</span>
               </span>
             </div>
             <button
