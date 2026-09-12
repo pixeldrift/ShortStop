@@ -139,7 +139,7 @@ export function SchoolListScreen({
                 label above, the way sharing a centered flex row with it
                 used to. */}
             <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
-              <SchoolIcon className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-blue-600" />
+              <SchoolIcon className="absolute top-1/2 right-full mr-1 h-6 w-6 -translate-y-1/2 text-blue-600" />
               Schools
             </h1>
           </div>

@@ -509,7 +509,7 @@ export function RouteListScreen({
                     county label above, the way sharing a centered flex
                     row with it used to. */}
                 <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
-                  <RouteIcon className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-blue-600" />
+                  <RouteIcon className="absolute top-1/2 right-full mr-1 h-6 w-6 -translate-y-1/2 text-blue-600" />
                   Routes
                 </h1>
               </div>

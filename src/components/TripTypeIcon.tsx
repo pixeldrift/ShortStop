@@ -1,4 +1,4 @@
-import { FlagIcon, SunIcon, SunriseIcon } from "./icons";
+import { AmIcon, FlagIcon, PmIcon } from "./icons";
 import type { TripType } from "@/lib/types";
 
 /** Which icon a trip-type badge shows next to its own "AM"/"PM"/"Field
@@ -8,7 +8,7 @@ import type { TripType } from "@/lib/types";
  * (TopBar, StartScreen, RouteListScreen, EditRouteScreen, StepScreen)
  * that already shows one of these badges. */
 export function TripTypeIcon({ tripType, className }: { tripType: TripType; className?: string }) {
-  if (tripType === "pickup") return <SunriseIcon className={className} />;
-  if (tripType === "dropoff") return <SunIcon className={className} />;
+  if (tripType === "pickup") return <AmIcon className={className} />;
+  if (tripType === "dropoff") return <PmIcon className={className} />;
   return <FlagIcon className={className} />;
 }

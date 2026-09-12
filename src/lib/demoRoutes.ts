@@ -100,8 +100,8 @@ function mulberry32(seed: number): () => number {
 // Windows loosely matching the real routes' actual times (6:30-7:56 AM
 // pickup, 2:30-3:45 PM dropoff) - keeps a demo row's departureTime
 // consistent with its own tripType, so RouteListScreen's AM/PM icon
-// (SunriseIcon for pickup, SunIcon for dropoff) never contradicts the
-// time printed right next to it.
+// (AmIcon for pickup, PmIcon for dropoff) never contradicts the time
+// printed right next to it.
 function randomDepartureTime(rng: () => number, tripType: TripType): string {
   const [minHour, maxHour] = tripType === "pickup" ? [6, 8] : [14, 16];
   const hour24 = minHour + Math.floor(rng() * (maxHour - minHour + 1));
