@@ -2964,15 +2964,28 @@ export function EditRouteScreen({
                   <span className="text-zinc-400 italic">No route number</span>
                 )}
               </span>
-              {routeNumber && tripType && (
-                <span className="flex items-center gap-0.5 text-sm font-bold text-blue-500">
-                  {tripTypeLabel(tripType)}
+              {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
+                  pickup/dropoff is just the icon alone, sized to the
+                  route number's own height - every other TripType
+                  (FlagIcon, no lettering of its own) keeps its text
+                  label alongside it. */}
+              {routeNumber &&
+                (tripType === "pickup" || tripType === "dropoff" ? (
                   <TripTypeIcon
                     tripType={tripType}
-                    className="h-3.5 w-3.5 text-zinc-400"
+                    className="h-4 w-4 text-zinc-400"
                   />
-                </span>
-              )}
+                ) : (
+                  tripType && (
+                    <span className="flex items-center gap-0.5 text-sm font-bold text-blue-500">
+                      {tripTypeLabel(tripType)}
+                      <TripTypeIcon
+                        tripType={tripType}
+                        className="h-3.5 w-3.5 text-zinc-400"
+                      />
+                    </span>
+                  )
+                ))}
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
                 {schoolName || "No school selected"}
               </span>
@@ -3276,19 +3289,32 @@ export function EditRouteScreen({
                 was tuned against. */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
               Route {route?.routeNumber ?? ""}
-              {route?.routeNumber && tripType && (
-                <span
-                  className={`absolute left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500 ${
-                    tripType === "dropoff" ? "top-0" : "bottom-0"
-                  }`}
-                >
-                  {tripTypeLabel(tripType)}
+              {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
+                  pickup/dropoff no longer needs a text sibling to
+                  align against, or the old top/bottom-edge pin that
+                  alignment used - vertically centered against the
+                  title's full height instead, sized to nearly match
+                  it. Every other TripType (FlagIcon, no lettering of
+                  its own) keeps the original small icon+text pairing,
+                  pinned to the title's own top/bottom edge by trip
+                  type same as before. */}
+              {route?.routeNumber &&
+                (tripType === "pickup" || tripType === "dropoff" ? (
                   <TripTypeIcon
                     tripType={tripType}
-                    className="h-4 w-4 text-zinc-400"
+                    className="absolute top-1/2 left-full ml-2 h-8 w-8 -translate-y-1/2 text-zinc-400"
                   />
-                </span>
-              )}
+                ) : (
+                  tripType && (
+                    <span className="absolute bottom-0 left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500">
+                      {tripTypeLabel(tripType)}
+                      <TripTypeIcon
+                        tripType={tripType}
+                        className="h-4 w-4 text-zinc-400"
+                      />
+                    </span>
+                  )
+                ))}
             </h1>
           </div>
           <span className="w-10" />

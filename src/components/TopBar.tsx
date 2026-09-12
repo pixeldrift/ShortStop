@@ -49,28 +49,33 @@ export function TopBar({
           <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
             Route
           </p>
-          {/* relative/absolute rather than a flex row - the AM/PM badge
+          {/* relative/absolute rather than a flex row - the AM/PM icon
               floats off the route number's own right edge (left-full)
               so it never shifts the number itself off-center from the
-              "ROUTE" label above. Pinned to the number's own top edge
-              for a dropoff (PM) route, bottom edge otherwise (AM/FT/OT)
-              - the same top/bottom-by-trip-type baseline every other
-              AM/PM badge in the app now shares (RouteListScreen's own
-              rows, StartScreen's title, AllStopsModal's title), rather
-              than this one badge alone staying vertically centered. */}
+              "ROUTE" label above. am.svg/pm.svg carry their own label
+              lettering, so pickup/dropoff is the icon alone -
+              vertically centered against the number's full height and
+              sized to nearly match it. Every other TripType (FlagIcon,
+              no lettering of its own) keeps the original small
+              icon+text pairing, pinned to the number's bottom edge same
+              as before (only dropoff, now handled by the icon-alone
+              branch, ever pinned to the top edge). */}
           <p className="font-heading relative -mt-1 text-3xl leading-[0.7083] font-black tracking-tight">
             {routeNumber}
-            <span
-              className={`absolute left-full ml-1.5 flex items-center gap-1 text-base leading-[0.75] text-blue-500 ${
-                tripType === "dropoff" ? "top-0" : "bottom-0"
-              }`}
-            >
-              {tripTypeLabel(tripType)}
+            {tripType === "pickup" || tripType === "dropoff" ? (
               <TripTypeIcon
                 tripType={tripType}
-                className="h-4 w-4 text-zinc-400"
+                className="absolute top-1/2 left-full ml-1.5 h-7 w-7 -translate-y-1/2 text-zinc-400"
               />
-            </span>
+            ) : (
+              <span className="absolute bottom-0 left-full ml-1.5 flex items-center gap-1 text-base leading-[0.75] text-blue-500">
+                {tripTypeLabel(tripType)}
+                <TripTypeIcon
+                  tripType={tripType}
+                  className="h-4 w-4 text-zinc-400"
+                />
+              </span>
+            )}
           </p>
         </div>
 

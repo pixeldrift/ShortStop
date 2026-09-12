@@ -737,44 +737,35 @@ export function RouteListScreen({
                         value - and were confirmed against the live
                         rendered box (not just canvas metrics) before
                         landing here. */}
-                    {/* items-start/items-end on the outer row aligns the
-                        badge's own div to the route number's own top/
-                        bottom edge - but that div also has to stop
-                        centering its own two children (items-center) to
-                        actually deliver "flush," since the icon (h-3,
-                        12px) is taller than the now-trimmed text (~9px,
-                        leading-[0.75] below); items-center would leave
-                        the text itself sitting short of the div's own
-                        edge by half that difference even once the div
-                        itself is correctly placed. Matching the same
-                        start/end here instead puts the *text* flush
-                        against the number, icon included, not just the
-                        div loosely centered around it. */}
-                    <div
-                      className={`flex gap-1.5 ${
-                        route.tripType === "dropoff"
-                          ? "items-start"
-                          : "items-end"
-                      }`}
-                    >
+                    {/* am.svg/pm.svg have their own "AM"/"PM" lettering
+                        baked right into the glyph, so a pickup/dropoff
+                        badge is just that icon alone now, sized to the
+                        route number's own full height rather than a
+                        small icon next to small text. FlagIcon (every
+                        other TripType) has no such lettering of its
+                        own, so that case keeps the original small
+                        icon+text pairing. */}
+                    <div className="flex items-center gap-1">
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
-                      <div
-                        className={`flex gap-0.5 text-blue-500 ${
-                          route.tripType === "dropoff"
-                            ? "items-start"
-                            : "items-end"
-                        }`}
-                      >
-                        <span className="font-heading text-xs leading-[0.75] font-black">
-                          {tripTypeLabel(route.tripType)}
-                        </span>
+                      {route.tripType === "pickup" ||
+                      route.tripType === "dropoff" ? (
                         <TripTypeIcon
                           tripType={route.tripType}
-                          className="h-3 w-3 text-zinc-400"
+                          className="h-6 w-6 text-zinc-400"
                         />
-                      </div>
+                      ) : (
+                        <span className="flex items-end gap-0.5 text-blue-500">
+                          <span className="font-heading text-xs leading-[0.75] font-black">
+                            {tripTypeLabel(route.tripType)}
+                          </span>
+                          <TripTypeIcon
+                            tripType={route.tripType}
+                            className="h-3 w-3 text-zinc-400"
+                          />
+                        </span>
+                      )}
                     </div>
                     <span className="min-w-0 pl-1.5">
                       <SchoolNameLabel name={route.schoolName} />

@@ -235,30 +235,33 @@ export function StartScreen({
                 uses leading-none/-mt-1 and never needed retuning - to
                 1.5px, rather than guessing a value against this tighter
                 line-height. relative/absolute rather than a flex row -
-                the AM/PM badge floats off the
-                text's own right edge (left-full) so it never shifts the
-                title text itself off-center from the county label above,
-                the way sharing a centered flex row with it used to.
-                Pinned to the title's own top edge for a dropoff (PM)
-                route, bottom edge otherwise (AM/FT/OT) - same
-                top/bottom-by-trip-type baseline every AM/PM badge in the
-                app now shares (RouteListScreen's own rows,
-                AllStopsModal's title, TopBar's route badge), rather than
-                this one staying vertically centered regardless of trip
-                type. */}
+                the AM/PM icon floats off the text's own right edge
+                (left-full) so it never shifts the title text itself
+                off-center from the county label above, the way sharing
+                a centered flex row with it used to. am.svg/pm.svg carry
+                their own label lettering, so pickup/dropoff is the icon
+                alone - vertically centered against the title's full
+                height and sized to nearly match it. Every other
+                TripType (FlagIcon, no lettering of its own) keeps the
+                original small icon+text pairing, pinned to the title's
+                bottom edge same as before (only dropoff, now handled by
+                the icon-alone branch, ever pinned to the top edge). */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
               Route {route.routeNumber}
-              <span
-                className={`absolute left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500 ${
-                  route.tripType === "dropoff" ? "top-0" : "bottom-0"
-                }`}
-              >
-                {tripTypeLabel(route.tripType)}
+              {route.tripType === "pickup" || route.tripType === "dropoff" ? (
                 <TripTypeIcon
                   tripType={route.tripType}
-                  className="h-4 w-4 text-zinc-400"
+                  className="absolute top-1/2 left-full ml-2 h-8 w-8 -translate-y-1/2 text-zinc-400"
                 />
-              </span>
+              ) : (
+                <span className="absolute bottom-0 left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500">
+                  {tripTypeLabel(route.tripType)}
+                  <TripTypeIcon
+                    tripType={route.tripType}
+                    className="h-4 w-4 text-zinc-400"
+                  />
+                </span>
+              )}
             </h1>
           </div>
           {/* Balances the back button's own width so the title block
@@ -494,17 +497,20 @@ function AllStopsModal({
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
           <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
             Route {route.routeNumber}
-            <span
-              className={`flex items-center gap-1 text-sm leading-[0.75] text-blue-500 ${
-                route.tripType === "dropoff" ? "self-start" : "self-end"
-              }`}
-            >
-              {tripTypeLabel(route.tripType)}
+            {route.tripType === "pickup" || route.tripType === "dropoff" ? (
               <TripTypeIcon
                 tripType={route.tripType}
-                className="h-3.5 w-3.5 text-zinc-400"
+                className="h-5 w-5 text-zinc-400"
               />
-            </span>
+            ) : (
+              <span className="flex items-center gap-1 text-sm leading-[0.75] text-blue-500">
+                {tripTypeLabel(route.tripType)}
+                <TripTypeIcon
+                  tripType={route.tripType}
+                  className="h-3.5 w-3.5 text-zinc-400"
+                />
+              </span>
+            )}
             <span className="text-zinc-400">-</span>
             All Stops
           </h2>
