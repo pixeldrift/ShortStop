@@ -16,6 +16,7 @@ import {
   RoundedTriangleIcon,
   TriangleIcon,
   TurnArrow,
+  XCircleIcon,
 } from "./icons";
 import { addressWithoutZip } from "@/lib/schoolAddress";
 import type { NavigationStep, Route } from "@/lib/types";
@@ -35,32 +36,22 @@ function routeStatusLabel(status: Route["status"]): {
   return { text: "Demo route", className: "text-zinc-500" };
 }
 
-/** "All coordinates verified" (or a partial "5/7 coordinates verified")
- * - the same "ok" cache-entry check isRouteFullyResolved (routeReadiness.ts)
- * uses before RouteListScreen ever lets a route publish, just counted
- * here instead of reduced to a single pass/fail. A route with nothing
+/** Whether every geocodable step on this route has a resolved
+ * coordinate - the same "ok" cache-entry check isRouteFullyResolved
+ * (routeReadiness.ts) uses before RouteListScreen ever lets a route
+ * publish. The screen itself only shows a plain "Coordinates" label
+ * colored/iconed by this boolean (check vs. X) - the actual count
+ * only matters once View All Stops is open, where each stop's own
+ * resolved/unresolved state is visible directly. A route with nothing
  * geocodable at all (every step "unresolvable" - pure driver
  * instructions, no real stops) has nothing to verify in the first
- * place, so that reads as its own neutral line rather than a
- * confusing "0/0 verified." */
-function coordinateStatusLabel(
-  route: Route,
-  cache: WaypointCache,
-): { text: string; verified: boolean } {
+ * place, so that reads as verified rather than a false alarm. */
+function coordinatesVerified(route: Route, cache: WaypointCache): boolean {
   const geocodable = route.steps.filter(
     (s) => !s.waypointKey.startsWith("unresolvable:"),
   );
-  if (geocodable.length === 0)
-    return { text: "No coordinates to verify", verified: true };
-  const resolved = geocodable.filter(
-    (s) => cache[s.waypointKey]?.status === "ok",
-  ).length;
-  return resolved === geocodable.length
-    ? { text: "All coordinates verified", verified: true }
-    : {
-        text: `${resolved}/${geocodable.length} coordinates verified`,
-        verified: false,
-      };
+  if (geocodable.length === 0) return true;
+  return geocodable.every((s) => cache[s.waypointKey]?.status === "ok");
 }
 
 // Not currently rendered (see StartScreen below) - kept ready to
@@ -143,7 +134,7 @@ export function StartScreen({
   const [showStopsModal, setShowStopsModal] = useState(false);
   // The committed geocode cache (src/app/api/waypoints), fetched fresh
   // on mount purely to answer "is this route's coordinate data actually
-  // good" (coordinateStatusLabel above) - a real fetch failure just
+  // good" (coordinatesVerified above) - a real fetch failure just
   // reads as "0 confirmed" rather than blocking anything else on this
   // screen, same empty-fallback convention every other cache fetch in
   // this app already uses (RouteMap.tsx, EditRouteScreen.tsx).
@@ -163,7 +154,7 @@ export function StartScreen({
     };
   }, []);
   const status = routeStatusLabel(route.status);
-  const coordStatus = coordinateStatusLabel(route, waypointCache);
+  const verified = coordinatesVerified(route, waypointCache);
 
   // Same derivation as StepScreen's own stopMarkers/turnMarkers/
   // routePath/schoolPoint - this screen's small overview map wants the
@@ -331,11 +322,19 @@ export function StartScreen({
               </span>
               <span
                 className={`flex w-full items-center gap-1 ${
-                  coordStatus.verified ? "text-green-600" : "text-zinc-500"
+                  verified ? "text-green-600" : "text-red-500"
                 }`}
               >
-                <CheckCircleIcon className="h-3 w-3 shrink-0" />
-                <span className="min-w-0 truncate">{coordStatus.text}</span>
+                {verified ? (
+                  <CheckCircleIcon className="h-3 w-3 shrink-0" />
+                ) : (
+                  <XCircleIcon className="h-3 w-3 shrink-0" />
+                )}
+                {/* Just "Coordinates" - the icon/color above already say
+                    resolved or not; the actual count is one tap away via
+                    View All Stops, where each stop's own status shows
+                    directly, so it'd only be redundant here. */}
+                <span className="min-w-0 truncate">Coordinates</span>
               </span>
             </div>
             <button
