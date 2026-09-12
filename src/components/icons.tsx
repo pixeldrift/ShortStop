@@ -158,9 +158,9 @@ export function ActionIcon({ action, className }: { action: string; className?: 
 }
 
 /** A small pennant on a pole - the field-trip badge every AM/PM badge's
- * own SunriseIcon/SunIcon pairs with once a route's trip type is
- * "fieldtrip" instead (TripTypeIcon, TripTypeIcon.tsx) - a one-off
- * special trip has no time-of-day to show a sun icon for. */
+ * own AmIcon/PmIcon pairs with once a route's trip type is "fieldtrip"
+ * instead (TripTypeIcon, TripTypeIcon.tsx) - a one-off special trip
+ * has no time-of-day to show an AM/PM icon for. */
 export { default as FlagIcon } from "./icons/flag.svg";
 export { default as BackArrowIcon } from "./icons/back-arrow.svg";
 export { default as RightArrowIcon } from "./icons/right-arrow.svg";
@@ -178,8 +178,8 @@ export { default as DownloadIcon } from "./icons/download.svg";
 export { default as EyeIcon } from "./icons/eye.svg";
 export { default as EyeOffIcon } from "./icons/eye-off.svg";
 export { default as SearchIcon } from "./icons/search.svg";
-export { default as SunriseIcon } from "./icons/sunrise.svg";
-export { default as SunIcon } from "./icons/sun.svg";
+export { default as AmIcon } from "./icons/am.svg";
+export { default as PmIcon } from "./icons/pm.svg";
 export { default as GlobeIcon } from "./icons/globe.svg";
 export { default as SpinnerIcon } from "./icons/spinner.svg";
 export { default as CloseIcon } from "./icons/close.svg";

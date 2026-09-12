@@ -57,7 +57,7 @@ import type {
   RouteResolutionCounts,
   RowResolutionStatus,
 } from "@/lib/routeResolutionStatus";
-import { tripTypeFullLabel, tripTypeLabel } from "@/lib/tripType";
+import { tripTypeFullLabel } from "@/lib/tripType";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -2964,12 +2964,20 @@ export function EditRouteScreen({
                   <span className="text-zinc-400 italic">No route number</span>
                 )}
               </span>
-              {routeNumber && tripType && (
-                <span className="flex items-center gap-0.5 text-sm font-bold text-blue-500">
-                  {tripTypeLabel(tripType)}
-                  <TripTypeIcon tripType={tripType} className="h-3.5 w-3.5" />
-                </span>
-              )}
+              {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
+                  pickup/dropoff is just the icon alone, sized to the
+                  route number's own height. Every other TripType
+                  (fieldtrip/other) skips the badge entirely - those
+                  routes may not even have a morning/afternoon
+                  distinction to badge, and there's no real example of
+                  one yet to design that case against. */}
+              {routeNumber &&
+                (tripType === "pickup" || tripType === "dropoff") && (
+                  <TripTypeIcon
+                    tripType={tripType}
+                    className="h-3 w-3 text-zinc-400"
+                  />
+                )}
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
                 {schoolName || "No school selected"}
               </span>
@@ -3273,16 +3281,21 @@ export function EditRouteScreen({
                 was tuned against. */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
               Route {route?.routeNumber ?? ""}
-              {route?.routeNumber && tripType && (
-                <span
-                  className={`absolute left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500 ${
-                    tripType === "dropoff" ? "top-0" : "bottom-0"
-                  }`}
-                >
-                  {tripTypeLabel(tripType)}
-                  <TripTypeIcon tripType={tripType} className="h-4 w-4" />
-                </span>
-              )}
+              {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
+                  pickup/dropoff is vertically centered against the
+                  title's full height and sized to nearly match it.
+                  Every other TripType (fieldtrip/other) skips the
+                  badge entirely - those routes may not even have a
+                  morning/afternoon distinction to badge, and there's
+                  no real example of one yet to design that case
+                  against. */}
+              {route?.routeNumber &&
+                (tripType === "pickup" || tripType === "dropoff") && (
+                  <TripTypeIcon
+                    tripType={tripType}
+                    className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
+                  />
+                )}
             </h1>
           </div>
           <span className="w-10" />

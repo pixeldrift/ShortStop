@@ -1,7 +1,6 @@
 import { Logo } from "./Logo";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { BackArrowIcon, PersonSolidIcon } from "./icons";
-import { tripTypeLabel } from "@/lib/tripType";
 import type { TripType } from "@/lib/types";
 
 export function TopBar({
@@ -36,7 +35,11 @@ export function TopBar({
           height would push the logo/Bus figure down out of line. */}
       <div className="grid w-full grid-cols-3 items-start">
         <div className="justify-self-start">
-          <button type="button" onClick={onLogoClick} aria-label="Back to routes">
+          <button
+            type="button"
+            onClick={onLogoClick}
+            aria-label="Back to routes"
+          >
             <Logo size="small" />
           </button>
         </div>
@@ -45,33 +48,42 @@ export function TopBar({
           <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
             Route
           </p>
-          {/* relative/absolute rather than a flex row - the AM/PM badge
+          {/* mt-0.5 (not the -mt-1 this used to be) - leading-[0.7083]
+              trims the number's own line box down to its ink height,
+              and pulling it up further on top of that was crowding it
+              right up against "ROUTE" above; a small positive gap
+              instead of a negative one keeps them legibly apart.
+              relative/absolute rather than a flex row - the AM/PM icon
               floats off the route number's own right edge (left-full)
               so it never shifts the number itself off-center from the
-              "ROUTE" label above. Pinned to the number's own top edge
-              for a dropoff (PM) route, bottom edge otherwise (AM/FT/OT)
-              - the same top/bottom-by-trip-type baseline every other
-              AM/PM badge in the app now shares (RouteListScreen's own
-              rows, StartScreen's title, AllStopsModal's title), rather
-              than this one badge alone staying vertically centered. */}
-          <p className="font-heading relative -mt-1 text-3xl leading-[0.7083] font-black tracking-tight">
+              "ROUTE" label above. am.svg/pm.svg carry their own label
+              lettering, so pickup/dropoff is the icon alone -
+              vertically centered against the number's full height and
+              sized to nearly match it. Every other TripType
+              (fieldtrip/other) skips the badge entirely - those routes
+              may not even have a morning/afternoon distinction to
+              badge, and there's no real example of one yet to design
+              that case against. */}
+          <p className="font-heading relative mt-0.5 text-3xl leading-[0.7083] font-black tracking-tight">
             {routeNumber}
-            <span
-              className={`absolute left-full ml-1.5 flex items-center gap-1 text-base leading-[0.75] text-blue-500 ${
-                tripType === "dropoff" ? "top-0" : "bottom-0"
-              }`}
-            >
-              {tripTypeLabel(tripType)}
-              <TripTypeIcon tripType={tripType} className="h-4 w-4" />
-            </span>
+            {(tripType === "pickup" || tripType === "dropoff") && (
+              <TripTypeIcon
+                tripType={tripType}
+                className="absolute top-1/2 left-full ml-1.5 h-[21px] w-[21px] -translate-y-1/2 text-zinc-400"
+              />
+            )}
           </p>
         </div>
 
         <div className="col-start-3 justify-self-end text-right">
-          <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Bus</p>
+          <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
+            Bus
+          </p>
           <p
             className={`font-heading -mt-1 text-xl leading-none font-bold tracking-tight ${
-              isAlternateBus ? "rounded-md border border-red-500 px-1 py-0.5" : ""
+              isAlternateBus
+                ? "rounded-md border border-red-500 px-1 py-0.5"
+                : ""
             }`}
           >
             {busNumber}

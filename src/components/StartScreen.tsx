@@ -16,7 +16,6 @@ import {
   TurnArrow,
 } from "./icons";
 import { addressWithoutZip } from "@/lib/schoolAddress";
-import { tripTypeLabel } from "@/lib/tripType";
 import type { NavigationStep, Route } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
@@ -24,8 +23,12 @@ import type { WaypointCache } from "@/lib/waypointCache";
  * RouteStatus values RouteListScreen's own admin rows already key off
  * (isRoutePublished), just spelled out here for a driver/admin reading
  * this one route's own info screen instead of a whole table of them. */
-function routeStatusLabel(status: Route["status"]): { text: string; className: string } {
-  if (status === "published") return { text: "Published", className: "text-green-600" };
+function routeStatusLabel(status: Route["status"]): {
+  text: string;
+  className: string;
+} {
+  if (status === "published")
+    return { text: "Published", className: "text-green-600" };
   if (status === "draft") return { text: "Draft", className: "text-amber-600" };
   return { text: "Demo route", className: "text-zinc-500" };
 }
@@ -38,13 +41,24 @@ function routeStatusLabel(status: Route["status"]): { text: string; className: s
  * instructions, no real stops) has nothing to verify in the first
  * place, so that reads as its own neutral line rather than a
  * confusing "0/0 verified." */
-function coordinateStatusLabel(route: Route, cache: WaypointCache): { text: string; verified: boolean } {
-  const geocodable = route.steps.filter((s) => !s.waypointKey.startsWith("unresolvable:"));
-  if (geocodable.length === 0) return { text: "No coordinates to verify", verified: true };
-  const resolved = geocodable.filter((s) => cache[s.waypointKey]?.status === "ok").length;
+function coordinateStatusLabel(
+  route: Route,
+  cache: WaypointCache,
+): { text: string; verified: boolean } {
+  const geocodable = route.steps.filter(
+    (s) => !s.waypointKey.startsWith("unresolvable:"),
+  );
+  if (geocodable.length === 0)
+    return { text: "No coordinates to verify", verified: true };
+  const resolved = geocodable.filter(
+    (s) => cache[s.waypointKey]?.status === "ok",
+  ).length;
   return resolved === geocodable.length
     ? { text: "All coordinates verified", verified: true }
-    : { text: `${resolved}/${geocodable.length} coordinates verified`, verified: false };
+    : {
+        text: `${resolved}/${geocodable.length} coordinates verified`,
+        verified: false,
+      };
 }
 
 // Not currently rendered (see StartScreen below) - kept ready to
@@ -90,8 +104,12 @@ function splitValueUnit(text: string): [string, string] {
 function StatTile({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex flex-col items-center">
-      <span className="font-heading text-2xl font-black tracking-tight">{value}</span>
-      <span className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">{label}</span>
+      <span className="font-heading text-2xl font-black tracking-tight">
+        {value}
+      </span>
+      <span className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+        {label}
+      </span>
     </div>
   );
 }
@@ -115,7 +133,10 @@ export function StartScreen({
   onViewSchool: (schoolName: string) => void;
 }) {
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
-  const totalRiders = route.steps.reduce((sum, s) => sum + (s.studentCount ?? 0), 0);
+  const totalRiders = route.steps.reduce(
+    (sum, s) => sum + (s.studentCount ?? 0),
+    0,
+  );
   const [distanceValue] = splitValueUnit(route.distance);
   const [showStopsModal, setShowStopsModal] = useState(false);
   // The committed geocode cache (src/app/api/waypoints), fetched fresh
@@ -128,7 +149,9 @@ export function StartScreen({
   useEffect(() => {
     let cancelled = false;
     fetch("/api/waypoints")
-      .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
+      .then((res): Promise<WaypointCache> | WaypointCache =>
+        res.ok ? res.json() : {},
+      )
       .catch(() => ({}) as WaypointCache)
       .then((data) => {
         if (!cancelled) setWaypointCache(data);
@@ -154,12 +177,22 @@ export function StartScreen({
     () =>
       route.steps
         .filter((s) => s.kind === "turn")
-        .map((s) => ({ waypointKey: s.waypointKey, direction: s.direction, heading: s.heading })),
+        .map((s) => ({
+          waypointKey: s.waypointKey,
+          direction: s.direction,
+          heading: s.heading,
+        })),
     [route],
   );
-  const routePath = useMemo(() => route.steps.map((s) => s.waypointKey), [route]);
+  const routePath = useMemo(
+    () => route.steps.map((s) => s.waypointKey),
+    [route],
+  );
   const schoolPoint = useMemo(
-    () => (route.schoolLat != null && route.schoolLon != null ? { lat: route.schoolLat, lon: route.schoolLon } : null),
+    () =>
+      route.schoolLat != null && route.schoolLon != null
+        ? { lat: route.schoolLat, lon: route.schoolLon }
+        : null,
     [route.schoolLat, route.schoolLon],
   );
 
@@ -201,27 +234,26 @@ export function StartScreen({
                 uses leading-none/-mt-1 and never needed retuning - to
                 1.5px, rather than guessing a value against this tighter
                 line-height. relative/absolute rather than a flex row -
-                the AM/PM badge floats off the
-                text's own right edge (left-full) so it never shifts the
-                title text itself off-center from the county label above,
-                the way sharing a centered flex row with it used to.
-                Pinned to the title's own top edge for a dropoff (PM)
-                route, bottom edge otherwise (AM/FT/OT) - same
-                top/bottom-by-trip-type baseline every AM/PM badge in the
-                app now shares (RouteListScreen's own rows,
-                AllStopsModal's title, TopBar's route badge), rather than
-                this one staying vertically centered regardless of trip
-                type. */}
+                the AM/PM icon floats off the text's own right edge
+                (left-full) so it never shifts the title text itself
+                off-center from the county label above, the way sharing
+                a centered flex row with it used to. am.svg/pm.svg carry
+                their own label lettering, so pickup/dropoff is the icon
+                alone - vertically centered against the title's full
+                height and sized to nearly match it. Every other
+                TripType (fieldtrip/other) skips the badge entirely -
+                those routes may not even have a morning/afternoon
+                distinction to badge, and there's no real example of
+                one yet to design that case against. */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
               Route {route.routeNumber}
-              <span
-                className={`absolute left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500 ${
-                  route.tripType === "dropoff" ? "top-0" : "bottom-0"
-                }`}
-              >
-                {tripTypeLabel(route.tripType)}
-                <TripTypeIcon tripType={route.tripType} className="h-4 w-4" />
-              </span>
+              {(route.tripType === "pickup" ||
+                route.tripType === "dropoff") && (
+                <TripTypeIcon
+                  tripType={route.tripType}
+                  className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
+                />
+              )}
             </h1>
           </div>
           {/* Balances the back button's own width so the title block
@@ -259,7 +291,11 @@ export function StartScreen({
           <div className="mt-4 grid grid-cols-4 gap-2">
             <StatTile value={distanceValue} label="miles" />
             <StatTile
-              value={route.durationMinutes != null ? String(route.durationMinutes) : "—"}
+              value={
+                route.durationMinutes != null
+                  ? String(route.durationMinutes)
+                  : "—"
+              }
               label="minutes"
             />
             <StatTile value={String(totalStops)} label="stops" />
@@ -282,7 +318,13 @@ export function StartScreen({
           <p className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-sm font-semibold">
             <span className={status.className}>{status.text}</span>
             <span className="text-zinc-300">·</span>
-            <span className={coordStatus.verified ? "text-green-600" : "text-zinc-500"}>{coordStatus.text}</span>
+            <span
+              className={
+                coordStatus.verified ? "text-green-600" : "text-zinc-500"
+              }
+            >
+              {coordStatus.text}
+            </span>
           </p>
 
           <button
@@ -356,7 +398,9 @@ function StopSubheading({ subheading }: { subheading: string }) {
   const [roadA, roadB] = parts;
   return (
     <>
-      {roadA} <span className="text-sm font-normal text-zinc-400 italic">&</span> {roadB}
+      {roadA}{" "}
+      <span className="text-sm font-normal text-zinc-400 italic">&</span>{" "}
+      {roadB}
     </>
   );
 }
@@ -385,12 +429,16 @@ function TurnRow({ step }: { step: NavigationStep }) {
   return (
     <div className="py-3 text-left">
       <span className="font-heading flex items-center gap-1.5 text-base font-bold text-zinc-500">
-        {step.direction && <TurnArrow direction={step.direction} className="h-4 w-4 shrink-0" />}
+        {step.direction && (
+          <TurnArrow direction={step.direction} className="h-4 w-4 shrink-0" />
+        )}
         {step.heading}
       </span>
       <p className="text-zinc-700">{step.subheading}</p>
       {step.specialInstruction && (
-        <p className="mt-0.5 text-sm text-zinc-500">{step.specialInstruction}</p>
+        <p className="mt-0.5 text-sm text-zinc-500">
+          {step.specialInstruction}
+        </p>
       )}
     </div>
   );
@@ -410,7 +458,13 @@ function TurnRow({ step }: { step: NavigationStep }) {
  * into the stops list - first for a dropoff route (the bus starts
  * there), last for a pickup route (the bus ends there), matching which
  * end of the real trip it actually is. */
-function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }) {
+function AllStopsModal({
+  route,
+  onClose,
+}: {
+  route: Route;
+  onClose: () => void;
+}) {
   const [showTurns, setShowTurns] = useState(false);
   const schoolEntry = <SchoolEntry route={route} />;
 
@@ -435,14 +489,12 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
           <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
             Route {route.routeNumber}
-            <span
-              className={`flex items-center gap-1 text-sm leading-[0.75] text-blue-500 ${
-                route.tripType === "dropoff" ? "self-start" : "self-end"
-              }`}
-            >
-              {tripTypeLabel(route.tripType)}
-              <TripTypeIcon tripType={route.tripType} className="h-3.5 w-3.5" />
-            </span>
+            {(route.tripType === "pickup" || route.tripType === "dropoff") && (
+              <TripTypeIcon
+                tripType={route.tripType}
+                className="h-[15px] w-[15px] text-zinc-400"
+              />
+            )}
             <span className="text-zinc-400">-</span>
             All Stops
           </h2>
@@ -457,7 +509,11 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
         </div>
 
         <div className="flex shrink-0 justify-end border-b border-zinc-200 px-5 py-2">
-          <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
+          <ToggleSwitch
+            checked={showTurns}
+            onChange={setShowTurns}
+            label="Show turns"
+          />
         </div>
 
         <div className="divide-y divide-zinc-200 overflow-y-auto px-5">
@@ -476,24 +532,34 @@ function AllStopsModal({ route, onClose }: { route: Route; onClose: () => void }
                         <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
                           ({step.sideOfRoad.toLowerCase()}
                           <RoundedTriangleIcon
-                            direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
+                            direction={
+                              step.sideOfRoad.toLowerCase() === "left"
+                                ? "left"
+                                : "right"
+                            }
                             className="h-3 w-3"
-                          />)
+                          />
+                          )
                         </span>
                       )}
                     </span>
                     {step.studentCount != null && (
                       <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
                         <PersonSolidIcon className="h-4 w-4" />
-                        {step.studentCount} rider{step.studentCount === 1 ? "" : "s"}
+                        {step.studentCount} rider
+                        {step.studentCount === 1 ? "" : "s"}
                       </span>
                     )}
                   </div>
                   <p className="text-zinc-700">
-                    {step.subheading && <StopSubheading subheading={step.subheading} />}
+                    {step.subheading && (
+                      <StopSubheading subheading={step.subheading} />
+                    )}
                   </p>
                   {step.specialInstruction && (
-                    <p className="mt-0.5 text-sm text-zinc-500">{step.specialInstruction}</p>
+                    <p className="mt-0.5 text-sm text-zinc-500">
+                      {step.specialInstruction}
+                    </p>
                   )}
                 </div>
               );

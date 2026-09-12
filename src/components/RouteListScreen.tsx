@@ -26,7 +26,7 @@ import {
   isRouteFullyResolved,
 } from "@/lib/routeReadiness";
 import { parseTimeToMinutes } from "@/lib/time";
-import { tripTypeLabel, TRIP_TYPE_ORDER } from "@/lib/tripType";
+import { TRIP_TYPE_ORDER } from "@/lib/tripType";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 import { SortableHeader } from "./SortableHeader";
@@ -509,7 +509,7 @@ export function RouteListScreen({
                     county label above, the way sharing a centered flex
                     row with it used to. */}
                 <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
-                  <RouteIcon className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-blue-600" />
+                  <RouteIcon className="absolute top-1/2 right-full mr-1 h-6 w-6 -translate-y-1/2 text-zinc-400" />
                   Routes
                 </h1>
               </div>
@@ -623,16 +623,16 @@ export function RouteListScreen({
             adminMode ? "border-2 border-blue-400" : "border-zinc-300"
           }`}
         >
-          <div className="grid grid-cols-[5.75rem_1fr_3.75rem_1.75rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+          <div className="grid grid-cols-[4.5rem_1fr_3.75rem_1.75rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
             {/* The #/School/Start group is its own col-span-3 grid using
-                the exact same grid-cols-[5.75rem_1fr_3.75rem] template
+                the exact same grid-cols-[4.5rem_1fr_3.75rem] template
                 (and gap) as each row's own button below, rather than
                 three independent columns of this outer 4-col grid - that
                 guarantees their boundaries are computed identically, not
                 just hopefully-equal, so the divide lines here land
                 exactly on the row content's own column edges instead of
                 drifting off to the side of them. */}
-            <div className="col-span-3 grid grid-cols-[5.75rem_1fr_3.75rem] items-stretch gap-x-1 divide-x divide-zinc-200">
+            <div className="col-span-3 grid grid-cols-[4.5rem_1fr_3.75rem] items-stretch gap-x-1 divide-x divide-zinc-200">
               {/* "#" keeps its own cell/divider, separate from AM/PM -
                   AM and PM themselves stack as two lines within that
                   second cell instead of reading "AM/PM" on one line. A
@@ -641,7 +641,7 @@ export function RouteListScreen({
                   the tap target every row's own big route-number digits
                   echo) - easier to actually see/hit than a header cell
                   this narrow would otherwise read as. */}
-              <div className="grid h-full grid-cols-[2.75rem_1fr] items-stretch gap-x-1 divide-x divide-zinc-200">
+              <div className="grid h-full grid-cols-[2.25rem_1fr] items-stretch gap-x-1 divide-x divide-zinc-200">
                 <SortableHeader
                   label={<span className="text-base leading-none">#</span>}
                   field="routeNumber"
@@ -655,14 +655,49 @@ export function RouteListScreen({
                 <SortableHeader
                   label={
                     <span className="flex flex-col items-center leading-none">
-                      <span>AM</span>
-                      <span>PM</span>
+                      {/* No separate sort-direction carets here (see
+                          showIcon below) - AM/PM only has room for its
+                          own two stacked words, so the active sortDir
+                          highlights whichever one it actually means
+                          (AM for ascending, PM for descending) directly
+                          instead. Each span needs its OWN explicit
+                          color in both branches, not just the active
+                          one left "" - this button's own wrapper
+                          already turns text-zinc-700 while tripType is
+                          the active sort field (SortableHeader's own
+                          `active` styling), and color inherits, so an
+                          unstyled inactive span would otherwise pick
+                          up that same dark color instead of reading as
+                          the *other* one. */}
+                      <span
+                        className={
+                          sortField === "tripType"
+                            ? sortDir === "asc"
+                              ? "text-zinc-700"
+                              : "text-zinc-400"
+                            : ""
+                        }
+                      >
+                        AM
+                      </span>
+                      <span
+                        className={
+                          sortField === "tripType"
+                            ? sortDir === "desc"
+                              ? "text-zinc-700"
+                              : "text-zinc-400"
+                            : ""
+                        }
+                      >
+                        PM
+                      </span>
                     </span>
                   }
                   field="tripType"
                   align="center"
                   fill
                   padded={false}
+                  showIcon={false}
                   sortField={sortField}
                   sortDir={sortDir}
                   onSort={toggleSort}
@@ -712,7 +747,7 @@ export function RouteListScreen({
               return (
                 <div
                   key={route.id}
-                  className={`grid w-full grid-cols-[5.75rem_1fr_3.75rem_1.75rem] items-center gap-x-1 px-2 py-3 text-left ${
+                  className={`grid w-full grid-cols-[4.5rem_1fr_3.75rem_1.75rem] items-center gap-x-1 px-2 py-3 text-left ${
                     isAdminOnly ? "opacity-50" : ""
                   }`}
                 >
@@ -721,7 +756,7 @@ export function RouteListScreen({
                     onClick={() =>
                       adminMode ? onEditRoute(route) : onSelect(route)
                     }
-                    className="col-span-3 grid grid-cols-[5.75rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-zinc-100"
+                    className="col-span-3 grid grid-cols-[4.5rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-zinc-100"
                   >
                     {/* leading-none (line-height: 1) still isn't tight -
                         Ubuntu at this weight reports a font-box taller
@@ -737,46 +772,29 @@ export function RouteListScreen({
                         value - and were confirmed against the live
                         rendered box (not just canvas metrics) before
                         landing here. */}
-                    {/* items-start/items-end on the outer row aligns the
-                        badge's own div to the route number's own top/
-                        bottom edge - but that div also has to stop
-                        centering its own two children (items-center) to
-                        actually deliver "flush," since the icon (h-3,
-                        12px) is taller than the now-trimmed text (~9px,
-                        leading-[0.75] below); items-center would leave
-                        the text itself sitting short of the div's own
-                        edge by half that difference even once the div
-                        itself is correctly placed. Matching the same
-                        start/end here instead puts the *text* flush
-                        against the number, icon included, not just the
-                        div loosely centered around it. */}
-                    <div
-                      className={`flex gap-1.5 ${
-                        route.tripType === "dropoff"
-                          ? "items-start"
-                          : "items-end"
-                      }`}
-                    >
+                    {/* am.svg/pm.svg have their own "AM"/"PM" lettering
+                        baked right into the glyph, so a pickup/dropoff
+                        badge is just that icon alone, sized to the
+                        route number's own full height. Every other
+                        TripType (fieldtrip/other) skips the badge
+                        entirely rather than falling back to some other
+                        icon+text pairing - those routes may not even
+                        have a morning/afternoon distinction to badge in
+                        the first place, and there's no real example of
+                        one yet to design that case against. */}
+                    <div className="flex items-center gap-1">
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
-                      <div
-                        className={`flex gap-0.5 text-blue-500 ${
-                          route.tripType === "dropoff"
-                            ? "items-start"
-                            : "items-end"
-                        }`}
-                      >
-                        <span className="font-heading text-xs leading-[0.75] font-black">
-                          {tripTypeLabel(route.tripType)}
-                        </span>
+                      {(route.tripType === "pickup" ||
+                        route.tripType === "dropoff") && (
                         <TripTypeIcon
                           tripType={route.tripType}
-                          className="h-3 w-3"
+                          className="h-[18px] w-[18px] text-zinc-400"
                         />
-                      </div>
+                      )}
                     </div>
-                    <span className="min-w-0 pl-1.5">
+                    <span className="min-w-0">
                       <SchoolNameLabel name={route.schoolName} />
                     </span>
                     <span className="text-right text-sm font-semibold text-zinc-500">
