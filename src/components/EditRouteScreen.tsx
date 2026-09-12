@@ -41,7 +41,6 @@ import type { GeocodableQuery } from "@/lib/geocode";
 import {
   matchSchoolFromRows,
   parseRouteImport,
-  RECOGNIZED_ACTIONS,
   unresolvedRequiredFields,
 } from "@/lib/parseRouteImport";
 import { parseRouteFilename } from "@/lib/parseRouteMasterList";
@@ -286,9 +285,7 @@ const labelClass =
   "text-xs font-semibold tracking-wide text-zinc-500 uppercase";
 
 // The exact values StepRowEditor's own Type <select> below offers, in
-// display order - reused for that select's own value (falling back to
-// "" for a value that isn't one of these, rather than a browser
-// silently rendering no option highlighted at all) and for
+// display order - reused for that select's own value and for
 // rowValidationIssue below, so neither can drift out of sync with what
 // an admin can actually pick.
 const WAYPOINT_TYPES = [
@@ -304,7 +301,29 @@ const WAYPOINT_TYPES = [
   "Depart",
   "Arrive",
 ] as const;
-const WAYPOINT_TYPE_SET = new Set<string>(WAYPOINT_TYPES);
+
+// Every real option's own trimmed/lowercased form, mapped back to its
+// canonical (correctly-cased) spelling - a row already sitting in the
+// database with a merely differently-cased or stray-whitespace value
+// ("left", "STOP ", both real data from a district's own CSV rather
+// than a typo) still resolves to its real option this way, instead of
+// an exact-string match reading it as unspecified/invalid just because
+// it isn't byte-for-byte identical to how the dropdown itself spells
+// it.
+const WAYPOINT_TYPE_BY_KEY: Record<string, string> = Object.fromEntries(
+  WAYPOINT_TYPES.map((type) => [type.toLowerCase(), type]),
+);
+
+/** The real option a row's own `action` value actually means, or null
+ * when it doesn't match any of them even loosely (case/whitespace
+ * aside) - shared by the Type select's own displayed value (below) and
+ * rowValidationIssue (further below), so a row already correctly typed
+ * in the database is never shown as "- Unspecified -" just because its
+ * casing doesn't match the dropdown's own, and a row that's genuinely
+ * something else entirely is never silently treated as valid either. */
+function canonicalWaypointType(action: string): string | null {
+  return WAYPOINT_TYPE_BY_KEY[action.trim().toLowerCase()] ?? null;
+}
 
 /** A concrete reason a row's own raw data can't be trusted, or null
  * when it's fine - the main way a row actually ends up this way is a
@@ -313,9 +332,14 @@ const WAYPOINT_TYPE_SET = new Set<string>(WAYPOINT_TYPES);
  * row got here. Read by StepRowView below to flag the row with a red
  * border and a warning triangle carrying this same message, so a bad
  * import surfaces immediately in the stops list rather than only once
- * an admin happens to expand that one row. */
+ * an admin happens to expand that one row. Checked against the Type
+ * select's own real options (WAYPOINT_TYPES) rather than some broader
+ * "recognized by the app somewhere" set - stray data that doesn't
+ * match anything an admin can actually pick is exactly what's worth a
+ * human's attention here, even if some other part of this app happens
+ * to tolerate it. */
 function rowValidationIssue(row: RawRouteRow): string | null {
-  if (!RECOGNIZED_ACTIONS.has(row.action.trim().toLowerCase())) {
+  if (!canonicalWaypointType(row.action)) {
     return row.action.trim()
       ? `Unrecognized waypoint type "${row.action}".`
       : "Missing a waypoint type.";
@@ -1035,7 +1059,7 @@ function StepRowEditor({
                   // The original value stays in `row` either way until
                   // an admin actually changes this select - only
                   // changing what's *shown*, not what's saved.
-                  value={WAYPOINT_TYPE_SET.has(row.action) ? row.action : ""}
+                  value={canonicalWaypointType(row.action) ?? ""}
                   onChange={(e) => handleTypeChange(e.target.value)}
                 >
                   <option value="">- Unspecified -</option>
