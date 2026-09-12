@@ -7,7 +7,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 import { ActionIcon } from "./icons";
-import { PMTILES_URL, resolveMapEngine } from "@/lib/mapEngine";
+import { PMTILES_ATTRIBUTION, PMTILES_URL, resolveMapEngine } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import type { RoutingResult } from "@/lib/routing/types";
 import type { TripType, TurnDirection } from "@/lib/types";
@@ -945,7 +945,7 @@ function mountMapLibre(args: MountArgs): () => void {
         }),
         zoom: DEFAULT_ZOOM,
         bearing: 0,
-        attributionControl: { customAttribution: TILE_ATTRIBUTION },
+        attributionControl: { customAttribution: PMTILES_ATTRIBUTION },
       });
       const mapInstance = map;
 

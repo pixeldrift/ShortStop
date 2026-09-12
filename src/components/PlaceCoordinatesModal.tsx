@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as LeafletMap } from "leaflet";
 import { MapPinIcon } from "./icons";
-import { PMTILES_URL, resolveMapEngine } from "@/lib/mapEngine";
+import { PMTILES_ATTRIBUTION, PMTILES_URL, resolveMapEngine } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import { TILE_ATTRIBUTION, TILE_SUBDOMAINS, TILE_URL } from "./RouteMap";
 
@@ -185,6 +185,7 @@ function mountMapLibre(
         style: protomapsStyle(PMTILES_URL),
         center: [initialCenter.lon, initialCenter.lat],
         zoom: DEFAULT_ZOOM,
+        attributionControl: { customAttribution: PMTILES_ATTRIBUTION },
       });
       map.on("move", () => {
         if (!map) return;

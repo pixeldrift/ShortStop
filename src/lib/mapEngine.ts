@@ -26,6 +26,22 @@
  *      below and both maps switch to it automatically, no other code
  *      changes needed. Until then, every map keeps working exactly as
  *      it does today, on Leaflet.
+ *
+ * package.json pins maplibre-gl to 5.24.0, not the newer 6.x this was
+ * originally built against - 6.2.0 through at least 6.9.0 have a
+ * confirmed bug (maplibre/maplibre-gl-js#8186) where a pmtiles://
+ * vector source resolves its metadata fine but then never requests an
+ * actual tile in a PRODUCTION build specifically (next build/start;
+ * next dev is unaffected) - the map silently stays blank forever, no
+ * error anywhere. 5.24.0 predates the regression. This does mean
+ * losing 6.x's fix for a real XSS sanitizer bypass (GHSA-jrc7-96c5-
+ * q579) - accepted here because nothing in this app ever hands
+ * user-controlled or remote HTML to MapLibre's own sanitizer: every
+ * marker is built from this app's own fixed icon strings
+ * (stopMarkerHtml/turnMarkerHtml/schoolMarkerHtml in RouteMap.tsx) via
+ * a plain `el.innerHTML =`, never a MapLibre popup or any other API
+ * that runs through DOM.sanitize(). Re-check this pin against
+ * maplibre-gl-js#8186's status before ever bumping past 5.x again.
  */
 
 /** Where both callers expect the self-hosted PMTiles file, if one has
@@ -36,6 +52,20 @@
  * Chattanooga, not just Rutherford County) so the filename doesn't go
  * stale the next time the drawn area changes. */
 export const PMTILES_URL = "/maps/middle-tennessee.pmtiles";
+
+/** Required corner attribution for the MapLibre/PMTiles path - this
+ * tileset is a Produced Work of OpenStreetMap data per Protomaps'
+ * basemaps licensing guidelines (github.com/protomaps/basemaps -
+ * LICENSE_DATA.md), which requires visible "© OpenStreetMap"
+ * attribution on any web map using it, plus their own requested (not
+ * required, but appreciated) Protomaps credit. Distinct from
+ * TILE_ATTRIBUTION (RouteMap.tsx) - that one credits CARTO, the
+ * Leaflet fallback's own tile provider, and would be wrong to reuse
+ * here now that these maps render real OSM-via-Protomaps data instead
+ * of CARTO's. */
+export const PMTILES_ATTRIBUTION =
+  '<a href="https://github.com/protomaps/basemaps">Protomaps</a> © ' +
+  '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
 function supportsWebGL(): boolean {
   if (typeof document === "undefined") return false;
