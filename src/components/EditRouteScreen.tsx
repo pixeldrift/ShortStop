@@ -1546,24 +1546,16 @@ function ErrorDetailsModal({
   );
 }
 
-// Solid HSL red-to-green interpolation (0% = red, 100% = green) - the
-// same "how close to done" reading a green/red fuel gauge already
-// gives, just driven by progress instead of a remaining quota. Shared
-// by GeocodeRatioBar and FetchCoordinatesModal's own batch-progress
-// fill below, so a route's overall geocode ratio and one in-flight
-// batch's progress both use the same color language.
-function progressColor(fraction: number): string {
-  const hue = Math.max(0, Math.min(1, fraction)) * 120;
-  return `hsl(${hue}, 70%, 45%)`;
-}
-
 /** A thin at-a-glance ratio of resolved vs. not - a solid red track
  * with a green fill scaled to `percent`, so it reads correctly (a
  * sliver of green, mostly red) well before anyone reads the count
- * next to it. Styled like the app's own glossy buttons (the same
- * white sheen highlight) but with an inset shadow instead of a raised
- * one, so it reads as a groove the fill sits inside rather than
- * another button. */
+ * next to it. The fill itself stays the same green the whole way -
+ * only its width grows - rather than shifting hue with progress, so
+ * it never reads as "still red/orange, not really done yet" partway
+ * through. Styled like the app's own glossy buttons (the same white
+ * sheen highlight) but with an inset shadow instead of a raised one,
+ * so it reads as a groove the fill sits inside rather than another
+ * button. */
 function GeocodeRatioBar({
   percent,
   className = "h-1",
@@ -1576,11 +1568,8 @@ function GeocodeRatioBar({
       className={`meter-track w-full overflow-hidden rounded-full bg-red-400 ${className}`}
     >
       <div
-        className="h-full rounded-full transition-[width]"
-        style={{
-          width: `${percent}%`,
-          backgroundColor: progressColor(percent / 100),
-        }}
+        className="h-full rounded-full bg-green-600 transition-[width]"
+        style={{ width: `${percent}%` }}
       />
     </div>
   );
