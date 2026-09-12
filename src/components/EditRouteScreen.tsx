@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
+import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
+import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
   BackArrowIcon,
@@ -131,6 +133,98 @@ function parseLatLon(text: string): [number, number] | null {
   const lat = parseCoordinatePart(parts[0]);
   const lon = parseCoordinatePart(parts[1]);
   return lat != null && lon != null ? [lat, lon] : null;
+}
+
+/** Icon + "full crossroads" text for one row - PlaceCoordinatesModal's
+ * own context lines (the row being placed, plus its immediate
+ * previous/next neighbors) need both roads of an intersection, not
+ * just the one formatWaypointInstruction names for a turn ("Left onto
+ * Rock Springs Rd," the destination road only - Stop/Depart/Arrive
+ * already get both via their own "at {from} & {to}" phrasing, so this
+ * only actually changes anything for a turn-kind action). Deliberately
+ * its own function rather than a formatWaypointInstruction change -
+ * that one still drives the real app (StepRowView's collapsed rows,
+ * spoken turn-by-turn announcements), where this fuller phrasing was
+ * never asked for and would read oddly out loud. */
+function crossroadsLine(
+  row: RawRouteRow,
+  stopNumber: number | null,
+  previousRoad: string | null,
+  schools: Record<string, SchoolInfo>,
+): { icon: React.ReactNode; text: string } {
+  const actionLower = row.action.toLowerCase();
+  const isStop = actionLower === "stop";
+  const isSchoolAction = actionLower === "depart" || actionLower === "arrive";
+  const isStopKind = isStop || isSchoolAction || actionLower === "complete";
+  const turnDirection =
+    actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
+
+  const target = row.location.trim().toLowerCase();
+  const matchedSchool = target
+    ? Object.keys(schools).some((name) => name.trim().toLowerCase() === target)
+    : false;
+  const isPlainLocation = /^\d/.test(row.location.trim()) || matchedSchool;
+  const effectiveFrom = isPlainLocation
+    ? ""
+    : row.fromLocation || previousRoad || "";
+
+  const icon = isStop ? (
+    <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
+  ) : isSchoolAction ? (
+    <ActionIcon
+      action={row.action}
+      className="h-4 w-4 shrink-0 text-blue-600"
+    />
+  ) : turnDirection ? (
+    <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+  ) : (
+    <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
+  );
+
+  const text =
+    !isStopKind && effectiveFrom
+      ? `${row.action || "Turn"} from ${effectiveFrom} onto ${row.location}`
+      : formatWaypointInstruction(row, stopNumber, effectiveFrom);
+
+  return { icon, text };
+}
+
+/** PlaceCoordinatesModal's own starting guess for a given row - the
+ * nearest already-resolved waypoint walking outward from `index` in
+ * each direction, averaged when both sides find one, a single side's
+ * own point when only one does, null when neither has resolved yet
+ * (the modal falls back to its own fixed default in that case). Walks
+ * past `index` itself in both directions rather than stopping at the
+ * immediate neighbor - an unresolved row right next to this one
+ * shouldn't end the search early when a resolved one is only one
+ * step further out. */
+function nearestResolvedGuess(
+  resolutionRows: RowResolutionStatus[],
+  index: number,
+): { lat: number; lon: number } | null {
+  let before: { lat: number; lon: number } | null = null;
+  for (let i = index - 1; i >= 0; i--) {
+    const row = resolutionRows[i];
+    if (row?.status === "resolved") {
+      before = { lat: row.lat, lon: row.lon };
+      break;
+    }
+  }
+  let after: { lat: number; lon: number } | null = null;
+  for (let i = index + 1; i < resolutionRows.length; i++) {
+    const row = resolutionRows[i];
+    if (row?.status === "resolved") {
+      after = { lat: row.lat, lon: row.lon };
+      break;
+    }
+  }
+  if (before && after) {
+    return {
+      lat: (before.lat + after.lat) / 2,
+      lon: (before.lon + after.lon) / 2,
+    };
+  }
+  return before ?? after;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -554,6 +648,7 @@ function StepRowEditor({
   status,
   fetching,
   fetchLocked,
+  placementGuess,
   onChange,
   onFetch,
   onManualCoordinates,
@@ -589,6 +684,12 @@ function StepRowEditor({
    * still shows a plain globe (not a spinner) while merely cooling
    * down. */
   fetchLocked: boolean;
+  /** Where the "place manually" map should open centered - the nearest
+   * already-resolved neighbor waypoint(s) either side of this row (see
+   * the StepRowEditor call site below), averaged when both exist, null
+   * when neither side has resolved yet (PlaceCoordinatesModal falls
+   * back to a fixed default in that case). */
+  placementGuess: { lat: number; lon: number } | null;
   onChange: (patch: Partial<RawRouteRow>) => void;
   onFetch: () => void;
   /** A coordinate typed/pasted directly into the Latitude/Longitude
@@ -677,6 +778,11 @@ function StepRowEditor({
   const hasCoordsText = coordsText.trim() !== "";
   const manualCoords = useMemo(() => parseLatLon(coordsText), [coordsText]);
 
+  // The "place manually" map popup - opened by its own button beside
+  // Fetch, below. Its own on/off state rather than reusing `expandedIndex`
+  // or similar: it's a popup on top of this one, not a replacement for it.
+  const [showPlaceModal, setShowPlaceModal] = useState(false);
+
   // Re-syncs the box the moment a Fetch actually lands - `status` is
   // derived from the shared cache (EditRouteScreen's own `cache` state),
   // which fetchLocation already updates as soon as the response comes
@@ -719,6 +825,49 @@ function StepRowEditor({
     onUpdate();
   }
 
+  // Same icon the collapsed StepRowView row above shows for this same
+  // stop/turn (live off `isStop`/`turnDirection` - the draft's own Type
+  // select, not a snapshot from when this editor opened), paired with
+  // the exact instruction this row now produces ("Stop 1 at Lake Forest
+  // Dr & Davids Way," "Left onto Main Street") instead of just its own
+  // type/number - both update immediately as Type/destination change,
+  // not only after Update commits. Reused as PlaceCoordinatesModal's
+  // own title below, so that popup identifies the same waypoint the
+  // same way rather than restating it in different words.
+  const instructionLine = (
+    <>
+      {isStop ? (
+        <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
+      ) : isSchoolAction ? (
+        <ActionIcon
+          action={row.action}
+          className="h-4 w-4 shrink-0 text-blue-600"
+        />
+      ) : turnDirection ? (
+        <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+      ) : (
+        <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
+      )}
+      {formatWaypointInstruction(
+        row,
+        stopNumber,
+        isPlainLocation ? "" : row.fromLocation || previousRoad || "",
+      )}
+    </>
+  );
+
+  // The place-coordinates view's own header line, in place of
+  // instructionLine above while it's showing - the full crossroads for
+  // this row (both roads of the intersection, not just the destination
+  // one a turn's own instructionLine names), since pinning down a
+  // hard-to-place point needs the whole intersection, not half of it.
+  const currentCrossroads = crossroadsLine(
+    row,
+    stopNumber,
+    previousRoad,
+    schools,
+  );
+
   return (
     <div
       className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
@@ -730,43 +879,42 @@ function StepRowEditor({
       >
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="font-heading text-xl font-black tracking-tight">
-              Edit Waypoint
-            </h2>
-            {/* Same icon the collapsed StepRowView row above shows for
-                this same stop/turn (live off `isStop`/`turnDirection` -
-                the draft's own Type select, not a snapshot from when
-                this editor opened), paired with the exact instruction
-                this row now produces ("Stop 1 at Lake Forest Dr &
-                Davids Way," "Left onto Main Street") instead of just
-                its own type/number - both update immediately as Type/
-                destination change, not only after Update commits. */}
-            <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-500">
-              {isStop ? (
-                <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
-              ) : isSchoolAction ? (
-                <ActionIcon
-                  action={row.action}
-                  className="h-4 w-4 shrink-0 text-blue-600"
-                />
-              ) : turnDirection ? (
-                <TurnArrow
-                  direction={turnDirection}
-                  className="h-4 w-4 shrink-0"
-                />
-              ) : (
-                <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
-              )}
-              {formatWaypointInstruction(
-                row,
-                stopNumber,
-                isPlainLocation ? "" : row.fromLocation || previousRoad || "",
-              )}
-            </p>
+            {/* Same card, same size, whichever of the two views below
+                is showing - "Place Coordinates" swaps in for "Edit
+                Waypoint" entirely rather than opening as a second
+                popup layered on top of this one. */}
+            {showPlaceModal ? (
+              <>
+                <h2 className="font-heading text-xl font-black tracking-tight">
+                  Place Coordinates
+                </h2>
+                <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-500">
+                  {currentCrossroads.icon}
+                  {currentCrossroads.text}
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="font-heading text-xl font-black tracking-tight">
+                  Edit Waypoint
+                </h2>
+                {/* Same icon the collapsed StepRowView row above shows for
+                  this same stop/turn (live off `isStop`/`turnDirection` -
+                  the draft's own Type select, not a snapshot from when
+                  this editor opened), paired with the exact instruction
+                  this row now produces ("Stop 1 at Lake Forest Dr &
+                  Davids Way," "Left onto Main Street") instead of just
+                  its own type/number - both update immediately as Type/
+                  destination change, not only after Update commits. */}
+                <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-500">
+                  {instructionLine}
+                </p>
+              </>
+            )}
           </div>
           <button
             type="button"
-            onClick={onCancel}
+            onClick={showPlaceModal ? () => setShowPlaceModal(false) : onCancel}
             aria-label="Close"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
           >
@@ -774,76 +922,106 @@ function StepRowEditor({
           </button>
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Field label="Type">
-            <select
-              className={inputClass}
-              value={row.action}
-              onChange={(e) => handleTypeChange(e.target.value)}
-            >
-              <option value="Stop">Stop</option>
-              <option value="Left">Turn Left</option>
-              <option value="Right">Turn Right</option>
-              <option value="Continue">Continue</option>
-              <option value="U-Turn">U-Turn</option>
-              <option value="Turn Around">Turn Around</option>
-              <option value="Proceed">Proceed</option>
-              <option value="Pull Over">Pull Over</option>
-              <option value="Return">Return</option>
-              <option value="Depart">Depart</option>
-              <option value="Arrive">Arrive</option>
-            </select>
-          </Field>
-          {isStop ? (
-            <Field label="Side">
-              <select
-                className={inputClass}
-                value={row.side}
-                onChange={(e) => onChange({ side: e.target.value })}
-              >
-                <option value="">Side (none)</option>
-                <option value="Left">Left</option>
-                <option value="Right">Right</option>
-              </select>
-            </Field>
-          ) : (
-            <span />
-          )}
-        </div>
+        {showPlaceModal ? (
+          <PlaceCoordinatesModal
+            // This row's own current coordinate (typed, or already
+            // resolved) wins over the neighbor guess whenever it has
+            // one - opening this map to fine-tune an existing point
+            // should start on that point, not somewhere else nearby.
+            // The neighbor guess (placementGuess) only ever matters for
+            // a row with no coordinate of its own yet.
+            initialCenter={
+              (manualCoords && {
+                lat: manualCoords[0],
+                lon: manualCoords[1],
+              }) ??
+              (resolvedLat != null && resolvedLon != null
+                ? { lat: resolvedLat, lon: resolvedLon }
+                : null) ??
+              placementGuess ?? {
+                lat: LA_VERGNE_CENTER[0],
+                lon: LA_VERGNE_CENTER[1],
+              }
+            }
+            onCancel={() => setShowPlaceModal(false)}
+            onSetCoordinates={(lat, lon) => {
+              onManualCoordinates(lat, lon);
+              setShowPlaceModal(false);
+            }}
+          />
+        ) : (
+          <>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <Field label="Type">
+                <select
+                  className={inputClass}
+                  value={row.action}
+                  onChange={(e) => handleTypeChange(e.target.value)}
+                >
+                  <option value="Stop">Stop</option>
+                  <option value="Left">Turn Left</option>
+                  <option value="Right">Turn Right</option>
+                  <option value="Continue">Continue</option>
+                  <option value="U-Turn">U-Turn</option>
+                  <option value="Turn Around">Turn Around</option>
+                  <option value="Proceed">Proceed</option>
+                  <option value="Pull Over">Pull Over</option>
+                  <option value="Return">Return</option>
+                  <option value="Depart">Depart</option>
+                  <option value="Arrive">Arrive</option>
+                </select>
+              </Field>
+              {isStop ? (
+                <Field label="Side">
+                  <select
+                    className={inputClass}
+                    value={row.side}
+                    onChange={(e) => onChange({ side: e.target.value })}
+                  >
+                    <option value="">Side (none)</option>
+                    <option value="Left">Left</option>
+                    <option value="Right">Right</option>
+                  </select>
+                </Field>
+              ) : (
+                <span />
+              )}
+            </div>
 
-        {/* Depart/Arrive's own quick-pick - fills Location with a
+            {/* Depart/Arrive's own quick-pick - fills Location with a
           chosen school's exact name (below) rather than requiring one
           typed out by hand. Left out for every other action - a turn
           or a plain stop names a road or address, never a school. */}
-        {isSchoolAction && Object.keys(schools).length > 0 && (
-          <div className="mt-2">
-            <Field label="School">
-              <select
-                className={inputClass}
-                value={matchedSchool?.name ?? ""}
-                onChange={(e) => {
-                  if (e.target.value) onChange({ location: e.target.value });
-                }}
-              >
-                <option value="">
-                  {matchedSchool
-                    ? "— Other (type below) —"
-                    : "— Not a listed school (type below) —"}
-                </option>
-                {Object.keys(schools)
-                  .sort((a, b) => a.localeCompare(b))
-                  .map((name) => (
-                    <option key={name} value={name}>
-                      {name}
+            {isSchoolAction && Object.keys(schools).length > 0 && (
+              <div className="mt-2">
+                <Field label="School">
+                  <select
+                    className={inputClass}
+                    value={matchedSchool?.name ?? ""}
+                    onChange={(e) => {
+                      if (e.target.value)
+                        onChange({ location: e.target.value });
+                    }}
+                  >
+                    <option value="">
+                      {matchedSchool
+                        ? "— Other (type below) —"
+                        : "— Not a listed school (type below) —"}
                     </option>
-                  ))}
-              </select>
-            </Field>
-          </div>
-        )}
+                    {Object.keys(schools)
+                      .sort((a, b) => a.localeCompare(b))
+                      .map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                </Field>
+              </div>
+            )}
 
-        <div className="mt-2 flex flex-col gap-2">
-          {/* Comes before Location, not after - reads in real driving
+            <div className="mt-2 flex flex-col gap-2">
+              {/* Comes before Location, not after - reads in real driving
             order ("from Main St, onto Elm St"), and doubles as this
             row's only escape hatch for fixing a bad inference or an
             explicit typo (e.g. 120-AM-HS.csv's real "David Way," which
@@ -852,86 +1030,100 @@ function StepRowEditor({
             plain address or a matched school (see isPlainLocation
             above) - neither is part of an intersection, so there's no
             "from" road to name. */}
-          {!isPlainLocation && (
-            <Field label="From (optional)">
-              <input
-                className={inputClass}
-                value={row.fromLocation}
-                onChange={(e) => onChange({ fromLocation: e.target.value })}
-                placeholder={previousRoad || "start of route"}
-              />
-            </Field>
-          )}
-          <Field label="Location">
-            <input
-              className={`${inputClass} ${
-                status?.status === "unresolved"
-                  ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                  : ""
-              }`}
-              value={row.location}
-              onChange={(e) => onChange({ location: e.target.value })}
-              placeholder={
-                isSchoolAction
-                  ? "LaVergne High School"
-                  : /^\d/.test(row.location)
-                    ? "123 Maple Dr"
-                    : "Elm St"
-              }
-            />
-          </Field>
-          {/* A location that matches a known school by name - typed by
+              {!isPlainLocation && (
+                <Field label="From (optional)">
+                  <input
+                    className={inputClass}
+                    value={row.fromLocation}
+                    onChange={(e) => onChange({ fromLocation: e.target.value })}
+                    placeholder={previousRoad || "start of route"}
+                  />
+                </Field>
+              )}
+              <Field label="Location">
+                <input
+                  className={`${inputClass} ${
+                    status?.status === "unresolved"
+                      ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                      : ""
+                  }`}
+                  value={row.location}
+                  onChange={(e) => onChange({ location: e.target.value })}
+                  placeholder={
+                    isSchoolAction
+                      ? "LaVergne High School"
+                      : /^\d/.test(row.location)
+                        ? "123 Maple Dr"
+                        : "Elm St"
+                  }
+                />
+              </Field>
+              {/* A location that matches a known school by name - typed by
             hand, quick-picked above, or defaulted from this route's
             own school - reads as linked to that real school entity,
             not just a text string a geocoder has to guess at: its
             actual street address shows right underneath as
             confirmation. */}
-          {matchedSchool && (
-            <p className="-mt-1 flex items-center gap-1 text-xs text-zinc-500">
-              <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
-              {matchedSchool.info.address}
-            </p>
-          )}
-        </div>
-
-        <div className="mt-2">
-          <Field
-            label={
-              <span className={row.skip ? "text-zinc-300" : undefined}>
-                Latitude, longitude
-              </span>
-            }
-          >
-            <div className="flex items-center gap-2">
-              <input
-                className={`${inputClass} flex-1 font-mono disabled:opacity-50 ${
-                  (hasCoordsText && !manualCoords) ||
-                  (!hasCoordsText && status?.status === "unresolved")
-                    ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                    : manualCoords || status?.status === "resolved"
-                      ? "border-green-400 focus:border-green-500 focus:ring-green-500"
-                      : ""
-                }`}
-                value={coordsText}
-                onChange={(e) => setCoordsText(e.target.value)}
-                disabled={row.skip}
-              />
-              <button
-                type="button"
-                onClick={onFetch}
-                disabled={fetchLocked || row.skip}
-                aria-label="Fetch coordinates for this location"
-                className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
-              >
-                {fetching ? (
-                  <SpinnerIcon className="h-4 w-4 animate-spin" />
-                ) : (
-                  <GlobeIcon className="h-4 w-4" />
-                )}
-              </button>
+              {matchedSchool && (
+                <p className="-mt-1 flex items-center gap-1 text-xs text-zinc-500">
+                  <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+                  {matchedSchool.info.address}
+                </p>
+              )}
             </div>
-          </Field>
-          {/* Every status message this row can have, right under the box
+
+            <div className="mt-2">
+              <Field
+                label={
+                  <span className={row.skip ? "text-zinc-300" : undefined}>
+                    Latitude, longitude
+                  </span>
+                }
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    className={`${inputClass} flex-1 font-mono disabled:opacity-50 ${
+                      (hasCoordsText && !manualCoords) ||
+                      (!hasCoordsText && status?.status === "unresolved")
+                        ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                        : manualCoords || status?.status === "resolved"
+                          ? "border-green-400 focus:border-green-500 focus:ring-green-500"
+                          : ""
+                    }`}
+                    value={coordsText}
+                    onChange={(e) => setCoordsText(e.target.value)}
+                    disabled={row.skip}
+                  />
+                  <button
+                    type="button"
+                    onClick={onFetch}
+                    disabled={fetchLocked || row.skip}
+                    aria-label="Fetch coordinates for this location"
+                    className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
+                  >
+                    {fetching ? (
+                      <SpinnerIcon className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <GlobeIcon className="h-4 w-4" />
+                    )}
+                  </button>
+                  {/* The manual alternative to Fetch above - for a spot no
+                geocoder will ever find (a bare curb, a driveway with no
+                address of its own), not one it merely got wrong. Opens
+                a map the admin drags into position themselves rather
+                than typing coordinates by hand. */}
+                  <button
+                    type="button"
+                    onClick={() => setShowPlaceModal(true)}
+                    disabled={row.skip}
+                    aria-label="Manually place coordinates on a map"
+                    className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
+                  >
+                    <MapPinIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </Field>
+              {/* Every status message this row can have, right under the box
             it's actually about - a locally malformed manual entry
             takes priority over the row's own geocoded status (it's
             about to replace it the moment Save runs), and a locally
@@ -943,56 +1135,56 @@ function StepRowEditor({
             "No shared node found in the search box"-length explanation
             needs to be read whole, not guessed at from its first few
             words. */}
-          {hasCoordsText && !manualCoords ? (
-            <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
-              <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>
-                Enter latitude and longitude, separated by a space, comma, or
-                tab.
-              </span>
-            </p>
-          ) : manualCoords ? (
-            <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
-              <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
-              Verified coordinates
-            </p>
-          ) : status?.status === "unresolved" ? (
-            <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
-              <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{status.reason}</span>
-            </p>
-          ) : status?.status === "resolved" ? (
-            <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
-              <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
-              Verified coordinates
-            </p>
-          ) : null}
-          <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-600">
-            <input
-              type="checkbox"
-              checked={row.skip}
-              onChange={(e) => onChange({ skip: e.target.checked })}
-              className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
-            />
-            Instructions only - no location coordinates
-          </label>
-        </div>
+              {hasCoordsText && !manualCoords ? (
+                <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
+                  <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Enter latitude and longitude, separated by a space, comma,
+                    or tab.
+                  </span>
+                </p>
+              ) : manualCoords ? (
+                <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
+                  <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
+                  Verified coordinates
+                </p>
+              ) : status?.status === "unresolved" ? (
+                <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
+                  <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{status.reason}</span>
+                </p>
+              ) : status?.status === "resolved" ? (
+                <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
+                  <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
+                  Verified coordinates
+                </p>
+              ) : null}
+              <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-600">
+                <input
+                  type="checkbox"
+                  checked={row.skip}
+                  onChange={(e) => onChange({ skip: e.target.checked })}
+                  className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+                />
+                Instructions only - no location coordinates
+              </label>
+            </div>
 
-        {/* Notes ahead of Riders - a driver reads this box top to bottom,
+            {/* Notes ahead of Riders - a driver reads this box top to bottom,
           and the note (a special instruction) matters regardless of
           whether this row even has riders, so it shouldn't sit below a
           field that sometimes isn't even shown at all. */}
-        <div className="mt-2">
-          <Field label="Driver Notes">
-            <input
-              className={inputClass}
-              value={row.notes}
-              onChange={(e) => onChange({ notes: e.target.value })}
-            />
-          </Field>
-        </div>
+            <div className="mt-2">
+              <Field label="Driver Notes">
+                <input
+                  className={inputClass}
+                  value={row.notes}
+                  onChange={(e) => onChange({ notes: e.target.value })}
+                />
+              </Field>
+            </div>
 
-        {/* Riders only really means anything for a stop (a turn has no
+            {/* Riders only really means anything for a stop (a turn has no
           one boarding/leaving at it) - live off `isStop` above, so
           switching Type away from Stop fades it immediately rather
           than leaving it looking just as active as every other field.
@@ -1004,52 +1196,54 @@ function StepRowEditor({
           row" it now is. Its own full-width line, not sharing a row
           with Driver Notes - the two aren't related enough to read as
           a pair, and Driver Notes needs the room on longer entries. */}
-        <div className={`mt-2 ${isStop ? "" : "opacity-40"}`}>
-          <Field
-            label={
-              <span className="inline-flex items-center gap-1">
-                <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
-              </span>
-            }
-          >
-            <input
-              className={inputClass}
-              inputMode="numeric"
-              value={row.riderCount}
-              onChange={(e) =>
-                onChange({ riderCount: e.target.value.replace(/\D/g, "") })
-              }
-              disabled={!isStop}
-            />
-          </Field>
-        </div>
+            <div className={`mt-2 ${isStop ? "" : "opacity-40"}`}>
+              <Field
+                label={
+                  <span className="inline-flex items-center gap-1">
+                    <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
+                  </span>
+                }
+              >
+                <input
+                  className={inputClass}
+                  inputMode="numeric"
+                  value={row.riderCount}
+                  onChange={(e) =>
+                    onChange({ riderCount: e.target.value.replace(/\D/g, "") })
+                  }
+                  disabled={!isStop}
+                />
+              </Field>
+            </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onDelete}
-            aria-label="Delete step"
-            className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
-          >
-            <TrashIcon className="h-3.5 w-3.5" />
-            Delete
-          </button>
-          <span className="flex-1" />
-          <button
-            type="button"
-            onClick={onCancel}
-            className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="btn-glossy-blue shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
-          >
-            Save
-          </button>
-        </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onDelete}
+                aria-label="Delete step"
+                className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
+              >
+                <TrashIcon className="h-3.5 w-3.5" />
+                Delete
+              </button>
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={onCancel}
+                className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="btn-glossy-blue shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                Save
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2697,8 +2891,9 @@ export function EditRouteScreen({
             {parseResult.unmatchedSourceHeaders.length > 0 && (
               <p className="mt-2 text-xs text-zinc-500">
                 Ignored column
-                {parseResult.unmatchedSourceHeaders.length === 1 ? "" : "s"}:{" "}
-                {parseResult.unmatchedSourceHeaders.join(", ")}
+                {parseResult.unmatchedSourceHeaders.length === 1
+                  ? ""
+                  : "s"}: {parseResult.unmatchedSourceHeaders.join(", ")}
               </p>
             )}
           </div>
@@ -2968,6 +3163,7 @@ export function EditRouteScreen({
                     : false
                 }
                 fetchLocked={singleFetchCoolingDown}
+                placementGuess={nearestResolvedGuess(resolutionRows, index)}
                 onChange={handleDraftChange}
                 onFetch={() =>
                   draftWaypoint &&
