@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BackArrowIcon, CloseIcon, MailIcon, MapPinIcon, RouteIcon, SchoolIcon, SearchIcon } from "./icons";
+import {
+  BackArrowIcon,
+  CloseIcon,
+  MailIcon,
+  MapPinIcon,
+  RouteIcon,
+  SchoolIcon,
+  SearchIcon,
+} from "./icons";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
@@ -85,12 +93,19 @@ export function SchoolListScreen({
     const q = query.trim().toLowerCase();
     const matching = Object.entries(schools).filter(
       ([name, info]) =>
-        !q || name.toLowerCase().includes(q) || cityFromAddress(info.address).toLowerCase().includes(q),
+        !q ||
+        name.toLowerCase().includes(q) ||
+        cityFromAddress(info.address).toLowerCase().includes(q),
     );
 
-    const compare = (a: [string, SchoolInfo], b: [string, SchoolInfo]): number => {
+    const compare = (
+      a: [string, SchoolInfo],
+      b: [string, SchoolInfo],
+    ): number => {
       if (sortField === "city") {
-        return cityFromAddress(a[1].address).localeCompare(cityFromAddress(b[1].address));
+        return cityFromAddress(a[1].address).localeCompare(
+          cityFromAddress(b[1].address),
+        );
       }
       if (sortField === "routes") {
         return (routeCounts[a[0]] ?? 0) - (routeCounts[b[0]] ?? 0);
@@ -98,7 +113,9 @@ export function SchoolListScreen({
       return a[0].localeCompare(b[0]);
     };
 
-    return [...matching].sort((a, b) => (sortDir === "asc" ? compare(a, b) : -compare(a, b)));
+    return [...matching].sort((a, b) =>
+      sortDir === "asc" ? compare(a, b) : -compare(a, b),
+    );
   }, [schools, query, sortField, sortDir, routeCounts]);
 
   return (
@@ -139,7 +156,7 @@ export function SchoolListScreen({
                 label above, the way sharing a centered flex row with it
                 used to. */}
             <h1 className="font-heading relative -mt-1 text-4xl leading-none font-black tracking-tight">
-              <SchoolIcon className="absolute top-1/2 right-full mr-1 h-6 w-6 -translate-y-1/2 text-blue-600" />
+              <SchoolIcon className="absolute top-1/2 right-full mr-1 h-6 w-6 -translate-y-1/2 text-zinc-400" />
               Schools
             </h1>
           </div>
@@ -210,13 +227,17 @@ export function SchoolListScreen({
                     the right) so a normal-length school name reads on
                     one line instead of wrapping the way it did when
                     squeezed into just the School column. */}
-                <span className="col-span-2 text-base font-semibold text-zinc-900">{name}</span>
+                <span className="col-span-2 text-base font-semibold text-zinc-900">
+                  {name}
+                </span>
                 <span className="row-span-2 self-center pl-2 text-center text-sm font-semibold text-zinc-700">
                   {routeCounts[name] ?? 0}
                 </span>
                 <span className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
                   <MapPinIcon className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{streetFromAddress(info.address)}</span>
+                  <span className="truncate">
+                    {streetFromAddress(info.address)}
+                  </span>
                 </span>
                 {/* The real per-row value for the City column above,
                     not a placeholder - genuinely sortable now. */}
@@ -228,7 +249,11 @@ export function SchoolListScreen({
 
             {filtered.length === 0 && (
               <p className="px-2 py-6 text-center text-sm text-zinc-500">
-                {query ? <>No schools match &ldquo;{query}&rdquo;.</> : "No schools found."}
+                {query ? (
+                  <>No schools match &ldquo;{query}&rdquo;.</>
+                ) : (
+                  "No schools found."
+                )}
               </p>
             )}
           </div>

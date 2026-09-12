@@ -36,7 +36,11 @@ export function TopBar({
           height would push the logo/Bus figure down out of line. */}
       <div className="grid w-full grid-cols-3 items-start">
         <div className="justify-self-start">
-          <button type="button" onClick={onLogoClick} aria-label="Back to routes">
+          <button
+            type="button"
+            onClick={onLogoClick}
+            aria-label="Back to routes"
+          >
             <Logo size="small" />
           </button>
         </div>
@@ -62,16 +66,23 @@ export function TopBar({
               }`}
             >
               {tripTypeLabel(tripType)}
-              <TripTypeIcon tripType={tripType} className="h-4 w-4" />
+              <TripTypeIcon
+                tripType={tripType}
+                className="h-4 w-4 text-zinc-400"
+              />
             </span>
           </p>
         </div>
 
         <div className="col-start-3 justify-self-end text-right">
-          <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">Bus</p>
+          <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
+            Bus
+          </p>
           <p
             className={`font-heading -mt-1 text-xl leading-none font-bold tracking-tight ${
-              isAlternateBus ? "rounded-md border border-red-500 px-1 py-0.5" : ""
+              isAlternateBus
+                ? "rounded-md border border-red-500 px-1 py-0.5"
+                : ""
             }`}
           >
             {busNumber}
