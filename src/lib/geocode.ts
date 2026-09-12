@@ -77,11 +77,20 @@ export type GeocodeProvider = (
 // blends OSM with a few other open sources), matching "OSM for our
 // data" - just reached through a provider that doesn't block CI.
 
-// api.openrouteservice.org itself is deprecated and aggressively
-// throttled now that HeiGIT (the institute that actually runs this
-// service) has moved public traffic to its own domain - same API, same
-// key, just a different host.
-const ORS_GEOCODE_URL = "https://api.heigit.org/geocode/search";
+// Reverted from api.heigit.org back to ORS's own domain - that switch
+// was made on the assumption api.openrouteservice.org had been
+// deprecated in favor of a HeiGIT-hosted mirror, but every request to
+// api.heigit.org/geocode/search came back a bare nginx "404 Not Found"
+// (the raw response body was literally an nginx default error page,
+// not a JSON error from the geocoder itself) - the signature of a
+// request landing on a host/path that was never actually serving this
+// route, not a real API-level failure. That broke geocoding for every
+// query, obvious well-known addresses included. If HeiGIT does host a
+// working mirror, it's evidently at some other path than this one -
+// worth real testing (a browser/curl hit with a real ORS_API_KEY)
+// before ever repointing this again, not another guess from training
+// knowledge.
+const ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search";
 
 interface OrsFeature {
   geometry: { coordinates: [number, number] }; // GeoJSON order: [lon, lat]
