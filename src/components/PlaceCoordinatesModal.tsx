@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as LeafletMap } from "leaflet";
 import { MapPinIcon } from "./icons";
+import { PMTILES_URL, resolveMapEngine } from "@/lib/mapEngine";
+import { protomapsStyle } from "@/lib/protomapsStyle";
 import { TILE_ATTRIBUTION, TILE_SUBDOMAINS, TILE_URL } from "./RouteMap";
 
 const DEFAULT_ZOOM = 18;
@@ -16,13 +19,22 @@ const DEFAULT_ZOOM = 18;
  * `showPlaceModal` state) rather than opening as a second stacked
  * popup on top of it - same card, same size, no second dim backdrop
  * layered behind another. Center point stays fixed - visually, a pin
- * pinned to the middle of the viewport, never a real Leaflet marker
- * bound to a lat/lng - while the map tiles underneath pan freely, so
+ * pinned to the middle of the viewport, never a real map marker bound
+ * to a lat/lng - while the map tiles underneath pan freely, so
  * dragging always reads as "move the map until the right spot is
- * under the pin," not "drag the pin to the right spot." `map.getCenter()`
- * on every 'move' is what actually drives the live readout below and
- * what "Set coordinates" ultimately sends up via onSetCoordinates -
- * the pin element itself never carries a coordinate of its own.
+ * under the pin," not "drag the pin to the right spot." The map's own
+ * live center on every 'move' is what actually drives the readout
+ * below and what "Set coordinates" ultimately sends up via
+ * onSetCoordinates - the pin element itself never carries a coordinate
+ * of its own.
+ *
+ * Same two-renderer split as RouteMap.tsx - resolveMapEngine()
+ * (mapEngine.ts) decides once, on mount, between MapLibre GL's
+ * self-hosted vector tiles (mountMapLibre, preferred) and the original
+ * Leaflet + CARTO raster map (mountLeaflet, kept exactly as it always
+ * was as the automatic fallback). See mapEngine.ts's own doc comment
+ * for what that check looks at and how to generate the PMTiles file
+ * the MapLibre path needs.
  */
 export function PlaceCoordinatesModal({
   initialCenter,
@@ -44,34 +56,20 @@ export function PlaceCoordinatesModal({
     const container = containerRef.current;
     if (!container) return;
 
-    let map: LeafletMap | undefined;
     let cancelled = false;
+    let cleanup: (() => void) | undefined;
 
-    // Dynamic import, not top-level - same "leaflet touches `window`
-    // during module evaluation" reasoning RouteMap.tsx's own identical
-    // import documents.
-    void import("leaflet").then((L) => {
+    void resolveMapEngine().then((engine) => {
       if (cancelled) return;
-      map = L.map(container, {
-        center: [initialCenter.lat, initialCenter.lon],
-        zoom: DEFAULT_ZOOM,
-      });
-      L.tileLayer(TILE_URL, {
-        maxZoom: 20,
-        subdomains: TILE_SUBDOMAINS,
-        attribution: TILE_ATTRIBUTION,
-        detectRetina: true,
-      }).addTo(map);
-      map.on("move", () => {
-        if (!map) return;
-        const c = map.getCenter();
-        setCenter({ lat: c.lat, lon: c.lng });
-      });
+      cleanup =
+        engine === "maplibre"
+          ? mountMapLibre(container, initialCenter, setCenter, () => cancelled)
+          : mountLeaflet(container, initialCenter, setCenter, () => cancelled);
     });
 
     return () => {
       cancelled = true;
-      map?.remove();
+      cleanup?.();
     };
     // initialCenter is only ever read on mount (the map's own starting
     // point) - re-centering on every render would fight the admin's own
@@ -116,4 +114,87 @@ export function PlaceCoordinatesModal({
       </div>
     </>
   );
+}
+
+type CenterSetter = (center: { lat: number; lon: number }) => void;
+
+// The original renderer, unchanged from before mountMapLibre existed -
+// the automatic fallback whenever resolveMapEngine() (mapEngine.ts)
+// can't use MapLibre.
+function mountLeaflet(
+  container: HTMLDivElement,
+  initialCenter: { lat: number; lon: number },
+  setCenter: CenterSetter,
+  cancelledRef: () => boolean,
+): () => void {
+  let map: LeafletMap | undefined;
+
+  // Dynamic import, not top-level - same "leaflet touches `window`
+  // during module evaluation" reasoning RouteMap.tsx's own identical
+  // import documents.
+  void import("leaflet").then((L) => {
+    if (cancelledRef()) return;
+    map = L.map(container, {
+      center: [initialCenter.lat, initialCenter.lon],
+      zoom: DEFAULT_ZOOM,
+    });
+    L.tileLayer(TILE_URL, {
+      maxZoom: 20,
+      subdomains: TILE_SUBDOMAINS,
+      attribution: TILE_ATTRIBUTION,
+      detectRetina: true,
+    }).addTo(map);
+    map.on("move", () => {
+      if (!map) return;
+      const c = map.getCenter();
+      setCenter({ lat: c.lat, lon: c.lng });
+    });
+  });
+
+  return () => {
+    map?.remove();
+  };
+}
+
+// MapLibre GL + self-hosted PMTiles vector tiles - the preferred
+// renderer wherever resolveMapEngine() (mapEngine.ts) finds it can
+// actually work. Same drag-under-a-fixed-pin behavior as mountLeaflet
+// above, just reading the live center off MapLibre's own map.getCenter()
+// instead of Leaflet's.
+function mountMapLibre(
+  container: HTMLDivElement,
+  initialCenter: { lat: number; lon: number },
+  setCenter: CenterSetter,
+  cancelledRef: () => boolean,
+): () => void {
+  let map: import("maplibre-gl").Map | undefined;
+
+  void import("maplibre-gl").then((maplibregl) =>
+    import("pmtiles").then(({ Protocol }) => {
+      if (cancelledRef()) return;
+
+      // Harmless to repeat across this modal's own mounts and
+      // RouteMap.tsx's own identical registration - see that
+      // component's own doc comment on mountMapLibre for why this
+      // skips an "already registered" guard.
+      const protocol = new Protocol();
+      maplibregl.addProtocol("pmtiles", protocol.tile);
+
+      map = new maplibregl.Map({
+        container,
+        style: protomapsStyle(PMTILES_URL),
+        center: [initialCenter.lon, initialCenter.lat],
+        zoom: DEFAULT_ZOOM,
+      });
+      map.on("move", () => {
+        if (!map) return;
+        const c = map.getCenter();
+        setCenter({ lat: c.lat, lon: c.lng });
+      });
+    }),
+  );
+
+  return () => {
+    map?.remove();
+  };
 }
