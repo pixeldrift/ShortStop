@@ -125,6 +125,23 @@ body {
   box-shadow: none;
 }
 
+/* Same white-sheen highlight as the .btn-glossy-* trio above, but an
+   inset shadow in place of their outer drop shadow - a button pops out,
+   a meter's own track should read as a groove the fill sits inside
+   instead. Used by GeocodeRatioBar and FetchCoordinatesModal's own
+   batch-progress bar (EditRouteScreen.tsx) - both just supply their own
+   track/fill colors and width on top of this. */
+.meter-track {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0) 55%
+  );
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.3),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.3);
+}
+
 /* A hard on/off blink (not a fade) for the live clock's colon, so it
    reads clearly as "this clock is ticking" rather than just decorative. */
 @keyframes blink {

@@ -23,7 +23,12 @@ export function ConfirmModal({
   onCancel,
 }: {
   title: string;
-  message?: string;
+  /** Plain text for the ordinary case - a caller wanting the same
+   * icon+colored-text treatment the rest of the app uses for a status
+   * (a green check, a red x, RouteListScreen's own warning triangle for
+   * an unresolved-coordinates activate) passes a small element instead
+   * of a bare string. */
+  message?: React.ReactNode;
   confirmLabel: string;
   /** Icon shown before confirmLabel - a trash can for delete, say -
    * kept optional/generic rather than hardcoding delete's icon here,
@@ -55,7 +60,9 @@ export function ConfirmModal({
         className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="font-heading text-xl font-black tracking-tight">{title}</h2>
+        <h2 className="font-heading text-xl font-black tracking-tight">
+          {title}
+        </h2>
         {message && <p className="mt-2 text-sm text-zinc-500">{message}</p>}
 
         {/* Destructive (delete) reads leftmost, same rule this app
@@ -67,7 +74,9 @@ export function ConfirmModal({
             leftmost-destructive slot, so a plain destructive confirm
             (flex-row-reverse) and a Delete-then-Cancel-then-Activate
             three-button row both read the same left-to-right. */}
-        <div className={`mt-4 flex gap-2 ${destructive && !secondaryLabel ? "flex-row-reverse" : ""}`}>
+        <div
+          className={`mt-4 flex gap-2 ${destructive && !secondaryLabel ? "flex-row-reverse" : ""}`}
+        >
           {secondaryLabel && onSecondary && (
             <button
               type="button"

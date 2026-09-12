@@ -26,13 +26,20 @@ import {
   UploadIcon,
   XCircleIcon,
 } from "./icons";
-import { buildRouteFromRows, formatWaypointInstruction } from "@/lib/parseRouteCsv";
+import {
+  buildRouteFromRows,
+  formatWaypointInstruction,
+} from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
-import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
-import { matchSchoolFromRows, parseRouteImport, unresolvedRequiredFields } from "@/lib/parseRouteImport";
+import type { GeocodableQuery } from "@/lib/geocode";
+import {
+  matchSchoolFromRows,
+  parseRouteImport,
+  unresolvedRequiredFields,
+} from "@/lib/parseRouteImport";
 import { parseRouteFilename } from "@/lib/parseRouteMasterList";
 import {
   PLACEHOLDER_DISTANCE,
@@ -40,8 +47,14 @@ import {
   SCHOOL_ADDRESS_NOT_YET_PROVIDED,
 } from "@/lib/placeholderMeta";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
-import { resolutionCounts, summarizeRouteResolution } from "@/lib/routeResolutionStatus";
-import type { RouteResolutionCounts, RowResolutionStatus } from "@/lib/routeResolutionStatus";
+import {
+  resolutionCounts,
+  summarizeRouteResolution,
+} from "@/lib/routeResolutionStatus";
+import type {
+  RouteResolutionCounts,
+  RowResolutionStatus,
+} from "@/lib/routeResolutionStatus";
 import { tripTypeFullLabel, tripTypeLabel } from "@/lib/tripType";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
@@ -57,6 +70,11 @@ import type { GeocodeResponseBody } from "@/app/api/geocode/route";
 interface FetchErrorInfo {
   message: string;
   raw?: string;
+  /** True only for a real 429 from the geocoder - shown as its own
+   * plain "you hit the limit" message rather than the generic
+   * error+"View Error" treatment, since there's no useful detail to
+   * dig into, just a wait-and-retry. */
+  rateLimited?: boolean;
 }
 
 /** Thrown by callGeocodeApi below on a non-ok response - carries the
@@ -79,6 +97,41 @@ class GeocodeApiError extends Error {
  * server paced internally in one request; see runFetchAll's own doc
  * for why that moved to the client). */
 const SINGLE_FETCH_COOLDOWN_MS = 1100;
+
+/** One coordinate value, typed either as a plain signed decimal
+ * ("-86.54681") or with its own degree symbol and hemisphere letter
+ * ("86.54681° W" - a common copy-paste format off a map app) - the
+ * letter's sign wins over a redundant/contradictory leading "-", same
+ * as how any map app itself would read "-86.54681° W" (still west).
+ * Null if it doesn't look like a coordinate at all. */
+function parseCoordinatePart(raw: string): number | null {
+  const match = raw.trim().match(/^(-?\d+(?:\.\d+)?)\s*°?\s*([NSEWnsew])?$/);
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+  const hemisphere = match[2]?.toUpperCase();
+  if (hemisphere === "S" || hemisphere === "W") return -Math.abs(value);
+  if (hemisphere === "N" || hemisphere === "E") return Math.abs(value);
+  return value;
+}
+
+/** StepRowEditor's own Latitude/Longitude box, parsed - a comma
+ * between the two values when one is present (needed so "86.54681°
+ * W"'s own space, between the symbol and the hemisphere letter,
+ * isn't mistaken for the lat/lon separator), otherwise split on
+ * whitespace/tab same as a plain "36.05274 -86.54681" always has.
+ * Null unless this resolves to exactly two real coordinate values. */
+function parseLatLon(text: string): [number, number] | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const parts = trimmed.includes(",")
+    ? trimmed.split(",")
+    : trimmed.split(/\s+/);
+  if (parts.length !== 2) return null;
+  const lat = parseCoordinatePart(parts[0]);
+  const lon = parseCoordinatePart(parts[1]);
+  return lat != null && lon != null ? [lat, lon] : null;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -103,7 +156,8 @@ interface BatchProgress {
 // as before - parseRouteImport.ts does the real work - it's just not
 // spelled out here anymore now that Upload File, above, is the
 // primary path and this is the secondary one.
-const STEPS_PLACEHOLDER = "One stop or turn per line, or delimited fields with headers.";
+const STEPS_PLACEHOLDER =
+  "One stop or turn per line, or delimited fields with headers.";
 
 // "Next Action" own third choice, alongside ending the trip
 // (nextRouteId null) or chaining into a real other route (nextRouteId
@@ -132,7 +186,8 @@ const BLANK_ROW: RawRouteRow = {
 // in use elsewhere in this app's own real data).
 const inputClass =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base placeholder:text-zinc-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none";
-const labelClass = "text-xs font-semibold tracking-wide text-zinc-500 uppercase";
+const labelClass =
+  "text-xs font-semibold tracking-wide text-zinc-500 uppercase";
 
 /** Same shape as inputClass, swapped to a red border/focus ring - a
  * required field (Route #, Trip, School - see requiredFieldErrors)
@@ -219,9 +274,21 @@ function waypointLabel(query: WaypointQuery): string {
 /** A small resolved/unresolved/skipped indicator - shared between the
  * collapsed row's one-line summary and the expanded editor's own
  * fuller status line below. */
-function ResolutionIcon({ status, className }: { status: RowResolutionStatus["status"]; className: string }) {
-  if (status === "resolved") return <CheckCircleIcon className={`${className} text-green-600`} />;
-  if (status === "skipped") return <span className={`${className} text-center leading-none text-zinc-400`}>–</span>;
+function ResolutionIcon({
+  status,
+  className,
+}: {
+  status: RowResolutionStatus["status"];
+  className: string;
+}) {
+  if (status === "resolved")
+    return <CheckCircleIcon className={`${className} text-green-600`} />;
+  if (status === "skipped")
+    return (
+      <span className={`${className} text-center leading-none text-zinc-400`}>
+        –
+      </span>
+    );
   return <XCircleIcon className={`${className} text-red-500`} />;
 }
 
@@ -289,14 +356,18 @@ function StepRowView({
 }) {
   const isStop = stopNumber !== null;
   const actionLower = row.action.toLowerCase();
-  const isPlaceAction = actionLower === "stop" || actionLower === "depart" || actionLower === "arrive";
+  const isPlaceAction =
+    actionLower === "stop" ||
+    actionLower === "depart" ||
+    actionLower === "arrive";
   // Only "Left"/"Right" actually have a direction (and the mirrored
   // TurnArrow to go with it) - every other action (Continue, U-Turn,
   // Turn Around, Proceed, Pull Over, Return, Depart, Arrive) gets its
   // own icon instead (ActionIcon, icons.tsx) rather than reading as
   // plain, icon-less text the way it used to, same as the real driving
   // screen now does too (StepContent's own doc comment).
-  const turnDirection = actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
+  const turnDirection =
+    actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
   // A place action's own from/location pair reads as an intersection
   // ("Main St & Oak Ave"); a turn's reads as the maneuver itself ("Main
   // St onto Oak Ave") - same shape, different connector word, both set
@@ -312,12 +383,19 @@ function StepRowView({
   // what the expanded editor already treats as its own address.
   const isPlainLocation =
     /^\d/.test(row.location.trim()) ||
-    Object.keys(schools).some((name) => name.trim().toLowerCase() === row.location.trim().toLowerCase());
-  const effectiveFrom = isPlainLocation ? null : row.fromLocation || previousRoad;
+    Object.keys(schools).some(
+      (name) => name.trim().toLowerCase() === row.location.trim().toLowerCase(),
+    );
+  const effectiveFrom = isPlainLocation
+    ? null
+    : row.fromLocation || previousRoad;
   const connector = isPlaceAction ? "&" : "onto";
   const subheading = effectiveFrom ? (
     <>
-      {effectiveFrom} <span className="text-sm font-normal text-zinc-400 italic">{connector}</span>{" "}
+      {effectiveFrom}{" "}
+      <span className="text-sm font-normal text-zinc-400 italic">
+        {connector}
+      </span>{" "}
       {row.location}
     </>
   ) : (
@@ -337,7 +415,9 @@ function StepRowView({
                   <span className="flex items-center gap-0.5 text-sm font-semibold text-zinc-400">
                     ({row.side.toLowerCase()}
                     <RoundedTriangleIcon
-                      direction={row.side.toLowerCase() === "left" ? "left" : "right"}
+                      direction={
+                        row.side.toLowerCase() === "left" ? "left" : "right"
+                      }
                       className="h-3 w-3"
                     />
                     )
@@ -346,12 +426,18 @@ function StepRowView({
               </>
             ) : actionLower === "depart" || actionLower === "arrive" ? (
               <>
-                <ActionIcon action={row.action} className="h-4 w-4 shrink-0 text-blue-600" />
+                <ActionIcon
+                  action={row.action}
+                  className="h-4 w-4 shrink-0 text-blue-600"
+                />
                 {row.action}
               </>
             ) : turnDirection ? (
               <>
-                <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+                <TurnArrow
+                  direction={turnDirection}
+                  className="h-4 w-4 shrink-0"
+                />
                 Turn {turnDirection === "left" ? "Left" : "Right"}
               </>
             ) : (
@@ -369,7 +455,9 @@ function StepRowView({
           )}
         </div>
         <p className="truncate text-zinc-700">
-          {subheading || <span className="text-zinc-400 italic">No location yet</span>}
+          {subheading || (
+            <span className="text-zinc-400 italic">No location yet</span>
+          )}
         </p>
         {/* The row's own real geocoding outcome - actual coordinates
             once resolved (green check), the specific miss/error reason
@@ -378,7 +466,10 @@ function StepRowView({
             all (a driver instruction, not a real road). */}
         {status && (
           <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
-            <ResolutionIcon status={status.status} className="h-3.5 w-3.5 shrink-0" />
+            <ResolutionIcon
+              status={status.status}
+              className="h-3.5 w-3.5 shrink-0"
+            />
             {status.status === "resolved"
               ? `${status.lat.toFixed(5)}, ${status.lon.toFixed(5)}`
               : status.status === "skipped"
@@ -390,7 +481,9 @@ function StepRowView({
             read last - after the row's own location is established, not
             competing with it for the reader's attention right under the
             cross streets. */}
-        {row.notes && <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>}
+        {row.notes && (
+          <p className="mt-0.5 text-sm text-zinc-500">{row.notes}</p>
+        )}
       </div>
       {/* -mr-2 pulls this pair in closer to the row's own right edge
           (half its old gap to the list's own px-4) than a plain
@@ -521,7 +614,8 @@ function StepRowEditor({
   // Turn Around, Proceed, Pull Over, Return, Depart, Arrive) gets its
   // own icon instead (ActionIcon) in the subtitle below, same as
   // StepRowView's own identical derivation for the collapsed row.
-  const turnDirection = actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
+  const turnDirection =
+    actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
 
   // A school this row's own `location` text matches by name (exact,
   // case/space-insensitive) - true for a Depart/Arrive row defaulted or
@@ -536,7 +630,9 @@ function StepRowEditor({
   const matchedSchool = useMemo(() => {
     const target = row.location.trim().toLowerCase();
     if (!target) return null;
-    const entry = Object.entries(schools).find(([name]) => name.trim().toLowerCase() === target);
+    const entry = Object.entries(schools).find(
+      ([name]) => name.trim().toLowerCase() === target,
+    );
     return entry ? { name: entry[0], info: entry[1] } : null;
   }, [row.location, schools]);
 
@@ -545,10 +641,13 @@ function StepRowEditor({
   // a "from road" concept the way an intersection does, so the From
   // field below stays hidden for either rather than asking for context
   // that wouldn't mean anything.
-  const isPlainLocation = /^\d/.test(row.location.trim()) || matchedSchool !== null;
+  const isPlainLocation =
+    /^\d/.test(row.location.trim()) || matchedSchool !== null;
 
   function handleTypeChange(nextAction: string) {
-    const nextIsSchoolAction = nextAction.toLowerCase() === "depart" || nextAction.toLowerCase() === "arrive";
+    const nextIsSchoolAction =
+      nextAction.toLowerCase() === "depart" ||
+      nextAction.toLowerCase() === "arrive";
     // Defaults a fresh Depart/Arrive row straight to this route's own
     // school - overridable by picking a different one from the quick-
     // pick below or just typing over it - rather than opening on a
@@ -562,16 +661,21 @@ function StepRowEditor({
   }
 
   // Latitude/Longitude - local text, seeded from whatever's already
-  // resolved for this row (blank otherwise), parsed only on Save
-  // (handleSave below) rather than live on every keystroke, so a
-  // half-typed number is never mistaken for a real coordinate. Accepts
-  // a space, comma, or tab between the two values.
+  // resolved for this row (blank otherwise). parseLatLon (above) reads
+  // it live on every keystroke - not just on Save - so a manually typed
+  // coordinate shows its own green check immediately instead of only
+  // after Save closes and reopens this editor. Accepts a plain decimal
+  // pair (space/comma/tab-separated) or one with its own degree symbol
+  // and hemisphere letter per value ("36.05274° N, 86.54681° W").
   const resolvedLat = status?.status === "resolved" ? status.lat : null;
   const resolvedLon = status?.status === "resolved" ? status.lon : null;
   const [coordsText, setCoordsText] = useState(() =>
-    resolvedLat != null && resolvedLon != null ? `${resolvedLat}, ${resolvedLon}` : "",
+    resolvedLat != null && resolvedLon != null
+      ? `${resolvedLat}, ${resolvedLon}`
+      : "",
   );
-  const [coordsError, setCoordsError] = useState(false);
+  const hasCoordsText = coordsText.trim() !== "";
+  const manualCoords = useMemo(() => parseLatLon(coordsText), [coordsText]);
 
   // Re-syncs the box the moment a Fetch actually lands - `status` is
   // derived from the shared cache (EditRouteScreen's own `cache` state),
@@ -590,30 +694,28 @@ function StepRowEditor({
   // resolution) actually changes the real value - never on every
   // render, and never clobbering a coordinate the admin is still
   // mid-typing by hand.
-  const [lastSyncedCoords, setLastSyncedCoords] = useState<[number, number] | null>(
-    resolvedLat != null && resolvedLon != null ? [resolvedLat, resolvedLon] : null,
+  const [lastSyncedCoords, setLastSyncedCoords] = useState<
+    [number, number] | null
+  >(
+    resolvedLat != null && resolvedLon != null
+      ? [resolvedLat, resolvedLon]
+      : null,
   );
   if (
     resolvedLat != null &&
     resolvedLon != null &&
-    (lastSyncedCoords?.[0] !== resolvedLat || lastSyncedCoords?.[1] !== resolvedLon)
+    (lastSyncedCoords?.[0] !== resolvedLat ||
+      lastSyncedCoords?.[1] !== resolvedLon)
   ) {
     setLastSyncedCoords([resolvedLat, resolvedLon]);
     setCoordsText(`${resolvedLat}, ${resolvedLon}`);
-    setCoordsError(false);
   }
 
   function handleSave() {
-    const trimmed = coordsText.trim();
-    if (trimmed) {
-      const parts = trimmed.split(/[\s,]+/).map(Number);
-      if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n))) {
-        setCoordsError(true);
-        return;
-      }
-      onManualCoordinates(parts[0], parts[1]);
+    if (hasCoordsText) {
+      if (!manualCoords) return; // the box below already shows why, live
+      onManualCoordinates(manualCoords[0], manualCoords[1]);
     }
-    setCoordsError(false);
     onUpdate();
   }
 
@@ -628,7 +730,9 @@ function StepRowEditor({
       >
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="font-heading text-xl font-black tracking-tight">Edit Waypoint</h2>
+            <h2 className="font-heading text-xl font-black tracking-tight">
+              Edit Waypoint
+            </h2>
             {/* Same icon the collapsed StepRowView row above shows for
                 this same stop/turn (live off `isStop`/`turnDirection` -
                 the draft's own Type select, not a snapshot from when
@@ -641,13 +745,23 @@ function StepRowEditor({
               {isStop ? (
                 <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
               ) : isSchoolAction ? (
-                <ActionIcon action={row.action} className="h-4 w-4 shrink-0 text-blue-600" />
+                <ActionIcon
+                  action={row.action}
+                  className="h-4 w-4 shrink-0 text-blue-600"
+                />
               ) : turnDirection ? (
-                <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+                <TurnArrow
+                  direction={turnDirection}
+                  className="h-4 w-4 shrink-0"
+                />
               ) : (
                 <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
               )}
-              {formatWaypointInstruction(row, stopNumber, isPlainLocation ? "" : row.fromLocation || previousRoad || "")}
+              {formatWaypointInstruction(
+                row,
+                stopNumber,
+                isPlainLocation ? "" : row.fromLocation || previousRoad || "",
+              )}
             </p>
           </div>
           <button
@@ -660,70 +774,76 @@ function StepRowEditor({
           </button>
         </div>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <Field label="Type">
-          <select className={inputClass} value={row.action} onChange={(e) => handleTypeChange(e.target.value)}>
-            <option value="Stop">Stop</option>
-            <option value="Left">Turn Left</option>
-            <option value="Right">Turn Right</option>
-            <option value="Continue">Continue</option>
-            <option value="U-Turn">U-Turn</option>
-            <option value="Turn Around">Turn Around</option>
-            <option value="Proceed">Proceed</option>
-            <option value="Pull Over">Pull Over</option>
-            <option value="Return">Return</option>
-            <option value="Depart">Depart</option>
-            <option value="Arrive">Arrive</option>
-          </select>
-        </Field>
-        {isStop ? (
-          <Field label="Side">
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Field label="Type">
             <select
               className={inputClass}
-              value={row.side}
-              onChange={(e) => onChange({ side: e.target.value })}
+              value={row.action}
+              onChange={(e) => handleTypeChange(e.target.value)}
             >
-              <option value="">Side (none)</option>
-              <option value="Left">Left</option>
-              <option value="Right">Right</option>
+              <option value="Stop">Stop</option>
+              <option value="Left">Turn Left</option>
+              <option value="Right">Turn Right</option>
+              <option value="Continue">Continue</option>
+              <option value="U-Turn">U-Turn</option>
+              <option value="Turn Around">Turn Around</option>
+              <option value="Proceed">Proceed</option>
+              <option value="Pull Over">Pull Over</option>
+              <option value="Return">Return</option>
+              <option value="Depart">Depart</option>
+              <option value="Arrive">Arrive</option>
             </select>
           </Field>
-        ) : (
-          <span />
-        )}
-      </div>
+          {isStop ? (
+            <Field label="Side">
+              <select
+                className={inputClass}
+                value={row.side}
+                onChange={(e) => onChange({ side: e.target.value })}
+              >
+                <option value="">Side (none)</option>
+                <option value="Left">Left</option>
+                <option value="Right">Right</option>
+              </select>
+            </Field>
+          ) : (
+            <span />
+          )}
+        </div>
 
-      {/* Depart/Arrive's own quick-pick - fills Location with a
+        {/* Depart/Arrive's own quick-pick - fills Location with a
           chosen school's exact name (below) rather than requiring one
           typed out by hand. Left out for every other action - a turn
           or a plain stop names a road or address, never a school. */}
-      {isSchoolAction && Object.keys(schools).length > 0 && (
-        <div className="mt-2">
-          <Field label="School">
-            <select
-              className={inputClass}
-              value={matchedSchool?.name ?? ""}
-              onChange={(e) => {
-                if (e.target.value) onChange({ location: e.target.value });
-              }}
-            >
-              <option value="">
-                {matchedSchool ? "— Other (type below) —" : "— Not a listed school (type below) —"}
-              </option>
-              {Object.keys(schools)
-                .sort((a, b) => a.localeCompare(b))
-                .map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-            </select>
-          </Field>
-        </div>
-      )}
+        {isSchoolAction && Object.keys(schools).length > 0 && (
+          <div className="mt-2">
+            <Field label="School">
+              <select
+                className={inputClass}
+                value={matchedSchool?.name ?? ""}
+                onChange={(e) => {
+                  if (e.target.value) onChange({ location: e.target.value });
+                }}
+              >
+                <option value="">
+                  {matchedSchool
+                    ? "— Other (type below) —"
+                    : "— Not a listed school (type below) —"}
+                </option>
+                {Object.keys(schools)
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          </div>
+        )}
 
-      <div className="mt-2 flex flex-col gap-2">
-        {/* Comes before Location, not after - reads in real driving
+        <div className="mt-2 flex flex-col gap-2">
+          {/* Comes before Location, not after - reads in real driving
             order ("from Main St, onto Elm St"), and doubles as this
             row's only escape hatch for fixing a bad inference or an
             explicit typo (e.g. 120-AM-HS.csv's real "David Way," which
@@ -732,121 +852,147 @@ function StepRowEditor({
             plain address or a matched school (see isPlainLocation
             above) - neither is part of an intersection, so there's no
             "from" road to name. */}
-        {!isPlainLocation && (
-          <Field label="From (optional)">
+          {!isPlainLocation && (
+            <Field label="From (optional)">
+              <input
+                className={inputClass}
+                value={row.fromLocation}
+                onChange={(e) => onChange({ fromLocation: e.target.value })}
+                placeholder={previousRoad || "start of route"}
+              />
+            </Field>
+          )}
+          <Field label="Location">
             <input
-              className={inputClass}
-              value={row.fromLocation}
-              onChange={(e) => onChange({ fromLocation: e.target.value })}
-              placeholder={previousRoad || "start of route"}
+              className={`${inputClass} ${
+                status?.status === "unresolved"
+                  ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                  : ""
+              }`}
+              value={row.location}
+              onChange={(e) => onChange({ location: e.target.value })}
+              placeholder={
+                isSchoolAction
+                  ? "LaVergne High School"
+                  : /^\d/.test(row.location)
+                    ? "123 Maple Dr"
+                    : "Elm St"
+              }
             />
           </Field>
-        )}
-        <Field label="Location">
-          <input
-            className={`${inputClass} ${
-              status?.status === "unresolved" ? "border-red-400 focus:border-red-500 focus:ring-red-500" : ""
-            }`}
-            value={row.location}
-            onChange={(e) => onChange({ location: e.target.value })}
-            placeholder={isSchoolAction ? "LaVergne High School" : /^\d/.test(row.location) ? "123 Maple Dr" : "Elm St"}
-          />
-        </Field>
-        {/* A location that matches a known school by name - typed by
+          {/* A location that matches a known school by name - typed by
             hand, quick-picked above, or defaulted from this route's
             own school - reads as linked to that real school entity,
             not just a text string a geocoder has to guess at: its
             actual street address shows right underneath as
             confirmation. */}
-        {matchedSchool && (
-          <p className="-mt-1 flex items-center gap-1 text-xs text-zinc-500">
-            <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
-            {matchedSchool.info.address}
-          </p>
-        )}
-      </div>
+          {matchedSchool && (
+            <p className="-mt-1 flex items-center gap-1 text-xs text-zinc-500">
+              <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
+              {matchedSchool.info.address}
+            </p>
+          )}
+        </div>
 
-      <div className="mt-2">
-        <Field
-          label={
-            <span className={row.skip ? "text-zinc-300" : undefined}>Latitude, longitude</span>
-          }
-        >
-          <div className="flex items-center gap-2">
+        <div className="mt-2">
+          <Field
+            label={
+              <span className={row.skip ? "text-zinc-300" : undefined}>
+                Latitude, longitude
+              </span>
+            }
+          >
+            <div className="flex items-center gap-2">
+              <input
+                className={`${inputClass} flex-1 font-mono disabled:opacity-50 ${
+                  (hasCoordsText && !manualCoords) ||
+                  (!hasCoordsText && status?.status === "unresolved")
+                    ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                    : manualCoords || status?.status === "resolved"
+                      ? "border-green-400 focus:border-green-500 focus:ring-green-500"
+                      : ""
+                }`}
+                value={coordsText}
+                onChange={(e) => setCoordsText(e.target.value)}
+                disabled={row.skip}
+              />
+              <button
+                type="button"
+                onClick={onFetch}
+                disabled={fetchLocked || row.skip}
+                aria-label="Fetch coordinates for this location"
+                className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
+              >
+                {fetching ? (
+                  <SpinnerIcon className="h-4 w-4 animate-spin" />
+                ) : (
+                  <GlobeIcon className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </Field>
+          {/* Every status message this row can have, right under the box
+            it's actually about - a locally malformed manual entry
+            takes priority over the row's own geocoded status (it's
+            about to replace it the moment Save runs), and a locally
+            *valid* one shows its own green check immediately rather
+            than waiting on Save to reflect it. The real routing/
+            geocoding failure (moved down here from the destination
+            field above, where it used to sit disconnected from the
+            coordinates it's actually about) is never truncated - a
+            "No shared node found in the search box"-length explanation
+            needs to be read whole, not guessed at from its first few
+            words. */}
+          {hasCoordsText && !manualCoords ? (
+            <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
+              <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Enter latitude and longitude, separated by a space, comma, or
+                tab.
+              </span>
+            </p>
+          ) : manualCoords ? (
+            <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
+              <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
+              Verified coordinates
+            </p>
+          ) : status?.status === "unresolved" ? (
+            <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
+              <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{status.reason}</span>
+            </p>
+          ) : status?.status === "resolved" ? (
+            <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
+              <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
+              Verified coordinates
+            </p>
+          ) : null}
+          <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-600">
             <input
-              className={`${inputClass} flex-1 font-mono disabled:opacity-50 ${
-                coordsError || status?.status === "unresolved"
-                  ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                  : status?.status === "resolved"
-                    ? "border-green-400 focus:border-green-500 focus:ring-green-500"
-                    : ""
-              }`}
-              value={coordsText}
-              onChange={(e) => {
-                setCoordsText(e.target.value);
-                setCoordsError(false);
-              }}
-              disabled={row.skip}
+              type="checkbox"
+              checked={row.skip}
+              onChange={(e) => onChange({ skip: e.target.checked })}
+              className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
             />
-            <button
-              type="button"
-              onClick={onFetch}
-              disabled={fetchLocked || row.skip}
-              aria-label="Fetch coordinates for this location"
-              className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
-            >
-              {fetching ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <GlobeIcon className="h-4 w-4" />}
-            </button>
-          </div>
-        </Field>
-        {/* Every status message this row can have, right under the box
-            it's actually about - coordsError (a locally malformed
-            manual entry) takes priority over the row's own geocoded
-            status, since it's about to replace it the moment Save
-            runs; the real routing/geocoding failure (moved down here
-            from the destination field above, where it used to sit
-            disconnected from the coordinates it's actually about) is
-            never truncated - a "No shared node found in the search
-            box"-length explanation needs to be read whole, not
-            guessed at from its first few words. */}
-        {coordsError ? (
-          <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
-            <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>Enter latitude and longitude, separated by a space, comma, or tab.</span>
-          </p>
-        ) : status?.status === "unresolved" ? (
-          <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
-            <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>{status.reason}</span>
-          </p>
-        ) : status?.status === "resolved" ? (
-          <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
-            <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
-            Verified coordinates
-          </p>
-        ) : null}
-        <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-600">
-          <input
-            type="checkbox"
-            checked={row.skip}
-            onChange={(e) => onChange({ skip: e.target.checked })}
-            className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
-          />
-          Instructions only - no location coordinates
-        </label>
-      </div>
+            Instructions only - no location coordinates
+          </label>
+        </div>
 
-      {/* Notes ahead of Riders - a driver reads this box top to bottom,
+        {/* Notes ahead of Riders - a driver reads this box top to bottom,
           and the note (a special instruction) matters regardless of
           whether this row even has riders, so it shouldn't sit below a
           field that sometimes isn't even shown at all. */}
-      <div className="mt-2">
-        <Field label="Driver Notes">
-          <input className={inputClass} value={row.notes} onChange={(e) => onChange({ notes: e.target.value })} />
-        </Field>
-      </div>
+        <div className="mt-2">
+          <Field label="Driver Notes">
+            <input
+              className={inputClass}
+              value={row.notes}
+              onChange={(e) => onChange({ notes: e.target.value })}
+            />
+          </Field>
+        </div>
 
-      {/* Riders only really means anything for a stop (a turn has no
+        {/* Riders only really means anything for a stop (a turn has no
           one boarding/leaving at it) - live off `isStop` above, so
           switching Type away from Stop fades it immediately rather
           than leaving it looking just as active as every other field.
@@ -858,50 +1004,52 @@ function StepRowEditor({
           row" it now is. Its own full-width line, not sharing a row
           with Driver Notes - the two aren't related enough to read as
           a pair, and Driver Notes needs the room on longer entries. */}
-      <div className={`mt-2 ${isStop ? "" : "opacity-40"}`}>
-        <Field
-          label={
-            <span className="inline-flex items-center gap-1">
-              <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
-            </span>
-          }
-        >
-          <input
-            className={inputClass}
-            inputMode="numeric"
-            value={row.riderCount}
-            onChange={(e) => onChange({ riderCount: e.target.value.replace(/\D/g, "") })}
-            disabled={!isStop}
-          />
-        </Field>
-      </div>
+        <div className={`mt-2 ${isStop ? "" : "opacity-40"}`}>
+          <Field
+            label={
+              <span className="inline-flex items-center gap-1">
+                <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
+              </span>
+            }
+          >
+            <input
+              className={inputClass}
+              inputMode="numeric"
+              value={row.riderCount}
+              onChange={(e) =>
+                onChange({ riderCount: e.target.value.replace(/\D/g, "") })
+              }
+              disabled={!isStop}
+            />
+          </Field>
+        </div>
 
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label="Delete step"
-          className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
-        >
-          <TrashIcon className="h-3.5 w-3.5" />
-          Delete
-        </button>
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={onCancel}
-          className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={handleSave}
-          className="btn-glossy-blue shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
-        >
-          Save
-        </button>
-      </div>
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label="Delete step"
+            className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
+          >
+            <TrashIcon className="h-3.5 w-3.5" />
+            Delete
+          </button>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="btn-glossy-blue shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            Save
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -913,7 +1061,13 @@ function StepRowEditor({
  * order, not only appended past the last one. Disabled while a
  * different row's own editor is open, same as every other action here
  * that would move rows out from under it. */
-function AddStepButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+function AddStepButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void;
+  disabled: boolean;
+}) {
   return (
     <div className="relative flex items-center justify-center py-1">
       <div className="absolute inset-x-0 border-t border-dashed border-zinc-200" />
@@ -958,7 +1112,9 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
-          <h2 className="font-heading text-xl font-black tracking-tight">Stops Format</h2>
+          <h2 className="font-heading text-xl font-black tracking-tight">
+            Stops Format
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -972,23 +1128,26 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
         <div className="overflow-y-auto p-5 text-left">
           <p className="text-sm text-zinc-600">
             Only <code className="font-mono text-xs">action</code> and{" "}
-            <code className="font-mono text-xs">location</code> are required - every other column
-            can be left blank. Each row names the one road that action or direction happens on;
-            anything else (the road it crosses, say) is figured out from whichever road the route
-            was already on.
+            <code className="font-mono text-xs">location</code> are required -
+            every other column can be left blank. Each row names the one road
+            that action or direction happens on; anything else (the road it
+            crosses, say) is figured out from whichever road the route was
+            already on.
           </p>
           <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
             <table className="w-full min-w-[28rem] border-collapse text-xs">
               <thead>
                 <tr className="bg-zinc-100 text-zinc-500 uppercase">
-                  {["action", "location", "rider_count", "side", "notes"].map((header) => (
-                    <th
-                      key={header}
-                      className="border-b border-zinc-200 px-2 py-1.5 text-left font-semibold"
-                    >
-                      {header}
-                    </th>
-                  ))}
+                  {["action", "location", "rider_count", "side", "notes"].map(
+                    (header) => (
+                      <th
+                        key={header}
+                        className="border-b border-zinc-200 px-2 py-1.5 text-left font-semibold"
+                      >
+                        {header}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
@@ -1006,14 +1165,15 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
           </div>
           <p className="mt-3 text-sm text-zinc-600">
             Prefer to spell out both sides of every intersection yourself? Add a{" "}
-            <code className="font-mono text-xs">from_location</code> column alongside{" "}
-            <code className="font-mono text-xs">location</code> (e.g.{" "}
-            <code className="font-mono text-xs">Stop, Main St, Oak Ave, 3</code>) - only needed
-            where the road can&apos;t already be figured out from context.
+            <code className="font-mono text-xs">from_location</code> column
+            alongside <code className="font-mono text-xs">location</code> (e.g.{" "}
+            <code className="font-mono text-xs">Stop, Main St, Oak Ave, 3</code>
+            ) - only needed where the road can&apos;t already be figured out
+            from context.
           </p>
           <p className="mt-3 text-sm text-zinc-600">
-            No header row works too - one stop or turn per line, same as the paste box&apos;s own
-            placeholder shows.
+            No header row works too - one stop or turn per line, same as the
+            paste box&apos;s own placeholder shows.
           </p>
         </div>
       </div>
@@ -1061,7 +1221,9 @@ function ErrorDetailsModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2">
-          <h2 className="font-heading text-xl font-black tracking-tight">Error Details</h2>
+          <h2 className="font-heading text-xl font-black tracking-tight">
+            Error Details
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -1085,29 +1247,42 @@ function ErrorDetailsModal({
   );
 }
 
-/** OpenRouteService's own account-wide rate limit, drawn as a small
- * health-meter bar - green while there's plenty left, amber then red
- * as it runs low, the same "fuel gauge" reading any of those colors
- * already implies. Only ever rendered when a real quota is known (see
- * geocode.ts's own getLastKnownOrsQuota) - there's no "unknown" bar,
- * just no bar at all. */
-function QuotaMeter({ quota }: { quota: ApiQuota }) {
-  const fraction = quota.limit > 0 ? Math.max(0, Math.min(1, quota.remaining / quota.limit)) : 0;
-  const barColor = fraction > 0.5 ? "bg-green-500" : fraction > 0.2 ? "bg-amber-500" : "bg-red-500";
+// Solid HSL red-to-green interpolation (0% = red, 100% = green) - the
+// same "how close to done" reading a green/red fuel gauge already
+// gives, just driven by progress instead of a remaining quota. Shared
+// by GeocodeRatioBar and FetchCoordinatesModal's own batch-progress
+// fill below, so a route's overall geocode ratio and one in-flight
+// batch's progress both use the same color language.
+function progressColor(fraction: number): string {
+  const hue = Math.max(0, Math.min(1, fraction)) * 120;
+  return `hsl(${hue}, 70%, 45%)`;
+}
+
+/** A thin at-a-glance ratio of resolved vs. not - a solid red track
+ * with a green fill scaled to `percent`, so it reads correctly (a
+ * sliver of green, mostly red) well before anyone reads the count
+ * next to it. Styled like the app's own glossy buttons (the same
+ * white sheen highlight) but with an inset shadow instead of a raised
+ * one, so it reads as a groove the fill sits inside rather than
+ * another button. */
+function GeocodeRatioBar({
+  percent,
+  className = "h-1",
+}: {
+  percent: number;
+  className?: string;
+}) {
   return (
-    <div>
-      <div className="flex items-center justify-between text-xs font-semibold text-zinc-500">
-        <span>API quota remaining</span>
-        <span>
-          {quota.remaining} / {quota.limit}
-        </span>
-      </div>
-      <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-zinc-200">
-        <div
-          className={`h-full rounded-full transition-[width] ${barColor}`}
-          style={{ width: `${fraction * 100}%` }}
-        />
-      </div>
+    <div
+      className={`meter-track w-full overflow-hidden rounded-full bg-red-400 ${className}`}
+    >
+      <div
+        className="h-full rounded-full transition-[width]"
+        style={{
+          width: `${percent}%`,
+          backgroundColor: progressColor(percent / 100),
+        }}
+      />
     </div>
   );
 }
@@ -1127,7 +1302,6 @@ function QuotaMeter({ quota }: { quota: ApiQuota }) {
  */
 function FetchCoordinatesModal({
   counts,
-  quota,
   fetchRunning,
   batchProgress,
   fetchError,
@@ -1136,7 +1310,6 @@ function FetchCoordinatesModal({
   onClose,
 }: {
   counts: RouteResolutionCounts;
-  quota: ApiQuota | null;
   fetchRunning: boolean;
   batchProgress: BatchProgress | null;
   fetchError: FetchErrorInfo | null;
@@ -1155,7 +1328,9 @@ function FetchCoordinatesModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2">
-          <h2 className="font-heading text-xl font-black tracking-tight">Fetch Coordinates</h2>
+          <h2 className="font-heading text-xl font-black tracking-tight">
+            Fetch Coordinates
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -1167,25 +1342,27 @@ function FetchCoordinatesModal({
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <div className="rounded-lg border border-green-200 bg-green-50 py-3 text-center">
-            <p className="font-heading text-2xl font-black text-green-700">{counts.resolved}</p>
-            <p className="text-xs font-semibold tracking-wide text-green-700 uppercase">Valid</p>
-          </div>
           <div className="rounded-lg border border-red-200 bg-red-50 py-3 text-center">
-            <p className="font-heading text-2xl font-black text-red-600">{counts.unresolved}</p>
-            <p className="text-xs font-semibold tracking-wide text-red-600 uppercase">Missing</p>
+            <p className="font-heading text-2xl font-black text-red-600">
+              {counts.unresolved}
+            </p>
+            <p className="text-xs font-semibold tracking-wide text-red-600 uppercase">
+              Missing
+            </p>
+          </div>
+          <div className="rounded-lg border border-green-200 bg-green-50 py-3 text-center">
+            <p className="font-heading text-2xl font-black text-green-700">
+              {counts.resolved}
+            </p>
+            <p className="text-xs font-semibold tracking-wide text-green-700 uppercase">
+              Valid
+            </p>
           </div>
         </div>
         {counts.skipped > 0 && (
           <p className="mt-2 text-center text-xs text-zinc-400">
             {counts.skipped} skipped ({counts.total} total)
           </p>
-        )}
-
-        {quota && (
-          <div className="mt-4">
-            <QuotaMeter quota={quota} />
-          </div>
         )}
 
         {/* Reserves its own height whether or not there's anything to
@@ -1202,18 +1379,25 @@ function FetchCoordinatesModal({
             <>
               <p className="flex items-center gap-1.5 text-sm font-semibold text-zinc-600">
                 <SpinnerIcon className="h-4 w-4 animate-spin" />
-                Fetching {Math.min(batchProgress.completed + 1, batchProgress.total)} of {batchProgress.total}…
+                Fetching{" "}
+                {Math.min(
+                  batchProgress.completed + 1,
+                  batchProgress.total,
+                )} of {batchProgress.total}…
               </p>
-              <p className="max-w-full truncate text-xs text-zinc-400">{batchProgress.currentLabel}</p>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200">
-                <div
-                  className="h-full rounded-full bg-blue-600 transition-[width]"
-                  style={{ width: `${(batchProgress.completed / batchProgress.total) * 100}%` }}
-                />
-              </div>
+              <p className="max-w-full truncate text-xs text-zinc-400">
+                {batchProgress.currentLabel}
+              </p>
+              <GeocodeRatioBar
+                percent={(batchProgress.completed / batchProgress.total) * 100}
+                className="h-1.5"
+              />
             </>
           ) : (
-            fetchError && (
+            fetchError &&
+            (fetchError.rateLimited ? (
+              <p className="text-sm text-amber-600">{fetchError.message}</p>
+            ) : (
               <p className="flex items-center gap-1.5 text-sm text-red-600">
                 Oops, could not look up coordinates.
                 <button
@@ -1224,7 +1408,7 @@ function FetchCoordinatesModal({
                   View Error
                 </button>
               </p>
-            )
+            ))
           )}
         </div>
 
@@ -1371,13 +1555,20 @@ export function EditRouteScreen({
   // level instead of falling back to the generic placeholder/default -
   // picking a *different* school from the dropdown always overrides
   // this with that school's own real table entry.
-  const isOriginalUnmatchedSchool = route != null && route.schoolName === schoolName && !schoolInfo;
+  const isOriginalUnmatchedSchool =
+    route != null && route.schoolName === schoolName && !schoolInfo;
   const schoolAddress =
-    schoolInfo?.address ?? (isOriginalUnmatchedSchool ? route.schoolAddress : SCHOOL_ADDRESS_NOT_YET_PROVIDED);
+    schoolInfo?.address ??
+    (isOriginalUnmatchedSchool
+      ? route.schoolAddress
+      : SCHOOL_ADDRESS_NOT_YET_PROVIDED);
   const schoolLevel: SchoolLevel =
-    schoolInfo?.schoolLevel ?? (isOriginalUnmatchedSchool ? route.schoolLevel : "elementary");
-  const schoolLat = schoolInfo?.lat ?? (isOriginalUnmatchedSchool ? route.schoolLat : null);
-  const schoolLon = schoolInfo?.lon ?? (isOriginalUnmatchedSchool ? route.schoolLon : null);
+    schoolInfo?.schoolLevel ??
+    (isOriginalUnmatchedSchool ? route.schoolLevel : "elementary");
+  const schoolLat =
+    schoolInfo?.lat ?? (isOriginalUnmatchedSchool ? route.schoolLat : null);
+  const schoolLon =
+    schoolInfo?.lon ?? (isOriginalUnmatchedSchool ? route.schoolLon : null);
   // Whether `schoolAddress` above is a real, geocodable address rather
   // than the generic "not yet provided" placeholder it falls back to
   // when nothing's selected - unlike that state-backed field before
@@ -1399,7 +1590,9 @@ export function EditRouteScreen({
   // requiredFieldErrors below), so it needs a genuine "not chosen yet"
   // state to require *into*, the same way School already has one via
   // its own blank "Select a school" option.
-  const [tripType, setTripType] = useState<TripType | "">(route?.tripType ?? "");
+  const [tripType, setTripType] = useState<TripType | "">(
+    route?.tripType ?? "",
+  );
   // Every other real route this bus could plausibly hand off to once
   // this one's done - same bus (a chain is one bus driving more than
   // one leg back-to-back) and same trip type (an AM route handing off
@@ -1411,7 +1604,11 @@ export function EditRouteScreen({
   const nextRouteOptions = useMemo(
     () =>
       routes.filter(
-        (r) => r.status !== "demo" && r.id !== route?.id && r.busNumber === busNumber && r.tripType === tripType,
+        (r) =>
+          r.status !== "demo" &&
+          r.id !== route?.id &&
+          r.busNumber === busNumber &&
+          r.tripType === tripType,
       ),
     [routes, route?.id, busNumber, tripType],
   );
@@ -1435,19 +1632,27 @@ export function EditRouteScreen({
     // useful in the far more common first one.
     if (route?.nextRouteId) return route.nextRouteId;
     const nextLevel: SchoolLevel | null =
-      schoolLevel === "elementary" ? "middle" : schoolLevel === "middle" ? "high" : null;
+      schoolLevel === "elementary"
+        ? "middle"
+        : schoolLevel === "middle"
+          ? "high"
+          : null;
     if (!nextLevel) return null;
-    return nextRouteOptions.find((r) => r.schoolLevel === nextLevel)?.id ?? null;
+    return (
+      nextRouteOptions.find((r) => r.schoolLevel === nextLevel)?.id ?? null
+    );
   });
-  const [departureTime, setDepartureTime] = useState(route?.departureTime ?? "");
-  // Genuinely blank for a brand-new route now, not pre-filled with
-  // PLACEHOLDER_DRIVER_NAME ("Otto Mann") - that placeholder is still
-  // the right stand-in for every *real* route loaded without a driver
-  // on file yet (see page.tsx), but pre-filling a brand-new route's own
-  // editable field with a fake name read as real data risked getting
-  // saved as-is if never noticed; an actual "First Last" hint (see the
-  // input's own placeholder below) can't be mistaken for a real value.
-  const [driverName, setDriverName] = useState(route?.driverName ?? "");
+  const [departureTime, setDepartureTime] = useState(
+    route?.departureTime ?? "",
+  );
+  // Read-only here now - no form field sets this anymore (see
+  // routeDetailsForm's own doc comment on why "Driver" is gone): a
+  // driver is a person to assign to a route, not a property of the
+  // route itself, so there's nothing for this screen to edit until
+  // there's a real user entity to assign. Still carried straight
+  // through on save (buildMetaFields below) so an existing route's own
+  // driverName - however it got set - is never silently dropped.
+  const driverName = route?.driverName ?? "";
   // mode "add" only - the paste/upload box, the one place this screen
   // still deals in CSV/TSV text at all (a human pasting or uploading a
   // route sheet - see parseRouteImport.ts). mode "edit" never reads
@@ -1475,6 +1680,25 @@ export function EditRouteScreen({
   // which defaults to stops-only) - reviewing a route for editing is
   // exactly when seeing every turn in its real place matters most.
   const [showTurns, setShowTurns] = useState(true);
+  // Narrows the list to only what still needs a coordinate - "Jump to
+  // next unverified" below is the other way to reach the same rows
+  // without leaving the full list.
+  const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
+  // The scrollable rows container - jumpToNextUnverified below scrolls
+  // within this specifically, not the whole page (see subScreen
+  // "stops"'s own layout: this list is its own internal scroll region).
+  const stopsListRef = useRef<HTMLDivElement>(null);
+  // Which row "Jump to next unverified" landed on last, so a repeated
+  // click advances to the *next* one instead of re-landing on the same
+  // first unresolved row every time. Cleared (via the timeout below)
+  // shortly after each jump, purely to drop the temporary highlight -
+  // the jump sequence itself is tracked separately, right below.
+  const [highlightedRowIndex, setHighlightedRowIndex] = useState<number | null>(
+    null,
+  );
+  const [lastJumpedRowIndex, setLastJumpedRowIndex] = useState<number | null>(
+    null,
+  );
   // Which row (an index into `rows`) currently has its full editor
   // open, if any - only ever one at a time, matching how this screen's
   // own editing actually happens ("tweak a few details, or add one new
@@ -1497,7 +1721,9 @@ export function EditRouteScreen({
   // lazy initializer, not an effect, so there's no real network fetch
   // to skip in that case at all, only a genuine cache miss ever
   // reaches the effect below.
-  const [cache, setCache] = useState<WaypointCache>(() => initialWaypointCache ?? {});
+  const [cache, setCache] = useState<WaypointCache>(
+    () => initialWaypointCache ?? {},
+  );
   // Only ever holds an error now ("Route number is required.", "Couldn't
   // save: …") - a successful save used to also flash "Saving…"/"Saved."
   // through here, but `dirty` below (going false the moment Save
@@ -1549,8 +1775,13 @@ export function EditRouteScreen({
   // /api/geocode's own doc comment for why that specific repeat is
   // worse than merely wasteful - it's what actually triggered a live
   // 403 in production).
-  const [schoolAnchor, setSchoolAnchor] = useState<{ lat: number; lon: number } | null>(null);
-  const [fetchingStepIds, setFetchingStepIds] = useState<ReadonlySet<number>>(new Set());
+  const [schoolAnchor, setSchoolAnchor] = useState<{
+    lat: number;
+    lon: number;
+  } | null>(null);
+  const [fetchingStepIds, setFetchingStepIds] = useState<ReadonlySet<number>>(
+    new Set(),
+  );
   // Blocks *every* single-row "Fetch" button, not just whichever row
   // was just fetched - only one row can be expanded/edited at a time,
   // but Cancel closes the editor without waiting for its own in-flight
@@ -1564,13 +1795,11 @@ export function EditRouteScreen({
   // since nothing here is looping on its own to pace.
   const [singleFetchCoolingDown, setSingleFetchCoolingDown] = useState(false);
   const [fetchAllRunning, setFetchAllRunning] = useState(false);
-  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
+  const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(
+    null,
+  );
   const [fetchError, setFetchError] = useState<FetchErrorInfo | null>(null);
   const [showFetchModal, setShowFetchModal] = useState(false);
-  // OpenRouteService's own account-wide rate limit, if the last batch
-  // that made a real ORS call happened to report one - see geocode.ts's
-  // own getLastKnownOrsQuota doc comment for why this isn't guaranteed.
-  const [quota, setQuota] = useState<ApiQuota | null>(null);
 
   // Whatever's already geocoded, if anything - the shared Postgres
   // cache (src/app/api/waypoints), covering every route at once now
@@ -1586,7 +1815,9 @@ export function EditRouteScreen({
 
     let cancelled = false;
     fetch("/api/waypoints")
-      .then((res): Promise<WaypointCache> | WaypointCache => (res.ok ? res.json() : {}))
+      .then((res): Promise<WaypointCache> | WaypointCache =>
+        res.ok ? res.json() : {},
+      )
       .catch(() => ({}) as WaypointCache)
       .then((data) => {
         if (!cancelled) setCache(data);
@@ -1633,8 +1864,16 @@ export function EditRouteScreen({
     [rows],
   );
   const { waypoints, previousRoads } = useMemo(() => {
-    if (mode !== "edit" || hasIncompleteRow || !hasRealSchoolAddress || rows.length === 0) {
-      return { waypoints: [] as WaypointQuery[], previousRoads: [] as (string | null)[] };
+    if (
+      mode !== "edit" ||
+      hasIncompleteRow ||
+      !hasRealSchoolAddress ||
+      rows.length === 0
+    ) {
+      return {
+        waypoints: [] as WaypointQuery[],
+        previousRoads: [] as (string | null)[],
+      };
     }
     return deriveWaypointsWithContext(rows, schoolAddress);
   }, [mode, rows, hasIncompleteRow, hasRealSchoolAddress, schoolAddress]);
@@ -1642,7 +1881,10 @@ export function EditRouteScreen({
     () => summarizeRouteResolution(waypoints, cache),
     [waypoints, cache],
   );
-  const counts = useMemo(() => resolutionCounts(resolutionRows), [resolutionRows]);
+  const counts = useMemo(
+    () => resolutionCounts(resolutionRows),
+    [resolutionRows],
+  );
 
   // The row currently open in StepRowEditor's own waypoint, re-derived
   // from `draftRow` rather than read off `waypoints[expandedIndex]`
@@ -1656,12 +1898,31 @@ export function EditRouteScreen({
   // in exactly the situations that array would have been empty in.
   const draftWaypoint = useMemo(() => {
     if (expandedIndex === null || !draftRow) return undefined;
-    if (mode !== "edit" || hasIncompleteRow || !hasRealSchoolAddress || rows.length === 0) return undefined;
+    if (
+      mode !== "edit" ||
+      hasIncompleteRow ||
+      !hasRealSchoolAddress ||
+      rows.length === 0
+    )
+      return undefined;
     const draftRows = rows.map((r, i) => (i === expandedIndex ? draftRow : r));
-    return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[expandedIndex];
-  }, [expandedIndex, draftRow, rows, schoolAddress, mode, hasIncompleteRow, hasRealSchoolAddress]);
+    return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[
+      expandedIndex
+    ];
+  }, [
+    expandedIndex,
+    draftRow,
+    rows,
+    schoolAddress,
+    mode,
+    hasIncompleteRow,
+    hasRealSchoolAddress,
+  ]);
   const draftStatus = useMemo(
-    () => (draftWaypoint ? summarizeRouteResolution([draftWaypoint], cache)[0] : undefined),
+    () =>
+      draftWaypoint
+        ? summarizeRouteResolution([draftWaypoint], cache)[0]
+        : undefined,
     [draftWaypoint, cache],
   );
 
@@ -1782,16 +2043,22 @@ export function EditRouteScreen({
   // hand before choosing a file.
   function prefillFromImport(filename: string, text: string) {
     const parsedName = parseRouteFilename(filename);
-    if (parsedName.routeNumber && !routeNumber) setRouteNumber(parsedName.routeNumber);
+    if (parsedName.routeNumber && !routeNumber)
+      setRouteNumber(parsedName.routeNumber);
     if (parsedName.tripType && !tripType) setTripType(parsedName.tripType);
 
     if (!schoolName) {
-      const matchedSchool = matchSchoolFromRows(parseRouteImport(text).rows, schools);
+      const matchedSchool = matchSchoolFromRows(
+        parseRouteImport(text).rows,
+        schools,
+      );
       if (matchedSchool) setSchoolName(matchedSchool);
     }
   }
 
-  async function callGeocodeApi(query: GeocodableQuery): Promise<GeocodeResponseBody> {
+  async function callGeocodeApi(
+    query: GeocodableQuery,
+  ): Promise<GeocodeResponseBody> {
     const res = await fetch("/api/geocode", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1802,7 +2069,11 @@ export function EditRouteScreen({
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new GeocodeApiError(data.error ?? `${res.status} ${res.statusText}`, data.raw);
+    if (!res.ok)
+      throw new GeocodeApiError(
+        data.error ?? `${res.status} ${res.statusText}`,
+        data.raw,
+      );
     return data as GeocodeResponseBody;
   }
 
@@ -1834,7 +2105,10 @@ export function EditRouteScreen({
   // batch pipeline did that.
   function persistSchoolAnchorIfFresh(anchorEntry: WaypointCacheEntry | null) {
     if (!anchorEntry) return;
-    persistWaypoint(waypointCacheKey({ stepId: -1, kind: "address", text: schoolAddress }), anchorEntry);
+    persistWaypoint(
+      waypointCacheKey({ stepId: -1, kind: "address", text: schoolAddress }),
+      anchorEntry,
+    );
   }
 
   // A coordinate typed/pasted directly into StepRowEditor's own
@@ -1844,7 +2118,11 @@ export function EditRouteScreen({
   // reads as resolved everywhere else that checks it (the collapsed
   // row's own green check, Publish's readiness count) the same way
   // either path got there.
-  function setManualCoordinates(waypoint: GeocodableQuery, lat: number, lon: number) {
+  function setManualCoordinates(
+    waypoint: GeocodableQuery,
+    lat: number,
+    lon: number,
+  ) {
     const key = waypointCacheKey(waypoint);
     const entry: WaypointCacheEntry = {
       status: "ok",
@@ -1867,10 +2145,16 @@ export function EditRouteScreen({
       const data = await callGeocodeApi(waypoint);
       if (data.anchor) setSchoolAnchor(data.anchor);
       persistSchoolAnchorIfFresh(data.anchorEntry);
-      if (data.quota) setQuota(data.quota);
       const key = waypointCacheKey(waypoint);
       setCache((prev) => ({ ...prev, [key]: data.result }));
       persistWaypoint(key, data.result);
+      if (data.result.status === "error" && data.result.rateLimited) {
+        setFetchError({
+          message:
+            "OpenRouteService's rate limit was reached - wait a bit before trying again.",
+          rateLimited: true,
+        });
+      }
     } catch (err) {
       setFetchError({
         message: err instanceof Error ? err.message : String(err),
@@ -1882,7 +2166,10 @@ export function EditRouteScreen({
         next.delete(waypoint.stepId);
         return next;
       });
-      window.setTimeout(() => setSingleFetchCoolingDown(false), SINGLE_FETCH_COOLDOWN_MS);
+      window.setTimeout(
+        () => setSingleFetchCoolingDown(false),
+        SINGLE_FETCH_COOLDOWN_MS,
+      );
     }
   }
 
@@ -1905,16 +2192,23 @@ export function EditRouteScreen({
     setFetchError(null);
     setFetchAllRunning(true);
     setFetchingStepIds(new Set(toFetch.map((w) => w.stepId)));
-    setBatchProgress({ completed: 0, total: toFetch.length, currentLabel: waypointLabel(toFetch[0]) });
+    setBatchProgress({
+      completed: 0,
+      total: toFetch.length,
+      currentLabel: waypointLabel(toFetch[0]),
+    });
     try {
       for (const [index, waypoint] of toFetch.entries()) {
-        setBatchProgress({ completed: index, total: toFetch.length, currentLabel: waypointLabel(waypoint) });
+        setBatchProgress({
+          completed: index,
+          total: toFetch.length,
+          currentLabel: waypointLabel(waypoint),
+        });
         if (index > 0) await sleep(SINGLE_FETCH_COOLDOWN_MS);
 
         const data = await callGeocodeApi(waypoint);
         if (data.anchor) setSchoolAnchor(data.anchor);
         persistSchoolAnchorIfFresh(data.anchorEntry);
-        if (data.quota) setQuota(data.quota);
         const key = waypointCacheKey(waypoint);
         setCache((prev) => ({ ...prev, [key]: data.result }));
         persistWaypoint(key, data.result);
@@ -1923,8 +2217,21 @@ export function EditRouteScreen({
           next.delete(waypoint.stepId);
           return next;
         });
+        // Stop the batch here rather than burning through - and
+        // failing on - every remaining query the same way: once the
+        // rate limit is hit it isn't coming back within this run.
+        if (data.result.status === "error" && data.result.rateLimited) {
+          setFetchError({
+            message:
+              "OpenRouteService's rate limit was reached - wait a bit before fetching more.",
+            rateLimited: true,
+          });
+          return;
+        }
       }
-      setBatchProgress((prev) => (prev ? { ...prev, completed: toFetch.length } : prev));
+      setBatchProgress((prev) =>
+        prev ? { ...prev, completed: toFetch.length } : prev,
+      );
     } catch (err) {
       setFetchError({
         message: err instanceof Error ? err.message : String(err),
@@ -1942,7 +2249,9 @@ export function EditRouteScreen({
   function fetchMissingLocations() {
     return runFetchAll(
       waypoints.filter(
-        (w): w is GeocodableQuery => w.kind !== "unresolvable" && cache[waypointCacheKey(w)]?.status !== "ok",
+        (w): w is GeocodableQuery =>
+          w.kind !== "unresolvable" &&
+          cache[waypointCacheKey(w)]?.status !== "ok",
       ),
     );
   }
@@ -1951,7 +2260,9 @@ export function EditRouteScreen({
   // included - the modal's "Re-fetch All" button, for when an admin
   // suspects a previously-resolved coordinate is actually wrong.
   function refetchAllLocations() {
-    return runFetchAll(waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable"));
+    return runFetchAll(
+      waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable"),
+    );
   }
 
   // Every field a RouteMeta needs, straight off this screen's own
@@ -2063,7 +2374,9 @@ export function EditRouteScreen({
         return;
       }
     } catch (err) {
-      setMessage(`Couldn't save: ${err instanceof Error ? err.message : String(err)}`);
+      setMessage(
+        `Couldn't save: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return;
     } finally {
       setSaving(false);
@@ -2087,16 +2400,54 @@ export function EditRouteScreen({
 
   function handleDownloadCsv() {
     if (!exportableRoute) return;
-    downloadCsv(`${exportableRoute.id}-stops.csv`, routeStepsToCsv(exportableRoute, cache));
+    downloadCsv(
+      `${exportableRoute.id}-stops.csv`,
+      routeStepsToCsv(exportableRoute, cache),
+    );
   }
 
   // Which rows to actually render below - every row when "Show turns"
   // is on, stops only otherwise (matching StartScreen's own "View All
-  // Stops" default). Never affects the underlying `rows` state itself,
-  // only what's currently displayed.
+  // Stops" default), further narrowed to just the unresolved ones when
+  // "Unverified only" is on. Never affects the underlying `rows` state
+  // itself, only what's currently displayed.
   const visibleRowIndices = rows
     .map((_, index) => index)
-    .filter((index) => showTurns || rows[index].action.toLowerCase() === "stop");
+    .filter((index) => showTurns || rows[index].action.toLowerCase() === "stop")
+    .filter(
+      (index) =>
+        !showUnverifiedOnly || resolutionRows[index]?.status === "unresolved",
+    );
+
+  // "Jump to next unverified"'s own target list - every *currently
+  // visible* unresolved row (so it never lands on one hidden by "Show
+  // turns" being off), independent of "Unverified only" itself (that
+  // button's only ever shown while this list is the full one, not
+  // already narrowed to just these rows - see its own render below).
+  const unverifiedRowIndices = rows
+    .map((_, index) => index)
+    .filter((index) => showTurns || rows[index].action.toLowerCase() === "stop")
+    .filter((index) => resolutionRows[index]?.status === "unresolved");
+
+  function jumpToNextUnverified() {
+    if (unverifiedRowIndices.length === 0) return;
+    const currentPos =
+      lastJumpedRowIndex != null
+        ? unverifiedRowIndices.indexOf(lastJumpedRowIndex)
+        : -1;
+    const nextIndex =
+      unverifiedRowIndices[(currentPos + 1) % unverifiedRowIndices.length];
+    setLastJumpedRowIndex(nextIndex);
+    setHighlightedRowIndex(nextIndex);
+    stopsListRef.current
+      ?.querySelector(`[data-row-index="${nextIndex}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(
+      () =>
+        setHighlightedRowIndex((prev) => (prev === nextIndex ? null : prev)),
+      1500,
+    );
+  }
 
   // Precomputed outside the JSX map below (not incremented inline in the
   // render callback) so React Compiler's per-item memoization doesn't see a
@@ -2104,7 +2455,8 @@ export function EditRouteScreen({
   let stopCounter = 0;
   const stopNumbers = new Map<number, number>();
   for (const index of visibleRowIndices) {
-    if (rows[index].action.toLowerCase() === "stop") stopNumbers.set(index, ++stopCounter);
+    if (rows[index].action.toLowerCase() === "stop")
+      stopNumbers.set(index, ++stopCounter);
   }
 
   // Shared by mode "add"'s single screen and mode "edit"'s own
@@ -2120,7 +2472,11 @@ export function EditRouteScreen({
       <div className="grid grid-cols-3 gap-2">
         <Field label="Route #" required={routeNumberMissing}>
           <input
-            className={showRequiredErrors && routeNumberMissing ? errorInputClass : inputClass}
+            className={
+              showRequiredErrors && routeNumberMissing
+                ? errorInputClass
+                : inputClass
+            }
             value={routeNumber}
             onChange={(e) => {
               setRouteNumber(e.target.value);
@@ -2131,7 +2487,11 @@ export function EditRouteScreen({
         </Field>
         <Field label="Trip" required={tripTypeMissing}>
           <select
-            className={showRequiredErrors && tripTypeMissing ? errorInputClass : inputClass}
+            className={
+              showRequiredErrors && tripTypeMissing
+                ? errorInputClass
+                : inputClass
+            }
             value={tripType}
             onChange={(e) => {
               setTripType(e.target.value as TripType | "");
@@ -2164,7 +2524,11 @@ export function EditRouteScreen({
       <div className="mt-3">
         <Field label="School" required={schoolNameMissing}>
           <select
-            className={showRequiredErrors && schoolNameMissing ? errorInputClass : inputClass}
+            className={
+              showRequiredErrors && schoolNameMissing
+                ? errorInputClass
+                : inputClass
+            }
             value={schoolName}
             onChange={(e) => {
               setSchoolName(e.target.value);
@@ -2200,40 +2564,30 @@ export function EditRouteScreen({
             placeholder="123"
           />
         </Field>
-        <Field label="Driver">
-          <input
-            className={inputClass}
-            value={driverName}
-            onChange={(e) => {
-              setDriverName(e.target.value);
-              setDirty(true);
-            }}
-            placeholder="First Last"
-          />
-        </Field>
-      </div>
-
-      {/* What happens once this route's last step is reached, instead
-          of always just ending the trip - either a real chained route
-          (same bus driving more than one leg back-to-back - elementary,
-          then middle school, say - see nextRouteOptions above, grouped
-          here under "Begin Next Route" since picking one of those is
-          what actually sets this), or DEPOT_NEXT_ACTION, a fixed
-          sentinel this app recognizes but no real Route.id could ever
-          collide with (every real one is `${routeNumber}-${tripType}-
-          ${schoolLevel}`, always hyphenated) - "the driver heads back
-          to base," not "hand off into another route's own directions"
-          the way a real chain does (handleRouteArrived in page.tsx),
-          which still ends the trip exactly like leaving this blank
-          does. Genuinely distinguishing an actual return-to-depot leg
-          (its own real stops/navigation) is a later step - see the
-          README's own Next steps - this is just the honest label for
-          "ends the trip, but the driver isn't just stopping wherever
-          the last stop happened to be." Defaults to whichever eligible
-          chained route (nextRouteOptions) runs the next school level
-          up, if there is one - see the nextRouteId state's own doc
-          comment for exactly how. */}
-      <div className="mt-3">
+        {/* What happens once this route's last step is reached, instead
+            of always just ending the trip - either a real chained route
+            (same bus driving more than one leg back-to-back - elementary,
+            then middle school, say - see nextRouteOptions above, grouped
+            here under "Begin Next Route" since picking one of those is
+            what actually sets this), or DEPOT_NEXT_ACTION, a fixed
+            sentinel this app recognizes but no real Route.id could ever
+            collide with (every real one is `${routeNumber}-${tripType}-
+            ${schoolLevel}`, always hyphenated) - "the driver heads back
+            to base," not "hand off into another route's own directions"
+            the way a real chain does (handleRouteArrived in page.tsx),
+            which still ends the trip exactly like leaving this blank
+            does. Genuinely distinguishing an actual return-to-depot leg
+            (its own real stops/navigation) is a later step - see the
+            README's own Next steps - this is just the honest label for
+            "ends the trip, but the driver isn't just stopping wherever
+            the last stop happened to be." Defaults to whichever eligible
+            chained route (nextRouteOptions) runs the next school level
+            up, if there is one - see the nextRouteId state's own doc
+            comment for exactly how. Sits where "Driver" used to (see
+            EditRouteScreen's own doc comment on why that field is gone
+            for now) - a real driver is a person to assign to a route,
+            not a property of the route itself; that's a later feature,
+            once there's a real user entity to assign. */}
         <Field label="Next Action">
           <select
             className={inputClass}
@@ -2272,11 +2626,15 @@ export function EditRouteScreen({
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
-          <h1 className="font-heading text-2xl font-black tracking-tight">Add New Route</h1>
+          <h1 className="font-heading text-2xl font-black tracking-tight">
+            New Route
+          </h1>
           <span className="w-10" />
         </div>
 
-        <CollapsibleSection title="Route Details">{routeDetailsForm}</CollapsibleSection>
+        <CollapsibleSection title="Route Details">
+          {routeDetailsForm}
+        </CollapsibleSection>
 
         <CollapsibleSection title="Stops and Turns">
           <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
@@ -2324,19 +2682,22 @@ export function EditRouteScreen({
 
             {missingRequired.length > 0 && (
               <p className="mt-2 text-xs text-amber-600">
-                Couldn&apos;t find a column for: {missingRequired.join(", ")} - stops won&apos;t come
-                through until that&apos;s fixed, but the route can still be saved as a draft.
+                Couldn&apos;t find a column for: {missingRequired.join(", ")} -
+                stops won&apos;t come through until that&apos;s fixed, but the
+                route can still be saved as a draft.
               </p>
             )}
             {parseResult.headerless && parseResult.rows.length > 0 && (
               <p className="mt-2 text-xs text-zinc-500">
-                No column header recognized - read as a plain list ({parseResult.rows.length} row
+                No column header recognized - read as a plain list (
+                {parseResult.rows.length} row
                 {parseResult.rows.length === 1 ? "" : "s"}).
               </p>
             )}
             {parseResult.unmatchedSourceHeaders.length > 0 && (
               <p className="mt-2 text-xs text-zinc-500">
-                Ignored column{parseResult.unmatchedSourceHeaders.length === 1 ? "" : "s"}:{" "}
+                Ignored column
+                {parseResult.unmatchedSourceHeaders.length === 1 ? "" : "s"}:{" "}
                 {parseResult.unmatchedSourceHeaders.join(", ")}
               </p>
             )}
@@ -2357,7 +2718,9 @@ export function EditRouteScreen({
           </button>
         </div>
 
-        {showFormatModal && <StopsFormatModal onClose={() => setShowFormatModal(false)} />}
+        {showFormatModal && (
+          <StopsFormatModal onClose={() => setShowFormatModal(false)} />
+        )}
       </div>
     );
   }
@@ -2384,7 +2747,9 @@ export function EditRouteScreen({
             >
               <BackArrowIcon className="h-5 w-5" />
             </button>
-            <h1 className="font-heading text-2xl font-black tracking-tight">Stops and Turns</h1>
+            <h1 className="font-heading text-2xl font-black tracking-tight">
+              Stops and Turns
+            </h1>
             <span className="w-10" />
           </div>
 
@@ -2400,7 +2765,9 @@ export function EditRouteScreen({
           <div className="flex w-full max-w-md shrink-0 flex-col items-center gap-0.5">
             <p className="flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0.5">
               <span className="font-heading text-lg font-black tracking-tight">
-                {routeNumber || <span className="text-zinc-400 italic">No route number</span>}
+                {routeNumber || (
+                  <span className="text-zinc-400 italic">No route number</span>
+                )}
               </span>
               {routeNumber && tripType && (
                 <span className="flex items-center gap-0.5 text-sm font-bold text-blue-500">
@@ -2436,24 +2803,18 @@ export function EditRouteScreen({
                         ? `All ${geocodable} location${geocodable === 1 ? "" : "s"} verified`
                         : `${counts.unresolved} of ${geocodable} coordinate${geocodable === 1 ? "" : "s"} could not be verified`}
                     </p>
-                    {/* A thin at-a-glance ratio of confirmed vs. not -
-                        green width scales with percentVerified over a
-                        solid red track, so the meter still reads
-                        correctly (a sliver of green, mostly red) well
-                        before an admin has read the count above it. */}
-                    <div className="h-1 w-full overflow-hidden rounded-full bg-red-400">
-                      <div
-                        className="h-full rounded-full bg-green-500"
-                        style={{ width: `${percentVerified}%` }}
-                      />
-                    </div>
+                    <GeocodeRatioBar percent={percentVerified} />
                   </div>
                 );
               })()}
           </div>
 
           <div className="flex w-full max-w-md shrink-0 items-center justify-between gap-3">
-            <ToggleSwitch checked={showTurns} onChange={setShowTurns} label="Show turns" />
+            <ToggleSwitch
+              checked={showTurns}
+              onChange={setShowTurns}
+              label="Show turns"
+            />
             <button
               type="button"
               onClick={() => setShowFetchModal(true)}
@@ -2463,9 +2824,31 @@ export function EditRouteScreen({
               Fetch Coordinates…
             </button>
           </div>
+
+          <div className="flex w-full max-w-md shrink-0 items-center justify-between gap-3">
+            <ToggleSwitch
+              checked={showUnverifiedOnly}
+              onChange={setShowUnverifiedOnly}
+              label="Unverified only"
+            />
+            {/* Only offered from the full list - "Unverified only" above
+                already narrows to exactly these rows, so a shortcut to
+                find one among them would be redundant. */}
+            {!showUnverifiedOnly && unverifiedRowIndices.length > 0 && (
+              <button
+                type="button"
+                onClick={jumpToNextUnverified}
+                className="btn-glossy-light flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
+              >
+                <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
+                Jump to next unverified
+              </button>
+            )}
+          </div>
           {hasIncompleteRow && (
             <p className="w-full max-w-md shrink-0 text-xs text-red-600">
-              Every stop needs at least a type and a location before locations can be checked.
+              Every stop needs at least a type and a location before locations
+              can be checked.
             </p>
           )}
 
@@ -2478,12 +2861,20 @@ export function EditRouteScreen({
                 the static card around it) so the first/last row never
                 sits flush against the box's own edges, scrolled to
                 either end or not. */}
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-              <AddStepButton onClick={() => addRow(0)} disabled={expandedIndex !== null} />
+            <div
+              ref={stopsListRef}
+              className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+            >
+              <AddStepButton
+                onClick={() => addRow(0)}
+                disabled={expandedIndex !== null}
+              />
               {visibleRowIndices.map((index) => {
                 const row = rows[index];
                 const isStop = row.action.toLowerCase() === "stop";
-                const stopNumber = isStop ? (stopNumbers.get(index) ?? null) : null;
+                const stopNumber = isStop
+                  ? (stopNumbers.get(index) ?? null)
+                  : null;
                 const waypoint = waypoints[index];
 
                 return (
@@ -2491,11 +2882,13 @@ export function EditRouteScreen({
                     key={index}
                     data-row-index={index}
                     className={
-                      dragRowIndex === index
-                        ? "opacity-40"
-                        : dragOverIndex === index && dragRowIndex !== null
-                          ? "border-t-2 border-blue-500"
-                          : ""
+                      highlightedRowIndex === index
+                        ? "rounded-lg ring-2 ring-amber-400 transition-shadow"
+                        : dragRowIndex === index
+                          ? "opacity-40"
+                          : dragOverIndex === index && dragRowIndex !== null
+                            ? "border-t-2 border-blue-500"
+                            : ""
                     }
                   >
                     <StepRowView
@@ -2515,8 +2908,11 @@ export function EditRouteScreen({
                         const target = document
                           .elementFromPoint(e.clientX, e.clientY)
                           ?.closest("[data-row-index]");
-                        const overIndex = target ? Number(target.getAttribute("data-row-index")) : null;
-                        if (overIndex !== null && !Number.isNaN(overIndex)) setDragOverIndex(overIndex);
+                        const overIndex = target
+                          ? Number(target.getAttribute("data-row-index"))
+                          : null;
+                        if (overIndex !== null && !Number.isNaN(overIndex))
+                          setDragOverIndex(overIndex);
                       }}
                       onDragEnd={(e) => {
                         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
@@ -2529,7 +2925,10 @@ export function EditRouteScreen({
                         setDragOverIndex(null);
                       }}
                     />
-                    <AddStepButton onClick={() => addRow(index + 1)} disabled={expandedIndex !== null} />
+                    <AddStepButton
+                      onClick={() => addRow(index + 1)}
+                      disabled={expandedIndex !== null}
+                    />
                   </div>
                 );
               })}
@@ -2563,11 +2962,17 @@ export function EditRouteScreen({
                 schools={schools}
                 routeSchoolName={schoolName}
                 status={draftStatus}
-                fetching={draftWaypoint ? fetchingStepIds.has(draftWaypoint.stepId) : false}
+                fetching={
+                  draftWaypoint
+                    ? fetchingStepIds.has(draftWaypoint.stepId)
+                    : false
+                }
                 fetchLocked={singleFetchCoolingDown}
                 onChange={handleDraftChange}
                 onFetch={() =>
-                  draftWaypoint && draftWaypoint.kind !== "unresolvable" && fetchLocation(draftWaypoint)
+                  draftWaypoint &&
+                  draftWaypoint.kind !== "unresolvable" &&
+                  fetchLocation(draftWaypoint)
                 }
                 onManualCoordinates={(lat, lon) =>
                   draftWaypoint &&
@@ -2622,7 +3027,6 @@ export function EditRouteScreen({
         {showFetchModal && (
           <FetchCoordinatesModal
             counts={counts}
-            quota={quota}
             fetchRunning={fetchAllRunning}
             batchProgress={batchProgress}
             fetchError={fetchError}
@@ -2689,6 +3093,34 @@ export function EditRouteScreen({
         </div>
 
         {routeDetailsForm}
+
+        {counts.total - counts.skipped > 0 &&
+          (() => {
+            // Same "every geocodable waypoint" definition the Edit
+            // Stops screen's own meter/message use (see its doc
+            // comment) - skipped/unresolvable rows never count against
+            // either the bar or the two tallies below.
+            const geocodable = counts.total - counts.skipped;
+            const percentVerified = (counts.resolved / geocodable) * 100;
+            return (
+              <div className="flex w-full max-w-md shrink-0 flex-col items-center gap-1.5">
+                <GeocodeRatioBar percent={percentVerified} />
+                <p className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-xs font-semibold">
+                  <span className="flex items-center gap-1 text-green-700">
+                    <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
+                    {counts.resolved} waypoint{counts.resolved === 1 ? "" : "s"}{" "}
+                    valid
+                  </span>
+                  <span className="text-zinc-300">|</span>
+                  <span className="flex items-center gap-1 text-red-600">
+                    <XCircleIcon className="h-3.5 w-3.5 shrink-0" />
+                    {counts.unresolved} waypoint
+                    {counts.unresolved === 1 ? "" : "s"} unresolved
+                  </span>
+                </p>
+              </div>
+            );
+          })()}
 
         {message && <p className="text-sm text-zinc-500">{message}</p>}
       </div>

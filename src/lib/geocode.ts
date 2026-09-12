@@ -25,14 +25,22 @@ function hasStateSuffix(address: string): boolean {
  * narrowed type, so a caller holding a full WaypointQuery must filter
  * "unresolvable" ones out first - a compile-time guardrail rather than
  * a runtime check that could silently no-op instead. */
-export type GeocodableQuery = Extract<WaypointQuery, { kind: "address" | "intersection" }>;
+export type GeocodableQuery = Extract<
+  WaypointQuery,
+  { kind: "address" | "intersection" }
+>;
 
 /** Builds the free-text search string sent to whichever geocoding
  * provider is active - shared across all of them below, since it's
  * just plain-English query construction, nothing provider-specific. */
-export function queryTextFor(query: GeocodableQuery, locationContext: string): string {
+export function queryTextFor(
+  query: GeocodableQuery,
+  locationContext: string,
+): string {
   if (query.kind === "address") {
-    return hasStateSuffix(query.text) ? query.text : `${query.text}, ${locationContext}`;
+    return hasStateSuffix(query.text)
+      ? query.text
+      : `${query.text}, ${locationContext}`;
   }
   return `${query.roadA} and ${query.roadB}, ${locationContext}`;
 }
@@ -69,7 +77,11 @@ export type GeocodeProvider = (
 // blends OSM with a few other open sources), matching "OSM for our
 // data" - just reached through a provider that doesn't block CI.
 
-const ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search";
+// api.openrouteservice.org itself is deprecated and aggressively
+// throttled now that HeiGIT (the institute that actually runs this
+// service) has moved public traffic to its own domain - same API, same
+// key, just a different host.
+const ORS_GEOCODE_URL = "https://api.heigit.org/geocode/search";
 
 interface OrsFeature {
   geometry: { coordinates: [number, number] }; // GeoJSON order: [lon, lat]
@@ -78,25 +90,6 @@ interface OrsFeature {
 
 interface OrsGeocodeResponse {
   features: OrsFeature[];
-}
-
-/** OpenRouteService's own account-wide rate limit, as reported by the
- * `X-Ratelimit-*` response headers on the most recent real ORS request
- * this server process has made. Not guaranteed to exist - ORS's exact
- * gating/quota semantics aren't confirmed (see README's own "Next
- * steps" note on this) - so a caller should treat a missing value as
- * "unknown," never as "unlimited" or "zero." Module-level rather than
- * threaded through GeocodeProvider's own per-query return type, since
- * it's one account-wide number every request already reports
- * redundantly, not something specific to whichever query triggered it.
- */
-export interface ApiQuota {
-  limit: number;
-  remaining: number;
-}
-let lastKnownQuota: ApiQuota | null = null;
-export function getLastKnownOrsQuota(): ApiQuota | null {
-  return lastKnownQuota;
 }
 
 export const geocodeViaOpenRouteService: GeocodeProvider = async (
@@ -112,19 +105,6 @@ export const geocodeViaOpenRouteService: GeocodeProvider = async (
 
   const res = await fetchImpl(url);
 
-  // Read before the ok-check below, deliberately - a request that
-  // finally trips the rate limit (a 429) is exactly the response most
-  // worth capturing this from.
-  const limitHeader = res.headers.get("X-Ratelimit-Limit");
-  const remainingHeader = res.headers.get("X-Ratelimit-Remaining");
-  if (limitHeader != null && remainingHeader != null) {
-    const limit = Number(limitHeader);
-    const remaining = Number(remainingHeader);
-    if (Number.isFinite(limit) && Number.isFinite(remaining)) {
-      lastKnownQuota = { limit, remaining };
-    }
-  }
-
   if (!res.ok) {
     // ORS's own error body (when there is one) usually says *why* -
     // "quota exceeded," "rate limit," an invalid key - which a bare
@@ -135,11 +115,15 @@ export const geocodeViaOpenRouteService: GeocodeProvider = async (
     // sentence) as `raw` - the literal response body ORS sent back,
     // not this app's own writing, so a caller showing both to someone
     // can keep them visibly distinct instead of one blended string.
+    // `rateLimited` (429 specifically) gets its own flag so a caller
+    // batching several queries in a row can stop and say so plainly,
+    // rather than burning through - and failing on - every remaining one.
     const detail = await res.text().catch(() => "");
     return {
       status: "error",
       message: `OpenRouteService geocoding returned ${res.status} ${res.statusText} for "${source}"`,
       raw: detail || undefined,
+      rateLimited: res.status === 429,
       source,
       provider: "openrouteservice",
     };
@@ -148,7 +132,13 @@ export const geocodeViaOpenRouteService: GeocodeProvider = async (
   const body = (await res.json()) as OrsGeocodeResponse;
   const [first] = body.features;
   if (!first) {
-    return { status: "error", message: "No geocoding result", notFound: true, source, provider: "openrouteservice" };
+    return {
+      status: "error",
+      message: "No geocoding result",
+      notFound: true,
+      source,
+      provider: "openrouteservice",
+    };
   }
 
   const [lon, lat] = first.geometry.coordinates;
@@ -174,7 +164,8 @@ const NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search";
 
 // Nominatim's usage policy requires a real, identifying User-Agent on
 // every request - not optional, and not the default one `fetch` sends.
-const NOMINATIM_USER_AGENT = "ShortStop-prototype (https://github.com/pixeldrift/ShortStop/issues)";
+const NOMINATIM_USER_AGENT =
+  "ShortStop-prototype (https://github.com/pixeldrift/ShortStop/issues)";
 
 interface NominatimResult {
   lat: string;
@@ -191,15 +182,25 @@ export const geocodeViaNominatim: GeocodeProvider = async (
   const source = queryTextFor(query, locationContext);
   const url = `${NOMINATIM_SEARCH_URL}?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(source)}`;
 
-  const res = await fetchImpl(url, { headers: { "User-Agent": NOMINATIM_USER_AGENT } });
+  const res = await fetchImpl(url, {
+    headers: { "User-Agent": NOMINATIM_USER_AGENT },
+  });
   if (!res.ok) {
-    throw new Error(`Nominatim returned ${res.status} ${res.statusText} for "${source}"`);
+    throw new Error(
+      `Nominatim returned ${res.status} ${res.statusText} for "${source}"`,
+    );
   }
 
   const results = (await res.json()) as NominatimResult[];
   const [first] = results;
   if (!first) {
-    return { status: "error", message: "No geocoding result", notFound: true, source, provider: "nominatim" };
+    return {
+      status: "error",
+      message: "No geocoding result",
+      notFound: true,
+      source,
+      provider: "nominatim",
+    };
   }
 
   return {
