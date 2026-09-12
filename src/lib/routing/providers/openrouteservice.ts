@@ -5,14 +5,13 @@ import type {
   RoutingResult,
 } from "../types";
 
-// Reverted from api.heigit.org back to ORS's own domain - see
-// geocode.ts's own doc comment on ORS_GEOCODE_URL for why: every
-// request to api.heigit.org came back a bare nginx "404 Not Found"
-// (not a real API-level error from the geocoder/directions service
-// itself), the signature of a host/path that was never actually
-// serving this route. Same fix applies here since this hits the same
-// host under a different path.
-const ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions";
+// See geocode.ts's own doc comment on ORS_GEOCODE_URL: HeiGIT's
+// announced structure is api.heigit.org/<service name>/<version>/...,
+// so this path also gained an "/openrouteservice" segment right after
+// the host, not just a host swap - HeiGIT's own migration table lists
+// this exact mapping (api.openrouteservice.org/v2/directions ->
+// api.heigit.org/openrouteservice/v2/directions).
+const ORS_DIRECTIONS_URL = "https://api.heigit.org/openrouteservice/v2/directions";
 
 // ORS has no dedicated school-bus profile - "driving-car" is the
 // closest general-vehicle one, and it's enough for this app's actual

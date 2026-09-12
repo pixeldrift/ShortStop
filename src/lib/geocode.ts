@@ -77,20 +77,21 @@ export type GeocodeProvider = (
 // blends OSM with a few other open sources), matching "OSM for our
 // data" - just reached through a provider that doesn't block CI.
 
-// Reverted from api.heigit.org back to ORS's own domain - that switch
-// was made on the assumption api.openrouteservice.org had been
-// deprecated in favor of a HeiGIT-hosted mirror, but every request to
-// api.heigit.org/geocode/search came back a bare nginx "404 Not Found"
-// (the raw response body was literally an nginx default error page,
-// not a JSON error from the geocoder itself) - the signature of a
-// request landing on a host/path that was never actually serving this
-// route, not a real API-level failure. That broke geocoding for every
-// query, obvious well-known addresses included. If HeiGIT does host a
-// working mirror, it's evidently at some other path than this one -
-// worth real testing (a browser/curl hit with a real ORS_API_KEY)
-// before ever repointing this again, not another guess from training
-// knowledge.
-const ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search";
+// api.openrouteservice.org is deprecated in favor of api.heigit.org,
+// per HeiGIT's own announcement (2026-04-28,
+// ask.openrouteservice.org/t/7912): every HeiGIT API now lives at
+// api.heigit.org/<service name>/<version>/..., so this service's own
+// path gained an "/openrouteservice" segment right after the host,
+// not just a host swap. An earlier attempt to switch this (before that
+// segment was known) pointed straight at
+// api.heigit.org/geocode/search - missing that segment - and got back
+// a bare nginx "404 Not Found" (a literal nginx default error page,
+// not a JSON error from the geocoder), the signature of hitting a path
+// nothing was actually serving. api.openrouteservice.org itself still
+// works (HeiGIT's notice says the old URL is only deprecated, not shut
+// off), just with quota that may shrink over time to encourage moving
+// off it.
+const ORS_GEOCODE_URL = "https://api.heigit.org/openrouteservice/geocode/search";
 
 interface OrsFeature {
   geometry: { coordinates: [number, number] }; // GeoJSON order: [lon, lat]
