@@ -12,36 +12,23 @@ const DEFAULT_ZOOM = 18;
  * The manual alternative to StepRowEditor's own Fetch (globe) button -
  * for the coordinate a geocoder can't find at all (a driveway, a bare
  * curb with no address of its own) rather than one it merely got
- * wrong. Center point stays fixed - visually, a pin pinned to the
- * middle of the viewport, never a real Leaflet marker bound to a
- * lat/lng - while the map tiles underneath pan freely, so dragging
- * always reads as "move the map until the right spot is under the
- * pin," not "drag the pin to the right spot." `map.getCenter()` on
- * every 'move' is what actually drives the live readout below and
+ * wrong. Swapped in for StepRowEditor's own form body/footer (its
+ * `showPlaceModal` state) rather than opening as a second stacked
+ * popup on top of it - same card, same size, no second dim backdrop
+ * layered behind another. Center point stays fixed - visually, a pin
+ * pinned to the middle of the viewport, never a real Leaflet marker
+ * bound to a lat/lng - while the map tiles underneath pan freely, so
+ * dragging always reads as "move the map until the right spot is
+ * under the pin," not "drag the pin to the right spot." `map.getCenter()`
+ * on every 'move' is what actually drives the live readout below and
  * what "Set coordinates" ultimately sends up via onSetCoordinates -
  * the pin element itself never carries a coordinate of its own.
  */
 export function PlaceCoordinatesModal({
-  title,
-  previousLine,
-  nextLine,
   initialCenter,
   onCancel,
   onSetCoordinates,
 }: {
-  /** This row's own icon+"full crossroads" instruction line
-   * (StepRowEditor's own crossroadsLine) - both roads of the
-   * intersection, not just the destination one a turn's collapsed-row
-   * instruction names, since pinning down a hard-to-place point needs
-   * the whole crossroads, not half of it. */
-  title: React.ReactNode;
-  /** The immediately previous/next step's own same-shaped line (icon +
-   * full crossroads text), null at whichever end of the route has
-   * none - shown smaller/faded above and below `title` respectively,
-   * purely as "you're placing the point between these two" context,
-   * never itself editable or clickable here. */
-  previousLine?: React.ReactNode | null;
-  nextLine?: React.ReactNode | null;
   /** Where the map opens centered - the nearest already-resolved
    * neighbor waypoint(s) on either side of this row, averaged when both
    * exist (see StepRowEditor's own call site) - just a starting guess
@@ -93,69 +80,40 @@ export function PlaceCoordinatesModal({
   }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
-      onClick={onCancel}
-    >
-      <div
-        className="animate-popup-pop flex w-full max-w-sm flex-col rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Previous/current/next, stacked - the current row's own
-            full-crossroads line stays the normal size/weight (the one
-            actually being placed), its neighbors sit smaller, indented,
-            and faded on either side, purely as "you're placing this
-            between these two" context. */}
-        {previousLine && (
-          <p className="flex items-center gap-1.5 pl-3 text-xs font-semibold text-zinc-400 opacity-70">
-            <span className="shrink-0">Previous:</span>
-            {previousLine}
-          </p>
-        )}
-        <p className="flex items-center gap-1.5 text-sm font-bold text-zinc-500">
-          {title}
-        </p>
-        {nextLine && (
-          <p className="flex items-center gap-1.5 pl-3 text-xs font-semibold text-zinc-400 opacity-70">
-            <span className="shrink-0">Next:</span>
-            {nextLine}
-          </p>
-        )}
-
-        <div className="relative mt-3 h-64 w-full overflow-hidden rounded-lg">
-          <div ref={containerRef} className="h-full w-full" />
-          {/* Fixed dead-center, never moved - this is the "place" the
-              admin is positioning the map under, not a marker with a
-              coordinate of its own. Tip anchored exactly at the
-              container's visual center via the -100% vertical
-              translate, same as any other teardrop-pin anchor
-              elsewhere in this app (RouteMap.tsx's own marker icons). */}
-          <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full">
-            <MapPinIcon className="h-8 w-8 text-red-500 drop-shadow-md" />
-          </div>
-        </div>
-
-        <p className="mt-2 text-center font-mono text-sm text-zinc-600">
-          {center.lat.toFixed(5)}, {center.lon.toFixed(5)}
-        </p>
-
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="btn-glossy-light font-heading flex flex-1 items-center justify-center rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => onSetCoordinates(center.lat, center.lon)}
-            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white"
-          >
-            Set coordinates
-          </button>
+    <>
+      <div className="relative mt-3 h-64 w-full overflow-hidden rounded-lg">
+        <div ref={containerRef} className="h-full w-full" />
+        {/* Fixed dead-center, never moved - this is the "place" the
+            admin is positioning the map under, not a marker with a
+            coordinate of its own. Tip anchored exactly at the
+            container's visual center via the -100% vertical
+            translate, same as any other teardrop-pin anchor
+            elsewhere in this app (RouteMap.tsx's own marker icons). */}
+        <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full">
+          <MapPinIcon className="h-8 w-8 text-red-500 drop-shadow-md" />
         </div>
       </div>
-    </div>
+
+      <p className="mt-2 text-center font-mono text-sm text-zinc-600">
+        {center.lat.toFixed(5)}, {center.lon.toFixed(5)}
+      </p>
+
+      <div className="mt-4 flex gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="btn-glossy-light font-heading flex flex-1 items-center justify-center rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => onSetCoordinates(center.lat, center.lon)}
+          className="btn-glossy-blue font-heading flex flex-1 items-center justify-center rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white"
+        >
+          Set coordinates
+        </button>
+      </div>
+    </>
   );
 }
