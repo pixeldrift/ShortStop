@@ -384,13 +384,34 @@ export default function Home() {
     }
   }
 
-  function handleDeleteRoute(route: Route) {
+  // Same "the local overlay isn't the real write" gap handleSetRouteStatus
+  // above had until /api/routes/[id]/status existed: deletedRouteIds
+  // used to be the only thing this touched, which hid the row for the
+  // rest of this session (effectiveRealRoutes filters by it) but never
+  // actually removed anything from Postgres, so it silently came back
+  // on the next real page load. A demo route (see buildDemoRoutes) has
+  // no row there to begin with - status: "demo" is a fixed identity
+  // marker, not a real one this app ever gets to delete, so that case
+  // stays exactly the local-only removal it always was.
+  async function handleDeleteRoute(route: Route) {
     setDeletedRouteIds((prev) => new Set(prev).add(route.id));
     setAdminRoutes((prev) => {
       const next = { ...prev };
       delete next[route.id];
       return next;
     });
+    if (route.status === "demo") return;
+    try {
+      const res = await fetch(`/api/routes/${route.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    } catch (err) {
+      console.error(`Couldn't delete route ${route.id}:`, err);
+      setDeletedRouteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(route.id);
+        return next;
+      });
+    }
   }
 
   // RouteApp's own hand-off the moment a route reaches "arrived" -
