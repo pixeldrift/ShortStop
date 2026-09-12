@@ -190,8 +190,15 @@ export function matchColumns(headerLine: string, delimiter: string): ImportColum
 // other waypoint types (StepRowEditor's own Type select). Matched
 // case-insensitively against a header-less line's first cell to tell
 // "this line names its own action" apart from "this line is just a
-// bare location" (see parseHeaderlessLine).
-const RECOGNIZED_ACTIONS = new Set([
+// bare location" (see parseHeaderlessLine). Exported so
+// EditRouteScreen.tsx's own row-level validity check (a row's
+// `action` genuinely being one of these, not just non-blank) reads off
+// this same list rather than a second copy of it that could drift out
+// of sync - "complete" included here even though StepRowEditor's own
+// Type select doesn't offer it as a pick (see deriveWaypoints.ts's
+// PLACE_ACTIONS), so a route that already has one isn't wrongly
+// flagged as invalid.
+export const RECOGNIZED_ACTIONS = new Set([
   "stop",
   "left",
   "right",

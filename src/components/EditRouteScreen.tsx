@@ -26,6 +26,7 @@ import {
   TriangleIcon,
   TurnArrow,
   UploadIcon,
+  WarningIcon,
   XCircleIcon,
 } from "./icons";
 import {
@@ -40,6 +41,7 @@ import type { GeocodableQuery } from "@/lib/geocode";
 import {
   matchSchoolFromRows,
   parseRouteImport,
+  RECOGNIZED_ACTIONS,
   unresolvedRequiredFields,
 } from "@/lib/parseRouteImport";
 import { parseRouteFilename } from "@/lib/parseRouteMasterList";
@@ -283,6 +285,45 @@ const inputClass =
 const labelClass =
   "text-xs font-semibold tracking-wide text-zinc-500 uppercase";
 
+// The exact values StepRowEditor's own Type <select> below offers, in
+// display order - reused for that select's own value (falling back to
+// "" for a value that isn't one of these, rather than a browser
+// silently rendering no option highlighted at all) and for
+// rowValidationIssue below, so neither can drift out of sync with what
+// an admin can actually pick.
+const WAYPOINT_TYPES = [
+  "Stop",
+  "Left",
+  "Right",
+  "Continue",
+  "U-Turn",
+  "Turn Around",
+  "Proceed",
+  "Pull Over",
+  "Return",
+  "Depart",
+  "Arrive",
+] as const;
+const WAYPOINT_TYPE_SET = new Set<string>(WAYPOINT_TYPES);
+
+/** A concrete reason a row's own raw data can't be trusted, or null
+ * when it's fine - the main way a row actually ends up this way is a
+ * loosely-typed import (a blank or misspelled action cell, a location
+ * column that didn't map), but the check itself doesn't care how the
+ * row got here. Read by StepRowView below to flag the row with a red
+ * border and a warning triangle carrying this same message, so a bad
+ * import surfaces immediately in the stops list rather than only once
+ * an admin happens to expand that one row. */
+function rowValidationIssue(row: RawRouteRow): string | null {
+  if (!RECOGNIZED_ACTIONS.has(row.action.trim().toLowerCase())) {
+    return row.action.trim()
+      ? `Unrecognized waypoint type "${row.action}".`
+      : "Missing a waypoint type.";
+  }
+  if (!row.location.trim()) return "Missing a location.";
+  return null;
+}
+
 /** Same shape as inputClass, swapped to a red border/focus ring - a
  * required field (Route #, Trip, School - see requiredFieldErrors)
  * still blank the moment a submit attempt is actually made, so it's
@@ -449,6 +490,7 @@ function StepRowView({
   onDragEnd: (e: ReactPointerEvent) => void;
 }) {
   const isStop = stopNumber !== null;
+  const issue = rowValidationIssue(row);
   const actionLower = row.action.toLowerCase();
   const isPlaceAction =
     actionLower === "stop" ||
@@ -497,7 +539,11 @@ function StepRowView({
   );
 
   return (
-    <div className="flex items-center gap-2 py-0.5 text-left">
+    <div
+      className={`flex items-center gap-2 rounded-lg py-0.5 text-left ${
+        issue ? "-mx-2 border border-red-400 bg-red-50 px-2" : ""
+      }`}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-heading flex items-center gap-1.5 text-base font-black">
@@ -553,23 +599,35 @@ function StepRowView({
             <span className="text-zinc-400 italic">No location yet</span>
           )}
         </p>
-        {/* The row's own real geocoding outcome - actual coordinates
-            once resolved (green check), the specific miss/error reason
-            otherwise (red X), or "- Instructions Only -" for a row
-            deriveWaypoints.ts flagged as never needing a location at
-            all (a driver instruction, not a real road). */}
-        {status && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
-            <ResolutionIcon
-              status={status.status}
-              className="h-3.5 w-3.5 shrink-0"
-            />
-            {status.status === "resolved"
-              ? `${status.lat.toFixed(5)}, ${status.lon.toFixed(5)}`
-              : status.status === "skipped"
-                ? "- Instructions Only -"
-                : status.reason}
+        {/* A structurally bad row (see rowValidationIssue) takes
+            priority over the geocoding status below - there's nothing
+            meaningful to resolve yet when the action/location
+            themselves are missing or unrecognized, so showing both
+            would just be two ways of saying "this row is off." */}
+        {issue ? (
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-red-600">
+            <WarningIcon className="h-3.5 w-3.5 shrink-0" />
+            {issue}
           </p>
+        ) : (
+          /* The row's own real geocoding outcome - actual coordinates
+             once resolved (green check), the specific miss/error reason
+             otherwise (red X), or "- Instructions Only -" for a row
+             deriveWaypoints.ts flagged as never needing a location at
+             all (a driver instruction, not a real road). */
+          status && (
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
+              <ResolutionIcon
+                status={status.status}
+                className="h-3.5 w-3.5 shrink-0"
+              />
+              {status.status === "resolved"
+                ? `${status.lat.toFixed(5)}, ${status.lon.toFixed(5)}`
+                : status.status === "skipped"
+                  ? "- Instructions Only -"
+                  : status.reason}
+            </p>
+          )
         )}
         {/* Driver hints (wheelchair assistance, wait-inside notes, etc.)
             read last - after the row's own location is established, not
@@ -967,9 +1025,20 @@ function StepRowEditor({
               <Field label="Type">
                 <select
                   className={inputClass}
-                  value={row.action}
+                  // Falls back to "" (the "- Unspecified -" option
+                  // below) rather than passing an unrecognized
+                  // row.action straight through as this select's own
+                  // value - an imported row with a blank or misspelled
+                  // action cell would otherwise leave no option
+                  // actually selected, which a browser renders as if
+                  // "Stop" (the first real option) were picked instead.
+                  // The original value stays in `row` either way until
+                  // an admin actually changes this select - only
+                  // changing what's *shown*, not what's saved.
+                  value={WAYPOINT_TYPE_SET.has(row.action) ? row.action : ""}
                   onChange={(e) => handleTypeChange(e.target.value)}
                 >
+                  <option value="">- Unspecified -</option>
                   <option value="Stop">Stop</option>
                   <option value="Left">Turn Left</option>
                   <option value="Right">Turn Right</option>
@@ -2431,7 +2500,41 @@ export function EditRouteScreen({
         });
         if (index > 0) await sleep(SINGLE_FETCH_COOLDOWN_MS);
 
-        const data = await callGeocodeApi(waypoint);
+        let data: GeocodeResponseBody;
+        try {
+          data = await callGeocodeApi(waypoint);
+        } catch (err) {
+          // A single waypoint's own request failing outright (a real
+          // HTTP error - see WaypointCacheEntry's own doc on how that's
+          // distinct from a normal "queried fine, found nothing" miss)
+          // shouldn't take down every waypoint after it in the same
+          // batch. Most often this is the school-address anchor lookup
+          // an intersection query needs (ensureAnchor,
+          // resolveWaypoint.ts) failing - only that one row's own
+          // attempt actually needed it, and a later row (a plain
+          // address, say, or a repeat intersection query once the
+          // anchor genuinely does resolve) can still succeed on its own
+          // merits. Recorded as this row's own "error" cache entry, the
+          // same shape a genuine not-found already gets, so it shows up
+          // exactly like any other miss - a red X and this message -
+          // rather than silently stopping partway through with nothing
+          // to show for every row after it.
+          const key = waypointCacheKey(waypoint);
+          const entry: WaypointCacheEntry = {
+            status: "error",
+            message: err instanceof Error ? err.message : String(err),
+            raw: err instanceof GeocodeApiError ? err.raw : undefined,
+            source: waypointLabel(waypoint),
+            provider: "none",
+          };
+          setCache((prev) => ({ ...prev, [key]: entry }));
+          setFetchingStepIds((prev) => {
+            const next = new Set(prev);
+            next.delete(waypoint.stepId);
+            return next;
+          });
+          continue;
+        }
         if (data.anchor) setSchoolAnchor(data.anchor);
         persistSchoolAnchorIfFresh(data.anchorEntry);
         const key = waypointCacheKey(waypoint);
