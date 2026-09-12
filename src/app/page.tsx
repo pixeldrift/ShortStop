@@ -344,8 +344,23 @@ export default function Home() {
 
   // A demo route's own "status" is a fixed identity marker, not a real
   // lifecycle value (see demoHiddenIds above) - publishing/unpublishing
-  // one only ever toggles that separate overlay, never adminRoutes.
-  function handleSetRouteStatus(route: Route, status: RouteStatus) {
+  // one only ever toggles that separate overlay, never adminRoutes, and
+  // never touches Postgres at all (a demo route has no row there to
+  // begin with - see demoRoutes.ts).
+  //
+  // A real route does have a row, so this also has to actually persist
+  // the change - updating adminRoutes alone (as this used to, before
+  // /api/routes/[id]/status existed) only ever looked saved: it made
+  // effectiveRealRoutes read as published/draft for the rest of this
+  // session, but a later page load re-fetches realRoutes straight from
+  // Postgres, which never got written, so the route silently reverted.
+  // adminRoutes is still updated first and optimistically, same as
+  // before, so the row's own eyeball/badge flips the instant an admin
+  // taps Activate/Deactivate rather than waiting on a round trip; the
+  // PATCH below just makes that same value durable. A failure reverts
+  // it back rather than leaving the UI showing a status Postgres never
+  // actually got, which is exactly the inconsistency this is fixing.
+  async function handleSetRouteStatus(route: Route, status: RouteStatus) {
     if (route.status === "demo") {
       setDemoHiddenIds((prev) => {
         const next = new Set(prev);
@@ -356,15 +371,47 @@ export default function Home() {
       return;
     }
     setAdminRoutes((prev) => ({ ...prev, [route.id]: { ...route, status } }));
+    try {
+      const res = await fetch(`/api/routes/${route.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    } catch (err) {
+      console.error(`Couldn't save route ${route.id}'s status:`, err);
+      setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
+    }
   }
 
-  function handleDeleteRoute(route: Route) {
+  // Same "the local overlay isn't the real write" gap handleSetRouteStatus
+  // above had until /api/routes/[id]/status existed: deletedRouteIds
+  // used to be the only thing this touched, which hid the row for the
+  // rest of this session (effectiveRealRoutes filters by it) but never
+  // actually removed anything from Postgres, so it silently came back
+  // on the next real page load. A demo route (see buildDemoRoutes) has
+  // no row there to begin with - status: "demo" is a fixed identity
+  // marker, not a real one this app ever gets to delete, so that case
+  // stays exactly the local-only removal it always was.
+  async function handleDeleteRoute(route: Route) {
     setDeletedRouteIds((prev) => new Set(prev).add(route.id));
     setAdminRoutes((prev) => {
       const next = { ...prev };
       delete next[route.id];
       return next;
     });
+    if (route.status === "demo") return;
+    try {
+      const res = await fetch(`/api/routes/${route.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    } catch (err) {
+      console.error(`Couldn't delete route ${route.id}:`, err);
+      setDeletedRouteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(route.id);
+        return next;
+      });
+    }
   }
 
   // RouteApp's own hand-off the moment a route reaches "arrived" -
