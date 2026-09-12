@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
 import type {
+  GeoJSONSource,
   IControl,
   Map as MapLibreMap,
   Marker as MapLibreMarker,
@@ -18,7 +19,7 @@ import {
   resolveMapEngine,
 } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
-import type { RoutingResult } from "@/lib/routing/types";
+import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
 import type { TripType, TurnDirection } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
@@ -63,6 +64,28 @@ const STREET_ZOOM = 17;
 // driving mode's own full pin set (drawDrivingPins) reused as-is once
 // crossed.
 const OVERVIEW_DETAIL_ZOOM = 15;
+
+// The road-following route line's own color - deliberately lighter
+// than the school/stop pins' own blue (#2563eb, schoolMarkerHtml/
+// stopMarkerHtml below) so the line never reads as though it were just
+// another pin, especially where one sits right on top of it.
+const ROUTE_LINE_COLOR = "#60a5fa";
+
+/** A plain GeoJSON LineString Feature wrapping `coordinates` - the one
+ * shape both mountLeaflet and mountMapLibre's own route-line sources
+ * need, built fresh on every redraw (the traveled/remaining split
+ * below changes which points belong to which line every time the
+ * active step or a live GPS fix moves). `as const` on the two type
+ * tags keeps them as their own literal types ("Feature"/"LineString")
+ * rather than widening to plain `string`, the same reasoning
+ * protomapsStyle.ts's own doc comment gives for its layer literals. */
+function lineFeature(coordinates: RouteCoordinate[]) {
+  return {
+    type: "Feature" as const,
+    properties: {},
+    geometry: { type: "LineString" as const, coordinates },
+  };
+}
 
 // CARTO's free Voyager basemap rather than tile.openstreetmap.org
 // directly: same OSM data underneath (styled to look close to the
@@ -214,6 +237,33 @@ function bearingAt(
     return initialBearing(ordered[index], ordered[index + 1]);
   if (index - 1 >= 0) return initialBearing(ordered[index - 1], ordered[index]);
   return null;
+}
+
+/** Which point along a route's own road-geometry coordinates (lon/lat
+ * order, per RouteCoordinate) sits closest to `point` - how far along
+ * the drawn line the "traveled" (solid) / "remaining" (dashed) split
+ * below falls. Plain Euclidean comparison in degree-space, not a real
+ * haversine/projection - close enough to tell which of a route's own
+ * points is nearest at the scale one route ever covers (a few miles),
+ * and this only ever needs to rank points against each other, never
+ * report a real distance. */
+function nearestCoordIndex(
+  coords: RouteCoordinate[],
+  point: { lat: number; lon: number },
+): number {
+  let bestIndex = 0;
+  let bestDistSq = Infinity;
+  for (let i = 0; i < coords.length; i++) {
+    const [lon, lat] = coords[i];
+    const dLat = lat - point.lat;
+    const dLon = lon - point.lon;
+    const distSq = dLat * dLat + dLon * dLon;
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
 }
 
 /**
@@ -570,6 +620,22 @@ function mountLeaflet(
 
   let map: LeafletMap | undefined;
   let watchId: number | undefined;
+  // The live GPS fix (watchPosition below), in [lat, lon] order - null
+  // until the first one arrives, or forever if geolocation is denied/
+  // unavailable. Read by updateRouteProgress (defined once the route
+  // line itself exists) to split the drawn line at how far the bus has
+  // actually gotten, not just which step the driver has manually
+  // advanced to - watchPosition's own callback lives outside the
+  // closure that function is defined in, so this (and applyRouteProgress
+  // just below) are what let the one reach the other.
+  let liveLatLng: [number, number] | null = null;
+  let applyRouteProgress: (() => void) | undefined;
+  // The last index into roadLngLats the route line's own traveled/
+  // remaining split actually landed on - held onto so a driving-mode
+  // step with no resolved coordinate of its own (updateRouteProgress's
+  // point lookup coming up empty) leaves the split exactly where it
+  // was rather than snapping back to 0.
+  let lastRouteSplitIndex = 0;
 
   void import("leaflet").then((L) =>
     // Side-effect only (patches L.Map to add rotation) - must resolve
@@ -655,26 +721,88 @@ function mountLeaflet(
             )
             .then((result) => {
               if (cancelledRef() || !map || !result) return;
-              const roadLatLngs: [number, number][] =
-                result.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-              L.polyline(roadLatLngs, {
-                color: "#2563eb",
+              const roadLngLats = result.geometry.coordinates;
+              // Two layers sharing one color (ROUTE_LINE_COLOR) rather
+              // than one - dotted ahead of the bus, solid behind it, so
+              // the line itself shows how far the route has actually
+              // been driven, not just that it exists. Both start empty;
+              // updateRouteProgress below (called once immediately, and
+              // again on every step advance/live GPS fix) is what
+              // actually splits roadLngLats between them.
+              const remainingLine = L.polyline([], {
+                color: ROUTE_LINE_COLOR,
                 weight: 4,
-                opacity: 0.7,
+                opacity: 0.85,
+                lineJoin: "round",
+                dashArray: "1, 10",
+                interactive: false,
+              }).addTo(map);
+              const traveledLine = L.polyline([], {
+                color: ROUTE_LINE_COLOR,
+                weight: 4,
+                opacity: 0.85,
                 lineJoin: "round",
                 interactive: false,
               }).addTo(map);
+
+              // Splits roadLngLats at how far the bus has actually
+              // gotten - a live GPS fix (liveLatLng) when one exists,
+              // otherwise the active step's own resolved coordinate,
+              // same "something to show even without GPS" fallback the
+              // rest of driving mode already leans on. Assigned to
+              // applyRouteProgress (declared outside this whole
+              // closure) so watchPosition's own callback - which lives
+              // outside it too, since it's registered after this
+              // fetch/cache chain rather than inside it - can still
+              // trigger a redraw the moment a new GPS fix arrives.
+              function updateRouteProgress() {
+                if (!map) return;
+                if (modeRef.current !== "driving") {
+                  lastRouteSplitIndex = 0;
+                } else {
+                  const point = liveLatLng
+                    ? { lat: liveLatLng[0], lon: liveLatLng[1] }
+                    : (() => {
+                        const key = activeWaypointKeyRef.current;
+                        const entry = key ? cache[key] : undefined;
+                        return entry && entry.status === "ok" ? entry : null;
+                      })();
+                  // A step with no resolved coordinate yet (an
+                  // unverified stop an admin still activated - see
+                  // RouteListScreen's own warning for that) has
+                  // nothing to compute a new split from - keep
+                  // wherever the line last genuinely reached rather
+                  // than snapping the solid portion back to the start.
+                  if (point) lastRouteSplitIndex = nearestCoordIndex(roadLngLats, point);
+                }
+                const splitIndex = lastRouteSplitIndex;
+                traveledLine.setLatLngs(
+                  roadLngLats
+                    .slice(0, splitIndex + 1)
+                    .map(([lon, lat]): [number, number] => [lat, lon]),
+                );
+                remainingLine.setLatLngs(
+                  roadLngLats
+                    .slice(splitIndex)
+                    .map(([lon, lat]): [number, number] => [lat, lon]),
+                );
+              }
+              applyRouteProgress = updateRouteProgress;
+              updateRouteProgress();
+
               // The road can bow out well past a straight line
               // between waypoints (a river crossing, a one-way
               // detour) - once the actual road geometry is in, it's
               // a tighter, truer "fit the whole route" frame than
               // the raw waypoint dots the map was fit to below
               // while this was loading.
-              if (modeRef.current === "overview" && roadLatLngs.length > 0) {
-                map.fitBounds(L.latLngBounds(roadLatLngs), {
-                  padding: [40, 40],
-                  maxZoom: 16,
-                });
+              if (modeRef.current === "overview" && roadLngLats.length > 0) {
+                map.fitBounds(
+                  L.latLngBounds(
+                    roadLngLats.map(([lon, lat]): [number, number] => [lat, lon]),
+                  ),
+                  { padding: [40, 40], maxZoom: 16 },
+                );
               }
             })
             .catch((err) =>
@@ -798,6 +926,7 @@ function mountLeaflet(
           // fly to, reveal immediately instead of waiting on a
           // flight that will never happen (a later step advance
           // that does resolve still gets its own gated reveal).
+          applyRouteProgress?.();
           const bearing = bearingAt(
             orderedWaypointsRef.current,
             activeWaypointKeyRef.current,
@@ -872,6 +1001,8 @@ function mountLeaflet(
           } else {
             locationMarker.setLatLng(latLng);
           }
+          liveLatLng = latLng;
+          applyRouteProgress?.();
         },
         (error) => {
           console.warn("Geolocation unavailable:", error.message);
@@ -986,6 +1117,22 @@ function mountMapLibre(args: MountArgs): () => void {
   // tracked so the map's own "zoomend" handler only redraws pins on an
   // actual crossing, not on every zoom tick.
   let overviewDetailed = false;
+  // The live GPS fix (watchPosition below), in [lon, lat] order - null
+  // until the first one arrives, or forever if geolocation is denied/
+  // unavailable. Read by updateRouteProgress (defined once the route
+  // line itself exists) to split the drawn line at how far the bus has
+  // actually gotten, not just which step the driver has manually
+  // advanced to - watchPosition's own callback lives outside the
+  // closure that function is defined in, so this (and
+  // applyRouteProgress just below) are what let the one reach the other.
+  let liveLngLat: [number, number] | null = null;
+  let applyRouteProgress: (() => void) | undefined;
+  // The last index into roadLngLats the route line's own traveled/
+  // remaining split actually landed on - held onto so a driving-mode
+  // step with no resolved coordinate of its own (updateRouteProgress's
+  // point lookup coming up empty) leaves the split exactly where it
+  // was rather than snapping back to 0.
+  let lastRouteSplitIndex = 0;
 
   function clearPins() {
     for (const marker of pins) marker.remove();
@@ -1102,25 +1249,101 @@ function mountMapLibre(args: MountArgs): () => void {
               .then((result) => {
                 if (cancelledRef() || !result) return;
                 const roadLngLats = result.geometry.coordinates;
-                mapInstance.addSource("route-line", {
+                // Two layers sharing one color (ROUTE_LINE_COLOR)
+                // rather than one - dotted ahead of the bus, solid
+                // behind it, so the line itself shows how far the
+                // route has actually been driven, not just that it
+                // exists. Both start empty; updateRouteProgress below
+                // (called once immediately, and again on every step
+                // advance/live GPS fix) is what actually splits
+                // roadLngLats between them. beforeId (both layers)
+                // places them directly under the road-name labels
+                // (added earlier, in protomapsStyle.ts's own layer
+                // list) so street names stay legible over the route
+                // instead of the line painting over them - addLayer
+                // with no beforeId would otherwise stack this on top
+                // of literally everything already in the style,
+                // labels included.
+                mapInstance.addSource("route-remaining", {
                   type: "geojson",
-                  data: {
-                    type: "Feature",
-                    properties: {},
-                    geometry: { type: "LineString", coordinates: roadLngLats },
-                  },
+                  data: lineFeature([]),
                 });
-                mapInstance.addLayer({
-                  id: "route-line",
-                  type: "line",
-                  source: "route-line",
-                  layout: { "line-cap": "round", "line-join": "round" },
-                  paint: {
-                    "line-color": "#2563eb",
-                    "line-width": 4,
-                    "line-opacity": 0.7,
-                  },
+                mapInstance.addSource("route-traveled", {
+                  type: "geojson",
+                  data: lineFeature([]),
                 });
+                mapInstance.addLayer(
+                  {
+                    id: "route-remaining",
+                    type: "line",
+                    source: "route-remaining",
+                    layout: { "line-cap": "round", "line-join": "round" },
+                    paint: {
+                      "line-color": ROUTE_LINE_COLOR,
+                      "line-width": 4,
+                      "line-opacity": 0.85,
+                      "line-dasharray": [0, 2],
+                    },
+                  },
+                  "roads-major-label",
+                );
+                mapInstance.addLayer(
+                  {
+                    id: "route-traveled",
+                    type: "line",
+                    source: "route-traveled",
+                    layout: { "line-cap": "round", "line-join": "round" },
+                    paint: {
+                      "line-color": ROUTE_LINE_COLOR,
+                      "line-width": 4,
+                      "line-opacity": 0.85,
+                    },
+                  },
+                  "roads-major-label",
+                );
+
+                // Splits roadLngLats at how far the bus has actually
+                // gotten - a live GPS fix (liveLngLat) when one
+                // exists, otherwise the active step's own resolved
+                // coordinate, same "something to show even without
+                // GPS" fallback the rest of driving mode already leans
+                // on. Assigned to applyRouteProgress (declared outside
+                // this whole closure) so watchPosition's own callback -
+                // which lives outside it too, since it's registered
+                // after this fetch/cache chain rather than inside it -
+                // can still trigger a redraw the moment a new GPS fix
+                // arrives.
+                function updateRouteProgress() {
+                  if (modeRef.current !== "driving") {
+                    lastRouteSplitIndex = 0;
+                  } else {
+                    const point = liveLngLat
+                      ? { lat: liveLngLat[1], lon: liveLngLat[0] }
+                      : (() => {
+                          const key = activeWaypointKeyRef.current;
+                          const entry = key ? cache[key] : undefined;
+                          return entry && entry.status === "ok" ? entry : null;
+                        })();
+                    // A step with no resolved coordinate yet (an
+                    // unverified stop an admin still activated - see
+                    // RouteListScreen's own warning for that) has
+                    // nothing to compute a new split from - keep
+                    // wherever the line last genuinely reached rather
+                    // than snapping the solid portion back to the
+                    // start.
+                    if (point) lastRouteSplitIndex = nearestCoordIndex(roadLngLats, point);
+                  }
+                  const splitIndex = lastRouteSplitIndex;
+                  (mapInstance.getSource("route-traveled") as GeoJSONSource)?.setData(
+                    lineFeature(roadLngLats.slice(0, splitIndex + 1)),
+                  );
+                  (mapInstance.getSource("route-remaining") as GeoJSONSource)?.setData(
+                    lineFeature(roadLngLats.slice(splitIndex)),
+                  );
+                }
+                applyRouteProgress = updateRouteProgress;
+                updateRouteProgress();
+
                 if (modeRef.current === "overview" && roadLngLats.length > 0) {
                   const lons = roadLngLats.map((c) => c[0]);
                   const lats = roadLngLats.map((c) => c[1]);
@@ -1223,6 +1446,7 @@ function mountMapLibre(args: MountArgs): () => void {
               return;
             }
 
+            applyRouteProgress?.();
             const bearing = bearingAt(
               orderedWaypointsRef.current,
               activeWaypointKeyRef.current,
@@ -1292,6 +1516,8 @@ function mountMapLibre(args: MountArgs): () => void {
           } else {
             locationMarker.setLngLat(lngLat);
           }
+          liveLngLat = lngLat;
+          applyRouteProgress?.();
         },
         (error) => {
           console.warn("Geolocation unavailable:", error.message);
