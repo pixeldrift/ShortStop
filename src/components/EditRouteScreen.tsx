@@ -135,6 +135,60 @@ function parseLatLon(text: string): [number, number] | null {
   return lat != null && lon != null ? [lat, lon] : null;
 }
 
+/** Icon + "full crossroads" text for one row - PlaceCoordinatesModal's
+ * own context lines (the row being placed, plus its immediate
+ * previous/next neighbors) need both roads of an intersection, not
+ * just the one formatWaypointInstruction names for a turn ("Left onto
+ * Rock Springs Rd," the destination road only - Stop/Depart/Arrive
+ * already get both via their own "at {from} & {to}" phrasing, so this
+ * only actually changes anything for a turn-kind action). Deliberately
+ * its own function rather than a formatWaypointInstruction change -
+ * that one still drives the real app (StepRowView's collapsed rows,
+ * spoken turn-by-turn announcements), where this fuller phrasing was
+ * never asked for and would read oddly out loud. */
+function crossroadsLine(
+  row: RawRouteRow,
+  stopNumber: number | null,
+  previousRoad: string | null,
+  schools: Record<string, SchoolInfo>,
+): { icon: React.ReactNode; text: string } {
+  const actionLower = row.action.toLowerCase();
+  const isStop = actionLower === "stop";
+  const isSchoolAction = actionLower === "depart" || actionLower === "arrive";
+  const isStopKind = isStop || isSchoolAction || actionLower === "complete";
+  const turnDirection =
+    actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
+
+  const target = row.location.trim().toLowerCase();
+  const matchedSchool = target
+    ? Object.keys(schools).some((name) => name.trim().toLowerCase() === target)
+    : false;
+  const isPlainLocation = /^\d/.test(row.location.trim()) || matchedSchool;
+  const effectiveFrom = isPlainLocation
+    ? ""
+    : row.fromLocation || previousRoad || "";
+
+  const icon = isStop ? (
+    <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
+  ) : isSchoolAction ? (
+    <ActionIcon
+      action={row.action}
+      className="h-4 w-4 shrink-0 text-blue-600"
+    />
+  ) : turnDirection ? (
+    <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
+  ) : (
+    <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
+  );
+
+  const text =
+    !isStopKind && effectiveFrom
+      ? `${row.action || "Turn"} from ${effectiveFrom} onto ${row.location}`
+      : formatWaypointInstruction(row, stopNumber, effectiveFrom);
+
+  return { icon, text };
+}
+
 /** PlaceCoordinatesModal's own starting guess for a given row - the
  * nearest already-resolved waypoint walking outward from `index` in
  * each direction, averaged when both sides find one, a single side's
@@ -165,7 +219,10 @@ function nearestResolvedGuess(
     }
   }
   if (before && after) {
-    return { lat: (before.lat + after.lat) / 2, lon: (before.lon + after.lon) / 2 };
+    return {
+      lat: (before.lat + after.lat) / 2,
+      lon: (before.lon + after.lon) / 2,
+    };
   }
   return before ?? after;
 }
@@ -592,6 +649,8 @@ function StepRowEditor({
   fetching,
   fetchLocked,
   placementGuess,
+  previousStep,
+  nextStep,
   onChange,
   onFetch,
   onManualCoordinates,
@@ -633,6 +692,23 @@ function StepRowEditor({
    * when neither side has resolved yet (PlaceCoordinatesModal falls
    * back to a fixed default in that case). */
   placementGuess: { lat: number; lon: number } | null;
+  /** The immediately adjacent committed row (this route's own real
+   * step order, not filtered by showTurns/showUnverifiedOnly) either
+   * side of this one - null at whichever end of the route has none.
+   * Only ever used for PlaceCoordinatesModal's own context lines
+   * (crossroadsLine, above) - a driver-facing "you're between these
+   * two" cue meant to help pin down a hard-to-place point, not shown
+   * anywhere else in this editor. */
+  previousStep: {
+    row: RawRouteRow;
+    stopNumber: number | null;
+    previousRoad: string | null;
+  } | null;
+  nextStep: {
+    row: RawRouteRow;
+    stopNumber: number | null;
+    previousRoad: string | null;
+  } | null;
   onChange: (patch: Partial<RawRouteRow>) => void;
   onFetch: () => void;
   /** A coordinate typed/pasted directly into the Latitude/Longitude
@@ -798,6 +874,36 @@ function StepRowEditor({
       )}
     </>
   );
+
+  // PlaceCoordinatesModal's own three-line title - the full crossroads
+  // for this row (both roads of the intersection, not just the
+  // destination one a turn's own instructionLine above names), plus
+  // its immediate previous/next neighbors for extra context toward
+  // pinning down a hard-to-place point. previousStep/nextStep are the
+  // committed rows either side of this one - null at whichever end of
+  // the route has none.
+  const currentCrossroads = crossroadsLine(
+    row,
+    stopNumber,
+    previousRoad,
+    schools,
+  );
+  const previousCrossroads = previousStep
+    ? crossroadsLine(
+        previousStep.row,
+        previousStep.stopNumber,
+        previousStep.previousRoad,
+        schools,
+      )
+    : null;
+  const nextCrossroads = nextStep
+    ? crossroadsLine(
+        nextStep.row,
+        nextStep.stopNumber,
+        nextStep.previousRoad,
+        schools,
+      )
+    : null;
 
   return (
     <>
@@ -1130,7 +1236,28 @@ function StepRowEditor({
       </div>
       {showPlaceModal && (
         <PlaceCoordinatesModal
-          title={instructionLine}
+          title={
+            <>
+              {currentCrossroads.icon}
+              {currentCrossroads.text}
+            </>
+          }
+          previousLine={
+            previousCrossroads && (
+              <>
+                {previousCrossroads.icon}
+                {previousCrossroads.text}
+              </>
+            )
+          }
+          nextLine={
+            nextCrossroads && (
+              <>
+                {nextCrossroads.icon}
+                {nextCrossroads.text}
+              </>
+            )
+          }
           // This row's own current coordinate (typed, or already
           // resolved) wins over the neighbor guess whenever it has
           // one - opening this map to fine-tune an existing point
@@ -3058,6 +3185,22 @@ export function EditRouteScreen({
           (() => {
             const index = expandedIndex;
             const isStop = rows[index].action.toLowerCase() === "stop";
+            // The committed row either side of this one, for
+            // PlaceCoordinatesModal's own previous/next context lines
+            // (crossroadsLine) - null at whichever end of the route
+            // has none. stopNumbers/previousRoads are keyed the same
+            // way as `rows` itself, so a neighbor index looks its own
+            // values up the exact same way the current row's props do
+            // just above.
+            function stepAt(i: number) {
+              if (i < 0 || i >= rows.length) return null;
+              const stepIsStop = rows[i].action.toLowerCase() === "stop";
+              return {
+                row: rows[i],
+                stopNumber: stepIsStop ? (stopNumbers.get(i) ?? null) : null,
+                previousRoad: previousRoads[i] ?? null,
+              };
+            }
             return (
               <StepRowEditor
                 row={draftRow}
@@ -3073,6 +3216,8 @@ export function EditRouteScreen({
                 }
                 fetchLocked={singleFetchCoolingDown}
                 placementGuess={nearestResolvedGuess(resolutionRows, index)}
+                previousStep={stepAt(index - 1)}
+                nextStep={stepAt(index + 1)}
                 onChange={handleDraftChange}
                 onFetch={() =>
                   draftWaypoint &&

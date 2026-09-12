@@ -23,15 +23,25 @@ const DEFAULT_ZOOM = 18;
  */
 export function PlaceCoordinatesModal({
   title,
+  previousLine,
+  nextLine,
   initialCenter,
   onCancel,
   onSetCoordinates,
 }: {
-  /** This row's own icon+instruction line (StepRowEditor already builds
-   * this for its own header) - reused as-is so the modal identifies
-   * which waypoint it's placing the same way the rest of the app
-   * already does, rather than restating it in different words. */
+  /** This row's own icon+"full crossroads" instruction line
+   * (StepRowEditor's own crossroadsLine) - both roads of the
+   * intersection, not just the destination one a turn's collapsed-row
+   * instruction names, since pinning down a hard-to-place point needs
+   * the whole crossroads, not half of it. */
   title: React.ReactNode;
+  /** The immediately previous/next step's own same-shaped line (icon +
+   * full crossroads text), null at whichever end of the route has
+   * none - shown smaller/faded above and below `title` respectively,
+   * purely as "you're placing the point between these two" context,
+   * never itself editable or clickable here. */
+  previousLine?: React.ReactNode | null;
+  nextLine?: React.ReactNode | null;
   /** Where the map opens centered - the nearest already-resolved
    * neighbor waypoint(s) on either side of this row, averaged when both
    * exist (see StepRowEditor's own call site) - just a starting guess
@@ -91,9 +101,26 @@ export function PlaceCoordinatesModal({
         className="animate-popup-pop flex w-full max-w-sm flex-col rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Previous/current/next, stacked - the current row's own
+            full-crossroads line stays the normal size/weight (the one
+            actually being placed), its neighbors sit smaller, indented,
+            and faded on either side, purely as "you're placing this
+            between these two" context. */}
+        {previousLine && (
+          <p className="flex items-center gap-1.5 pl-3 text-xs font-semibold text-zinc-400 opacity-70">
+            <span className="shrink-0">Previous:</span>
+            {previousLine}
+          </p>
+        )}
         <p className="flex items-center gap-1.5 text-sm font-bold text-zinc-500">
           {title}
         </p>
+        {nextLine && (
+          <p className="flex items-center gap-1.5 pl-3 text-xs font-semibold text-zinc-400 opacity-70">
+            <span className="shrink-0">Next:</span>
+            {nextLine}
+          </p>
+        )}
 
         <div className="relative mt-3 h-64 w-full overflow-hidden rounded-lg">
           <div ref={containerRef} className="h-full w-full" />
