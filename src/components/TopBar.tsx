@@ -48,7 +48,12 @@ export function TopBar({
           <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
             Route
           </p>
-          {/* relative/absolute rather than a flex row - the AM/PM icon
+          {/* mt-0.5 (not the -mt-1 this used to be) - leading-[0.7083]
+              trims the number's own line box down to its ink height,
+              and pulling it up further on top of that was crowding it
+              right up against "ROUTE" above; a small positive gap
+              instead of a negative one keeps them legibly apart.
+              relative/absolute rather than a flex row - the AM/PM icon
               floats off the route number's own right edge (left-full)
               so it never shifts the number itself off-center from the
               "ROUTE" label above. am.svg/pm.svg carry their own label
@@ -59,12 +64,12 @@ export function TopBar({
               may not even have a morning/afternoon distinction to
               badge, and there's no real example of one yet to design
               that case against. */}
-          <p className="font-heading relative -mt-1 text-3xl leading-[0.7083] font-black tracking-tight">
+          <p className="font-heading relative mt-0.5 text-3xl leading-[0.7083] font-black tracking-tight">
             {routeNumber}
             {(tripType === "pickup" || tripType === "dropoff") && (
               <TripTypeIcon
                 tripType={tripType}
-                className="absolute top-1/2 left-full ml-1.5 h-7 w-7 -translate-y-1/2 text-zinc-400"
+                className="absolute top-1/2 left-full ml-1.5 h-[21px] w-[21px] -translate-y-1/2 text-zinc-400"
               />
             )}
           </p>

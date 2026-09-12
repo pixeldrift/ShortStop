@@ -755,7 +755,7 @@ export function RouteListScreen({
                         route.tripType === "dropoff") && (
                         <TripTypeIcon
                           tripType={route.tripType}
-                          className="h-6 w-6 text-zinc-400"
+                          className="h-[18px] w-[18px] text-zinc-400"
                         />
                       )}
                     </div>

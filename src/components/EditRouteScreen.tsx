@@ -2975,7 +2975,7 @@ export function EditRouteScreen({
                 (tripType === "pickup" || tripType === "dropoff") && (
                   <TripTypeIcon
                     tripType={tripType}
-                    className="h-4 w-4 text-zinc-400"
+                    className="h-3 w-3 text-zinc-400"
                   />
                 )}
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
@@ -3293,7 +3293,7 @@ export function EditRouteScreen({
                 (tripType === "pickup" || tripType === "dropoff") && (
                   <TripTypeIcon
                     tripType={tripType}
-                    className="absolute top-1/2 left-full ml-2 h-8 w-8 -translate-y-1/2 text-zinc-400"
+                    className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
                   />
                 )}
             </h1>

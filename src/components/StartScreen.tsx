@@ -251,7 +251,7 @@ export function StartScreen({
                 route.tripType === "dropoff") && (
                 <TripTypeIcon
                   tripType={route.tripType}
-                  className="absolute top-1/2 left-full ml-2 h-8 w-8 -translate-y-1/2 text-zinc-400"
+                  className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
                 />
               )}
             </h1>
@@ -492,7 +492,7 @@ function AllStopsModal({
             {(route.tripType === "pickup" || route.tripType === "dropoff") && (
               <TripTypeIcon
                 tripType={route.tripType}
-                className="h-5 w-5 text-zinc-400"
+                className="h-[15px] w-[15px] text-zinc-400"
               />
             )}
             <span className="text-zinc-400">-</span>
