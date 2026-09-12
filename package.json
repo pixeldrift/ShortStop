@@ -13,6 +13,7 @@
     "geocode": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeRoute.js",
     "geocode:schools": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeSchools.js",
     "fix-school-coordinates": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fixSchoolCoordinates.js",
+    "fix-misplaced-rider-notes": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fixMisplacedRiderNotes.js",
     "prototype:overpass": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/prototypeOverpassGeocode.js"
   },
   "dependencies": {

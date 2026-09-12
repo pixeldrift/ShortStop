@@ -14,6 +14,7 @@
     "./geocodeRoute.ts",
     "./geocodeSchools.ts",
     "./fixSchoolCoordinates.ts",
+    "./fixMisplacedRiderNotes.ts",
     "./prototypeOverpassGeocode.ts",
     "../src/lib/parseRouteCsv.ts",
     "../src/lib/deriveWaypoints.ts",
