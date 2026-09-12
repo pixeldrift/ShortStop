@@ -5,9 +5,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
-import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
+import type {
+  IControl,
+  Map as MapLibreMap,
+  Marker as MapLibreMarker,
+} from "maplibre-gl";
 import { ActionIcon } from "./icons";
-import { PMTILES_ATTRIBUTION, PMTILES_URL, resolveMapEngine } from "@/lib/mapEngine";
+import {
+  collapseAttribution,
+  PMTILES_ATTRIBUTION,
+  PMTILES_URL,
+  resolveMapEngine,
+} from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import type { RoutingResult } from "@/lib/routing/types";
 import type { TripType, TurnDirection } from "@/lib/types";
@@ -887,6 +896,53 @@ function toLngLat({
   return [lon, lat];
 }
 
+// The street-names toggle - a real MapLibre IControl (map.addControl)
+// rather than a plain absolutely-positioned button, so it stacks
+// automatically directly under the NavigationControl's own zoom
+// buttons the way every other control sharing "top-left" does,
+// instead of needing hand-tuned offset math to sit under them. "Aa" is
+// the same plain-text convention other map apps' own label toggles
+// use rather than a bespoke icon - active (labels showing) is full
+// dark text, inactive is the same light gray the zoom buttons' own
+// icons already use, so the toggle's own on/off state reads at a
+// glance against them.
+class StreetLabelsControl implements IControl {
+  private visible = true;
+  private button?: HTMLButtonElement;
+
+  constructor(private readonly onToggle: (visible: boolean) => void) {}
+
+  onAdd(): HTMLElement {
+    const container = document.createElement("div");
+    container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("aria-label", "Toggle street names");
+    button.style.cssText =
+      "width:29px;height:29px;display:flex;align-items:center;" +
+      "justify-content:center;font-family:inherit;font-weight:700;" +
+      "font-size:13px;background:none;border:none;cursor:pointer;";
+    button.textContent = "Aa";
+    button.addEventListener("click", () => {
+      this.visible = !this.visible;
+      this.render();
+      this.onToggle(this.visible);
+    });
+    this.button = button;
+    this.render();
+    container.appendChild(button);
+    return container;
+  }
+
+  onRemove(): void {
+    this.button?.parentElement?.remove();
+  }
+
+  private render() {
+    if (this.button) this.button.style.color = this.visible ? "#333" : "#aaa";
+  }
+}
+
 function mountMapLibre(args: MountArgs): () => void {
   const {
     container,
@@ -945,9 +1001,42 @@ function mountMapLibre(args: MountArgs): () => void {
         }),
         zoom: DEFAULT_ZOOM,
         bearing: 0,
-        attributionControl: { customAttribution: PMTILES_ATTRIBUTION },
+        // compact: true - a small "i" that expands to the full credit
+        // on tap rather than the credit sitting spelled out in the
+        // corner at all times. OSM's own attribution guidelines
+        // (osmfoundation.org) explicitly bless this for space-
+        // constrained displays, and this app's own overview map is
+        // often barely taller than the attribution bar itself.
+        attributionControl: { customAttribution: PMTILES_ATTRIBUTION, compact: true },
       });
       const mapInstance = map;
+      collapseAttribution(container);
+      // showCompass: false - bearing here is driven programmatically
+      // (direction of travel in driving mode), not something a driver
+      // touches, so the compass puck would just be dead weight.
+      mapInstance.addControl(
+        new maplibregl.NavigationControl({ showCompass: false }),
+        "top-left",
+      );
+      // Added right after NavigationControl, same corner - MapLibre
+      // stacks same-corner controls in call order, so this lands
+      // directly under the zoom buttons with no manual offset math.
+      mapInstance.addControl(
+        new StreetLabelsControl((visible) => {
+          const visibility = visible ? "visible" : "none";
+          mapInstance.setLayoutProperty(
+            "roads-major-label",
+            "visibility",
+            visibility,
+          );
+          mapInstance.setLayoutProperty(
+            "roads-minor-label",
+            "visibility",
+            visibility,
+          );
+        }),
+        "top-left",
+      );
 
       // addSource/addLayer (the road-geometry line, below) need the
       // style to have actually finished loading first - markers don't

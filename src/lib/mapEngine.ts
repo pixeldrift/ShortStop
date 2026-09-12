@@ -67,6 +67,32 @@ export const PMTILES_ATTRIBUTION =
   '<a href="https://github.com/protomaps/basemaps">Protomaps</a> © ' +
   '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
+/** Forces MapLibre's own attribution control (a native `<details>`
+ * element, `compact: true` in the Map constructor's own
+ * `attributionControl` option) to start collapsed - RouteMap.tsx and
+ * PlaceCoordinatesModal.tsx both call this right after constructing
+ * their map. `compact: true` alone only lets the control auto-collapse
+ * once the map gets too narrow for the full credit to fit
+ * (MapLibre's own doc comment on that option is explicit about this);
+ * it does nothing when there's room, which every map in this app
+ * always has. OSM's own attribution guidelines
+ * (osmfoundation.org/wiki/Licence/Attribution_Guidelines) explicitly
+ * allow a small expandable icon in place of spelled-out credit on
+ * space-constrained displays, so collapsing it unconditionally here -
+ * not just when MapLibre's own width check happens to agree - is
+ * still within those terms. A plain DOM tweak (toggling the native
+ * `open` attribute) rather than fighting MapLibre for a real API to
+ * do this with, since it doesn't expose one - safe because MapLibre's
+ * own expand/collapse click handling reads that same attribute
+ * natively, it doesn't track a separate open/closed state of its own
+ * to fight with. */
+export function collapseAttribution(container: HTMLElement): void {
+  const details = container.querySelector<HTMLDetailsElement>(
+    ".maplibregl-ctrl-attrib",
+  );
+  if (details) details.open = false;
+}
+
 function supportsWebGL(): boolean {
   if (typeof document === "undefined") return false;
   try {
