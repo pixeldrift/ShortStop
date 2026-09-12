@@ -1,22 +1,9 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 24">
-  <!-- Generator: Adobe Illustrator 30.0.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 123)  -->
-  <defs>
-    <style>
-      .st0 {
-        fill: none;
-        stroke: #000;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        stroke-width: 2px;
-      }
-    </style>
-  </defs>
-  <circle class="st0" cx="12" cy="12" r="10"/>
-  <polygon class="st0" points="7.35 16.65 10.18 10.18 16.65 7.35 13.82 13.82 7.35 16.65"/>
-  <line class="st0" x1="20.34" y1="12.33" x2="21.28" y2="12.33"/>
-  <line class="st0" x1="2.72" y1="12.33" x2="3.66" y2="12.33"/>
-  <line class="st0" x1="12" y1="3.98" x2="12" y2="3.05"/>
-  <line class="st0" x1="12" y1="21.61" x2="12" y2="20.67"/>
-  <polygon points="10.18 10.18 16.65 7.35 13.82 13.82 10.18 10.18"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="12" cy="12" r="10" />
+  <polygon points="7.35 16.65 10.18 10.18 16.65 7.35 13.82 13.82 7.35 16.65" />
+  <line x1="20.34" y1="12.33" x2="21.28" y2="12.33" />
+  <line x1="2.72" y1="12.33" x2="3.66" y2="12.33" />
+  <line x1="12" y1="3.98" x2="12" y2="3.05" />
+  <line x1="12" y1="21.61" x2="12" y2="20.67" />
+  <polygon points="10.18 10.18 16.65 7.35 13.82 13.82 10.18 10.18" fill="currentColor" stroke="none" />
 </svg>

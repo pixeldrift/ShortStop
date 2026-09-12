@@ -1,6 +1,15 @@
-import type { RouteGeometry, RouteWaypoint, RoutingProvider, RoutingResult } from "../types";
+import type {
+  RouteGeometry,
+  RouteWaypoint,
+  RoutingProvider,
+  RoutingResult,
+} from "../types";
 
-const ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions";
+// api.openrouteservice.org itself is deprecated and aggressively
+// throttled now that HeiGIT (the institute that actually runs this
+// service) has moved public traffic to its own domain - same API, same
+// key, just a different host (see geocode.ts's identical switch).
+const ORS_DIRECTIONS_URL = "https://api.heigit.org/v2/directions";
 
 // ORS has no dedicated school-bus profile - "driving-car" is the
 // closest general-vehicle one, and it's enough for this app's actual
@@ -33,7 +42,9 @@ export function openRouteServiceProvider(apiKey: string): RoutingProvider {
   return {
     async route(waypoints: RouteWaypoint[]): Promise<RoutingResult> {
       if (waypoints.length < 2) {
-        throw new Error("At least two waypoints are required to compute a route.");
+        throw new Error(
+          "At least two waypoints are required to compute a route.",
+        );
       }
 
       const res = await fetch(`${ORS_DIRECTIONS_URL}/${PROFILE}/geojson`, {
@@ -64,12 +75,15 @@ export function openRouteServiceProvider(apiKey: string): RoutingProvider {
       const body = (await res.json()) as OrsDirectionsResponse;
       const [feature] = body.features;
       if (!feature) {
-        throw new Error("OpenRouteService returned no route for these waypoints.");
+        throw new Error(
+          "OpenRouteService returned no route for these waypoints.",
+        );
       }
 
       const geometry: RouteGeometry = {
         type: "LineString",
-        coordinates: feature.geometry.coordinates as RouteGeometry["coordinates"],
+        coordinates: feature.geometry
+          .coordinates as RouteGeometry["coordinates"],
       };
 
       return {

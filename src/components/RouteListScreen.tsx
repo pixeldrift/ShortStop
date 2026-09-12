@@ -18,9 +18,13 @@ import {
   SchoolIcon,
   SearchIcon,
   TrashIcon,
+  WarningIcon,
 } from "./icons";
 import { downloadCsv, routeListToCsv } from "@/lib/exportCsv";
-import { fetchCommittedWaypointCache, isRouteFullyResolved } from "@/lib/routeReadiness";
+import {
+  fetchCommittedWaypointCache,
+  isRouteFullyResolved,
+} from "@/lib/routeReadiness";
 import { parseTimeToMinutes } from "@/lib/time";
 import { tripTypeLabel, TRIP_TYPE_ORDER } from "@/lib/tripType";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -53,10 +57,13 @@ type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
 // in - the only pair here that ties often enough for that to matter.
 const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
   routeNumber: (a, b) =>
-    Number(a.routeNumber) - Number(b.routeNumber) || SORT_COMPARATORS.tripType(a, b),
-  tripType: (a, b) => TRIP_TYPE_ORDER.indexOf(a.tripType) - TRIP_TYPE_ORDER.indexOf(b.tripType),
+    Number(a.routeNumber) - Number(b.routeNumber) ||
+    SORT_COMPARATORS.tripType(a, b),
+  tripType: (a, b) =>
+    TRIP_TYPE_ORDER.indexOf(a.tripType) - TRIP_TYPE_ORDER.indexOf(b.tripType),
   schoolName: (a, b) => a.schoolName.localeCompare(b.schoolName),
-  departureTime: (a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
+  departureTime: (a, b) =>
+    parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
 };
 
 // Every toggle starts off (gray/"not filtering") - an empty set here
@@ -84,7 +91,10 @@ const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
 // Admin-mode only (see its own row below) - a normal driver's view
 // already excludes unpublished routes outright, so filtering by
 // published/hidden would have nothing to do there.
-const PUBLISH_STATUS_TOGGLES: { value: "published" | "hidden"; label: string }[] = [
+const PUBLISH_STATUS_TOGGLES: {
+  value: "published" | "hidden";
+  label: string;
+}[] = [
   { value: "published", label: "Pub" },
   { value: "hidden", label: "Hid" },
 ];
@@ -96,7 +106,10 @@ const PUBLISH_STATUS_TOGGLES: { value: "published" | "hidden"; label: string }[]
  * overlay instead. Shared by the search/filter pass and the row
  * rendering below so both agree on what "published" means for either
  * kind of route. */
-function isRoutePublished(route: Route, demoHiddenIds: ReadonlySet<string>): boolean {
+function isRoutePublished(
+  route: Route,
+  demoHiddenIds: ReadonlySet<string>,
+): boolean {
   if (route.status === "demo") return !demoHiddenIds.has(route.id);
   return route.status === "published";
 }
@@ -202,18 +215,33 @@ export function RouteListScreen({
   // needed just to look one up.
   const scopedSchoolAddress = routes[0]?.schoolAddress;
   const [query, setQuery] = useState("");
-  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
-  // Only set while handleActivateFromModal's own readiness check is
-  // in flight - not surfaced as a spinner anywhere yet, just prevents a
-  // second tap on the same row from firing a second check.
-  const [checkingRouteId, setCheckingRouteId] = useState<string | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(
+    null,
+  );
+  // Whether the "draft-options" popup's own route has every geocodable
+  // stop actually resolved - checked in the background the moment that
+  // popup opens (handleEyeClick below), not before, so the popup itself
+  // never waits on it. Keyed by route id since the async check can
+  // still be in flight when the popup closes/reopens for a different
+  // row; null (not just "unknown") while nothing's resolved yet, same
+  // as any other "haven't gotten an answer" case in this app. Doesn't
+  // block Activate either way anymore (see handleActivateFromModal) -
+  // just decides whether that popup shows a plain message or a warning.
+  const [draftResolution, setDraftResolution] = useState<{
+    routeId: string;
+    ready: boolean;
+  } | null>(null);
   // Every toggle starts off - see TRIP_TYPE_TOGGLES/SCHOOL_LEVEL_TOGGLES
   // above for why an empty set is the "show everything" state here.
-  const [activeTripTypes, setActiveTripTypes] = useState<ReadonlySet<TripType>>(() => new Set());
-  const [activeSchoolLevels, setActiveSchoolLevels] = useState<ReadonlySet<SchoolLevel>>(() => new Set());
-  const [activePublishStatuses, setActivePublishStatuses] = useState<ReadonlySet<"published" | "hidden">>(
+  const [activeTripTypes, setActiveTripTypes] = useState<ReadonlySet<TripType>>(
     () => new Set(),
   );
+  const [activeSchoolLevels, setActiveSchoolLevels] = useState<
+    ReadonlySet<SchoolLevel>
+  >(() => new Set());
+  const [activePublishStatuses, setActivePublishStatuses] = useState<
+    ReadonlySet<"published" | "hidden">
+  >(() => new Set());
   // The fabricated filler rows (buildDemoRoutes, page.tsx) - on by
   // default, matching how this list always looked before this toggle
   // existed. Off just hides them from view here; page.tsx keeps
@@ -290,7 +318,8 @@ export function RouteListScreen({
     // stops propagation on the way up, same as any standard
     // "click outside to close" pattern needs to.
     document.addEventListener("click", handleOutsideClick, true);
-    return () => document.removeEventListener("click", handleOutsideClick, true);
+    return () =>
+      document.removeEventListener("click", handleOutsideClick, true);
   }, [adminMode, confirmRequest, onToggleAdminMode]);
 
   const toggleSort = (field: SortField) => {
@@ -317,19 +346,27 @@ export function RouteListScreen({
       if (!isRoutePublished(route, demoHiddenIds) && !adminMode) return false;
 
       const matchesQuery =
-        !q || route.name.toLowerCase().includes(q) || route.routeNumber.includes(q);
-      const publishStatus: "published" | "hidden" = isRoutePublished(route, demoHiddenIds)
+        !q ||
+        route.name.toLowerCase().includes(q) ||
+        route.routeNumber.includes(q);
+      const publishStatus: "published" | "hidden" = isRoutePublished(
+        route,
+        demoHiddenIds,
+      )
         ? "published"
         : "hidden";
       const matchesToggles =
         (activeTripTypes.size === 0 || activeTripTypes.has(route.tripType)) &&
-        (activeSchoolLevels.size === 0 || activeSchoolLevels.has(route.schoolLevel)) &&
+        (activeSchoolLevels.size === 0 ||
+          activeSchoolLevels.has(route.schoolLevel)) &&
         // Only admin mode ever renders this toggle row (a normal
         // driver's view already excludes hidden routes outright above),
         // but guard on adminMode here too so a stale selection can't
         // silently filter the driver-facing list if admin mode toggles
         // off without this set happening to already be empty.
-        (!adminMode || activePublishStatuses.size === 0 || activePublishStatuses.has(publishStatus));
+        (!adminMode ||
+          activePublishStatuses.size === 0 ||
+          activePublishStatuses.has(publishStatus));
       return matchesQuery && matchesToggles;
     });
 
@@ -357,50 +394,41 @@ export function RouteListScreen({
   // published route gets the one-button "Deactivate" confirm (hiding
   // never needs a readiness check, see canToggleStatus's own reasoning
   // in EditRouteScreen.tsx); a draft one gets the Delete/Activate
-  // popup - readiness is only checked once "Activate" is actually
-  // pressed inside it (handleActivateFromModal below), not before the
-  // popup can even open, which used to skip the popup entirely for a
-  // not-yet-ready route and land on the edit screen with no visible
-  // confirmation the eye tap had done anything at all.
+  // popup, plus a background check (below) of whether every geocodable
+  // stop has actually resolved yet - purely informational now (see
+  // handleActivateFromModal), so it never holds up the popup opening.
   function handleEyeClick(route: Route) {
     if (isRoutePublished(route, demoHiddenIds)) {
       setConfirmRequest({ type: "deactivate", route });
-    } else {
-      setConfirmRequest({ type: "draft-options", route });
-    }
-  }
-
-  // The draft-options popup's own "Activate" button - checks the same
-  // "every geocodable stop has to actually resolve first" rule
-  // EditRouteScreen.tsx enforces, against the route's own committed
-  // sidecar cache merged with this session's own fetched-but-not-yet-
-  // committed overlay (adminWaypointCaches). Ready: activates and
-  // closes the popup. Not ready: closes the popup and goes to the edit
-  // screen instead, where the real warning UI (and the Fetch/Fetch All
-  // buttons that actually fix this) already lives - no separate
-  // warning needed here. A demo route has no real committed sidecar
-  // file of its own to check (it's fabricated), so it skips the
-  // readiness check entirely and always just activates.
-  async function handleActivateFromModal(route: Route) {
-    if (route.status === "demo") {
-      onSetRouteStatus(route, "published");
-      setConfirmRequest(null);
       return;
     }
-    setCheckingRouteId(route.id);
-    try {
-      const committed = await fetchCommittedWaypointCache();
-      const merged = { ...committed, ...(adminWaypointCaches[route.id] ?? {}) };
-      if (isRouteFullyResolved(route, merged)) {
-        onSetRouteStatus(route, "published");
-        setConfirmRequest(null);
-      } else {
-        setConfirmRequest(null);
-        onEditRoute(route);
-      }
-    } finally {
-      setCheckingRouteId(null);
+    setConfirmRequest({ type: "draft-options", route });
+    setDraftResolution(null);
+    if (route.status === "demo") {
+      // No real committed sidecar cache to check for a fabricated demo
+      // route - it's always "ready" the same way it always just
+      // activated outright below.
+      setDraftResolution({ routeId: route.id, ready: true });
+      return;
     }
+    void fetchCommittedWaypointCache().then((committed) => {
+      const merged = { ...committed, ...(adminWaypointCaches[route.id] ?? {}) };
+      setDraftResolution({
+        routeId: route.id,
+        ready: isRouteFullyResolved(route, merged),
+      });
+    });
+  }
+
+  // The draft-options popup's own "Activate" button - a route with
+  // unresolved coordinates can activate too now (a warning in the
+  // popup above this button already said so, via draftResolution) -
+  // this just always publishes rather than redirecting to the edit
+  // screen the way it used to when something wasn't fully resolved
+  // yet.
+  function handleActivateFromModal(route: Route) {
+    onSetRouteStatus(route, "published");
+    setConfirmRequest(null);
   }
 
   function handleDownloadCsv() {
@@ -430,7 +458,9 @@ export function RouteListScreen({
               >
                 <BackArrowIcon className="h-5 w-5" />
               </button>
-              <h1 className="font-heading flex items-center gap-2 text-4xl font-black tracking-tight">{title}</h1>
+              <h1 className="font-heading flex items-center gap-2 text-4xl font-black tracking-tight">
+                {title}
+              </h1>
               <span className="h-10 w-10 shrink-0" aria-hidden="true" />
             </div>
             {/* Same MapPinIcon + address convention every other
@@ -562,7 +592,10 @@ export function RouteListScreen({
                 this toggle would have nothing to do there. */}
             {adminMode && (
               <>
-                <div className="w-px self-stretch bg-zinc-300" aria-hidden="true" />
+                <div
+                  className="w-px self-stretch bg-zinc-300"
+                  aria-hidden="true"
+                />
                 <div className="flex flex-col gap-0.5">
                   {PUBLISH_STATUS_TOGGLES.map((toggle) => {
                     const active = activePublishStatuses.has(toggle.value);
@@ -685,7 +718,9 @@ export function RouteListScreen({
                 >
                   <button
                     type="button"
-                    onClick={() => (adminMode ? onEditRoute(route) : onSelect(route))}
+                    onClick={() =>
+                      adminMode ? onEditRoute(route) : onSelect(route)
+                    }
                     className="col-span-3 grid grid-cols-[5.75rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-zinc-100"
                   >
                     {/* leading-none (line-height: 1) still isn't tight -
@@ -717,7 +752,9 @@ export function RouteListScreen({
                         div loosely centered around it. */}
                     <div
                       className={`flex gap-1.5 ${
-                        route.tripType === "dropoff" ? "items-start" : "items-end"
+                        route.tripType === "dropoff"
+                          ? "items-start"
+                          : "items-end"
                       }`}
                     >
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
@@ -725,13 +762,18 @@ export function RouteListScreen({
                       </span>
                       <div
                         className={`flex gap-0.5 text-blue-500 ${
-                          route.tripType === "dropoff" ? "items-start" : "items-end"
+                          route.tripType === "dropoff"
+                            ? "items-start"
+                            : "items-end"
                         }`}
                       >
                         <span className="font-heading text-xs leading-[0.75] font-black">
                           {tripTypeLabel(route.tripType)}
                         </span>
-                        <TripTypeIcon tripType={route.tripType} className="h-3 w-3" />
+                        <TripTypeIcon
+                          tripType={route.tripType}
+                          className="h-3 w-3"
+                        />
                       </div>
                     </div>
                     <span className="min-w-0 pl-1.5">
@@ -745,13 +787,12 @@ export function RouteListScreen({
                     <button
                       type="button"
                       onClick={() => handleEyeClick(route)}
-                      disabled={checkingRouteId === route.id}
                       aria-label={
                         isPublished
                           ? `Deactivate route ${route.routeNumber}`
                           : `Activate route ${route.routeNumber}`
                       }
-                      className="justify-self-center p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
+                      className="justify-self-center p-1 text-blue-600 active:opacity-70"
                     >
                       {isPublished ? (
                         <EyeIcon className="h-4 w-4" />
@@ -763,7 +804,9 @@ export function RouteListScreen({
                     <button
                       type="button"
                       onClick={() => onToggleFavorite(route)}
-                      aria-label={route.isFavorite ? "Remove favorite" : "Add favorite"}
+                      aria-label={
+                        route.isFavorite ? "Remove favorite" : "Add favorite"
+                      }
                       className="justify-self-center p-1 active:opacity-70"
                     >
                       <HeartIcon
@@ -778,7 +821,11 @@ export function RouteListScreen({
 
             {filtered.length === 0 && (
               <p className="px-2 py-6 text-center text-sm text-zinc-500">
-                {query ? <>No routes match &ldquo;{query}&rdquo;.</> : "No routes match the selected filters."}
+                {query ? (
+                  <>No routes match &ldquo;{query}&rdquo;.</>
+                ) : (
+                  "No routes match the selected filters."
+                )}
               </p>
             )}
           </div>
@@ -864,7 +911,10 @@ export function RouteListScreen({
           exiting is deliberately the gray/neutral button of the pair,
           adding a route is the blue "forward" action. */}
       {adminMode && (
-        <div ref={controlsRef} className="flex w-full max-w-md shrink-0 items-center gap-3">
+        <div
+          ref={controlsRef}
+          className="flex w-full max-w-md shrink-0 items-center gap-3"
+        >
           <button
             type="button"
             onClick={onToggleAdminMode}
@@ -905,24 +955,38 @@ export function RouteListScreen({
           }}
         />
       )}
-      {confirmRequest?.type === "draft-options" && (
-        <ConfirmModal
-          title={`Route ${confirmRequest.route.routeNumber} is in Draft`}
-          message="It won't be visible to drivers until it's activated."
-          confirmLabel="Activate"
-          confirmIcon={<EyeIcon className="h-4 w-4" />}
-          secondaryLabel="Delete"
-          secondaryIcon={<TrashIcon className="h-4 w-4" />}
-          onSecondary={() => {
-            onDeleteRoute(confirmRequest.route);
-            setConfirmRequest(null);
-          }}
-          onCancel={() => setConfirmRequest(null)}
-          onConfirm={() => {
-            void handleActivateFromModal(confirmRequest.route);
-          }}
-        />
-      )}
+      {confirmRequest?.type === "draft-options" &&
+        (() => {
+          const unresolved =
+            draftResolution?.routeId === confirmRequest.route.id &&
+            !draftResolution.ready;
+          return (
+            <ConfirmModal
+              title={`Route ${confirmRequest.route.routeNumber} is in Draft`}
+              message={
+                unresolved ? (
+                  <span className="flex items-center justify-center gap-1.5 text-amber-600">
+                    <WarningIcon className="h-4 w-4 shrink-0" />
+                    Some locations aren&rsquo;t verified yet - the map may not
+                    accurately display this route once activated.
+                  </span>
+                ) : (
+                  "It won't be visible to drivers until it's activated."
+                )
+              }
+              confirmLabel="Activate"
+              confirmIcon={<EyeIcon className="h-4 w-4" />}
+              secondaryLabel="Delete"
+              secondaryIcon={<TrashIcon className="h-4 w-4" />}
+              onSecondary={() => {
+                onDeleteRoute(confirmRequest.route);
+                setConfirmRequest(null);
+              }}
+              onCancel={() => setConfirmRequest(null)}
+              onConfirm={() => handleActivateFromModal(confirmRequest.route)}
+            />
+          );
+        })()}
     </div>
   );
 }
@@ -959,7 +1023,10 @@ function SchoolNameLabel({ name }: { name: string }) {
   }, [name]);
 
   return (
-    <span ref={ref} className="block truncate text-sm leading-snug text-zinc-700">
+    <span
+      ref={ref}
+      className="block truncate text-sm leading-snug text-zinc-700"
+    >
       {dropSchoolWord ? name.replace(/ School$/, "") : name}
     </span>
   );

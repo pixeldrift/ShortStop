@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { extractCityState, getLastKnownOrsQuota } from "@/lib/geocode";
-import type { ApiQuota, GeocodableQuery } from "@/lib/geocode";
+import { extractCityState } from "@/lib/geocode";
+import type { GeocodableQuery } from "@/lib/geocode";
 import { fetchOneLocation } from "@/lib/resolveWaypoint";
 import type { WaypointCacheEntry } from "@/lib/waypointCache";
 
@@ -57,19 +57,16 @@ export interface GeocodeResponseBody {
    * not just this session's own `anchor` state above. */
   anchorEntry: WaypointCacheEntry | null;
   result: WaypointCacheEntry;
-  /** OpenRouteService's own account-wide rate limit, if this request
-   * made a real ORS request and it happened to report one (see
-   * geocode.ts's own getLastKnownOrsQuota) - null otherwise, including
-   * for an Overpass intersection lookup that reused an already-known
-   * anchor. */
-  quota: ApiQuota | null;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
   const apiKey = process.env.ORS_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "ORS_API_KEY isn't configured on the server - see .env.local.example." },
+      {
+        error:
+          "ORS_API_KEY isn't configured on the server - see .env.local.example.",
+      },
       { status: 500 },
     );
   }
@@ -83,25 +80,38 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const schoolAddress = body.schoolAddress?.trim();
   if (!schoolAddress) {
-    return NextResponse.json({ error: "schoolAddress is required." }, { status: 400 });
+    return NextResponse.json(
+      { error: "schoolAddress is required." },
+      { status: 400 },
+    );
   }
   const locationContext = extractCityState(schoolAddress);
   if (!locationContext) {
     return NextResponse.json(
-      { error: `Couldn't pull a "City, ST" context out of schoolAddress: "${schoolAddress}"` },
+      {
+        error: `Couldn't pull a "City, ST" context out of schoolAddress: "${schoolAddress}"`,
+      },
       { status: 400 },
     );
   }
 
   const anchor = body.anchor ?? null;
-  const result = await fetchOneLocation(body.query, { schoolAddress, locationContext, apiKey, anchor });
-  if ("error" in result) return NextResponse.json({ error: result.error, raw: result.raw }, { status: 502 });
+  const result = await fetchOneLocation(body.query, {
+    schoolAddress,
+    locationContext,
+    apiKey,
+    anchor,
+  });
+  if ("error" in result)
+    return NextResponse.json(
+      { error: result.error, raw: result.raw },
+      { status: 502 },
+    );
 
   const responseBody: GeocodeResponseBody = {
     anchor: result.anchor,
     anchorEntry: result.anchorEntry,
     result: result.entry,
-    quota: getLastKnownOrsQuota(),
   };
   return NextResponse.json(responseBody);
 }

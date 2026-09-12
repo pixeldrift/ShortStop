@@ -28,10 +28,30 @@ import type { WaypointQuery } from "./deriveWaypoints";
  * want to guess *which* part of a query is bad (see
  * routeResolutionStatus.ts) need this distinction: only a genuine
  * not-found is worth that guess at all - guessing over a 403 or a
- * missing API key would just be wrong. */
+ * missing API key would just be wrong.
+ *
+ * `rateLimited` is true only for a real 429 from the geocoder - a
+ * batch caller (EditRouteScreen.tsx's runFetchAll) uses this to stop
+ * and say so plainly instead of continuing to spend, and fail, every
+ * remaining query in the batch. */
 export type WaypointCacheEntry =
-  | { status: "ok"; lat: number; lon: number; displayName: string; source: string; provider: string }
-  | { status: "error"; message: string; notFound?: boolean; raw?: string; source: string; provider: string };
+  | {
+      status: "ok";
+      lat: number;
+      lon: number;
+      displayName: string;
+      source: string;
+      provider: string;
+    }
+  | {
+      status: "error";
+      message: string;
+      notFound?: boolean;
+      rateLimited?: boolean;
+      raw?: string;
+      source: string;
+      provider: string;
+    };
 
 /** public/data/route-125-waypoints.json's shape: every entry keyed by
  * waypointCacheKey(query) below. In practice only ever holds "ok"
