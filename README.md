@@ -114,7 +114,7 @@ Vercel value).
   driver/routing data exists.
 - Printable, per-route sheets for handing to a substitute driver — the
   admin "Download stops" link is a flat CSV export today.
-- No `public/maps/rutherford-county.pmtiles` file is committed yet, so
+- No `public/maps/middle-tennessee.pmtiles` file is committed yet, so
   every map still renders on the Leaflet fallback in production. See
   `src/lib/mapEngine.ts`'s doc comment for the exact steps to generate
   and place one (a Protomaps extract for the service area) and switch

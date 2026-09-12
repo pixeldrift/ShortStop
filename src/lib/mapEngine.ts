@@ -8,14 +8,20 @@
  * yet, silently and identically falls back everywhere instead of only
  * some maps working.
  *
- * This repo does NOT ship rutherford-county.pmtiles itself - it's a
- * real (tens-of-MB) binary data file built from OpenStreetMap, not
- * something to commit speculatively. To generate one:
- *   1. https://app.protomaps.com/downloads - draw a box around
- *      Rutherford County, TN (and a little padding for routes that
- *      touch its edges), download the .pmtiles extract.
- *   2. Save it as public/maps/rutherford-county.pmtiles in this repo
- *      (matching PMTILES_URL below).
+ * This repo does NOT ship middle-tennessee.pmtiles itself - it's a
+ * real (tens-of-MB, depending on the drawn extent) binary data file
+ * built from OpenStreetMap, not something to commit speculatively. To
+ * generate one:
+ *   1. https://app.protomaps.com/downloads - draw a box covering the
+ *      service area (and a little padding for routes that touch its
+ *      edges), download the .pmtiles extract. This doesn't need to
+ *      stay Rutherford-County-sized - a wider extract (e.g. one
+ *      spanning multiple counties) works the same way, just a bigger
+ *      file; name it for whatever it actually covers, not the one
+ *      county this app started in.
+ *   2. Save it as public/maps/middle-tennessee.pmtiles in this repo
+ *      (matching PMTILES_URL below - rename both together if the
+ *      extract's own coverage changes again).
  *   3. Reload the app - resolveMapEngine() finds it via the HEAD check
  *      below and both maps switch to it automatically, no other code
  *      changes needed. Until then, every map keeps working exactly as
@@ -25,8 +31,11 @@
 /** Where both callers expect the self-hosted PMTiles file, if one has
  * been generated and placed per this module's own doc comment above -
  * a plain static asset under /public, no server-side tile endpoint of
- * this app's own needed. */
-export const PMTILES_URL = "/maps/rutherford-county.pmtiles";
+ * this app's own needed. Named for the extract's actual coverage
+ * (currently a central-TN rectangle spanning roughly Clarksville to
+ * Chattanooga, not just Rutherford County) so the filename doesn't go
+ * stale the next time the drawn area changes. */
+export const PMTILES_URL = "/maps/middle-tennessee.pmtiles";
 
 function supportsWebGL(): boolean {
   if (typeof document === "undefined") return false;
