@@ -13,6 +13,7 @@ import {
 } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import { TILE_ATTRIBUTION, TILE_SUBDOMAINS, TILE_URL } from "./RouteMap";
+import type { RoutingResult } from "@/lib/routing/types";
 
 const DEFAULT_ZOOM = 18;
 
@@ -43,6 +44,7 @@ const DEFAULT_ZOOM = 18;
  */
 export function PlaceCoordinatesModal({
   initialCenter,
+  routeContext,
   onCancel,
   onSetCoordinates,
 }: {
@@ -51,6 +53,16 @@ export function PlaceCoordinatesModal({
    * exist (see StepRowEditor's own call site) - just a starting guess
    * the admin drags away from, never assumed correct on its own. */
   initialCenter: { lat: number; lon: number };
+  /** Every already-resolved stop on this route, in order, school
+   * included (EditRouteScreen's own routeContextPoints) - drawn as the
+   * same road-following blue line RouteMap.tsx draws while driving, so
+   * an admin placing a pin manually can see where it actually falls
+   * relative to the rest of the route rather than guessing from the
+   * bare tile background alone. Under two points draws nothing - same
+   * "quietly do without it" fallback RouteMap.tsx's own identical fetch
+   * already uses for a request/response failure, since there's no line
+   * to draw between fewer than two points anyway. */
+  routeContext: { lat: number; lon: number }[];
   onCancel: () => void;
   onSetCoordinates: (lat: number, lon: number) => void;
 }) {
@@ -68,17 +80,20 @@ export function PlaceCoordinatesModal({
       if (cancelled) return;
       cleanup =
         engine === "maplibre"
-          ? mountMapLibre(container, initialCenter, setCenter, () => cancelled)
-          : mountLeaflet(container, initialCenter, setCenter, () => cancelled);
+          ? mountMapLibre(container, initialCenter, routeContext, setCenter, () => cancelled)
+          : mountLeaflet(container, initialCenter, routeContext, setCenter, () => cancelled);
     });
 
     return () => {
       cancelled = true;
       cleanup?.();
     };
-    // initialCenter is only ever read on mount (the map's own starting
-    // point) - re-centering on every render would fight the admin's own
-    // drag the instant it happened.
+    // initialCenter/routeContext are only ever read on mount (the map's
+    // own starting point and its one-time route-line fetch) - re-fetching
+    // on every render (routeContext is a fresh array from EditRouteScreen's
+    // own useMemo whenever the underlying route data actually changes,
+    // but StepRowEditor itself re-renders far more often than that) would
+    // be wasted work for a line that never needs to move once drawn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -129,6 +144,7 @@ type CenterSetter = (center: { lat: number; lon: number }) => void;
 function mountLeaflet(
   container: HTMLDivElement,
   initialCenter: { lat: number; lon: number },
+  routeContext: { lat: number; lon: number }[],
   setCenter: CenterSetter,
   cancelledRef: () => boolean,
 ): () => void {
@@ -154,6 +170,34 @@ function mountLeaflet(
       const c = map.getCenter();
       setCenter({ lat: c.lat, lon: c.lng });
     });
+
+    // The route's own road-following line, for spatial context while
+    // placing this pin - see this function's own `routeContext` param
+    // doc for why fewer than two points draws nothing, and RouteMap.tsx's
+    // identical fetch for why a request/response failure also just
+    // means no line draws, never a fabricated straight one standing in.
+    if (routeContext.length > 1) {
+      fetch("/api/route-geometry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waypoints: routeContext }),
+      })
+        .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+        .then((result) => {
+          if (cancelledRef() || !map || !result) return;
+          const roadLatLngs: [number, number][] = result.geometry.coordinates.map(
+            ([lon, lat]) => [lat, lon],
+          );
+          L.polyline(roadLatLngs, {
+            color: "#2563eb",
+            weight: 4,
+            opacity: 0.7,
+            lineJoin: "round",
+            interactive: false,
+          }).addTo(map);
+        })
+        .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+    }
   });
 
   return () => {
@@ -169,6 +213,7 @@ function mountLeaflet(
 function mountMapLibre(
   container: HTMLDivElement,
   initialCenter: { lat: number; lon: number },
+  routeContext: { lat: number; lon: number }[],
   setCenter: CenterSetter,
   cancelledRef: () => boolean,
 ): () => void {
@@ -196,11 +241,48 @@ function mountMapLibre(
         // modal's own map is even smaller than the route info screen's.
         attributionControl: { customAttribution: PMTILES_ATTRIBUTION, compact: true },
       });
+      const mapInstance = map;
       collapseAttribution(container);
-      map.on("move", () => {
-        if (!map) return;
-        const c = map.getCenter();
+      mapInstance.on("move", () => {
+        const c = mapInstance.getCenter();
         setCenter({ lat: c.lat, lon: c.lng });
+      });
+
+      // addSource/addLayer need the style to have actually finished
+      // loading first - same "load" gate RouteMap.tsx's own
+      // mountMapLibre uses, for the same reason.
+      mapInstance.once("load", () => {
+        if (cancelledRef() || routeContext.length <= 1) return;
+        // The route's own road-following line, for spatial context
+        // while placing this pin - see this function's own
+        // `routeContext` param doc for why a request/response failure
+        // also just means no line draws, never a fabricated straight
+        // one standing in.
+        fetch("/api/route-geometry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ waypoints: routeContext }),
+        })
+          .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+          .then((result) => {
+            if (cancelledRef() || !result) return;
+            mapInstance.addSource("route-line", {
+              type: "geojson",
+              data: {
+                type: "Feature",
+                properties: {},
+                geometry: { type: "LineString", coordinates: result.geometry.coordinates },
+              },
+            });
+            mapInstance.addLayer({
+              id: "route-line",
+              type: "line",
+              source: "route-line",
+              layout: { "line-cap": "round", "line-join": "round" },
+              paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
+            });
+          })
+          .catch((err) => console.warn("Couldn't fetch route geometry:", err));
       });
     }),
   );

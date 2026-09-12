@@ -649,6 +649,7 @@ function StepRowEditor({
   fetching,
   fetchLocked,
   placementGuess,
+  routeContext,
   onChange,
   onFetch,
   onManualCoordinates,
@@ -690,6 +691,16 @@ function StepRowEditor({
    * when neither side has resolved yet (PlaceCoordinatesModal falls
    * back to a fixed default in that case). */
   placementGuess: { lat: number; lon: number } | null;
+  /** Every already-resolved stop on this route, in order, school
+   * included at whichever end it belongs (EditRouteScreen's own
+   * routeContextPoints) - handed straight through to
+   * PlaceCoordinatesModal so an admin placing a pin manually can see
+   * the route's actual road-following line for spatial context, the
+   * same line RouteMap.tsx draws while driving. Under two points (not
+   * enough to draw a line between) still comes through as whatever
+   * short array it is - PlaceCoordinatesModal itself is the one that
+   * decides that's too few to bother drawing. */
+  routeContext: { lat: number; lon: number }[];
   onChange: (patch: Partial<RawRouteRow>) => void;
   onFetch: () => void;
   /** A coordinate typed/pasted directly into the Latitude/Longitude
@@ -943,6 +954,7 @@ function StepRowEditor({
                 lon: LA_VERGNE_CENTER[1],
               }
             }
+            routeContext={routeContext}
             onCancel={() => setShowPlaceModal(false)}
             onSetCoordinates={(lat, lon) => {
               onManualCoordinates(lat, lon);
@@ -2079,6 +2091,25 @@ export function EditRouteScreen({
     () => resolutionCounts(resolutionRows),
     [resolutionRows],
   );
+  // Every already-resolved stop, in route order, with the school
+  // spliced into whichever end tripType puts it - RouteMap.tsx's own
+  // orderedWaypointsRef does the same splice for the same reason (the
+  // school is a real leg of the trip but never one of `waypoints`
+  // itself). PlaceCoordinatesModal's own context line reuses this list
+  // to draw the actual route while an admin is placing a pin, so a
+  // route with under two resolved points (nothing to draw a line
+  // between yet) is left as an empty array rather than a special case
+  // that component needs to know about.
+  const routeContextPoints = useMemo(() => {
+    const resolved = resolutionRows
+      .filter((r) => r.status === "resolved")
+      .map((r) => ({ lat: r.lat, lon: r.lon }));
+    if (schoolLat == null || schoolLon == null) return resolved;
+    const school = { lat: schoolLat, lon: schoolLon };
+    return tripType === "dropoff"
+      ? [school, ...resolved]
+      : [...resolved, school];
+  }, [resolutionRows, schoolLat, schoolLon, tripType]);
 
   // The row currently open in StepRowEditor's own waypoint, re-derived
   // from `draftRow` rather than read off `waypoints[expandedIndex]`
@@ -3172,6 +3203,7 @@ export function EditRouteScreen({
                 }
                 fetchLocked={singleFetchCoolingDown}
                 placementGuess={nearestResolvedGuess(resolutionRows, index)}
+                routeContext={routeContextPoints}
                 onChange={handleDraftChange}
                 onFetch={() =>
                   draftWaypoint &&

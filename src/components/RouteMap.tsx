@@ -57,6 +57,12 @@ const DEFAULT_ZOOM = 13;
 // Roughly "which side of the street" zoom - what driving mode flies to
 // for the current step, once its own coordinates are known.
 const STREET_ZOOM = 17;
+// Overview mode only shows every stop/turn once the admin has zoomed in
+// this far past the route's own auto-fit framing - below it, only the
+// first and last waypoint pins show (drawOverviewEndpoints), same as
+// driving mode's own full pin set (drawDrivingPins) reused as-is once
+// crossed.
+const OVERVIEW_DETAIL_ZOOM = 15;
 
 // CARTO's free Voyager basemap rather than tile.openstreetmap.org
 // directly: same OSM data underneath (styled to look close to the
@@ -593,6 +599,10 @@ function mountLeaflet(
       }).addTo(map);
       const pinsGroup = L.layerGroup().addTo(map);
       pinsGroupRef.current = pinsGroup;
+      // Whether overview mode is currently showing every stop/turn
+      // (OVERVIEW_DETAIL_ZOOM) rather than just the route's two
+      // endpoints - see mountMapLibre's own identical flag for why.
+      let overviewDetailed = false;
 
       // A 404 (the common case right now - see the `stops` prop doc
       // above) resolves to {} rather than rejecting, same as any other
@@ -672,42 +682,34 @@ function mountLeaflet(
             );
         }
 
-        // Just one pin marking where the route begins - every
-        // individual stop/turn pin is deliberately left off this
-        // zoomed-out view (see this component's own `mode` doc
-        // comment). clearLayers() first makes this safe to call
-        // more than once (syncToModeRef can fire again before mode
-        // ever actually changes).
-        function drawOverviewPin() {
+        // Just the route's two ends - every individual stop/turn pin in
+        // between is deliberately left off this zoomed-out view
+        // (drawDrivingPins below draws the full set once the admin
+        // zooms in past OVERVIEW_DETAIL_ZOOM). Reads off
+        // orderedWaypointsRef rather than stopsRef/schoolRef directly
+        // since that's already in trip order with the school spliced
+        // into whichever end tripType puts it - the same list the
+        // road-geometry request and bearing math both use.
+        // clearLayers() first makes this safe to call more than once
+        // (syncToModeRef can fire again before mode ever actually
+        // changes).
+        function drawOverviewEndpoints() {
           pinsGroup.clearLayers();
-          if (schoolRef.current && tripTypeRef.current === "dropoff") {
-            const latLng: [number, number] = [
-              schoolRef.current.lat,
-              schoolRef.current.lon,
-            ];
+          const ordered = orderedWaypointsRef.current;
+          if (ordered.length === 0) return;
+          const endpoints =
+            ordered.length === 1 ? [ordered[0]] : [ordered[0], ordered[ordered.length - 1]];
+          for (const point of endpoints) {
+            const stop = stopsRef.current.find((s) => s.waypointKey === point.key);
+            const isSchool = point.key === null;
+            if (!isSchool && !stop) continue;
+            const latLng: [number, number] = [point.lat, point.lon];
             L.marker(latLng, {
               icon: L.divIcon({
                 className: "",
-                html: schoolMarkerHtml(),
-                iconSize: [32, 32],
-                iconAnchor: [16, 30],
-              }),
-              interactive: false,
-            }).addTo(pinsGroup);
-            return;
-          }
-          const firstStop = stopsRef.current.find(
-            (s) => cache[s.waypointKey]?.status === "ok",
-          );
-          const entry = firstStop && cache[firstStop.waypointKey];
-          if (firstStop && entry && entry.status === "ok") {
-            const latLng: [number, number] = [entry.lat, entry.lon];
-            L.marker(latLng, {
-              icon: L.divIcon({
-                className: "",
-                html: stopMarkerHtml(firstStop.number),
-                iconSize: [28, 44],
-                iconAnchor: [14, 44],
+                html: isSchool ? schoolMarkerHtml() : stopMarkerHtml(stop!.number),
+                iconSize: isSchool ? [32, 32] : [28, 44],
+                iconAnchor: isSchool ? [16, 30] : [14, 44],
               }),
               interactive: false,
             }).addTo(pinsGroup);
@@ -769,7 +771,9 @@ function mountLeaflet(
         syncToModeRef.current = () => {
           if (!map) return;
           if (modeRef.current === "overview") {
-            drawOverviewPin();
+            overviewDetailed = map.getZoom() >= OVERVIEW_DETAIL_ZOOM;
+            if (overviewDetailed) drawDrivingPins();
+            else drawOverviewEndpoints();
             // Frame the whole route right away - the road-geometry
             // fetch above will tighten this once it resolves, but
             // that's a network round trip away and shouldn't leave
@@ -819,6 +823,19 @@ function mountLeaflet(
           });
         };
         syncToModeRef.current();
+
+        // Reveals every stop/turn pin once the admin zooms in past
+        // OVERVIEW_DETAIL_ZOOM while overview mode is showing - see
+        // mountMapLibre's own identical handler for why "zoomend" and
+        // why it's a no-op in driving mode.
+        map.on("zoomend", () => {
+          if (cancelledRef() || !map || modeRef.current !== "overview") return;
+          const detailed = map.getZoom() >= OVERVIEW_DETAIL_ZOOM;
+          if (detailed === overviewDetailed) return;
+          overviewDetailed = detailed;
+          if (detailed) drawDrivingPins();
+          else drawOverviewEndpoints();
+        });
       });
 
       // The bus is moving for the whole trip, so this tracks the
@@ -964,6 +981,11 @@ function mountMapLibre(args: MountArgs): () => void {
   let map: MapLibreMap | undefined;
   let watchId: number | undefined;
   let pins: MapLibreMarker[] = [];
+  // Whether overview mode is currently showing every stop/turn
+  // (OVERVIEW_DETAIL_ZOOM) rather than just the route's two endpoints -
+  // tracked so the map's own "zoomend" handler only redraws pins on an
+  // actual crossing, not on every zoom tick.
+  let overviewDetailed = false;
 
   function clearPins() {
     for (const marker of pins) marker.remove();
@@ -1116,30 +1138,27 @@ function mountMapLibre(args: MountArgs): () => void {
               );
           }
 
-          function drawOverviewPin() {
+          // Just the route's two ends - every individual stop/turn pin
+          // in between is deliberately left off this zoomed-out view
+          // (drawDrivingPins below draws the full set once the admin
+          // zooms in past OVERVIEW_DETAIL_ZOOM). Reads off
+          // orderedWaypointsRef rather than stopsRef/schoolRef directly
+          // since that's already in trip order with the school spliced
+          // into whichever end tripType puts it - the same list the
+          // road-geometry request and bearing math both use.
+          function drawOverviewEndpoints() {
             clearPins();
-            if (schoolRef.current && tripTypeRef.current === "dropoff") {
+            const ordered = orderedWaypointsRef.current;
+            if (ordered.length === 0) return;
+            const endpoints =
+              ordered.length === 1 ? [ordered[0]] : [ordered[0], ordered[ordered.length - 1]];
+            for (const point of endpoints) {
+              const stop = stopsRef.current.find((s) => s.waypointKey === point.key);
+              const html = point.key === null ? schoolMarkerHtml() : stop && stopMarkerHtml(stop.number);
+              if (!html) continue;
               pins.push(
-                new maplibregl.Marker({
-                  element: elementFromHtml(schoolMarkerHtml()),
-                  anchor: "bottom",
-                })
-                  .setLngLat(toLngLat(schoolRef.current))
-                  .addTo(mapInstance),
-              );
-              return;
-            }
-            const firstStop = stopsRef.current.find(
-              (s) => cache[s.waypointKey]?.status === "ok",
-            );
-            const entry = firstStop && cache[firstStop.waypointKey];
-            if (firstStop && entry && entry.status === "ok") {
-              pins.push(
-                new maplibregl.Marker({
-                  element: elementFromHtml(stopMarkerHtml(firstStop.number)),
-                  anchor: "bottom",
-                })
-                  .setLngLat(toLngLat(entry))
+                new maplibregl.Marker({ element: elementFromHtml(html), anchor: "bottom" })
+                  .setLngLat(toLngLat(point))
                   .addTo(mapInstance),
               );
             }
@@ -1187,7 +1206,9 @@ function mountMapLibre(args: MountArgs): () => void {
 
           syncToModeRef.current = () => {
             if (modeRef.current === "overview") {
-              drawOverviewPin();
+              overviewDetailed = mapInstance.getZoom() >= OVERVIEW_DETAIL_ZOOM;
+              if (overviewDetailed) drawDrivingPins();
+              else drawOverviewEndpoints();
               if (orderedWaypointsRef.current.length > 0) {
                 const lons = orderedWaypointsRef.current.map((w) => w.lon);
                 const lats = orderedWaypointsRef.current.map((w) => w.lat);
@@ -1233,6 +1254,21 @@ function mountMapLibre(args: MountArgs): () => void {
             });
           };
           syncToModeRef.current();
+
+          // Reveals every stop/turn pin once the admin zooms in past
+          // OVERVIEW_DETAIL_ZOOM while overview mode is showing - a
+          // no-op in driving mode, which manages its own pin reveal via
+          // drivingPinsRevealedRef above. "zoomend" (not "zoom") so this
+          // redraws once per gesture/animation rather than on every
+          // intermediate frame.
+          mapInstance.on("zoomend", () => {
+            if (cancelledRef() || modeRef.current !== "overview") return;
+            const detailed = mapInstance.getZoom() >= OVERVIEW_DETAIL_ZOOM;
+            if (detailed === overviewDetailed) return;
+            overviewDetailed = detailed;
+            if (detailed) drawDrivingPins();
+            else drawOverviewEndpoints();
+          });
         });
       });
 
