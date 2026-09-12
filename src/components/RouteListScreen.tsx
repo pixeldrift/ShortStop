@@ -26,7 +26,7 @@ import {
   isRouteFullyResolved,
 } from "@/lib/routeReadiness";
 import { parseTimeToMinutes } from "@/lib/time";
-import { tripTypeLabel, TRIP_TYPE_ORDER } from "@/lib/tripType";
+import { TRIP_TYPE_ORDER } from "@/lib/tripType";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 import { SortableHeader } from "./SortableHeader";
@@ -739,32 +739,24 @@ export function RouteListScreen({
                         landing here. */}
                     {/* am.svg/pm.svg have their own "AM"/"PM" lettering
                         baked right into the glyph, so a pickup/dropoff
-                        badge is just that icon alone now, sized to the
-                        route number's own full height rather than a
-                        small icon next to small text. FlagIcon (every
-                        other TripType) has no such lettering of its
-                        own, so that case keeps the original small
-                        icon+text pairing. */}
+                        badge is just that icon alone, sized to the
+                        route number's own full height. Every other
+                        TripType (fieldtrip/other) skips the badge
+                        entirely rather than falling back to some other
+                        icon+text pairing - those routes may not even
+                        have a morning/afternoon distinction to badge in
+                        the first place, and there's no real example of
+                        one yet to design that case against. */}
                     <div className="flex items-center gap-1">
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
-                      {route.tripType === "pickup" ||
-                      route.tripType === "dropoff" ? (
+                      {(route.tripType === "pickup" ||
+                        route.tripType === "dropoff") && (
                         <TripTypeIcon
                           tripType={route.tripType}
                           className="h-6 w-6 text-zinc-400"
                         />
-                      ) : (
-                        <span className="flex items-end gap-0.5 text-blue-500">
-                          <span className="font-heading text-xs leading-[0.75] font-black">
-                            {tripTypeLabel(route.tripType)}
-                          </span>
-                          <TripTypeIcon
-                            tripType={route.tripType}
-                            className="h-3 w-3 text-zinc-400"
-                          />
-                        </span>
                       )}
                     </div>
                     <span className="min-w-0 pl-1.5">

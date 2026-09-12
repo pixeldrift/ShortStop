@@ -16,7 +16,6 @@ import {
   TurnArrow,
 } from "./icons";
 import { addressWithoutZip } from "@/lib/schoolAddress";
-import { tripTypeLabel } from "@/lib/tripType";
 import type { NavigationStep, Route } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
@@ -242,25 +241,18 @@ export function StartScreen({
                 their own label lettering, so pickup/dropoff is the icon
                 alone - vertically centered against the title's full
                 height and sized to nearly match it. Every other
-                TripType (FlagIcon, no lettering of its own) keeps the
-                original small icon+text pairing, pinned to the title's
-                bottom edge same as before (only dropoff, now handled by
-                the icon-alone branch, ever pinned to the top edge). */}
+                TripType (fieldtrip/other) skips the badge entirely -
+                those routes may not even have a morning/afternoon
+                distinction to badge, and there's no real example of
+                one yet to design that case against. */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
               Route {route.routeNumber}
-              {route.tripType === "pickup" || route.tripType === "dropoff" ? (
+              {(route.tripType === "pickup" ||
+                route.tripType === "dropoff") && (
                 <TripTypeIcon
                   tripType={route.tripType}
                   className="absolute top-1/2 left-full ml-2 h-8 w-8 -translate-y-1/2 text-zinc-400"
                 />
-              ) : (
-                <span className="absolute bottom-0 left-full ml-2 flex items-center gap-1 text-lg leading-[0.75] text-blue-500">
-                  {tripTypeLabel(route.tripType)}
-                  <TripTypeIcon
-                    tripType={route.tripType}
-                    className="h-4 w-4 text-zinc-400"
-                  />
-                </span>
               )}
             </h1>
           </div>
@@ -497,19 +489,11 @@ function AllStopsModal({
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
           <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
             Route {route.routeNumber}
-            {route.tripType === "pickup" || route.tripType === "dropoff" ? (
+            {(route.tripType === "pickup" || route.tripType === "dropoff") && (
               <TripTypeIcon
                 tripType={route.tripType}
                 className="h-5 w-5 text-zinc-400"
               />
-            ) : (
-              <span className="flex items-center gap-1 text-sm leading-[0.75] text-blue-500">
-                {tripTypeLabel(route.tripType)}
-                <TripTypeIcon
-                  tripType={route.tripType}
-                  className="h-3.5 w-3.5 text-zinc-400"
-                />
-              </span>
             )}
             <span className="text-zinc-400">-</span>
             All Stops

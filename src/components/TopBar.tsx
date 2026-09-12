@@ -1,7 +1,6 @@
 import { Logo } from "./Logo";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { BackArrowIcon, PersonSolidIcon } from "./icons";
-import { tripTypeLabel } from "@/lib/tripType";
 import type { TripType } from "@/lib/types";
 
 export function TopBar({
@@ -55,26 +54,18 @@ export function TopBar({
               "ROUTE" label above. am.svg/pm.svg carry their own label
               lettering, so pickup/dropoff is the icon alone -
               vertically centered against the number's full height and
-              sized to nearly match it. Every other TripType (FlagIcon,
-              no lettering of its own) keeps the original small
-              icon+text pairing, pinned to the number's bottom edge same
-              as before (only dropoff, now handled by the icon-alone
-              branch, ever pinned to the top edge). */}
+              sized to nearly match it. Every other TripType
+              (fieldtrip/other) skips the badge entirely - those routes
+              may not even have a morning/afternoon distinction to
+              badge, and there's no real example of one yet to design
+              that case against. */}
           <p className="font-heading relative -mt-1 text-3xl leading-[0.7083] font-black tracking-tight">
             {routeNumber}
-            {tripType === "pickup" || tripType === "dropoff" ? (
+            {(tripType === "pickup" || tripType === "dropoff") && (
               <TripTypeIcon
                 tripType={tripType}
                 className="absolute top-1/2 left-full ml-1.5 h-7 w-7 -translate-y-1/2 text-zinc-400"
               />
-            ) : (
-              <span className="absolute bottom-0 left-full ml-1.5 flex items-center gap-1 text-base leading-[0.75] text-blue-500">
-                {tripTypeLabel(tripType)}
-                <TripTypeIcon
-                  tripType={tripType}
-                  className="h-4 w-4 text-zinc-400"
-                />
-              </span>
             )}
           </p>
         </div>
