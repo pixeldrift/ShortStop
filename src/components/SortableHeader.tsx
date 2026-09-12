@@ -16,6 +16,7 @@ export function SortableHeader<F extends string>({
   align = "left",
   padded = true,
   fill = false,
+  showIcon = true,
   sortField,
   sortDir,
   onSort,
@@ -36,12 +37,24 @@ export function SortableHeader<F extends string>({
    * label alone would otherwise be a cramped tap target hugging the
    * row's left edge. */
   fill?: boolean;
+  /** Off for RouteListScreen's own AM/PM column - "AM"/"PM" are already
+   * only two rows tall, so there's no room for the usual up/down carets
+   * beside them without crowding; that header instead highlights
+   * whichever of its own two stacked words (AM/PM) matches the active
+   * sortDir directly, via its own `label` styling, rather than a
+   * separate icon. */
+  showIcon?: boolean;
   sortField: F;
   sortDir: SortDir;
   onSort: (field: F) => void;
 }) {
   const active = sortField === field;
-  const justify = align === "right" ? "justify-end" : align === "center" ? "justify-center" : "";
+  const justify =
+    align === "right"
+      ? "justify-end"
+      : align === "center"
+        ? "justify-center"
+        : "";
   return (
     <button
       type="button"
@@ -51,7 +64,12 @@ export function SortableHeader<F extends string>({
       } ${justify} ${active ? "text-zinc-700" : ""}`}
     >
       <span>{label}</span>
-      <SortIcon direction={active ? sortDir : "none"} className="h-2.5 w-2.5 shrink-0" />
+      {showIcon && (
+        <SortIcon
+          direction={active ? sortDir : "none"}
+          className="h-2.5 w-2.5 shrink-0"
+        />
+      )}
     </button>
   );
 }
