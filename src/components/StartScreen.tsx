@@ -7,41 +7,50 @@ import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
   BackArrowIcon,
+  CheckCircleIcon,
   CloseIcon,
   EditIcon,
+  EyeIcon,
   MapPinIcon,
   PersonSolidIcon,
   RoundedTriangleIcon,
   TriangleIcon,
   TurnArrow,
+  XCircleIcon,
 } from "./icons";
 import { addressWithoutZip } from "@/lib/schoolAddress";
 import type { NavigationStep, Route } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
-/** "Published"/"Draft"/"Demo route" plus its own color - same three
- * RouteStatus values RouteListScreen's own admin rows already key off
- * (isRoutePublished), just spelled out here for a driver/admin reading
- * this one route's own info screen instead of a whole table of them. */
+/** "Published"/"Draft"/"Demo route" plus the color its own status
+ * icon (not the text itself - see the render below) should carry -
+ * same three RouteStatus values RouteListScreen's own admin rows
+ * already key off (isRoutePublished), just spelled out here for a
+ * driver/admin reading this one route's own info screen instead of a
+ * whole table of them. */
 function routeStatusLabel(status: Route["status"]): {
   text: string;
-  className: string;
+  iconClassName: string;
 } {
   if (status === "published")
-    return { text: "Published", className: "text-green-600" };
-  if (status === "draft") return { text: "Draft", className: "text-amber-600" };
-  return { text: "Demo route", className: "text-zinc-500" };
+    return { text: "Published", iconClassName: "text-green-600" };
+  if (status === "draft")
+    return { text: "Draft", iconClassName: "text-amber-600" };
+  return { text: "Demo route", iconClassName: "text-zinc-400" };
 }
 
-/** "All coordinates verified" (or a partial "5/7 coordinates verified")
- * - the same "ok" cache-entry check isRouteFullyResolved (routeReadiness.ts)
- * uses before RouteListScreen ever lets a route publish, just counted
- * here instead of reduced to a single pass/fail. A route with nothing
- * geocodable at all (every step "unresolvable" - pure driver
- * instructions, no real stops) has nothing to verify in the first
- * place, so that reads as its own neutral line rather than a
- * confusing "0/0 verified." */
-function coordinateStatusLabel(
+/** "X/Y coordinates" plus whether every geocodable step on the route
+ * has a resolved one - the same "ok" cache-entry check
+ * isRouteFullyResolved (routeReadiness.ts) uses before RouteListScreen
+ * ever lets a route publish, just counted here instead of reduced to
+ * a single pass/fail. `verified` only drives the check/X icon's own
+ * color (see the render below, same treatment as routeStatusLabel's
+ * own iconClassName) - the count itself is plain gray text either
+ * way. A route with nothing geocodable at all (every step
+ * "unresolvable" - pure driver instructions, no real stops) has
+ * nothing to verify in the first place, so that reads as its own
+ * neutral line rather than a confusing "0/0." */
+function coordinateCountLabel(
   route: Route,
   cache: WaypointCache,
 ): { text: string; verified: boolean } {
@@ -53,12 +62,10 @@ function coordinateStatusLabel(
   const resolved = geocodable.filter(
     (s) => cache[s.waypointKey]?.status === "ok",
   ).length;
-  return resolved === geocodable.length
-    ? { text: "All coordinates verified", verified: true }
-    : {
-        text: `${resolved}/${geocodable.length} coordinates verified`,
-        verified: false,
-      };
+  return {
+    text: `${resolved}/${geocodable.length} coordinates`,
+    verified: resolved === geocodable.length,
+  };
 }
 
 // Not currently rendered (see StartScreen below) - kept ready to
@@ -141,7 +148,7 @@ export function StartScreen({
   const [showStopsModal, setShowStopsModal] = useState(false);
   // The committed geocode cache (src/app/api/waypoints), fetched fresh
   // on mount purely to answer "is this route's coordinate data actually
-  // good" (coordinateStatusLabel above) - a real fetch failure just
+  // good" (coordinateCountLabel above) - a real fetch failure just
   // reads as "0 confirmed" rather than blocking anything else on this
   // screen, same empty-fallback convention every other cache fetch in
   // this app already uses (RouteMap.tsx, EditRouteScreen.tsx).
@@ -161,7 +168,7 @@ export function StartScreen({
     };
   }, []);
   const status = routeStatusLabel(route.status);
-  const coordStatus = coordinateStatusLabel(route, waypointCache);
+  const coordStatus = coordinateCountLabel(route, waypointCache);
 
   // Same derivation as StepScreen's own stopMarkers/turnMarkers/
   // routePath/schoolPoint - this screen's small overview map wants the
@@ -197,13 +204,13 @@ export function StartScreen({
   );
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-6 text-center">
+    <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-6 text-center">
       {/* Everything that can genuinely grow past the viewport (the
           overview map especially) lives in this inner, scrollable
           region - Start Route/Edit Route below stay outside it, pinned
           to the bottom of the screen instead of scrolling away with a
           long route. */}
-      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-4 overflow-y-auto">
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto">
         <div className="flex w-full max-w-md shrink-0 items-center justify-between">
           <button
             type="button"
@@ -263,13 +270,13 @@ export function StartScreen({
           <span className="h-10 w-10 shrink-0" aria-hidden="true" />
         </div>
 
-        <div className="w-full max-w-md shrink-0 rounded-2xl border border-zinc-300 p-5">
+        <div className="w-full max-w-md shrink-0 rounded-2xl border border-zinc-300 p-4">
           <button
             type="button"
             onClick={() => onViewSchool(route.schoolName)}
             className="w-full rounded-lg py-1 active:bg-zinc-100"
           >
-            <p className="font-heading text-xl leading-tight font-bold text-zinc-700">
+            <p className="font-heading truncate text-lg leading-tight font-bold text-zinc-700">
               {route.schoolName}
             </p>
             <p className="mt-0.5 flex items-center justify-center gap-1 text-sm text-zinc-500">
@@ -284,11 +291,11 @@ export function StartScreen({
               row's own centering with the AM/PM badge) - the one thing
               on this whole card worth reading at a glance before
               anything else. */}
-          <p className="font-heading mt-3 text-3xl leading-none font-black tracking-tight text-blue-600">
+          <p className="font-heading mt-2 text-3xl leading-none font-black tracking-tight text-blue-600">
             {route.departureTime}
           </p>
 
-          <div className="mt-4 grid grid-cols-4 gap-2">
+          <div className="mt-3 grid grid-cols-4 gap-2">
             <StatTile value={distanceValue} label="miles" />
             <StatTile
               value={
@@ -302,38 +309,52 @@ export function StartScreen({
             <StatTile value={String(totalRiders)} label="riders" />
           </div>
 
-          <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1 text-lg">
-            <dt className="text-right text-zinc-500">Bus</dt>
-            <dd className="text-left font-medium">{route.busNumber}</dd>
-            <dt className="text-right text-zinc-500">Driver</dt>
-            <dd className="text-left font-medium">{route.driverName}</dd>
-          </dl>
-
-          {/* Admin-relevant status, not a driver stat - whether this
-              route is actually live (published/draft/demo) and whether
-              its own stops are all real, geocoded locations yet, both
-              things RouteListScreen/EditRouteScreen already track but
-              that were otherwise invisible from this one route's own
-              info screen. */}
-          <p className="mt-3 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-0.5 text-sm font-semibold">
-            <span className={status.className}>{status.text}</span>
-            <span className="text-zinc-300">·</span>
-            <span
-              className={
-                coordStatus.verified ? "text-green-600" : "text-zinc-500"
-              }
-            >
-              {coordStatus.text}
-            </span>
+          {/* Bus and driver on one line (was a two-row dl) - both are
+              short enough that stacking them only cost vertical space
+              without adding any legibility. */}
+          <p className="mt-2 flex items-center justify-center gap-1.5 text-base">
+            <span className="text-zinc-500">Bus</span>
+            <span className="font-medium">{route.busNumber}</span>
+            <span className="px-1 text-zinc-300">·</span>
+            <span className="text-zinc-500">Driver</span>
+            <span className="font-medium">{route.driverName}</span>
           </p>
 
-          <button
-            type="button"
-            onClick={() => setShowStopsModal(true)}
-            className="btn-glossy-light font-heading mt-4 flex w-full items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-base font-semibold text-zinc-900"
-          >
-            View All Stops
-          </button>
+          {/* Admin-relevant status (whether this route is actually live,
+              and whether its own stops are all real, geocoded locations
+              yet - both things RouteListScreen/EditRouteScreen already
+              track but that were otherwise invisible from this one
+              route's own info screen) stacked to the left of View All
+              Stops rather than its own centered line above a full-width
+              button - the two rarely change, so they don't need a full
+              row each. */}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left text-xs font-semibold text-zinc-500">
+              {/* Only the icon carries the status color - published/
+                  draft/demo, and resolved/unresolved below - the text
+                  itself stays plain gray both places, same weight as
+                  each other rather than one drawing more attention. */}
+              <span className="flex w-full items-center gap-1">
+                <EyeIcon className={`h-3 w-3 shrink-0 ${status.iconClassName}`} />
+                <span className="min-w-0 truncate">{status.text}</span>
+              </span>
+              <span className="flex w-full items-center gap-1">
+                {coordStatus.verified ? (
+                  <CheckCircleIcon className="h-3 w-3 shrink-0 text-green-600" />
+                ) : (
+                  <XCircleIcon className="h-3 w-3 shrink-0 text-red-500" />
+                )}
+                <span className="min-w-0 truncate">{coordStatus.text}</span>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowStopsModal(true)}
+              className="btn-glossy-light font-heading flex w-1/2 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900"
+            >
+              View All Stops
+            </button>
+          </div>
         </div>
 
         {/* A small, glanceable overview of the whole route - the same
@@ -349,7 +370,7 @@ export function StartScreen({
             AllStopsModal below despite being earlier in the DOM and
             visually "behind" it. */}
         <RouteMap
-          className="relative z-0 h-40 w-full max-w-md shrink-0 overflow-hidden rounded-2xl border border-zinc-300"
+          className="relative z-0 min-h-32 w-full max-w-md flex-1 overflow-hidden rounded-2xl border border-zinc-300"
           stops={stopMarkers}
           turns={turnMarkers}
           path={routePath}
