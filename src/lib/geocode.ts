@@ -77,22 +77,24 @@ export type GeocodeProvider = (
 // blends OSM with a few other open sources), matching "OSM for our
 // data" - just reached through a provider that doesn't block CI.
 
-// Back on api.openrouteservice.org for now. HeiGIT's own announcement
-// (2026-04-28, ask.openrouteservice.org/t/7912) says the real
-// replacement is api.heigit.org/openrouteservice/geocode/search (an
-// "/openrouteservice" segment right after the host, not just a host
-// swap) - that's confirmed correct against their own migration table
-// for the sibling directions endpoint (routing/providers/
-// openrouteservice.ts), yet this exact path still came back a live,
-// verified bare nginx "404 Not Found" (via this app's own "View Error"
-// detail, not a guess) when actually used. Something about HeiGIT's
-// geocode/search service specifically isn't matching their documented
-// pattern yet - worth real investigation before trying again, not
-// another blind repoint. api.openrouteservice.org itself still works
-// (HeiGIT's notice says the old URL is only deprecated, not shut off),
-// just with quota that may shrink over time to encourage moving off
-// it.
-const ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search";
+// api.heigit.org/openrouteservice/geocode/search (matching HeiGIT's
+// general "api.heigit.org/<service>/<version>/..." pattern documented
+// for directions/isochrones/matrix) turned out wrong for geocoding
+// specifically - a live, verified bare nginx 404. Geocoding isn't part
+// of the openrouteservice routing engine itself, though - it's a
+// separate Pelias instance HeiGIT runs alongside it (see this file's
+// own "Pelias-based" note above, true since long before this
+// migration), and HeiGIT's current docs list it under its own path:
+// api.heigit.org/pelias/v1/search (reverse geocoding, unused by this
+// app today, is .../pelias/v1/reverse). Same query params as the old
+// endpoint (it's the same underlying Pelias service either way), so
+// only the host+path changes here. api.openrouteservice.org itself is
+// being fully shut off 2026-09-28 (quota already cut to 10% as of
+// 2026-08-27 per HeiGIT's own deprecation notice), so this isn't
+// optional to move off of much longer - test this path for real before
+// relying on it, given the last two URL guesses here each needed a
+// live "View Error" response to actually confirm/deny.
+const ORS_GEOCODE_URL = "https://api.heigit.org/pelias/v1/search";
 
 interface OrsFeature {
   geometry: { coordinates: [number, number] }; // GeoJSON order: [lon, lat]
