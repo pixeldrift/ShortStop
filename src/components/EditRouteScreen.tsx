@@ -513,6 +513,12 @@ function StepRowView({
   onDragMove: (e: ReactPointerEvent) => void;
   onDragEnd: (e: ReactPointerEvent) => void;
 }) {
+  // The "View Error" popup for this row's own unresolved status
+  // (status.raw below) - lets an admin see the literal geocoder
+  // response right from the collapsed list, the same detail
+  // StepRowEditor's own expanded view offers, without first opening
+  // the row's editor just to find out why it failed.
+  const [showErrorDetail, setShowErrorDetail] = useState(false);
   const isStop = stopNumber !== null;
   const issue = rowValidationIssue(row);
   const actionLower = row.action.toLowerCase();
@@ -650,8 +656,27 @@ function StepRowView({
                 : status.status === "skipped"
                   ? "- Instructions Only -"
                   : status.reason}
+              {status.status === "unresolved" && status.raw && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowErrorDetail(true);
+                  }}
+                  className="font-semibold text-red-600 underline underline-offset-2"
+                >
+                  View Error
+                </button>
+              )}
             </p>
           )
+        )}
+        {showErrorDetail && status?.status === "unresolved" && (
+          <ErrorDetailsModal
+            message={status.detail ?? status.reason}
+            raw={status.raw}
+            onClose={() => setShowErrorDetail(false)}
+          />
         )}
         {/* Driver hints (wheelchair assistance, wait-inside notes, etc.)
             read last - after the row's own location is established, not
@@ -875,6 +900,11 @@ function StepRowEditor({
   // Fetch, below. Its own on/off state rather than reusing `expandedIndex`
   // or similar: it's a popup on top of this one, not a replacement for it.
   const [showPlaceModal, setShowPlaceModal] = useState(false);
+
+  // The "View Error" popup for this row's own unresolved status
+  // (status.raw below) - its own on/off state, same reasoning as
+  // showPlaceModal above.
+  const [showRowErrorDetail, setShowRowErrorDetail] = useState(false);
 
   // Re-syncs the box the moment a Fetch actually lands - `status` is
   // derived from the shared cache (EditRouteScreen's own `cache` state),
@@ -1256,7 +1286,21 @@ function StepRowEditor({
               ) : status?.status === "unresolved" ? (
                 <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
                   <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>{status.reason}</span>
+                  <span>
+                    {status.reason}
+                    {status.raw && (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          onClick={() => setShowRowErrorDetail(true)}
+                          className="font-semibold underline underline-offset-2"
+                        >
+                          View Error
+                        </button>
+                      </>
+                    )}
+                  </span>
                 </p>
               ) : status?.status === "resolved" ? (
                 <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
@@ -1350,6 +1394,13 @@ function StepRowEditor({
           </>
         )}
       </div>
+      {showRowErrorDetail && status?.status === "unresolved" && (
+        <ErrorDetailsModal
+          message={status.detail ?? status.reason}
+          raw={status.raw}
+          onClose={() => setShowRowErrorDetail(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1546,24 +1597,16 @@ function ErrorDetailsModal({
   );
 }
 
-// Solid HSL red-to-green interpolation (0% = red, 100% = green) - the
-// same "how close to done" reading a green/red fuel gauge already
-// gives, just driven by progress instead of a remaining quota. Shared
-// by GeocodeRatioBar and FetchCoordinatesModal's own batch-progress
-// fill below, so a route's overall geocode ratio and one in-flight
-// batch's progress both use the same color language.
-function progressColor(fraction: number): string {
-  const hue = Math.max(0, Math.min(1, fraction)) * 120;
-  return `hsl(${hue}, 70%, 45%)`;
-}
-
 /** A thin at-a-glance ratio of resolved vs. not - a solid red track
  * with a green fill scaled to `percent`, so it reads correctly (a
  * sliver of green, mostly red) well before anyone reads the count
- * next to it. Styled like the app's own glossy buttons (the same
- * white sheen highlight) but with an inset shadow instead of a raised
- * one, so it reads as a groove the fill sits inside rather than
- * another button. */
+ * next to it. The fill itself stays the same green the whole way -
+ * only its width grows - rather than shifting hue with progress, so
+ * it never reads as "still red/orange, not really done yet" partway
+ * through. Styled like the app's own glossy buttons (the same white
+ * sheen highlight) but with an inset shadow instead of a raised one,
+ * so it reads as a groove the fill sits inside rather than another
+ * button. */
 function GeocodeRatioBar({
   percent,
   className = "h-1",
@@ -1576,11 +1619,8 @@ function GeocodeRatioBar({
       className={`meter-track w-full overflow-hidden rounded-full bg-red-400 ${className}`}
     >
       <div
-        className="h-full rounded-full transition-[width]"
-        style={{
-          width: `${percent}%`,
-          backgroundColor: progressColor(percent / 100),
-        }}
+        className="h-full rounded-full bg-green-600 transition-[width]"
+        style={{ width: `${percent}%` }}
       />
     </div>
   );
