@@ -2514,6 +2514,26 @@ export function EditRouteScreen({
         });
       }
     } catch (err) {
+      // Same reasoning as runFetchAll's own per-item catch below: this
+      // row's own request failed outright (most often the school-
+      // address anchor lookup an intersection query needs, or - as
+      // with a missing ORS_API_KEY - every query alike), and the only
+      // way an admin sees that at all is if it lands in this row's own
+      // cache entry. `fetchError` below still drives the "Fetch
+      // Coordinates..." modal's own banner for a batch run, but nothing
+      // renders it when this single-row Fetch (StepRowEditor's own
+      // globe button) is what failed - without also recording this
+      // here, the row silently sat at "Not yet geocoded" forever with
+      // no visible sign anything was even attempted.
+      const key = waypointCacheKey(waypoint);
+      const entry: WaypointCacheEntry = {
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+        raw: err instanceof GeocodeApiError ? err.raw : undefined,
+        source: waypointLabel(waypoint),
+        provider: "none",
+      };
+      setCache((prev) => ({ ...prev, [key]: entry }));
       setFetchError({
         message: err instanceof Error ? err.message : String(err),
         raw: err instanceof GeocodeApiError ? err.raw : undefined,
