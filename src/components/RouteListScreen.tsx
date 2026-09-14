@@ -701,10 +701,10 @@ export function RouteListScreen({
                   </div>
                   {routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => (
                     <div key={tripTypeGroup.tripType}>
-                      <div className="flex items-center gap-1.5 py-1 pr-3 pl-5 text-xs font-semibold text-zinc-500">
+                      <div className="flex items-center gap-1.5 py-1 pr-3 pl-5 text-sm font-semibold text-zinc-500">
                         <TripTypeIcon
                           tripType={tripTypeGroup.tripType}
-                          className="h-3.5 w-3.5 shrink-0"
+                          className="h-[18px] w-[18px] shrink-0"
                         />
                         {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
                         {tripTypeFullLabel(tripTypeGroup.tripType)}

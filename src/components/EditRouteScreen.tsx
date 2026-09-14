@@ -33,6 +33,7 @@ import {
 import {
   buildRouteFromRows,
   formatWaypointInstruction,
+  waypointConnectorWord,
 } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
@@ -185,7 +186,7 @@ function crossroadsLine(
 
   const text =
     !isStopKind && effectiveFrom
-      ? `${row.action || "Turn"} from ${effectiveFrom} onto ${row.location}`
+      ? `${row.action || "Turn"} from ${effectiveFrom} ${waypointConnectorWord(row.action)} ${row.location}`
       : formatWaypointInstruction(row, stopNumber, effectiveFrom);
 
   return { icon, text };

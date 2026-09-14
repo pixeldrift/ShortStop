@@ -252,7 +252,11 @@ export function SchoolListScreen({
                     the right) so a normal-length school name reads on
                     one line instead of wrapping the way it did when
                     squeezed into just the School column. */}
-                <span className="col-span-2 text-base font-semibold text-zinc-900">
+                <span className="col-span-2 flex min-w-0 items-center gap-1 text-base font-semibold text-zinc-900">
+                  <SchoolLevelIcon
+                    level={info.schoolLevel}
+                    className="h-4 w-4 shrink-0 text-zinc-400"
+                  />
                   {name}
                 </span>
                 <span className="row-span-2 self-center pl-2 text-center text-sm font-semibold text-zinc-700">

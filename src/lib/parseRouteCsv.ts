@@ -128,6 +128,26 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
  * inferred value instead, so a row with no explicit fromLocation of
  * its own still previews as the real intersection it'll actually
  * resolve to, not just its bare location. */
+/** The preposition connecting a waypoint's own action to its
+ * location/destination - every instruction and spoken announcement
+ * this app builds from a row (formatWaypointInstruction below,
+ * buildRouteFromRows's own spokenAnnouncement, EditRouteScreen's
+ * crossroadsLine) reads through this one lookup rather than each
+ * hardcoding its own guess, so "Continue on Main Street," "Return to
+ * Elm Street," "Depart from LaVergne High School" stay the same
+ * wherever a row's action shows up. Left/Right/Turn Around/Pull Over -
+ * every action without a more specific word of its own - fall back to
+ * "onto," the original default every one of these callers already
+ * used before this existed. */
+export function waypointConnectorWord(action: string): string {
+  const a = action.trim().toLowerCase();
+  if (a === "depart") return "from";
+  if (a === "stop" || a === "arrive" || a === "complete") return "at";
+  if (a === "continue" || a === "u-turn") return "on";
+  if (a === "return" || a === "proceed") return "to";
+  return "onto";
+}
+
 export function formatWaypointInstruction(
   row: RawRouteRow,
   stopNumber: number | null,
@@ -138,10 +158,10 @@ export function formatWaypointInstruction(
   if (a === "stop" || a === "depart" || a === "arrive" || a === "complete") {
     const fullLocation = effectiveFrom ? `${effectiveFrom} & ${location}` : location;
     const label = a === "stop" ? (stopNumber ? `Stop ${stopNumber}` : "Stop") : action || "Stop";
-    return fullLocation ? `${label} at ${fullLocation}` : label;
+    return fullLocation ? `${label} ${waypointConnectorWord(a)} ${fullLocation}` : label;
   }
   const actionLabel = action || "Turn";
-  return location ? `${actionLabel} onto ${location}` : actionLabel;
+  return location ? `${actionLabel} ${waypointConnectorWord(a)} ${location}` : actionLabel;
 }
 
 /** The big on-screen line for a turn-kind step (StepContent's own `h1`
@@ -202,7 +222,6 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
       };
     }
 
-    const isPlaceAction = action.toLowerCase() === "depart" || action.toLowerCase() === "arrive";
     const direction: TurnDirection | undefined =
       action.toLowerCase() === "left"
         ? "left"
@@ -211,28 +230,22 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
           : undefined;
 
     // "Left"/"Right" keep their exact original "Turn left/right (from
-    // X) onto Y" phrasing. Depart/Arrive read as arriving *at* a place
-    // (almost always the route's own school - see StepRowEditor.tsx's
-    // school-linking), not turning onto a road, so they get "at"
-    // instead of "onto." Every other action (Proceed, Turn Around,
-    // Pull Over, Return) speaks as its own verb instead of a hardcoded
-    // "Turn" - "Proceed onto Elm Street," not "Turn proceed onto Elm
-    // Street" - and falls back to the bare action ("Turn Around.")
-    // once there's no location typed in for it to name, the same
-    // "no name-by-name list" reasoning formatWaypointInstruction above
-    // uses for its own, differently-phrased preview of this same row.
+    // X) onto Y" phrasing. Every other action speaks as its own verb
+    // instead of a hardcoded "Turn" - "Proceed onto Elm Street," not
+    // "Turn proceed onto Elm Street" - through the same
+    // waypointConnectorWord lookup formatWaypointInstruction above
+    // uses for this same row's own, differently-phrased preview
+    // ("Continue on," "Return to," "Depart from," "Arrive at," same
+    // words either way) - and falls back to the bare action ("Turn
+    // Around.") once there's no location typed in for it to name.
     const spokenAnnouncement =
       action.toLowerCase() === "left" || action.toLowerCase() === "right"
         ? fromLocation && location
           ? `Turn ${action.toLowerCase()} from ${speakRoadNames(fromLocation)} onto ${speakRoadNames(location)}.`
           : `Turn ${action.toLowerCase()} onto ${speakRoadNames(location)}.`
-        : isPlaceAction
-          ? location
-            ? `${action} at ${speakRoadNames(location)}.`
-            : `${action}.`
-          : location
-            ? `${action} onto ${speakRoadNames(location)}.`
-            : `${action}.`;
+        : location
+          ? `${action} ${waypointConnectorWord(action)} ${speakRoadNames(location)}.`
+          : `${action}.`;
 
     // A turn's note is spoken too, same as a stop's - e.g. a road
     // renaming partway along with no turn of its own ("Fergus Rd
