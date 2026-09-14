@@ -119,3 +119,12 @@ Vercel value).
   `src/lib/mapEngine.ts`'s doc comment for the exact steps to generate
   and place one (a Protomaps extract for the service area) and switch
   both maps over to MapLibre automatically.
+- Draggable map/content split on the turn-by-turn navigation screen
+  (`StepScreen.tsx`) — currently a fixed 30vh/70vh (portrait) or
+  42%/58% (landscape) split, with the content pane's own text/icon/
+  button sizing tuned to that split via `clamp()` (vh-based). Making
+  the divider draggable needs the content pane to handle being
+  squeezed past its current tuning - likely a minimum content height
+  with `overflow-y-auto` once dragged past where the current sizing
+  was designed for, not just naive shrinking - plus a stored split
+  ratio and double-tap-to-reset back to the default.
