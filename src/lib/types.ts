@@ -9,9 +9,12 @@ export type TurnDirection = "left" | "right";
  * special activity bus, a one-off late run, whatever doesn't fit the
  * other three. */
 export type TripType = "pickup" | "dropoff" | "fieldtrip" | "other";
-/** "Demo" marks the fabricated filler routes (demoRoutes.ts) that pad
- * out the route list - never a real district route, whatever its
- * other fields claim. "Published"/"draft" are both real data,
+/** "Demo" marks a fabricated filler route - never a real district
+ * route, whatever its other fields claim. Nothing currently produces
+ * one (demo-route generation was removed), but the value stays valid
+ * so a future reintroduction doesn't need every "is this real"
+ * distinction elsewhere rebuilt from scratch. "Published"/"draft" are
+ * both real data,
  * distinguished by whether the route is currently run - a route
  * doesn't stop being real just because the district retired it (back
  * to "draft", not deleted), and a brand-new admin-created route (see
@@ -81,7 +84,7 @@ export interface Route {
   schoolLevel: SchoolLevel;
   /** The school's own geocoded location (School.lat/lon - see
    * scripts/geocodeSchools.ts), independent of the Waypoint cache -
-   * null for a demo/fabricated route (demoRoutes.ts) or a real school
+   * null for a demo/fabricated route or a real school
    * that hasn't been geocoded yet. This is what RouteMap's blue school
    * pin actually draws from now, not a Waypoint cache lookup - so
    * changing a route's school (EditRouteScreen) reflects on the map
@@ -101,9 +104,8 @@ export interface Route {
    * RouteMeta's own doc comment in parseRouteCsv.ts. */
   durationMinutes: number | undefined;
   /** Drives the heart icon on RouteListScreen's rows and the
-   * "Favorites" option in its View dropdown - see demoRoutes.ts (which
-   * randomly picks a handful of the fabricated routes) and
-   * placeholderMeta.ts (which always favorites the one real route). */
+   * "Favorites" option in its View dropdown - see placeholderMeta.ts
+   * (which always favorites the one real route). */
   isFavorite: boolean;
   steps: NavigationStep[];
   /** EditRouteScreen's own "Next Action" field - another real route's
@@ -113,7 +115,7 @@ export interface Route {
    * route's own directions instead of ending the trip - a bus that
    * drives more than one leg back-to-back (elementary, then middle,
    * then high school, say) without a driver pulling the next route up
-   * separately. Never set for a demo/fabricated route (demoRoutes.ts) -
-   * chaining only ever makes sense between real, scheduled routes. */
+   * separately. Never set for a demo/fabricated route - chaining only
+   * ever makes sense between real, scheduled routes. */
   nextRouteId: string | null;
 }

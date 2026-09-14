@@ -1,4 +1,4 @@
-import { AmIcon, FlagIcon, PmIcon } from "./icons";
+import { AmIcon, PmIcon, StarIcon } from "./icons";
 import type { TripType } from "@/lib/types";
 
 /** Which icon a trip-type badge shows - shared so adding a future
@@ -9,7 +9,7 @@ import type { TripType } from "@/lib/types";
  * "AM"/"PM" lettering baked right into the glyph, so a pickup/dropoff
  * badge is just this icon alone now, sized to match whatever it sits
  * beside - no separate tripTypeLabel (lib/tripType.ts) text next to
- * it anymore. FlagIcon has no such lettering of its own, so a
+ * it anymore. StarIcon has no such lettering of its own, so a
  * "fieldtrip"/"other" badge is the one case that still needs its
  * caller to show that text label alongside it. */
 export function TripTypeIcon({
@@ -21,5 +21,5 @@ export function TripTypeIcon({
 }) {
   if (tripType === "pickup") return <AmIcon className={className} />;
   if (tripType === "dropoff") return <PmIcon className={className} />;
-  return <FlagIcon className={className} />;
+  return <StarIcon className={className} />;
 }

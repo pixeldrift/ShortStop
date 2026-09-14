@@ -56,8 +56,8 @@ export type MasterListRoute = Omit<
  * populating it) - falls back to the `${routeNumber}-${tripType}-
  * ${schoolLevel}` convention documented on Route.id (types.ts) whenever
  * it's empty, rather than requiring the sheet to supply it. `name` isn't
- * a column either, so it's built the same way demoRoutes.ts builds one
- * for its fabricated routes: `${schoolName} — ${tripLabel}`.
+ * a column either, so it's built the same way: `${schoolName} —
+ * ${tripLabel}`.
  *
  * stop_count/rider_count are columns here too, but aren't parsed into
  * anything - the app already derives both, live, from each route's own

@@ -99,7 +99,7 @@ export function PlaceCoordinatesModal({
 
   return (
     <>
-      <div className="relative mt-3 h-64 w-full overflow-hidden rounded-lg">
+      <div className="relative mt-3 h-64 w-full overflow-hidden rounded-2xl border border-zinc-300">
         <div ref={containerRef} className="h-full w-full" />
         {/* Fixed dead-center, never moved - this is the "place" the
             admin is positioning the map under, not a marker with a
@@ -113,7 +113,7 @@ export function PlaceCoordinatesModal({
       </div>
 
       <p className="mt-2 text-center font-mono text-sm text-zinc-600">
-        {center.lat.toFixed(5)}, {center.lon.toFixed(5)}
+        ({center.lat.toFixed(5)}, {center.lon.toFixed(5)})
       </p>
 
       <div className="mt-4 flex gap-2">

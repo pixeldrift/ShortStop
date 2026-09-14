@@ -2095,7 +2095,7 @@ export function EditRouteScreen({
   const [showFormatModal, setShowFormatModal] = useState(false);
   // mode "edit" only - which of the two screens this whole component is
   // currently showing: the hub (the Route Details form itself, plus an
-  // "Edit Stops" button down to the second screen) or the Stops and
+  // "Edit Waypoints" button down to the second screen) or the Stops and
   // Turns table (still the one that owns its own Save/Cancel/Download
   // too, per its own JSX below - Save there and the hub's own Save
   // both call the same handleSave, so either screen can commit
@@ -2911,9 +2911,9 @@ export function EditRouteScreen({
             }}
           >
             <option value="">Select…</option>
-            <option value="pickup">AM pickup</option>
-            <option value="dropoff">PM drop off</option>
-            <option value="fieldtrip">Field Trip</option>
+            <option value="pickup">AM</option>
+            <option value="dropoff">PM</option>
+            <option value="fieldtrip">Special</option>
             <option value="other">Other</option>
           </select>
         </Field>
@@ -3139,7 +3139,7 @@ export function EditRouteScreen({
   }
 
   // mode "edit" - a small hub (the Route Details form, editable right
-  // there with its own Save/Cancel, plus an "Edit Stops" button below)
+  // there with its own Save/Cancel, plus an "Edit Waypoints" button below)
   // by default, or the Stops and Turns screen once that's picked.
 
   if (subScreen === "stops") {
@@ -3467,7 +3467,7 @@ export function EditRouteScreen({
     <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
       {/* Everything that can genuinely grow past the viewport (the
           Route Details form especially) lives in this inner, scrollable
-          region - Edit Stops/Cancel/Save below stay outside it, pinned
+          region - Edit Waypoints/Cancel/Save below stay outside it, pinned
           to the bottom of the screen instead of scrolling away, same
           pattern subScreen "stops" already uses for its own footer. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-4 overflow-y-auto">
@@ -3560,7 +3560,7 @@ export function EditRouteScreen({
           className="btn-glossy-light font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
         >
           <MapPinIcon className="h-5 w-5" />
-          Edit Stops
+          Edit Waypoints
         </button>
       </div>
 
