@@ -2911,9 +2911,9 @@ export function EditRouteScreen({
             }}
           >
             <option value="">Select…</option>
-            <option value="pickup">AM pickup</option>
-            <option value="dropoff">PM drop off</option>
-            <option value="fieldtrip">Field Trip</option>
+            <option value="pickup">AM</option>
+            <option value="dropoff">PM</option>
+            <option value="fieldtrip">Special</option>
             <option value="other">Other</option>
           </select>
         </Field>

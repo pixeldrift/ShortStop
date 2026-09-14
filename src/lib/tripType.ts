@@ -19,13 +19,15 @@ export function tripTypeLabel(tripType: TripType): string {
  * next, everything else last. */
 export const TRIP_TYPE_ORDER: TripType[] = ["pickup", "dropoff", "fieldtrip", "other"];
 
-/** The longer "Morning Pickup"/"Afternoon Drop Off"/"Field Trip"/
- * "Other" form - used wherever a route's own name is built from its
- * trip type (EditRouteScreen's own buildMetaFields, parseRouteMasterList's
- * real master-list rows) rather than the short badge label above. */
+/** The longer "Morning Pickup"/"Afternoon Drop Off"/"Special"/"Other"
+ * form - used wherever a route's own name is built from its trip type
+ * (EditRouteScreen's own buildMetaFields, parseRouteMasterList's real
+ * master-list rows) rather than the short badge label above. "Special"
+ * (not "Field Trip") covers any other one-off situation outside the
+ * normal AM/PM schedule, not just an actual field trip. */
 export function tripTypeFullLabel(tripType: TripType): string {
   if (tripType === "pickup") return "Morning Pickup";
   if (tripType === "dropoff") return "Afternoon Drop Off";
-  if (tripType === "fieldtrip") return "Field Trip";
+  if (tripType === "fieldtrip") return "Special";
   return "Other";
 }
