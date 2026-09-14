@@ -577,7 +577,7 @@ export function RouteListScreen({
             type="button"
             onClick={() => setGrouped((g) => !g)}
             aria-label={grouped ? "Switch to list view" : "Switch to grouped view"}
-            className="shrink-0 text-zinc-600"
+            className="shrink-0 text-blue-600"
           >
             {grouped ? (
               <GroupedViewIcon className="h-5 w-5" />
@@ -617,9 +617,13 @@ export function RouteListScreen({
             <div className="h-5 w-px bg-zinc-300" aria-hidden="true" />
             {/* One icon, not three - cycles view all -> elementary ->
                 middle -> high -> view all on each tap (cycleSchoolLevel
-                above), showing the plain three-faded-figures glyph
-                (gray) while off and whichever level's own icon (blue,
-                one figure solid, two faded) once it's picked one. */}
+                above). SchoolLevelsIcon (the plain three-figures glyph,
+                all solid in the file itself) reads as gray/inactive
+                here the same way as every other filter icon - via this
+                button's own className, not a fixed opacity baked into
+                the SVG - and SchoolLevelIcon's own three (one figure
+                solid, two faded) read as blue/active once a level's
+                actually picked. */}
             <button
               type="button"
               onClick={cycleSchoolLevel}
@@ -685,7 +689,7 @@ export function RouteListScreen({
               {groupedTree.map((routeNumberGroup) => (
                 <div key={routeNumberGroup.routeNumber}>
                   <div className="bg-zinc-100 px-3 py-1.5">
-                    <span className="font-heading text-sm font-black tracking-tight">
+                    <span className="font-heading text-2xl font-black tracking-tight">
                       Route {routeNumberGroup.routeNumber}
                     </span>
                     {routeNumberGroup.city && (

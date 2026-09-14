@@ -227,9 +227,11 @@ export { default as SchoolIcon } from "./icons/school.svg";
 /** Three student figures (short/medium/tall, standing for elementary/
  * middle/high), one drawn solid and the other two faded - see
  * SchoolLevelIcon.tsx for the SchoolLevel -> icon lookup that actually
- * uses these three. school-level.svg itself (all three faded, none
- * highlighted) isn't wired up anywhere yet - there's no "no level
- * chosen" state in the app today for it to represent. */
+ * uses these three. school-level.svg itself draws all three solid
+ * (no baked-in fade) - it's the "view all" state of RouteListScreen's
+ * own school-level filter, which applies the grayed-out/inactive look
+ * itself via its own className, same as every other filter icon there,
+ * rather than the file carrying its own fixed opacity. */
 export { default as SchoolLevelsIcon } from "./icons/school-level.svg";
 export { default as SchoolLevelEsIcon } from "./icons/school-level-es.svg";
 export { default as SchoolLevelMsIcon } from "./icons/school-level-ms.svg";
