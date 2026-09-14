@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
+import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
   BackArrowIcon,
@@ -595,17 +596,7 @@ export function RouteListScreen({
                   the tap target every row's own big route-number digits
                   echo) - easier to actually see/hit than a header cell
                   this narrow would otherwise read as. */}
-              <div className="grid h-full grid-cols-[2.25rem_1fr] items-stretch gap-x-1 divide-x divide-zinc-200">
-                <SortableHeader
-                  label={<span className="text-base leading-none">#</span>}
-                  field="routeNumber"
-                  align="center"
-                  fill
-                  padded={false}
-                  sortField={sortField}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
+              <div className="grid h-full grid-cols-[1fr_2.25rem] items-stretch gap-x-1 divide-x divide-zinc-200">
                 <SortableHeader
                   label={
                     <span className="flex flex-col items-center leading-none">
@@ -652,6 +643,16 @@ export function RouteListScreen({
                   fill
                   padded={false}
                   showIcon={false}
+                  sortField={sortField}
+                  sortDir={sortDir}
+                  onSort={toggleSort}
+                />
+                <SortableHeader
+                  label={<span className="text-base leading-none">#</span>}
+                  field="routeNumber"
+                  align="center"
+                  fill
+                  padded={false}
                   sortField={sortField}
                   sortDir={sortDir}
                   onSort={toggleSort}
@@ -737,18 +738,22 @@ export function RouteListScreen({
                         the first place, and there's no real example of
                         one yet to design that case against. */}
                     <div className="flex items-center gap-1">
-                      <span className="font-heading text-2xl leading-[0.7083] font-black">
-                        {route.routeNumber}
-                      </span>
                       {(route.tripType === "pickup" ||
                         route.tripType === "dropoff") && (
                         <TripTypeIcon
                           tripType={route.tripType}
-                          className="h-[18px] w-[18px] text-zinc-400"
+                          className="h-[18px] w-[18px] shrink-0 text-zinc-400"
                         />
                       )}
+                      <span className="font-heading text-2xl leading-[0.7083] font-black">
+                        {route.routeNumber}
+                      </span>
                     </div>
-                    <span className="min-w-0">
+                    <span className="flex min-w-0 items-center gap-1">
+                      <SchoolLevelIcon
+                        level={route.schoolLevel}
+                        className="h-4 w-4 shrink-0 text-zinc-400"
+                      />
                       <SchoolNameLabel name={route.schoolName} />
                     </span>
                     <span className="text-right text-sm font-semibold text-zinc-500">

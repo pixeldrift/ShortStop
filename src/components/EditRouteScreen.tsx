@@ -3187,11 +3187,6 @@ export function EditRouteScreen({
               checks down the list themselves. */}
           <div className="flex w-full max-w-md shrink-0 flex-col items-center gap-0.5">
             <p className="flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0.5">
-              <span className="font-heading text-lg font-black tracking-tight">
-                {routeNumber || (
-                  <span className="text-zinc-400 italic">No route number</span>
-                )}
-              </span>
               {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
                   pickup/dropoff is just the icon alone, sized to the
                   route number's own height. Every other TripType
@@ -3206,6 +3201,11 @@ export function EditRouteScreen({
                     className="h-3 w-3 text-zinc-400"
                   />
                 )}
+              <span className="font-heading text-lg font-black tracking-tight">
+                {routeNumber || (
+                  <span className="text-zinc-400 italic">No route number</span>
+                )}
+              </span>
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
                 {schoolName || "No school selected"}
               </span>
@@ -3509,7 +3509,6 @@ export function EditRouteScreen({
                 this is now literally the same text-4xl size that value
                 was tuned against. */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
-              Route {route?.routeNumber ?? ""}
               {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
                   pickup/dropoff is vertically centered against the
                   title's full height and sized to nearly match it.
@@ -3522,9 +3521,10 @@ export function EditRouteScreen({
                 (tripType === "pickup" || tripType === "dropoff") && (
                   <TripTypeIcon
                     tripType={tripType}
-                    className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
+                    className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
                   />
                 )}
+              Route {route?.routeNumber ?? ""}
             </h1>
           </div>
           <span className="w-10" />

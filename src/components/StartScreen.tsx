@@ -247,8 +247,8 @@ export function StartScreen({
                 uses leading-none/-mt-1 and never needed retuning - to
                 1.5px, rather than guessing a value against this tighter
                 line-height. relative/absolute rather than a flex row -
-                the AM/PM icon floats off the text's own right edge
-                (left-full) so it never shifts the title text itself
+                the AM/PM icon floats off the text's own left edge
+                (right-full) so it never shifts the title text itself
                 off-center from the county label above, the way sharing
                 a centered flex row with it used to. am.svg/pm.svg carry
                 their own label lettering, so pickup/dropoff is the icon
@@ -259,14 +259,14 @@ export function StartScreen({
                 distinction to badge, and there's no real example of
                 one yet to design that case against. */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
-              Route {route.routeNumber}
               {(route.tripType === "pickup" ||
                 route.tripType === "dropoff") && (
                 <TripTypeIcon
                   tripType={route.tripType}
-                  className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
+                  className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
                 />
               )}
+              Route {route.routeNumber}
             </h1>
           </div>
           {/* Balances the back button's own width so the title block
@@ -524,13 +524,13 @@ function AllStopsModal({
       >
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
           <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
-            Route {route.routeNumber}
             {(route.tripType === "pickup" || route.tripType === "dropoff") && (
               <TripTypeIcon
                 tripType={route.tripType}
                 className="h-[15px] w-[15px] text-zinc-400"
               />
             )}
+            Route {route.routeNumber}
           </h2>
           <button
             type="button"
