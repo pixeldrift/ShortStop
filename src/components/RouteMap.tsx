@@ -758,7 +758,12 @@ function mountLeaflet(
               function updateRouteProgress() {
                 if (!map) return;
                 if (modeRef.current !== "driving") {
-                  lastRouteSplitIndex = 0;
+                  // No live progress to show outside actual turn-by-turn
+                  // navigation - the whole line renders as "traveled"
+                  // (solid) rather than "remaining" (dashed), which
+                  // splitIndex 0 would otherwise do (nearly the entire
+                  // road ending up on the dashed layer).
+                  lastRouteSplitIndex = roadLngLats.length - 1;
                 } else {
                   const point = liveLatLng
                     ? { lat: liveLatLng[0], lon: liveLatLng[1] }
@@ -1315,7 +1320,13 @@ function mountMapLibre(args: MountArgs): () => void {
                 // arrives.
                 function updateRouteProgress() {
                   if (modeRef.current !== "driving") {
-                    lastRouteSplitIndex = 0;
+                    // No live progress to show outside actual turn-by-
+                    // turn navigation - the whole line renders as
+                    // "traveled" (solid) rather than "remaining"
+                    // (dashed), which splitIndex 0 would otherwise do
+                    // (nearly the entire road ending up on the dashed
+                    // layer).
+                    lastRouteSplitIndex = roadLngLats.length - 1;
                   } else {
                     const point = liveLngLat
                       ? { lat: liveLngLat[1], lon: liveLngLat[0] }
