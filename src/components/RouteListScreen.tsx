@@ -21,13 +21,14 @@ import {
   TrashIcon,
   WarningIcon,
 } from "./icons";
+import { cityFromAddress } from "@/lib/address";
 import { downloadCsv, routeListToCsv } from "@/lib/exportCsv";
 import {
   fetchCommittedWaypointCache,
   isRouteFullyResolved,
 } from "@/lib/routeReadiness";
 import { parseTimeToMinutes } from "@/lib/time";
-import { TRIP_TYPE_ORDER } from "@/lib/tripType";
+import { TRIP_TYPE_ORDER, tripTypeFullLabel, tripTypeLabel } from "@/lib/tripType";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 import { SortableHeader } from "./SortableHeader";
@@ -89,6 +90,13 @@ const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
   { value: "middle", label: "MS" },
   { value: "high", label: "HS" },
 ];
+// Grade order - elementary, then middle, then high - for both the
+// filter toggles above and the grouped view's own leaf rows below
+// (see groupedTree), so a routeNumber+tripType's own schools always
+// list youngest to oldest.
+const SCHOOL_LEVEL_ORDER: SchoolLevel[] = SCHOOL_LEVEL_TOGGLES.map(
+  (t) => t.value,
+);
 // Admin-mode only (see its own row below) - a normal driver's view
 // already excludes unpublished routes outright, so filtering by
 // published/hidden would have nothing to do there.
@@ -350,6 +358,66 @@ export function RouteListScreen({
     adminMode,
   ]);
 
+  // The hierarchical grouped view (routeNumber > AM/PM > school level,
+  // see groupedTree below) is the default - it's the whole route board
+  // read at a glance, so it only backs off once an admin actually goes
+  // looking for something specific: a search, or narrowing down by one
+  // of the toggle groups above. Any of those switches straight back to
+  // the plain sortable table, since a hand-picked subset (a single
+  // school level, say) doesn't have the range across route numbers a
+  // grouped view is actually for.
+  const grouped =
+    query.trim() === "" &&
+    activeTripTypes.size === 0 &&
+    activeSchoolLevels.size === 0 &&
+    activePublishStatuses.size === 0;
+
+  // routeNumber > tripType > schoolLevel, exactly the id convention
+  // Route.id documents (`${routeNumber}-${tripType}-${schoolLevel}`) -
+  // a single bus number often carries one row per school level it
+  // serves, for each of its AM and PM runs, and this is just that same
+  // structure read back out as a tree instead of a flat list. Built off
+  // `filtered` (not `routes` directly) so admin mode's own draft-route
+  // visibility rule still applies - `filtered` is trivially "every
+  // visible route" here since `grouped` above already guarantees no
+  // query/toggle is actually narrowing it.
+  const groupedTree = useMemo(() => {
+    if (!grouped) return [];
+    const byRouteNumber = new Map<string, Route[]>();
+    for (const route of filtered) {
+      const list = byRouteNumber.get(route.routeNumber);
+      if (list) list.push(route);
+      else byRouteNumber.set(route.routeNumber, [route]);
+    }
+    const routeNumbers = [...byRouteNumber.keys()].sort(
+      (a, b) => Number(a) - Number(b),
+    );
+    return routeNumbers.map((routeNumber) => {
+      const routesForNumber = byRouteNumber.get(routeNumber)!;
+      const byTripType = new Map<TripType, Route[]>();
+      for (const route of routesForNumber) {
+        const list = byTripType.get(route.tripType);
+        if (list) list.push(route);
+        else byTripType.set(route.tripType, [route]);
+      }
+      const tripTypeGroups = TRIP_TYPE_ORDER.filter((t) =>
+        byTripType.has(t),
+      ).map((tripType) => ({
+        tripType,
+        routes: [...byTripType.get(tripType)!].sort(
+          (a, b) =>
+            SCHOOL_LEVEL_ORDER.indexOf(a.schoolLevel) -
+            SCHOOL_LEVEL_ORDER.indexOf(b.schoolLevel),
+        ),
+      }));
+      return {
+        routeNumber,
+        city: cityFromAddress(routesForNumber[0].schoolAddress),
+        tripTypeGroups,
+      };
+    });
+  }, [filtered, grouped]);
+
   // The eyeball icon's own click handler - always opens the matching
   // popup immediately, published or draft, so a tap never silently
   // does something other than what tapping the eye reads as. A
@@ -495,20 +563,30 @@ export function RouteListScreen({
               </button>
             )}
           </div>
-          {/* Two (three in admin mode) grouped columns, not stacked
-              rows - trip type on the left, school level next to it,
-              each its own vertical stack of toggle buttons, divided by
-              a plain vertical rule rather than boxed. Every toggle
-              starts on/blue ("showing"); tapping one off fades it,
-              excluding that trip type/level from the list below rather
-              than picking a single exclusive view the old "View"
-              dropdown did. Sized small enough that a full three-tall
-              column sits within the search box's own height beside it,
-              not taller than it - same constraint the old two-row
-              layout was built around, just stacked instead of spread
-              sideways now. */}
-          <div className="flex shrink-0 items-stretch gap-1">
-            <div className="flex flex-col gap-0.5">
+          {/* A quiet readout, not a control of its own - `grouped`
+              above already decides this automatically (default view,
+              backs off the moment a search or toggle actually narrows
+              things down), so this just reflects that state back
+              rather than offering a second way to set it. Only shown
+              while actually grouped - the plain table it falls back to
+              is the unremarkable default, not something that needs its
+              own label. */}
+          {grouped && (
+            <span className="shrink-0 text-[10px] font-bold tracking-wide text-blue-600 uppercase">
+              Grouped
+            </span>
+          )}
+          {/* Icon toggles, not text - AM/PM/SP as TripTypeIcon, ES/MS/HS
+              as SchoolLevelIcon, each own group laid out inline (a row,
+              not a stacked column) so the icons themselves can be big
+              enough to actually read, the two groups still kept apart
+              by the same plain vertical rule the old stacked columns
+              used. Every toggle starts on/blue ("showing"); tapping one
+              off fades it, excluding that trip type/level from the list
+              below rather than picking a single exclusive view the old
+              "View" dropdown did. */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div className="flex items-center gap-1">
               {TRIP_TYPE_TOGGLES.map((toggle) => {
                 const active = activeTripTypes.has(toggle.value);
                 return (
@@ -517,15 +595,16 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleTripType(toggle.value)}
                     aria-pressed={active}
-                    className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
+                    aria-label={toggle.label}
+                    className={active ? "text-blue-600" : "text-zinc-300"}
                   >
-                    {toggle.label}
+                    <TripTypeIcon tripType={toggle.value} className="h-5 w-5" />
                   </button>
                 );
               })}
             </div>
-            <div className="w-px self-stretch bg-zinc-300" aria-hidden="true" />
-            <div className="flex flex-col gap-0.5">
+            <div className="h-5 w-px bg-zinc-300" aria-hidden="true" />
+            <div className="flex items-center gap-1">
               {SCHOOL_LEVEL_TOGGLES.map((toggle) => {
                 const active = activeSchoolLevels.has(toggle.value);
                 return (
@@ -534,9 +613,10 @@ export function RouteListScreen({
                     type="button"
                     onClick={() => toggleSchoolLevel(toggle.value)}
                     aria-pressed={active}
-                    className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
+                    aria-label={toggle.label}
+                    className={active ? "text-blue-600" : "text-zinc-300"}
                   >
-                    {toggle.label}
+                    <SchoolLevelIcon level={toggle.value} className="h-5 w-5" />
                   </button>
                 );
               })}
@@ -544,7 +624,9 @@ export function RouteListScreen({
             {/* Published/Hidden - admin mode only, same empty-set-shows-
                 everything convention as the two groups above. A normal
                 driver's list already excludes hidden routes outright, so
-                this toggle would have nothing to do there. */}
+                this toggle would have nothing to do there. Stays plain
+                text, not an icon - unlike trip type/school level, there's
+                no existing glyph pair for "published"/"hidden" to reuse. */}
             {adminMode && (
               <>
                 <div
@@ -578,7 +660,117 @@ export function RouteListScreen({
             adminMode ? "border-2 border-blue-400" : "border-zinc-300"
           }`}
         >
-          <div className="grid grid-cols-[4.5rem_1fr_3.75rem_1.75rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+          {grouped ? (
+            <div className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto">
+              {groupedTree.map((routeNumberGroup) => (
+                <div key={routeNumberGroup.routeNumber}>
+                  <div className="bg-zinc-100 px-3 py-1.5">
+                    <span className="font-heading text-sm font-black tracking-tight">
+                      Route {routeNumberGroup.routeNumber}
+                    </span>
+                    {routeNumberGroup.city && (
+                      <span className="text-sm text-zinc-500">
+                        {" "}
+                        - {routeNumberGroup.city}
+                      </span>
+                    )}
+                  </div>
+                  {routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => (
+                    <div key={tripTypeGroup.tripType}>
+                      <div className="flex items-center gap-1.5 py-1 pr-3 pl-5 text-xs font-semibold text-zinc-500">
+                        <TripTypeIcon
+                          tripType={tripTypeGroup.tripType}
+                          className="h-3.5 w-3.5 shrink-0"
+                        />
+                        {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
+                        {tripTypeFullLabel(tripTypeGroup.tripType)}
+                      </div>
+                      <div className="divide-y divide-zinc-100">
+                        {tripTypeGroup.routes.map((route) => {
+                          const isPublished = isRoutePublished(route);
+                          const isAdminOnly = !isPublished;
+                          return (
+                            <div
+                              key={route.id}
+                              className={`flex w-full items-center gap-2 py-2 pr-2 pl-8 ${
+                                isAdminOnly ? "opacity-50" : ""
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  adminMode
+                                    ? onEditRoute(route)
+                                    : onSelect(route)
+                                }
+                                className="flex min-w-0 flex-1 items-center gap-1.5 text-left active:bg-zinc-100"
+                              >
+                                <SchoolLevelIcon
+                                  level={route.schoolLevel}
+                                  className="h-4 w-4 shrink-0 text-zinc-400"
+                                />
+                                <span className="w-6 shrink-0 text-xs font-bold text-zinc-400">
+                                  {SCHOOL_LEVEL_TOGGLES.find(
+                                    (t) => t.value === route.schoolLevel,
+                                  )?.label}
+                                </span>
+                                <SchoolNameLabel name={route.schoolName} />
+                                <span className="ml-auto shrink-0 text-right text-sm font-semibold text-zinc-500">
+                                  {route.departureTime}
+                                </span>
+                              </button>
+                              {adminMode ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleEyeClick(route)}
+                                  aria-label={
+                                    isPublished
+                                      ? `Deactivate route ${route.routeNumber}`
+                                      : `Activate route ${route.routeNumber}`
+                                  }
+                                  className="shrink-0 p-1 text-blue-600 active:opacity-70"
+                                >
+                                  {isPublished ? (
+                                    <EyeIcon className="h-4 w-4" />
+                                  ) : (
+                                    <EyeOffIcon className="h-4 w-4 text-zinc-400" />
+                                  )}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => onToggleFavorite(route)}
+                                  aria-label={
+                                    route.isFavorite
+                                      ? "Remove favorite"
+                                      : "Add favorite"
+                                  }
+                                  className="shrink-0 p-1 active:opacity-70"
+                                >
+                                  <HeartIcon
+                                    filled={route.isFavorite}
+                                    className={`h-4 w-4 ${route.isFavorite ? "text-blue-600" : "text-zinc-300"}`}
+                                  />
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
+              {groupedTree.length === 0 && (
+                <p className="px-2 py-6 text-center text-sm text-zinc-500">
+                  No routes match the selected filters.
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-[4.5rem_1fr_3.75rem_1.75rem] items-stretch gap-x-1 divide-x divide-zinc-200 border-b border-zinc-300 bg-zinc-100 px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
             {/* The #/School/Start group is its own col-span-3 grid using
                 the exact same grid-cols-[4.5rem_1fr_3.75rem] template
                 (and gap) as each row's own button below, rather than
@@ -805,7 +997,9 @@ export function RouteListScreen({
                 )}
               </p>
             )}
-          </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
