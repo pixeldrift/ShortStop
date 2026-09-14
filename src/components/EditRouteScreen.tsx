@@ -26,6 +26,7 @@ import {
   TriangleIcon,
   TurnArrow,
   UploadIcon,
+  WarningIcon,
   XCircleIcon,
 } from "./icons";
 import {
@@ -283,6 +284,70 @@ const inputClass =
 const labelClass =
   "text-xs font-semibold tracking-wide text-zinc-500 uppercase";
 
+// The exact values StepRowEditor's own Type <select> below offers, in
+// display order - reused for that select's own value and for
+// rowValidationIssue below, so neither can drift out of sync with what
+// an admin can actually pick.
+const WAYPOINT_TYPES = [
+  "Stop",
+  "Left",
+  "Right",
+  "Continue",
+  "U-Turn",
+  "Turn Around",
+  "Proceed",
+  "Pull Over",
+  "Return",
+  "Depart",
+  "Arrive",
+] as const;
+
+// Every real option's own trimmed/lowercased form, mapped back to its
+// canonical (correctly-cased) spelling - a row already sitting in the
+// database with a merely differently-cased or stray-whitespace value
+// ("left", "STOP ", both real data from a district's own CSV rather
+// than a typo) still resolves to its real option this way, instead of
+// an exact-string match reading it as unspecified/invalid just because
+// it isn't byte-for-byte identical to how the dropdown itself spells
+// it.
+const WAYPOINT_TYPE_BY_KEY: Record<string, string> = Object.fromEntries(
+  WAYPOINT_TYPES.map((type) => [type.toLowerCase(), type]),
+);
+
+/** The real option a row's own `action` value actually means, or null
+ * when it doesn't match any of them even loosely (case/whitespace
+ * aside) - shared by the Type select's own displayed value (below) and
+ * rowValidationIssue (further below), so a row already correctly typed
+ * in the database is never shown as "- Unspecified -" just because its
+ * casing doesn't match the dropdown's own, and a row that's genuinely
+ * something else entirely is never silently treated as valid either. */
+function canonicalWaypointType(action: string): string | null {
+  return WAYPOINT_TYPE_BY_KEY[action.trim().toLowerCase()] ?? null;
+}
+
+/** A concrete reason a row's own raw data can't be trusted, or null
+ * when it's fine - the main way a row actually ends up this way is a
+ * loosely-typed import (a blank or misspelled action cell, a location
+ * column that didn't map), but the check itself doesn't care how the
+ * row got here. Read by StepRowView below to flag the row with a red
+ * border and a warning triangle carrying this same message, so a bad
+ * import surfaces immediately in the stops list rather than only once
+ * an admin happens to expand that one row. Checked against the Type
+ * select's own real options (WAYPOINT_TYPES) rather than some broader
+ * "recognized by the app somewhere" set - stray data that doesn't
+ * match anything an admin can actually pick is exactly what's worth a
+ * human's attention here, even if some other part of this app happens
+ * to tolerate it. */
+function rowValidationIssue(row: RawRouteRow): string | null {
+  if (!canonicalWaypointType(row.action)) {
+    return row.action.trim()
+      ? `Unrecognized waypoint type "${row.action}".`
+      : "Missing a waypoint type.";
+  }
+  if (!row.location.trim()) return "Missing a location.";
+  return null;
+}
+
 /** Same shape as inputClass, swapped to a red border/focus ring - a
  * required field (Route #, Trip, School - see requiredFieldErrors)
  * still blank the moment a submit attempt is actually made, so it's
@@ -448,7 +513,14 @@ function StepRowView({
   onDragMove: (e: ReactPointerEvent) => void;
   onDragEnd: (e: ReactPointerEvent) => void;
 }) {
+  // The "View Error" popup for this row's own unresolved status
+  // (status.raw below) - lets an admin see the literal geocoder
+  // response right from the collapsed list, the same detail
+  // StepRowEditor's own expanded view offers, without first opening
+  // the row's editor just to find out why it failed.
+  const [showErrorDetail, setShowErrorDetail] = useState(false);
   const isStop = stopNumber !== null;
+  const issue = rowValidationIssue(row);
   const actionLower = row.action.toLowerCase();
   const isPlaceAction =
     actionLower === "stop" ||
@@ -497,7 +569,11 @@ function StepRowView({
   );
 
   return (
-    <div className="flex items-center gap-2 py-0.5 text-left">
+    <div
+      className={`flex items-center gap-2 rounded-lg py-0.5 text-left ${
+        issue ? "-mx-2 border border-red-400 bg-red-50 px-2" : ""
+      }`}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3">
           <span className="font-heading flex items-center gap-1.5 text-base font-black">
@@ -553,23 +629,54 @@ function StepRowView({
             <span className="text-zinc-400 italic">No location yet</span>
           )}
         </p>
-        {/* The row's own real geocoding outcome - actual coordinates
-            once resolved (green check), the specific miss/error reason
-            otherwise (red X), or "- Instructions Only -" for a row
-            deriveWaypoints.ts flagged as never needing a location at
-            all (a driver instruction, not a real road). */}
-        {status && (
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
-            <ResolutionIcon
-              status={status.status}
-              className="h-3.5 w-3.5 shrink-0"
-            />
-            {status.status === "resolved"
-              ? `${status.lat.toFixed(5)}, ${status.lon.toFixed(5)}`
-              : status.status === "skipped"
-                ? "- Instructions Only -"
-                : status.reason}
+        {/* A structurally bad row (see rowValidationIssue) takes
+            priority over the geocoding status below - there's nothing
+            meaningful to resolve yet when the action/location
+            themselves are missing or unrecognized, so showing both
+            would just be two ways of saying "this row is off." */}
+        {issue ? (
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-red-600">
+            <WarningIcon className="h-3.5 w-3.5 shrink-0" />
+            {issue}
           </p>
+        ) : (
+          /* The row's own real geocoding outcome - actual coordinates
+             once resolved (green check), the specific miss/error reason
+             otherwise (red X), or "- Instructions Only -" for a row
+             deriveWaypoints.ts flagged as never needing a location at
+             all (a driver instruction, not a real road). */
+          status && (
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
+              <ResolutionIcon
+                status={status.status}
+                className="h-3.5 w-3.5 shrink-0"
+              />
+              {status.status === "resolved"
+                ? `${status.lat.toFixed(5)}, ${status.lon.toFixed(5)}`
+                : status.status === "skipped"
+                  ? "- Instructions Only -"
+                  : status.reason}
+              {status.status === "unresolved" && status.raw && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowErrorDetail(true);
+                  }}
+                  className="font-semibold text-red-600 underline underline-offset-2"
+                >
+                  View Error
+                </button>
+              )}
+            </p>
+          )
+        )}
+        {showErrorDetail && status?.status === "unresolved" && (
+          <ErrorDetailsModal
+            message={status.detail ?? status.reason}
+            raw={status.raw}
+            onClose={() => setShowErrorDetail(false)}
+          />
         )}
         {/* Driver hints (wheelchair assistance, wait-inside notes, etc.)
             read last - after the row's own location is established, not
@@ -649,6 +756,7 @@ function StepRowEditor({
   fetching,
   fetchLocked,
   placementGuess,
+  routeContext,
   onChange,
   onFetch,
   onManualCoordinates,
@@ -690,6 +798,16 @@ function StepRowEditor({
    * when neither side has resolved yet (PlaceCoordinatesModal falls
    * back to a fixed default in that case). */
   placementGuess: { lat: number; lon: number } | null;
+  /** Every already-resolved stop on this route, in order, school
+   * included at whichever end it belongs (EditRouteScreen's own
+   * routeContextPoints) - handed straight through to
+   * PlaceCoordinatesModal so an admin placing a pin manually can see
+   * the route's actual road-following line for spatial context, the
+   * same line RouteMap.tsx draws while driving. Under two points (not
+   * enough to draw a line between) still comes through as whatever
+   * short array it is - PlaceCoordinatesModal itself is the one that
+   * decides that's too few to bother drawing. */
+  routeContext: { lat: number; lon: number }[];
   onChange: (patch: Partial<RawRouteRow>) => void;
   onFetch: () => void;
   /** A coordinate typed/pasted directly into the Latitude/Longitude
@@ -782,6 +900,11 @@ function StepRowEditor({
   // Fetch, below. Its own on/off state rather than reusing `expandedIndex`
   // or similar: it's a popup on top of this one, not a replacement for it.
   const [showPlaceModal, setShowPlaceModal] = useState(false);
+
+  // The "View Error" popup for this row's own unresolved status
+  // (status.raw below) - its own on/off state, same reasoning as
+  // showPlaceModal above.
+  const [showRowErrorDetail, setShowRowErrorDetail] = useState(false);
 
   // Re-syncs the box the moment a Fetch actually lands - `status` is
   // derived from the shared cache (EditRouteScreen's own `cache` state),
@@ -943,6 +1066,7 @@ function StepRowEditor({
                 lon: LA_VERGNE_CENTER[1],
               }
             }
+            routeContext={routeContext}
             onCancel={() => setShowPlaceModal(false)}
             onSetCoordinates={(lat, lon) => {
               onManualCoordinates(lat, lon);
@@ -955,9 +1079,20 @@ function StepRowEditor({
               <Field label="Type">
                 <select
                   className={inputClass}
-                  value={row.action}
+                  // Falls back to "" (the "- Unspecified -" option
+                  // below) rather than passing an unrecognized
+                  // row.action straight through as this select's own
+                  // value - an imported row with a blank or misspelled
+                  // action cell would otherwise leave no option
+                  // actually selected, which a browser renders as if
+                  // "Stop" (the first real option) were picked instead.
+                  // The original value stays in `row` either way until
+                  // an admin actually changes this select - only
+                  // changing what's *shown*, not what's saved.
+                  value={canonicalWaypointType(row.action) ?? ""}
                   onChange={(e) => handleTypeChange(e.target.value)}
                 >
+                  <option value="">- Unspecified -</option>
                   <option value="Stop">Stop</option>
                   <option value="Left">Turn Left</option>
                   <option value="Right">Turn Right</option>
@@ -1151,7 +1286,21 @@ function StepRowEditor({
               ) : status?.status === "unresolved" ? (
                 <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
                   <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>{status.reason}</span>
+                  <span>
+                    {status.reason}
+                    {status.raw && (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          onClick={() => setShowRowErrorDetail(true)}
+                          className="font-semibold underline underline-offset-2"
+                        >
+                          View Error
+                        </button>
+                      </>
+                    )}
+                  </span>
                 </p>
               ) : status?.status === "resolved" ? (
                 <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
@@ -1245,6 +1394,13 @@ function StepRowEditor({
           </>
         )}
       </div>
+      {showRowErrorDetail && status?.status === "unresolved" && (
+        <ErrorDetailsModal
+          message={status.detail ?? status.reason}
+          raw={status.raw}
+          onClose={() => setShowRowErrorDetail(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1441,24 +1597,16 @@ function ErrorDetailsModal({
   );
 }
 
-// Solid HSL red-to-green interpolation (0% = red, 100% = green) - the
-// same "how close to done" reading a green/red fuel gauge already
-// gives, just driven by progress instead of a remaining quota. Shared
-// by GeocodeRatioBar and FetchCoordinatesModal's own batch-progress
-// fill below, so a route's overall geocode ratio and one in-flight
-// batch's progress both use the same color language.
-function progressColor(fraction: number): string {
-  const hue = Math.max(0, Math.min(1, fraction)) * 120;
-  return `hsl(${hue}, 70%, 45%)`;
-}
-
 /** A thin at-a-glance ratio of resolved vs. not - a solid red track
  * with a green fill scaled to `percent`, so it reads correctly (a
  * sliver of green, mostly red) well before anyone reads the count
- * next to it. Styled like the app's own glossy buttons (the same
- * white sheen highlight) but with an inset shadow instead of a raised
- * one, so it reads as a groove the fill sits inside rather than
- * another button. */
+ * next to it. The fill itself stays the same green the whole way -
+ * only its width grows - rather than shifting hue with progress, so
+ * it never reads as "still red/orange, not really done yet" partway
+ * through. Styled like the app's own glossy buttons (the same white
+ * sheen highlight) but with an inset shadow instead of a raised one,
+ * so it reads as a groove the fill sits inside rather than another
+ * button. */
 function GeocodeRatioBar({
   percent,
   className = "h-1",
@@ -1471,11 +1619,8 @@ function GeocodeRatioBar({
       className={`meter-track w-full overflow-hidden rounded-full bg-red-400 ${className}`}
     >
       <div
-        className="h-full rounded-full transition-[width]"
-        style={{
-          width: `${percent}%`,
-          backgroundColor: progressColor(percent / 100),
-        }}
+        className="h-full rounded-full bg-green-600 transition-[width]"
+        style={{ width: `${percent}%` }}
       />
     </div>
   );
@@ -1950,7 +2095,7 @@ export function EditRouteScreen({
   const [showFormatModal, setShowFormatModal] = useState(false);
   // mode "edit" only - which of the two screens this whole component is
   // currently showing: the hub (the Route Details form itself, plus an
-  // "Edit Stops" button down to the second screen) or the Stops and
+  // "Edit Waypoints" button down to the second screen) or the Stops and
   // Turns table (still the one that owns its own Save/Cancel/Download
   // too, per its own JSX below - Save there and the hub's own Save
   // both call the same handleSave, so either screen can commit
@@ -2079,6 +2224,25 @@ export function EditRouteScreen({
     () => resolutionCounts(resolutionRows),
     [resolutionRows],
   );
+  // Every already-resolved stop, in route order, with the school
+  // spliced into whichever end tripType puts it - RouteMap.tsx's own
+  // orderedWaypointsRef does the same splice for the same reason (the
+  // school is a real leg of the trip but never one of `waypoints`
+  // itself). PlaceCoordinatesModal's own context line reuses this list
+  // to draw the actual route while an admin is placing a pin, so a
+  // route with under two resolved points (nothing to draw a line
+  // between yet) is left as an empty array rather than a special case
+  // that component needs to know about.
+  const routeContextPoints = useMemo(() => {
+    const resolved = resolutionRows
+      .filter((r) => r.status === "resolved")
+      .map((r) => ({ lat: r.lat, lon: r.lon }));
+    if (schoolLat == null || schoolLon == null) return resolved;
+    const school = { lat: schoolLat, lon: schoolLon };
+    return tripType === "dropoff"
+      ? [school, ...resolved]
+      : [...resolved, school];
+  }, [resolutionRows, schoolLat, schoolLon, tripType]);
 
   // The row currently open in StepRowEditor's own waypoint, re-derived
   // from `draftRow` rather than read off `waypoints[expandedIndex]`
@@ -2350,6 +2514,26 @@ export function EditRouteScreen({
         });
       }
     } catch (err) {
+      // Same reasoning as runFetchAll's own per-item catch below: this
+      // row's own request failed outright (most often the school-
+      // address anchor lookup an intersection query needs, or - as
+      // with a missing ORS_API_KEY - every query alike), and the only
+      // way an admin sees that at all is if it lands in this row's own
+      // cache entry. `fetchError` below still drives the "Fetch
+      // Coordinates..." modal's own banner for a batch run, but nothing
+      // renders it when this single-row Fetch (StepRowEditor's own
+      // globe button) is what failed - without also recording this
+      // here, the row silently sat at "Not yet geocoded" forever with
+      // no visible sign anything was even attempted.
+      const key = waypointCacheKey(waypoint);
+      const entry: WaypointCacheEntry = {
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+        raw: err instanceof GeocodeApiError ? err.raw : undefined,
+        source: waypointLabel(waypoint),
+        provider: "none",
+      };
+      setCache((prev) => ({ ...prev, [key]: entry }));
       setFetchError({
         message: err instanceof Error ? err.message : String(err),
         raw: err instanceof GeocodeApiError ? err.raw : undefined,
@@ -2400,7 +2584,41 @@ export function EditRouteScreen({
         });
         if (index > 0) await sleep(SINGLE_FETCH_COOLDOWN_MS);
 
-        const data = await callGeocodeApi(waypoint);
+        let data: GeocodeResponseBody;
+        try {
+          data = await callGeocodeApi(waypoint);
+        } catch (err) {
+          // A single waypoint's own request failing outright (a real
+          // HTTP error - see WaypointCacheEntry's own doc on how that's
+          // distinct from a normal "queried fine, found nothing" miss)
+          // shouldn't take down every waypoint after it in the same
+          // batch. Most often this is the school-address anchor lookup
+          // an intersection query needs (ensureAnchor,
+          // resolveWaypoint.ts) failing - only that one row's own
+          // attempt actually needed it, and a later row (a plain
+          // address, say, or a repeat intersection query once the
+          // anchor genuinely does resolve) can still succeed on its own
+          // merits. Recorded as this row's own "error" cache entry, the
+          // same shape a genuine not-found already gets, so it shows up
+          // exactly like any other miss - a red X and this message -
+          // rather than silently stopping partway through with nothing
+          // to show for every row after it.
+          const key = waypointCacheKey(waypoint);
+          const entry: WaypointCacheEntry = {
+            status: "error",
+            message: err instanceof Error ? err.message : String(err),
+            raw: err instanceof GeocodeApiError ? err.raw : undefined,
+            source: waypointLabel(waypoint),
+            provider: "none",
+          };
+          setCache((prev) => ({ ...prev, [key]: entry }));
+          setFetchingStepIds((prev) => {
+            const next = new Set(prev);
+            next.delete(waypoint.stepId);
+            return next;
+          });
+          continue;
+        }
         if (data.anchor) setSchoolAnchor(data.anchor);
         persistSchoolAnchorIfFresh(data.anchorEntry);
         const key = waypointCacheKey(waypoint);
@@ -2693,9 +2911,9 @@ export function EditRouteScreen({
             }}
           >
             <option value="">Select…</option>
-            <option value="pickup">AM pickup</option>
-            <option value="dropoff">PM drop off</option>
-            <option value="fieldtrip">Field Trip</option>
+            <option value="pickup">AM</option>
+            <option value="dropoff">PM</option>
+            <option value="fieldtrip">Special</option>
             <option value="other">Other</option>
           </select>
         </Field>
@@ -2921,7 +3139,7 @@ export function EditRouteScreen({
   }
 
   // mode "edit" - a small hub (the Route Details form, editable right
-  // there with its own Save/Cancel, plus an "Edit Stops" button below)
+  // there with its own Save/Cancel, plus an "Edit Waypoints" button below)
   // by default, or the Stops and Turns screen once that's picked.
 
   if (subScreen === "stops") {
@@ -3172,6 +3390,7 @@ export function EditRouteScreen({
                 }
                 fetchLocked={singleFetchCoolingDown}
                 placementGuess={nearestResolvedGuess(resolutionRows, index)}
+                routeContext={routeContextPoints}
                 onChange={handleDraftChange}
                 onFetch={() =>
                   draftWaypoint &&
@@ -3248,7 +3467,7 @@ export function EditRouteScreen({
     <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
       {/* Everything that can genuinely grow past the viewport (the
           Route Details form especially) lives in this inner, scrollable
-          region - Edit Stops/Cancel/Save below stay outside it, pinned
+          region - Edit Waypoints/Cancel/Save below stay outside it, pinned
           to the bottom of the screen instead of scrolling away, same
           pattern subScreen "stops" already uses for its own footer. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-4 overflow-y-auto">
@@ -3341,7 +3560,7 @@ export function EditRouteScreen({
           className="btn-glossy-light font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
         >
           <MapPinIcon className="h-5 w-5" />
-          Edit Stops
+          Edit Waypoints
         </button>
       </div>
 

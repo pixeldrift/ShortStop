@@ -172,25 +172,30 @@ export function StepScreen({
           room for itself independently, via its own two-line text
           guarantee and shrink-if-crazy-long fallback - see StopContent/
           TurnContent below - rather than by the map yielding space. */}
-      <div className="relative h-[calc(30vh-20px)] w-full shrink-0 overflow-hidden landscape:h-[calc(100%-20px)] landscape:w-[42%]">
-        {/* z-0 gives Leaflet's own internal panes/controls (tile pane,
+      <div className="relative h-[30vh] w-full shrink-0 overflow-hidden landscape:h-full landscape:w-[42%]">
+        {/* h-full/w-full, not absolute+inset-0 - both Leaflet and
+            MapLibre's own stylesheets force `position: relative` on
+            whatever container element they're handed
+            (.leaflet-container/.maplibregl-map), overriding any
+            `position: absolute` Tailwind class placed on that same
+            element. Under the resulting position:relative, `inset-0`
+            (top/right/bottom/left) does nothing - it only sizes an
+            absolutely/fixed-positioned box - so the map's own height
+            silently collapsed to 0 (no in-flow content) the one time
+            this used inset-0 instead of an explicit height. An
+            explicit height works under any positioning scheme, which
+            is why it's used here instead.
+
+            z-0 gives Leaflet's own internal panes/controls (tile pane,
             zoom control, attribution - several of which carry their own
             explicit, fairly high z-index, e.g. the zoom control's 1000) a
             stacking context of their own to escalate within. Without it,
             since neither this div nor its parent set a z-index, those
             panes escape to the nearest ancestor stacking context and can
             paint above the roster popup below despite being earlier in
-            the DOM.
-
-            The map itself is drawn 20px taller than this container
-            (h-[calc(100%+20px)], pinned to the top) rather than filling
-            it exactly (inset-0) - this container is itself already 20px
-            shorter than it used to be, so the map ends up rendered at
-            its original size but with its own bottom 20px clipped off
-            by this container's overflow-hidden, instead of the whole
-            map simply shrinking to match. */}
+            the DOM. */}
         <RouteMap
-          className="absolute inset-x-0 top-0 z-0 h-[calc(100%+20px)]"
+          className="h-full w-full z-0"
           stops={stopMarkers}
           turns={turnMarkers}
           path={routePath}

@@ -8,7 +8,6 @@ import { SchoolListScreen } from "@/components/SchoolListScreen";
 import { ScreenTransition } from "@/components/ScreenTransition";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
-import { buildDemoRoutes } from "@/lib/demoRoutes";
 import { buildRouteFromRows } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import type { MasterListRoute } from "@/lib/parseRouteMasterList";
@@ -24,11 +23,6 @@ import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
 import type { Route, RouteStatus } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
-
-// How many fabricated routes to add to the real ones, purely so the
-// route-list screen has enough rows to actually demonstrate scrolling
-// and search filtering - see demoRoutes.ts.
-const DEMO_ROUTE_COUNT = 24;
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(path);
@@ -220,23 +214,10 @@ export default function Home() {
   // admin draft. Same session-only honesty as the rest of this admin
   // store: nothing is actually removed from the real database.
   const [deletedRouteIds, setDeletedRouteIds] = useState<ReadonlySet<string>>(new Set());
-  // The route list's own heart toggle (RouteListScreen) - a separate
-  // overlay from adminRoutes since it needs to apply to fabricated demo
-  // routes too, not just real ones, and demo routes aren't in that map
-  // at all (buildDemoRoutes fabricates them fresh every time `routes`
-  // below recomputes). Same session-only honesty as everything else
-  // here - nothing about a favorite is written back anywhere real.
+  // The route list's own heart toggle (RouteListScreen) - a separate,
+  // session-only overlay from adminRoutes; nothing about a favorite is
+  // written back anywhere real.
   const [favoriteOverrides, setFavoriteOverrides] = useState<Record<string, boolean>>({});
-  // A fabricated demo route's own Publish/Unpublish toggle - never
-  // written into `adminRoutes`/`route.status` itself, since every piece
-  // of "is this route fake" logic elsewhere (favorites' own real-first
-  // sort, RouteListScreen's row click, buildDemoRoutes regenerating the
-  // exact same fabricated routes every render) depends on `status`
-  // staying literally "demo" forever. This is purely a display-time
-  // overlay (RouteListScreen derives `isPublished` from it) - a demo
-  // route's id living here means "treat it as unpublished this
-  // session," nothing about the route object itself ever changes.
-  const [demoHiddenIds, setDemoHiddenIds] = useState<ReadonlySet<string>>(new Set());
   // Toggled by RouteListScreen's own "Edit Mode" link, or turned on
   // unconditionally by a route's "Edit Route" link on StartScreen -
   // reveals draft real routes on the list, dimmed, and the per-row
@@ -300,71 +281,79 @@ export default function Home() {
     return Array.from(byId.values());
   }, [realRoutes, adminRoutes, deletedRouteIds]);
 
-  // buildDemoRoutes fabricates the rest purely so the list has enough
-  // rows to demonstrate scrolling/search. Computed once per fetched
-  // batch of real routes (not on every render) via useMemo, so the
-  // list doesn't reshuffle each time the user navigates back to it.
+  // Computed once per fetched batch of real routes (not on every
+  // render) via useMemo, so the list doesn't reshuffle each time the
+  // user navigates back to it.
   const routes = useMemo(() => {
-    if (!effectiveRealRoutes || effectiveRealRoutes.length === 0) return effectiveRealRoutes ?? [];
-    const combined = [...effectiveRealRoutes, ...buildDemoRoutes(effectiveRealRoutes, DEMO_ROUTE_COUNT)];
-    return combined
-      // Real deletions are already gone via effectiveRealRoutes above -
-      // this second pass is what actually removes a deleted *demo* row,
-      // since buildDemoRoutes fabricates the same ones fresh every time
-      // (deterministically, so this doesn't reshuffle anything else).
-      .filter((route) => !deletedRouteIds.has(route.id))
+    if (!effectiveRealRoutes) return [];
+    return effectiveRealRoutes
       .map((route) =>
         route.id in favoriteOverrides ? { ...route, isFavorite: favoriteOverrides[route.id] } : route,
       )
       .sort((a, b) => parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime));
-  }, [effectiveRealRoutes, favoriteOverrides, deletedRouteIds]);
+  }, [effectiveRealRoutes, favoriteOverrides]);
 
   function handleToggleFavorite(route: Route) {
     setFavoriteOverrides((prev) => ({ ...prev, [route.id]: !route.isFavorite }));
   }
 
   function handleSaveRoute(route: Route, steps: RawRouteRow[], waypointCache: WaypointCache) {
-    // A demo route (see demoRoutes.ts) is fabricated filler, not a real
-    // entity of its own - folding it into adminRoutes here would merge
-    // it into effectiveRealRoutes below (double-counting it, since
-    // buildDemoRoutes keeps generating its own fresh 24 regardless) and
-    // could even reshuffle every other demo row's own generated number
-    // (buildDemoRoutes' routeNumber draws depend on which numbers are
-    // already taken). Its edit screen is for review only - nothing
-    // typed or saved there actually persists.
-    if (route.status === "demo") {
-      goBack();
-      return;
-    }
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
     setAdminStepsById((prev) => ({ ...prev, [route.id]: steps }));
     setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
     replaceScreen({ kind: "edit-route", route });
   }
 
-  // A demo route's own "status" is a fixed identity marker, not a real
-  // lifecycle value (see demoHiddenIds above) - publishing/unpublishing
-  // one only ever toggles that separate overlay, never adminRoutes.
-  function handleSetRouteStatus(route: Route, status: RouteStatus) {
-    if (route.status === "demo") {
-      setDemoHiddenIds((prev) => {
-        const next = new Set(prev);
-        if (status === "published") next.delete(route.id);
-        else next.add(route.id);
-        return next;
-      });
-      return;
-    }
+  // Updating adminRoutes alone (as this used to, before
+  // /api/routes/[id]/status existed) only ever looked saved: it made
+  // effectiveRealRoutes read as published/draft for the rest of this
+  // session, but a later page load re-fetches realRoutes straight from
+  // Postgres, which never got written, so the route silently reverted.
+  // adminRoutes is still updated first and optimistically, same as
+  // before, so the row's own eyeball/badge flips the instant an admin
+  // taps Activate/Deactivate rather than waiting on a round trip; the
+  // PATCH below just makes that same value durable. A failure reverts
+  // it back rather than leaving the UI showing a status Postgres never
+  // actually got, which is exactly the inconsistency this is fixing.
+  async function handleSetRouteStatus(route: Route, status: RouteStatus) {
     setAdminRoutes((prev) => ({ ...prev, [route.id]: { ...route, status } }));
+    try {
+      const res = await fetch(`/api/routes/${route.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    } catch (err) {
+      console.error(`Couldn't save route ${route.id}'s status:`, err);
+      setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
+    }
   }
 
-  function handleDeleteRoute(route: Route) {
+  // Same "the local overlay isn't the real write" gap handleSetRouteStatus
+  // above had until /api/routes/[id]/status existed: deletedRouteIds
+  // used to be the only thing this touched, which hid the row for the
+  // rest of this session (effectiveRealRoutes filters by it) but never
+  // actually removed anything from Postgres, so it silently came back
+  // on the next real page load.
+  async function handleDeleteRoute(route: Route) {
     setDeletedRouteIds((prev) => new Set(prev).add(route.id));
     setAdminRoutes((prev) => {
       const next = { ...prev };
       delete next[route.id];
       return next;
     });
+    try {
+      const res = await fetch(`/api/routes/${route.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    } catch (err) {
+      console.error(`Couldn't delete route ${route.id}:`, err);
+      setDeletedRouteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(route.id);
+        return next;
+      });
+    }
   }
 
   // RouteApp's own hand-off the moment a route reaches "arrived" -
@@ -425,15 +414,7 @@ export default function Home() {
       />
     );
   } else if (screen.kind === "edit-route") {
-    // A demo route (see demoRoutes.ts) never has its own real committed
-    // steps - it borrows realRoutes[0]'s exact steps as its base, so
-    // its edit screen borrows that same route's raw rows too, rather
-    // than opening to a stops list that looks empty next to the
-    // (borrowed) steps it already shows when actually run as a trip.
-    const initialSteps =
-      adminStepsById[screen.route.id] ??
-      stepsById[screen.route.id] ??
-      (screen.route.status === "demo" ? (stepsById[realRoutes[0]?.id ?? ""] ?? []) : []);
+    const initialSteps = adminStepsById[screen.route.id] ?? stepsById[screen.route.id] ?? [];
     content = (
       <EditRouteScreen
         key={`edit-${screen.route.id}`}
@@ -486,7 +467,6 @@ export default function Home() {
         onSetRouteStatus={handleSetRouteStatus}
         onDeleteRoute={handleDeleteRoute}
         onToggleFavorite={handleToggleFavorite}
-        demoHiddenIds={demoHiddenIds}
       />
     );
   } else {
@@ -504,7 +484,6 @@ export default function Home() {
         onSetRouteStatus={handleSetRouteStatus}
         onDeleteRoute={handleDeleteRoute}
         onToggleFavorite={handleToggleFavorite}
-        demoHiddenIds={demoHiddenIds}
       />
     );
   }

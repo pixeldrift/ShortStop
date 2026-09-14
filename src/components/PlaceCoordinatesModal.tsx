@@ -2,9 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as LeafletMap } from "leaflet";
 import { MapPinIcon } from "./icons";
+import {
+  collapseAttribution,
+  PMTILES_ATTRIBUTION,
+  PMTILES_URL,
+  resolveMapEngine,
+} from "@/lib/mapEngine";
+import { protomapsStyle } from "@/lib/protomapsStyle";
 import { TILE_ATTRIBUTION, TILE_SUBDOMAINS, TILE_URL } from "./RouteMap";
+import type { RoutingResult } from "@/lib/routing/types";
 
 const DEFAULT_ZOOM = 18;
 
@@ -16,16 +25,26 @@ const DEFAULT_ZOOM = 18;
  * `showPlaceModal` state) rather than opening as a second stacked
  * popup on top of it - same card, same size, no second dim backdrop
  * layered behind another. Center point stays fixed - visually, a pin
- * pinned to the middle of the viewport, never a real Leaflet marker
- * bound to a lat/lng - while the map tiles underneath pan freely, so
+ * pinned to the middle of the viewport, never a real map marker bound
+ * to a lat/lng - while the map tiles underneath pan freely, so
  * dragging always reads as "move the map until the right spot is
- * under the pin," not "drag the pin to the right spot." `map.getCenter()`
- * on every 'move' is what actually drives the live readout below and
- * what "Set coordinates" ultimately sends up via onSetCoordinates -
- * the pin element itself never carries a coordinate of its own.
+ * under the pin," not "drag the pin to the right spot." The map's own
+ * live center on every 'move' is what actually drives the readout
+ * below and what "Set coordinates" ultimately sends up via
+ * onSetCoordinates - the pin element itself never carries a coordinate
+ * of its own.
+ *
+ * Same two-renderer split as RouteMap.tsx - resolveMapEngine()
+ * (mapEngine.ts) decides once, on mount, between MapLibre GL's
+ * self-hosted vector tiles (mountMapLibre, preferred) and the original
+ * Leaflet + CARTO raster map (mountLeaflet, kept exactly as it always
+ * was as the automatic fallback). See mapEngine.ts's own doc comment
+ * for what that check looks at and how to generate the PMTiles file
+ * the MapLibre path needs.
  */
 export function PlaceCoordinatesModal({
   initialCenter,
+  routeContext,
   onCancel,
   onSetCoordinates,
 }: {
@@ -34,6 +53,16 @@ export function PlaceCoordinatesModal({
    * exist (see StepRowEditor's own call site) - just a starting guess
    * the admin drags away from, never assumed correct on its own. */
   initialCenter: { lat: number; lon: number };
+  /** Every already-resolved stop on this route, in order, school
+   * included (EditRouteScreen's own routeContextPoints) - drawn as the
+   * same road-following blue line RouteMap.tsx draws while driving, so
+   * an admin placing a pin manually can see where it actually falls
+   * relative to the rest of the route rather than guessing from the
+   * bare tile background alone. Under two points draws nothing - same
+   * "quietly do without it" fallback RouteMap.tsx's own identical fetch
+   * already uses for a request/response failure, since there's no line
+   * to draw between fewer than two points anyway. */
+  routeContext: { lat: number; lon: number }[];
   onCancel: () => void;
   onSetCoordinates: (lat: number, lon: number) => void;
 }) {
@@ -44,44 +73,33 @@ export function PlaceCoordinatesModal({
     const container = containerRef.current;
     if (!container) return;
 
-    let map: LeafletMap | undefined;
     let cancelled = false;
+    let cleanup: (() => void) | undefined;
 
-    // Dynamic import, not top-level - same "leaflet touches `window`
-    // during module evaluation" reasoning RouteMap.tsx's own identical
-    // import documents.
-    void import("leaflet").then((L) => {
+    void resolveMapEngine().then((engine) => {
       if (cancelled) return;
-      map = L.map(container, {
-        center: [initialCenter.lat, initialCenter.lon],
-        zoom: DEFAULT_ZOOM,
-      });
-      L.tileLayer(TILE_URL, {
-        maxZoom: 20,
-        subdomains: TILE_SUBDOMAINS,
-        attribution: TILE_ATTRIBUTION,
-        detectRetina: true,
-      }).addTo(map);
-      map.on("move", () => {
-        if (!map) return;
-        const c = map.getCenter();
-        setCenter({ lat: c.lat, lon: c.lng });
-      });
+      cleanup =
+        engine === "maplibre"
+          ? mountMapLibre(container, initialCenter, routeContext, setCenter, () => cancelled)
+          : mountLeaflet(container, initialCenter, routeContext, setCenter, () => cancelled);
     });
 
     return () => {
       cancelled = true;
-      map?.remove();
+      cleanup?.();
     };
-    // initialCenter is only ever read on mount (the map's own starting
-    // point) - re-centering on every render would fight the admin's own
-    // drag the instant it happened.
+    // initialCenter/routeContext are only ever read on mount (the map's
+    // own starting point and its one-time route-line fetch) - re-fetching
+    // on every render (routeContext is a fresh array from EditRouteScreen's
+    // own useMemo whenever the underlying route data actually changes,
+    // but StepRowEditor itself re-renders far more often than that) would
+    // be wasted work for a line that never needs to move once drawn.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <>
-      <div className="relative mt-3 h-64 w-full overflow-hidden rounded-lg">
+      <div className="relative mt-3 h-64 w-full overflow-hidden rounded-2xl border border-zinc-300">
         <div ref={containerRef} className="h-full w-full" />
         {/* Fixed dead-center, never moved - this is the "place" the
             admin is positioning the map under, not a marker with a
@@ -95,7 +113,7 @@ export function PlaceCoordinatesModal({
       </div>
 
       <p className="mt-2 text-center font-mono text-sm text-zinc-600">
-        {center.lat.toFixed(5)}, {center.lon.toFixed(5)}
+        ({center.lat.toFixed(5)}, {center.lon.toFixed(5)})
       </p>
 
       <div className="mt-4 flex gap-2">
@@ -116,4 +134,160 @@ export function PlaceCoordinatesModal({
       </div>
     </>
   );
+}
+
+type CenterSetter = (center: { lat: number; lon: number }) => void;
+
+// The original renderer, unchanged from before mountMapLibre existed -
+// the automatic fallback whenever resolveMapEngine() (mapEngine.ts)
+// can't use MapLibre.
+function mountLeaflet(
+  container: HTMLDivElement,
+  initialCenter: { lat: number; lon: number },
+  routeContext: { lat: number; lon: number }[],
+  setCenter: CenterSetter,
+  cancelledRef: () => boolean,
+): () => void {
+  let map: LeafletMap | undefined;
+
+  // Dynamic import, not top-level - same "leaflet touches `window`
+  // during module evaluation" reasoning RouteMap.tsx's own identical
+  // import documents.
+  void import("leaflet").then((L) => {
+    if (cancelledRef()) return;
+    map = L.map(container, {
+      center: [initialCenter.lat, initialCenter.lon],
+      zoom: DEFAULT_ZOOM,
+    });
+    L.tileLayer(TILE_URL, {
+      maxZoom: 20,
+      subdomains: TILE_SUBDOMAINS,
+      attribution: TILE_ATTRIBUTION,
+      detectRetina: true,
+    }).addTo(map);
+    map.on("move", () => {
+      if (!map) return;
+      const c = map.getCenter();
+      setCenter({ lat: c.lat, lon: c.lng });
+    });
+
+    // The route's own road-following line, for spatial context while
+    // placing this pin - see this function's own `routeContext` param
+    // doc for why fewer than two points draws nothing, and RouteMap.tsx's
+    // identical fetch for why a request/response failure also just
+    // means no line draws, never a fabricated straight one standing in.
+    if (routeContext.length > 1) {
+      fetch("/api/route-geometry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waypoints: routeContext }),
+      })
+        .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+        .then((result) => {
+          if (cancelledRef() || !map || !result) return;
+          const roadLatLngs: [number, number][] = result.geometry.coordinates.map(
+            ([lon, lat]) => [lat, lon],
+          );
+          L.polyline(roadLatLngs, {
+            color: "#2563eb",
+            weight: 4,
+            opacity: 0.7,
+            lineJoin: "round",
+            interactive: false,
+          }).addTo(map);
+        })
+        .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+    }
+  });
+
+  return () => {
+    map?.remove();
+  };
+}
+
+// MapLibre GL + self-hosted PMTiles vector tiles - the preferred
+// renderer wherever resolveMapEngine() (mapEngine.ts) finds it can
+// actually work. Same drag-under-a-fixed-pin behavior as mountLeaflet
+// above, just reading the live center off MapLibre's own map.getCenter()
+// instead of Leaflet's.
+function mountMapLibre(
+  container: HTMLDivElement,
+  initialCenter: { lat: number; lon: number },
+  routeContext: { lat: number; lon: number }[],
+  setCenter: CenterSetter,
+  cancelledRef: () => boolean,
+): () => void {
+  let map: import("maplibre-gl").Map | undefined;
+
+  void import("maplibre-gl").then((maplibregl) =>
+    import("pmtiles").then(({ Protocol }) => {
+      if (cancelledRef()) return;
+
+      // Harmless to repeat across this modal's own mounts and
+      // RouteMap.tsx's own identical registration - see that
+      // component's own doc comment on mountMapLibre for why this
+      // skips an "already registered" guard.
+      const protocol = new Protocol();
+      maplibregl.addProtocol("pmtiles", protocol.tile);
+
+      map = new maplibregl.Map({
+        container,
+        style: protomapsStyle(PMTILES_URL),
+        center: [initialCenter.lon, initialCenter.lat],
+        zoom: DEFAULT_ZOOM,
+        // compact: true - see RouteMap.tsx's own identical option for
+        // why (a small tap-to-expand "i" rather than the credit
+        // spelled out at all times); doubly relevant here since this
+        // modal's own map is even smaller than the route info screen's.
+        attributionControl: { customAttribution: PMTILES_ATTRIBUTION, compact: true },
+      });
+      const mapInstance = map;
+      collapseAttribution(container);
+      mapInstance.on("move", () => {
+        const c = mapInstance.getCenter();
+        setCenter({ lat: c.lat, lon: c.lng });
+      });
+
+      // addSource/addLayer need the style to have actually finished
+      // loading first - same "load" gate RouteMap.tsx's own
+      // mountMapLibre uses, for the same reason.
+      mapInstance.once("load", () => {
+        if (cancelledRef() || routeContext.length <= 1) return;
+        // The route's own road-following line, for spatial context
+        // while placing this pin - see this function's own
+        // `routeContext` param doc for why a request/response failure
+        // also just means no line draws, never a fabricated straight
+        // one standing in.
+        fetch("/api/route-geometry", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ waypoints: routeContext }),
+        })
+          .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+          .then((result) => {
+            if (cancelledRef() || !result) return;
+            mapInstance.addSource("route-line", {
+              type: "geojson",
+              data: {
+                type: "Feature",
+                properties: {},
+                geometry: { type: "LineString", coordinates: result.geometry.coordinates },
+              },
+            });
+            mapInstance.addLayer({
+              id: "route-line",
+              type: "line",
+              source: "route-line",
+              layout: { "line-cap": "round", "line-join": "round" },
+              paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
+            });
+          })
+          .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+      });
+    }),
+  );
+
+  return () => {
+    map?.remove();
+  };
 }

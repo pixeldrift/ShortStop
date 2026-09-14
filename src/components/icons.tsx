@@ -157,11 +157,11 @@ export function ActionIcon({ action, className }: { action: string; className?: 
   return Svg ? <Svg className={className} /> : null;
 }
 
-/** A small pennant on a pole - the field-trip badge every AM/PM badge's
- * own AmIcon/PmIcon pairs with once a route's trip type is "fieldtrip"
- * instead (TripTypeIcon, TripTypeIcon.tsx) - a one-off special trip
- * has no time-of-day to show an AM/PM icon for. */
-export { default as FlagIcon } from "./icons/flag.svg";
+/** The "Special" trip-type badge every AM/PM badge's own AmIcon/PmIcon
+ * pairs with once a route's trip type is "fieldtrip" instead
+ * (TripTypeIcon, TripTypeIcon.tsx) - a one-off special trip has no
+ * time-of-day to show an AM/PM icon for. */
+export { default as StarIcon } from "./icons/star.svg";
 export { default as BackArrowIcon } from "./icons/back-arrow.svg";
 export { default as RightArrowIcon } from "./icons/right-arrow.svg";
 export { default as CheckIcon } from "./icons/check.svg";
@@ -221,6 +221,12 @@ export function CheckboxIcon({
 /** A literal schoolhouse - used for the Schools heading
  * (SchoolListScreen) and RouteListScreen's own "Schools" link. */
 export { default as SchoolIcon } from "./icons/school.svg";
+/** Per-level school-building glyphs (elementary/middle/high) - see
+ * SchoolLevelIcon.tsx for the SchoolLevel -> icon lookup that actually
+ * uses these. */
+export { default as ElementarySchoolIcon } from "./icons/elementary-school.svg";
+export { default as MiddleSchoolIcon } from "./icons/middle-school.svg";
+export { default as HighSchoolIcon } from "./icons/high-school.svg";
 
 /** A folded paper map with a dotted route line crossing it - used for
  * the Routes heading (RouteListScreen). */

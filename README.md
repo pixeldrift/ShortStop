@@ -26,7 +26,10 @@ can only be published once every stop has resolved.
 - Tailwind CSS 4
 - Prisma 7 + Postgres — routes, schools, stops, and the geocoding cache
   all live here
-- Leaflet + CARTO tiles for the map; [OpenRouteService](https://openrouteservice.org)
+- [MapLibre GL JS](https://maplibre.org) rendering a self-hosted
+  [PMTiles](https://protomaps.com) vector basemap when one's deployed
+  (`src/lib/mapEngine.ts`), falling back automatically to Leaflet +
+  CARTO raster tiles otherwise; [OpenRouteService](https://openrouteservice.org)
   for geocoding and the road-following route line
 
 ## Running locally
@@ -111,3 +114,17 @@ Vercel value).
   driver/routing data exists.
 - Printable, per-route sheets for handing to a substitute driver — the
   admin "Download stops" link is a flat CSV export today.
+- No `public/maps/middle-tennessee.pmtiles` file is committed yet, so
+  every map still renders on the Leaflet fallback in production. See
+  `src/lib/mapEngine.ts`'s doc comment for the exact steps to generate
+  and place one (a Protomaps extract for the service area) and switch
+  both maps over to MapLibre automatically.
+- Draggable map/content split on the turn-by-turn navigation screen
+  (`StepScreen.tsx`) — currently a fixed 30vh/70vh (portrait) or
+  42%/58% (landscape) split, with the content pane's own text/icon/
+  button sizing tuned to that split via `clamp()` (vh-based). Making
+  the divider draggable needs the content pane to handle being
+  squeezed past its current tuning - likely a minimum content height
+  with `overflow-y-auto` once dragged past where the current sizing
+  was designed for, not just naive shrinking - plus a stored split
+  ratio and double-tap-to-reset back to the default.

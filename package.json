@@ -13,6 +13,8 @@
     "geocode": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeRoute.js",
     "geocode:schools": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/geocodeSchools.js",
     "fix-school-coordinates": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fixSchoolCoordinates.js",
+    "fix-misplaced-rider-notes": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fixMisplacedRiderNotes.js",
+    "fill-stop-details": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fillStopDetails.js",
     "prototype:overpass": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/prototypeOverpassGeocode.js"
   },
   "dependencies": {
@@ -20,8 +22,10 @@
     "@prisma/client": "^7.10.0",
     "leaflet": "^1.9.4",
     "leaflet-rotate": "^0.2.8",
+    "maplibre-gl": "^5.24.0",
     "next": "16.3.4",
     "pg": "^8.23.0",
+    "pmtiles": "^4.5.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },

@@ -107,9 +107,10 @@ function routeRow(route: Route): (string | number)[] {
   ];
 }
 
-/** The route list itself as CSV, one row per route - fabricated demo
- * routes (see demoRoutes.ts) are filtered out, so an export never
- * hands someone filler rows mixed in with the district's real ones. */
+/** The route list itself as CSV, one row per route - a fabricated demo
+ * route is filtered out (should one ever exist again), so an export
+ * never hands someone filler rows mixed in with the district's real
+ * ones. */
 export function routeListToCsv(routes: Route[]): string {
   const realRoutes = routes.filter((r) => r.status !== "demo");
   const rows = realRoutes.map((route) => csvRow(routeRow(route)));

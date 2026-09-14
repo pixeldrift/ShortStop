@@ -105,7 +105,19 @@ export function summarizeRouteResolution(
       return {
         stepId: waypoint.stepId,
         status: "unresolved",
-        reason: entry.notFound ? notFoundReason(waypoint, confirmedRoads) : "Couldn't look up coordinates",
+        // A genuine not-found gets the specific, address-quoting line
+        // below; anything else (a rate limit, a missing/invalid
+        // ORS_API_KEY, a real HTTP error from the geocoder) shows
+        // entry.message itself - already this app's own readable
+        // explanation (see WaypointCacheEntry's own doc) - rather than
+        // a one-size-fits-all "Couldn't look up coordinates" that reads
+        // identically whether the address genuinely doesn't exist or
+        // the geocoder itself is misconfigured/down/rate-limited. The
+        // same underlying cause repeating across every row (a bad API
+        // key, say) should be obvious from the row list itself, not
+        // require opening "View Error" on each one to discover they're
+        // all the same failure.
+        reason: entry.notFound ? notFoundReason(waypoint, confirmedRoads) : entry.message,
         detail: entry.message,
         raw: entry.raw,
       };
