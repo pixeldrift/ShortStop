@@ -10,10 +10,17 @@ import {
   SchoolIcon,
   SearchIcon,
 } from "./icons";
+import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
-import type { Route } from "@/lib/types";
+import type { Route, SchoolLevel } from "@/lib/types";
+
+/** Same three school levels RouteListScreen's own SCHOOL_LEVEL_TOGGLES
+ * filters by, here as icon buttons instead of ES/MS/HS text - shown
+ * beside the search bar rather than stacked above/below it, so the
+ * bar has room to stay full height next to them. */
+const SCHOOL_LEVELS: SchoolLevel[] = ["elementary", "middle", "high"];
 
 /** The city out of a school's own "<street>, <city>, TN <zip>" address
  * (schools.csv/Postgres' `School` table - every real school's address
@@ -48,11 +55,7 @@ type SchoolSortField = "name" | "city" | "routes";
  * never route data beyond each one's own route count.
  *
  * Every real school here is a Rutherford County one today (see the
- * small district label above the heading) - schoolLevel isn't shown
- * anymore (an admin picking a school by name/city doesn't need it
- * repeated here too, and it's still enforced everywhere it actually
- * matters - EditRouteScreen's own school picker, routing logic), but
- * stays on `SchoolInfo` itself for that.
+ * small district label above the heading).
  */
 export function SchoolListScreen({
   schools,
@@ -71,6 +74,12 @@ export function SchoolListScreen({
   const [query, setQuery] = useState("");
   const [sortField, setSortField] = useState<SchoolSortField>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Empty set shows every level - same convention RouteListScreen's own
+  // trip-type/school-level toggles already use, rather than picking one
+  // exclusive view.
+  const [activeLevels, setActiveLevels] = useState<ReadonlySet<SchoolLevel>>(
+    () => new Set(),
+  );
 
   const toggleSort = (field: SchoolSortField) => {
     if (field === sortField) {
@@ -80,6 +89,15 @@ export function SchoolListScreen({
       setSortDir("asc");
     }
   };
+
+  function toggleLevel(level: SchoolLevel) {
+    setActiveLevels((prev) => {
+      const next = new Set(prev);
+      if (next.has(level)) next.delete(level);
+      else next.add(level);
+      return next;
+    });
+  }
 
   const routeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -93,9 +111,10 @@ export function SchoolListScreen({
     const q = query.trim().toLowerCase();
     const matching = Object.entries(schools).filter(
       ([name, info]) =>
-        !q ||
-        name.toLowerCase().includes(q) ||
-        cityFromAddress(info.address).toLowerCase().includes(q),
+        (activeLevels.size === 0 || activeLevels.has(info.schoolLevel)) &&
+        (!q ||
+          name.toLowerCase().includes(q) ||
+          cityFromAddress(info.address).toLowerCase().includes(q)),
     );
 
     const compare = (
@@ -116,7 +135,7 @@ export function SchoolListScreen({
     return [...matching].sort((a, b) =>
       sortDir === "asc" ? compare(a, b) : -compare(a, b),
     );
-  }, [schools, query, sortField, sortDir, routeCounts]);
+  }, [schools, query, sortField, sortDir, routeCounts, activeLevels]);
 
   return (
     <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center">
@@ -163,26 +182,49 @@ export function SchoolListScreen({
           <span className="h-10 w-10 shrink-0" aria-hidden="true" />
         </div>
 
-        <div className="relative w-full max-w-md shrink-0">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search schools"
-            aria-label="Search schools"
-            className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
-              className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
-            >
-              <CloseIcon className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <div className="flex w-full max-w-md shrink-0 items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search schools"
+              aria-label="Search schools"
+              className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+              >
+                <CloseIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          {/* Same empty-set-shows-everything toggle convention as
+              RouteListScreen's own trip-type/school-level group, just
+              icons instead of ES/MS/HS text - the search bar shrinks
+              (min-w-0 flex-1 above) to make room beside it. */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {SCHOOL_LEVELS.map((level) => {
+              const active = activeLevels.has(level);
+              return (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => toggleLevel(level)}
+                  aria-pressed={active}
+                  aria-label={`Filter to ${level} schools`}
+                  className={active ? "text-blue-600" : "text-zinc-300"}
+                >
+                  <SchoolLevelIcon level={level} className="h-6 w-6" />
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
@@ -234,7 +276,7 @@ export function SchoolListScreen({
                   {routeCounts[name] ?? 0}
                 </span>
                 <span className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
-                  <MapPinIcon className="h-3 w-3 shrink-0" />
+                  <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
                   <span className="truncate">
                     {streetFromAddress(info.address)}
                   </span>
