@@ -103,34 +103,9 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
     });
 }
 
-/** The exact reader-facing instruction a row's own action/location
- * values produce - "Left onto Main Street", "Proceed onto Elm Street",
- * "Turn Around", "Stop 5 at 123 Elm Street", "Arrive at LaVergne High
- * School" - not the screen's own ALL-CAPS heading (stepHeading below)
- * or spoken announcement (buildRouteFromRows), which both phrase the
- * same row differently for their own contexts. Shared by
- * StepRowEditor's own live preview (this exact row, mid-edit) and
- * anywhere else that wants to show what a row actually says without
- * duplicating this phrasing. Works the same for every PLACE_ACTIONS
- * action (deriveWaypoints.ts's own "stop, depart, arrive, complete"
- * set) rather than hardcoding "Stop" as the only one with its own
- * label, and the same for every turn action (Left/Right aside) rather
- * than special-casing which of the dropdown's own options genuinely
- * have a destination - "Turn Around"/"Pull Over" simply never get one
- * typed in, so the fallback to the bare action label already covers
- * them without a name-by-name list that'd need updating for any future
- * action added to that dropdown. `stopNumber` null omits the number
- * rather than printing "Stop null" - the same graceful fallback every
- * other stop-number display in this app already uses for a row not
- * actually numbered yet. `effectiveFrom` defaults to the row's own
- * `fromLocation`, but a caller tracking "current road" context (see
- * deriveWaypointsWithContext's own `previousRoad`) can pass the
- * inferred value instead, so a row with no explicit fromLocation of
- * its own still previews as the real intersection it'll actually
- * resolve to, not just its bare location. */
 /** The preposition connecting a waypoint's own action to its
  * location/destination - every instruction and spoken announcement
- * this app builds from a row (formatWaypointInstruction below,
+ * this app builds from a row (formatWaypointInstructionParts below,
  * buildRouteFromRows's own spokenAnnouncement, EditRouteScreen's
  * crossroadsLine) reads through this one lookup rather than each
  * hardcoding its own guess, so "Continue on Main Street," "Return to
@@ -148,20 +123,61 @@ export function waypointConnectorWord(action: string): string {
   return "onto";
 }
 
-export function formatWaypointInstruction(
+/** The exact reader-facing instruction a row's own action/location
+ * values produce, broken into its own separately-stylable parts
+ * (`label`, `connector`, `location`) rather than one flat string -
+ * StepRowEditor's own popup header uses this directly so it can color
+ * the waypoint's real name differently from the connecting word
+ * ("at"/"onto"/"&") joining it to that name; formatWaypointInstruction
+ * below just joins these same three parts back into the plain string
+ * every other caller wants. `location` already carries its own
+ * " & " join for an intersection (both roads, from and to) - a caller
+ * that wants to style/break on that ampersand specifically (see
+ * StepRowEditor) splits on it itself rather than this function
+ * returning a fourth part just for a case only one caller cares about.
+ * `stopNumber` null omits the number rather than printing "Stop null."
+ * `effectiveFrom` defaults to the row's own `fromLocation`, but a
+ * caller tracking "current road" context (deriveWaypointsWithContext's
+ * own `previousRoad`) can pass the inferred value instead, so a row
+ * with no explicit fromLocation of its own still previews as the real
+ * intersection it'll actually resolve to. */
+export interface WaypointInstructionParts {
+  label: string;
+  connector?: string;
+  location?: string;
+}
+
+export function formatWaypointInstructionParts(
   row: RawRouteRow,
   stopNumber: number | null,
   effectiveFrom: string = row.fromLocation,
-): string {
+): WaypointInstructionParts {
   const { action, location } = row;
   const a = action.toLowerCase();
   if (a === "stop" || a === "depart" || a === "arrive" || a === "complete") {
     const fullLocation = effectiveFrom ? `${effectiveFrom} & ${location}` : location;
     const label = a === "stop" ? (stopNumber ? `Stop ${stopNumber}` : "Stop") : action || "Stop";
-    return fullLocation ? `${label} ${waypointConnectorWord(a)} ${fullLocation}` : label;
+    return fullLocation
+      ? { label, connector: waypointConnectorWord(a), location: fullLocation }
+      : { label };
   }
   const actionLabel = action || "Turn";
-  return location ? `${actionLabel} ${waypointConnectorWord(a)} ${location}` : actionLabel;
+  return location
+    ? { label: actionLabel, connector: waypointConnectorWord(a), location }
+    : { label: actionLabel };
+}
+
+export function formatWaypointInstruction(
+  row: RawRouteRow,
+  stopNumber: number | null,
+  effectiveFrom: string = row.fromLocation,
+): string {
+  const { label, connector, location } = formatWaypointInstructionParts(
+    row,
+    stopNumber,
+    effectiveFrom,
+  );
+  return connector && location ? `${label} ${connector} ${location}` : label;
 }
 
 /** The big on-screen line for a turn-kind step (StepContent's own `h1`

@@ -33,6 +33,7 @@ import {
 import {
   buildRouteFromRows,
   formatWaypointInstruction,
+  formatWaypointInstructionParts,
   waypointConnectorWord,
 } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
@@ -766,6 +767,9 @@ function StepRowEditor({
   onCancel,
   onDelete,
   onUpdate,
+  canGoPrev,
+  canGoNext,
+  onNavigate,
 }: {
   row: RawRouteRow;
   stopNumber: number | null;
@@ -827,6 +831,18 @@ function StepRowEditor({
   onCancel: () => void;
   onDelete: () => void;
   onUpdate: () => void;
+  /** Whether the header's own prev/next arrows have anywhere to go -
+   * both false for a route with only one currently-visible waypoint
+   * (see EditRouteScreen's own visibleRowIndices, which already
+   * respects "Stops only"), so navigating never has to guess whether
+   * it's about to run off either end of the list. */
+  canGoPrev: boolean;
+  canGoNext: boolean;
+  /** Saves this row's own draft (same as tapping Update) and opens the
+   * next/previous *visible* row's editor in its place - "visible"
+   * meaning whatever "Stops only" currently leaves on screen, so this
+   * never lands on a turn that's hidden right now. */
+  onNavigate: (direction: "prev" | "next") => void;
 }) {
   // Live off the draft's own Type select, not the `stopNumber` prop
   // (only recomputed by the parent from the *committed* rows, see
@@ -963,9 +979,19 @@ function StepRowEditor({
   // the exact instruction this row now produces ("Stop 1 at Lake Forest
   // Dr & Davids Way," "Left onto Main Street") instead of just its own
   // type/number - both update immediately as Type/destination change,
-  // not only after Update commits. Reused as PlaceCoordinatesModal's
-  // own title below, so that popup identifies the same waypoint the
-  // same way rather than restating it in different words.
+  // not only after Update commits.
+  const instructionParts = formatWaypointInstructionParts(
+    row,
+    stopNumber,
+    isPlainLocation ? "" : row.fromLocation || previousRoad || "",
+  );
+  // The waypoint's own real name(s) read in bold black - the thing
+  // actually worth a glance - while the connecting word joining it to
+  // the label ("at"/"onto"/"&"...) stays gray and not bold, just
+  // grammar holding the two names together. An intersection's own
+  // location ("X & Y") always breaks right after the "&" rather than
+  // wherever it happens to wrap on its own, so the two road names never
+  // read as one run-on line.
   const instructionLine = (
     <>
       {isStop ? (
@@ -980,11 +1006,39 @@ function StepRowEditor({
       ) : (
         <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
       )}
-      {formatWaypointInstruction(
-        row,
-        stopNumber,
-        isPlainLocation ? "" : row.fromLocation || previousRoad || "",
-      )}
+      <span>
+        <span className="font-bold text-zinc-900">
+          {instructionParts.label}
+        </span>
+        {instructionParts.connector && instructionParts.location && (
+          <>
+            {" "}
+            <span className="font-normal text-zinc-500">
+              {instructionParts.connector}
+            </span>{" "}
+            {instructionParts.location.includes(" & ") ? (
+              (() => {
+                const [fromRoad, toRoad] =
+                  instructionParts.location!.split(" & ");
+                return (
+                  <>
+                    <span className="font-bold text-zinc-900">
+                      {fromRoad}
+                    </span>{" "}
+                    <span className="font-normal text-zinc-500">&</span>
+                    <br />
+                    <span className="font-bold text-zinc-900">{toRoad}</span>
+                  </>
+                );
+              })()
+            ) : (
+              <span className="font-bold text-zinc-900">
+                {instructionParts.location}
+              </span>
+            )}
+          </>
+        )}
+      </span>
     </>
   );
 
@@ -1029,7 +1083,7 @@ function StepRowEditor({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2">
-          <div>
+          <div className="min-w-0 flex-1">
             {/* Same card, same size, whichever of the two views below
                 is showing - "Place Coordinates" swaps in for "Edit
                 Waypoint" entirely rather than opening as a second
@@ -1056,13 +1110,43 @@ function StepRowEditor({
                   this row now produces ("Stop 1 at Lake Forest Dr &
                   Davids Way," "Left onto Main Street") instead of just
                   its own type/number - both update immediately as Type/
-                  destination change, not only after Update commits. */}
-                <p className="mt-0.5 flex items-center gap-1.5 text-sm font-bold text-zinc-500">
+                  destination change, not only after Update commits.
+                  items-start (not -center) - the icon floats against the
+                  top of the first line only, not the vertical center of
+                  the whole (now possibly two-line, see
+                  formatWaypointInstructionParts' own "&" split above)
+                  block. leading-[1.125] - roughly three-quarters of the
+                  1.5 line-height this paragraph would otherwise inherit,
+                  tight enough that two short road names read as one
+                  compact label instead of two loosely-spaced lines. */}
+                <p className="mt-0.5 flex items-start gap-1.5 text-sm leading-[1.125]">
                   {instructionLine}
                 </p>
               </>
             )}
           </div>
+          {!showPlaceModal && (
+            <div className="flex shrink-0 items-center gap-1 pt-1">
+              <button
+                type="button"
+                onClick={() => onNavigate("prev")}
+                disabled={!canGoPrev}
+                aria-label="Previous waypoint"
+                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 disabled:opacity-30 active:bg-zinc-100"
+              >
+                <BackArrowIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate("next")}
+                disabled={!canGoNext}
+                aria-label="Next waypoint"
+                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 disabled:opacity-30 active:bg-zinc-100"
+              >
+                <RightArrowIcon className="h-4 w-4" />
+              </button>
+            </div>
+          )}
           <button
             type="button"
             onClick={showPlaceModal ? () => setShowPlaceModal(false) : onCancel}
@@ -1092,7 +1176,7 @@ function StepRowEditor({
         ) : (
           <>
             <div className="mt-3 grid grid-cols-[3fr_2fr_3fr] gap-2">
-              <Field label="Type">
+              <Field label="Type" required>
                 <select
                   className={inputClass}
                   // Falls back to "" (the "- Select -" option below)
@@ -1129,7 +1213,7 @@ function StepRowEditor({
                     value={row.side}
                     onChange={(e) => onChange({ side: e.target.value })}
                   >
-                    <option value="">(none)</option>
+                    <option value="">-</option>
                     <option value="Left">Left</option>
                     <option value="Right">Right</option>
                   </select>
@@ -1193,7 +1277,7 @@ function StepRowEditor({
             )}
 
             <div className="mt-2 flex flex-col gap-2">
-              <Field label="Location">
+              <Field label="Location" required>
                 <input
                   className={`${inputClass} ${
                     status?.status === "unresolved"
@@ -1460,7 +1544,7 @@ function AddStepButton({
 }) {
   return (
     <div className="relative flex items-center justify-center py-1">
-      <div className="absolute inset-x-0 border-t border-dashed border-zinc-200" />
+      <div className="absolute inset-x-0 border-t border-dashed border-zinc-300" />
       <button
         type="button"
         onClick={onClick}
@@ -2063,10 +2147,11 @@ export function EditRouteScreen({
   // is) - that's what a release actually reorders to.
   const [dragRowIndex, setDragRowIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
-  // Defaults to on here (unlike StartScreen's own "View All Stops",
-  // which defaults to stops-only) - reviewing a route for editing is
-  // exactly when seeing every turn in its real place matters most.
-  const [showTurns, setShowTurns] = useState(true);
+  // Defaults to off (showing every turn) here - unlike StartScreen's
+  // own "View All Stops," which defaults to stops-only - reviewing a
+  // route for editing is exactly when seeing every turn in its real
+  // place matters most.
+  const [stopsOnly, setStopsOnly] = useState(false);
   // Narrows the list to only what still needs a coordinate - "Jump to
   // next unverified" below is the other way to reach the same rows
   // without leaving the full list.
@@ -2885,28 +2970,51 @@ export function EditRouteScreen({
     );
   }
 
-  // Which rows to actually render below - every row when "Show turns"
-  // is on, stops only otherwise (matching StartScreen's own "View All
+  // Which rows to actually render below - stops only when "Stops only"
+  // is on, every row otherwise (matching StartScreen's own "View All
   // Stops" default), further narrowed to just the unresolved ones when
   // "Unverified only" is on. Never affects the underlying `rows` state
   // itself, only what's currently displayed.
   const visibleRowIndices = rows
     .map((_, index) => index)
-    .filter((index) => showTurns || rows[index].action.toLowerCase() === "stop")
+    .filter((index) => !stopsOnly || rows[index].action.toLowerCase() === "stop")
     .filter(
       (index) =>
         !showUnverifiedOnly || resolutionRows[index]?.status === "unresolved",
     );
 
   // "Jump to next unverified"'s own target list - every *currently
-  // visible* unresolved row (so it never lands on one hidden by "Show
-  // turns" being off), independent of "Unverified only" itself (that
+  // visible* unresolved row (so it never lands on one hidden by "Stops
+  // only" being on), independent of "Unverified only" itself (that
   // button's only ever shown while this list is the full one, not
   // already narrowed to just these rows - see its own render below).
   const unverifiedRowIndices = rows
     .map((_, index) => index)
-    .filter((index) => showTurns || rows[index].action.toLowerCase() === "stop")
+    .filter((index) => !stopsOnly || rows[index].action.toLowerCase() === "stop")
     .filter((index) => resolutionRows[index]?.status === "unresolved");
+
+  // StepRowEditor's own header arrows - saves the currently open row's
+  // draft (same as tapping Update) and opens whichever *visible* row
+  // sits next to it, so paging through a route's own waypoints never
+  // lands on one "Stops only" (or "Unverified only") is currently
+  // hiding. No-op past either end of `visibleRowIndices` - the arrows
+  // themselves are disabled there too (see canGoPrev/canGoNext below),
+  // this is just the same guard on the handler itself.
+  function goToRow(direction: "prev" | "next") {
+    if (expandedIndex === null || !draftRow) return;
+    const currentPos = visibleRowIndices.indexOf(expandedIndex);
+    if (currentPos === -1) return;
+    const nextIndex =
+      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
+    if (nextIndex === undefined) return;
+    setRows((prev) =>
+      prev.map((r, i) => (i === expandedIndex ? draftRow : r)),
+    );
+    if (newlyAddedIndex === expandedIndex) setNewlyAddedIndex(null);
+    setDirty(true);
+    setExpandedIndex(nextIndex);
+    setDraftRow({ ...rows[nextIndex] });
+  }
 
   function jumpToNextUnverified() {
     if (unverifiedRowIndices.length === 0) return;
@@ -3300,9 +3408,9 @@ export function EditRouteScreen({
 
           <div className="flex w-full max-w-md shrink-0 items-center justify-between gap-3">
             <ToggleSwitch
-              checked={showTurns}
-              onChange={setShowTurns}
-              label="Show turns"
+              checked={stopsOnly}
+              onChange={setStopsOnly}
+              label="Stops only"
             />
             <button
               type="button"
@@ -3471,6 +3579,12 @@ export function EditRouteScreen({
                   draftWaypoint.kind !== "unresolvable" &&
                   setManualCoordinates(draftWaypoint, lat, lon)
                 }
+                canGoPrev={visibleRowIndices.indexOf(index) > 0}
+                canGoNext={
+                  visibleRowIndices.indexOf(index) <
+                  visibleRowIndices.length - 1
+                }
+                onNavigate={goToRow}
                 onCancel={handleCancelRow}
                 onDelete={() => handleDeleteRow(index)}
                 onUpdate={handleUpdateRow}
