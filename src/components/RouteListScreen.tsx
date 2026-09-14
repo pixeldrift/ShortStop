@@ -11,7 +11,9 @@ import {
   EditIcon,
   EyeIcon,
   EyeOffIcon,
+  GroupedViewIcon,
   HeartIcon,
+  ListViewIcon,
   MailIcon,
   MapPinIcon,
   PlusIcon,
@@ -567,15 +569,20 @@ export function RouteListScreen({
               above already decides this automatically (default view,
               backs off the moment a search or toggle actually narrows
               things down), so this just reflects that state back
-              rather than offering a second way to set it. Only shown
-              while actually grouped - the plain table it falls back to
-              is the unremarkable default, not something that needs its
-              own label. */}
-          {grouped && (
-            <span className="shrink-0 text-[10px] font-bold tracking-wide text-blue-600 uppercase">
-              Grouped
-            </span>
-          )}
+              rather than offering a second way to set it. Always one
+              of the two icons, not conditionally shown text - grouped
+              and flat are equally normal states for this list to be
+              in, neither more "default" than the other from here. */}
+          <span
+            className="shrink-0 text-blue-600"
+            aria-label={grouped ? "Grouped view" : "List view"}
+          >
+            {grouped ? (
+              <GroupedViewIcon className="h-5 w-5" />
+            ) : (
+              <ListViewIcon className="h-5 w-5" />
+            )}
+          </span>
           {/* Icon toggles, not text - AM/PM/SP as TripTypeIcon, ES/MS/HS
               as SchoolLevelIcon, each own group laid out inline (a row,
               not a stacked column) so the icons themselves can be big
@@ -1170,7 +1177,17 @@ function SchoolNameLabel({ name }: { name: string }) {
       setDropSchoolWord(false);
       return;
     }
-    const checkFit = () => setDropSchoolWord(el.scrollWidth > el.clientWidth);
+    // A 1px tolerance, and skipping the state update entirely when the
+    // answer hasn't actually changed - without both, a name sitting
+    // right at the fit/no-fit boundary can flip a fractional pixel
+    // either way as the browser's own layout rounding shifts during
+    // scroll (subpixel jitter, not a real size change), which reads as
+    // this label's text flickering between its full and shortened form
+    // on every scroll frame instead of just holding still.
+    const checkFit = () => {
+      const shouldDrop = el.scrollWidth > el.clientWidth + 1;
+      setDropSchoolWord((prev) => (prev === shouldDrop ? prev : shouldDrop));
+    };
     checkFit();
     const observer = new ResizeObserver(checkFit);
     observer.observe(el);

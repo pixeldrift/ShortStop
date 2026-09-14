@@ -1,27 +1,14 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 24">
-  <!-- Generator: Adobe Illustrator 30.0.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 123)  -->
-  <defs>
-    <style>
-      .st0 {
-        fill: none;
-        stroke: #000;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        stroke-width: 2px;
-      }
-    </style>
-  </defs>
-  <line class="st0" x1="9.85" y1="3.8" x2="19.95" y2="3.8"/>
-  <line class="st0" x1="9.88" y1="7.1" x2="19.97" y2="7.1"/>
-  <line class="st0" x1="9.88" y1="10.38" x2="19.97" y2="10.38"/>
-  <line class="st0" x1="9.88" y1="13.65" x2="19.97" y2="13.65"/>
-  <line class="st0" x1="3.76" y1="3.83" x2="6.82" y2="3.83"/>
-  <line class="st0" x1="3.76" y1="7.1" x2="6.82" y2="7.1"/>
-  <line class="st0" x1="3.76" y1="10.38" x2="6.82" y2="10.38"/>
-  <line class="st0" x1="3.76" y1="13.65" x2="6.82" y2="13.65"/>
-  <line class="st0" x1="9.88" y1="16.92" x2="19.97" y2="16.92"/>
-  <line class="st0" x1="3.76" y1="16.92" x2="6.82" y2="16.92"/>
-  <line class="st0" x1="9.85" y1="20.2" x2="19.94" y2="20.2"/>
-  <line class="st0" x1="3.76" y1="20.2" x2="6.82" y2="20.2"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <line x1="9.85" y1="3.8" x2="19.95" y2="3.8" />
+  <line x1="9.88" y1="7.1" x2="19.97" y2="7.1" />
+  <line x1="9.88" y1="10.38" x2="19.97" y2="10.38" />
+  <line x1="9.88" y1="13.65" x2="19.97" y2="13.65" />
+  <line x1="3.76" y1="3.83" x2="6.82" y2="3.83" />
+  <line x1="3.76" y1="7.1" x2="6.82" y2="7.1" />
+  <line x1="3.76" y1="10.38" x2="6.82" y2="10.38" />
+  <line x1="3.76" y1="13.65" x2="6.82" y2="13.65" />
+  <line x1="9.88" y1="16.92" x2="19.97" y2="16.92" />
+  <line x1="3.76" y1="16.92" x2="6.82" y2="16.92" />
+  <line x1="9.85" y1="20.2" x2="19.94" y2="20.2" />
+  <line x1="3.76" y1="20.2" x2="6.82" y2="20.2" />
 </svg>

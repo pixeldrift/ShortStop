@@ -178,11 +178,8 @@ export { default as DownloadIcon } from "./icons/download.svg";
 export { default as EyeIcon } from "./icons/eye.svg";
 export { default as EyeOffIcon } from "./icons/eye-off.svg";
 export { default as SearchIcon } from "./icons/search.svg";
-// am.svg/pm.svg (the original pair) are gone - these two names now
-// point at what used to be the alternate am-alt.svg/pm-alt.svg pair,
-// swapped in app-wide after a side-by-side look at both.
-export { default as AmIcon } from "./icons/am-alt.svg";
-export { default as PmIcon } from "./icons/pm-alt.svg";
+export { default as AmIcon } from "./icons/am.svg";
+export { default as PmIcon } from "./icons/pm.svg";
 /** A driver's face - not wired into anything yet, ready for a future
  * per-driver user-settings screen. */
 export { default as DriverIcon } from "./icons/driver.svg";
@@ -241,5 +238,11 @@ export { default as SchoolLevelHsIcon } from "./icons/school-level-hs.svg";
 /** A folded paper map with a dotted route line crossing it - used for
  * the Routes heading (RouteListScreen). */
 export { default as RouteIcon } from "./icons/route.svg";
+
+/** RouteListScreen's own grouped-vs-flat state, as a two-icon pair
+ * (grouped headers/sub-items vs. a plain bulleted list) rather than
+ * text - shows whichever one matches the list currently on screen. */
+export { default as GroupedViewIcon } from "./icons/grouped-view.svg";
+export { default as ListViewIcon } from "./icons/list-view.svg";
 
 export { default as MailIcon } from "./icons/mail.svg";
