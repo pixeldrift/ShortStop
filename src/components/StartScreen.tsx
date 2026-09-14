@@ -204,13 +204,13 @@ export function StartScreen({
   );
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-6 text-center">
+    <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
       {/* Everything that can genuinely grow past the viewport (the
           overview map especially) lives in this inner, scrollable
-          region - Start Route/Edit Route below stay outside it, pinned
-          to the bottom of the screen instead of scrolling away with a
-          long route. */}
-      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto">
+          region - Start Route below stays outside it, pinned to the
+          bottom of the screen instead of scrolling away with a long
+          route. */}
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto pb-1">
         <div className="flex w-full max-w-md shrink-0 items-center justify-between">
           <button
             type="button"
@@ -270,7 +270,19 @@ export function StartScreen({
           <span className="h-10 w-10 shrink-0" aria-hidden="true" />
         </div>
 
-        <div className="w-full max-w-md shrink-0 rounded-2xl border border-zinc-300 p-4">
+        <div className="relative w-full max-w-md shrink-0 rounded-2xl border border-zinc-300 p-4">
+          {/* Replaces the old standalone "Edit Route" link below the
+              Start Route button - same destination (onEdit), just
+              reachable straight from this info box instead of costing
+              its own row at the very bottom of the screen. */}
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label="Edit route"
+            className="absolute top-3 right-3 text-blue-600 active:text-blue-800"
+          >
+            <EditIcon className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={() => onViewSchool(route.schoolName)}
@@ -387,15 +399,6 @@ export function StartScreen({
         className="btn-glossy-blue font-heading flex w-full max-w-xs shrink-0 items-center justify-center gap-2 rounded-2xl bg-blue-600 py-6 text-2xl font-bold text-white active:scale-[0.98]"
       >
         Start Route <TriangleIcon direction="right" className="h-6 w-6" />
-      </button>
-
-      <button
-        type="button"
-        onClick={onEdit}
-        className="flex shrink-0 items-center gap-1 text-xs font-medium text-zinc-400 active:text-zinc-600"
-      >
-        <EditIcon className="h-3 w-3" />
-        Edit Route
       </button>
 
       {showStopsModal && (
