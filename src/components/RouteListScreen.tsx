@@ -19,6 +19,7 @@ import {
   PlusIcon,
   RouteIcon,
   SchoolIcon,
+  SchoolLevelsIcon,
   SearchIcon,
   TrashIcon,
   WarningIcon,
@@ -99,6 +100,14 @@ const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
 const SCHOOL_LEVEL_ORDER: SchoolLevel[] = SCHOOL_LEVEL_TOGGLES.map(
   (t) => t.value,
 );
+// The school-level filter is a single icon that cycles through these
+// four states on each tap (view all -> elementary -> middle -> high ->
+// back to view all) rather than three separate toggle buttons - see
+// cycleSchoolLevel and its own button below.
+const SCHOOL_LEVEL_CYCLE: (SchoolLevel | null)[] = [
+  null,
+  ...SCHOOL_LEVEL_ORDER,
+];
 // Admin-mode only (see its own row below) - a normal driver's view
 // already excludes unpublished routes outright, so filtering by
 // published/hidden would have nothing to do there.
@@ -222,31 +231,29 @@ export function RouteListScreen({
     routeId: string;
     ready: boolean;
   } | null>(null);
-  // Every toggle starts off - see TRIP_TYPE_TOGGLES/SCHOOL_LEVEL_TOGGLES
-  // above for why an empty set is the "show everything" state here.
-  const [activeTripTypes, setActiveTripTypes] = useState<ReadonlySet<TripType>>(
-    () => new Set(),
+  // Exclusive, not multi-select - tapping a trip type turns it on and
+  // drops whatever else was active, tapping the active one again turns
+  // it back off (null = "show everything"). Same reasoning for
+  // activeSchoolLevel, just cycled through a single icon (see
+  // SCHOOL_LEVEL_CYCLE and its own button below) instead of one button
+  // per level.
+  const [activeTripType, setActiveTripType] = useState<TripType | null>(
+    null,
   );
-  const [activeSchoolLevels, setActiveSchoolLevels] = useState<
-    ReadonlySet<SchoolLevel>
-  >(() => new Set());
+  const [activeSchoolLevel, setActiveSchoolLevel] =
+    useState<SchoolLevel | null>(null);
   const [activePublishStatuses, setActivePublishStatuses] = useState<
     ReadonlySet<"published" | "hidden">
   >(() => new Set());
   function toggleTripType(value: TripType) {
-    setActiveTripTypes((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
-    });
+    setActiveTripType((prev) => (prev === value ? null : value));
   }
-  function toggleSchoolLevel(value: SchoolLevel) {
-    setActiveSchoolLevels((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
+  // null (view all) -> elementary -> middle -> high -> null - see
+  // SCHOOL_LEVEL_CYCLE below for the actual ordering.
+  function cycleSchoolLevel() {
+    setActiveSchoolLevel((prev) => {
+      const index = SCHOOL_LEVEL_CYCLE.indexOf(prev);
+      return SCHOOL_LEVEL_CYCLE[(index + 1) % SCHOOL_LEVEL_CYCLE.length];
     });
   }
   function togglePublishStatus(value: "published" | "hidden") {
@@ -330,9 +337,9 @@ export function RouteListScreen({
         ? "published"
         : "hidden";
       const matchesToggles =
-        (activeTripTypes.size === 0 || activeTripTypes.has(route.tripType)) &&
-        (activeSchoolLevels.size === 0 ||
-          activeSchoolLevels.has(route.schoolLevel)) &&
+        (activeTripType === null || route.tripType === activeTripType) &&
+        (activeSchoolLevel === null ||
+          route.schoolLevel === activeSchoolLevel) &&
         // Only admin mode ever renders this toggle row (a normal
         // driver's view already excludes hidden routes outright above),
         // but guard on adminMode here too so a stale selection can't
@@ -352,39 +359,36 @@ export function RouteListScreen({
   }, [
     routes,
     query,
-    activeTripTypes,
-    activeSchoolLevels,
+    activeTripType,
+    activeSchoolLevel,
     activePublishStatuses,
     sortField,
     sortDir,
     adminMode,
   ]);
 
-  // The hierarchical grouped view (routeNumber > AM/PM > school level,
-  // see groupedTree below) is the default - it's the whole route board
-  // read at a glance, so it only backs off once an admin actually goes
-  // looking for something specific: a search, or narrowing down by one
-  // of the toggle groups above. Any of those switches straight back to
-  // the plain sortable table, since a hand-picked subset (a single
-  // school level, say) doesn't have the range across route numbers a
-  // grouped view is actually for.
-  const grouped =
-    query.trim() === "" &&
-    activeTripTypes.size === 0 &&
-    activeSchoolLevels.size === 0 &&
-    activePublishStatuses.size === 0;
+  // Grouped is the default, but a plain view preference now - not
+  // something search/toggles ever flip on their own. Every filter
+  // above (search, trip type, school level, publish status) already
+  // narrows `filtered`, which groupedTree below reads straight from
+  // regardless of which view is currently on screen - so switching
+  // views never loses or changes what's actually filtered, it just
+  // changes how the same filtered set is laid out.
+  const [grouped, setGrouped] = useState(true);
 
   // routeNumber > tripType > schoolLevel, exactly the id convention
   // Route.id documents (`${routeNumber}-${tripType}-${schoolLevel}`) -
   // a single bus number often carries one row per school level it
   // serves, for each of its AM and PM runs, and this is just that same
   // structure read back out as a tree instead of a flat list. Built off
-  // `filtered` (not `routes` directly) so admin mode's own draft-route
-  // visibility rule still applies - `filtered` is trivially "every
-  // visible route" here since `grouped` above already guarantees no
-  // query/toggle is actually narrowing it.
+  // `filtered`, so a route number/trip-type branch with nothing left in
+  // it after a filter narrows things down just doesn't render at all
+  // (e.g. tapping AM leaves only AM's own tripTypeGroups behind) rather
+  // than needing its own separate "hide empty branches" pass. Computed
+  // unconditionally now (not gated on `grouped`) since the flat table
+  // can fall back to this same filtered list without needing the tree
+  // shape - only the JSX below decides which one actually renders.
   const groupedTree = useMemo(() => {
-    if (!grouped) return [];
     const byRouteNumber = new Map<string, Route[]>();
     for (const route of filtered) {
       const list = byRouteNumber.get(route.routeNumber);
@@ -418,7 +422,7 @@ export function RouteListScreen({
         tripTypeGroups,
       };
     });
-  }, [filtered, grouped]);
+  }, [filtered]);
 
   // The eyeball icon's own click handler - always opens the matching
   // popup immediately, published or draft, so a tap never silently
@@ -565,37 +569,37 @@ export function RouteListScreen({
               </button>
             )}
           </div>
-          {/* A quiet readout, not a control of its own - `grouped`
-              above already decides this automatically (default view,
-              backs off the moment a search or toggle actually narrows
-              things down), so this just reflects that state back
-              rather than offering a second way to set it. Always one
-              of the two icons, not conditionally shown text - grouped
-              and flat are equally normal states for this list to be
-              in, neither more "default" than the other from here. */}
-          <span
-            className="shrink-0 text-blue-600"
-            aria-label={grouped ? "Grouped view" : "List view"}
+          {/* A real toggle now, not just a readout - grouped/flat is a
+              plain view preference, independent of whatever's filtered
+              (see `grouped`'s own doc above), so tapping it switches
+              the layout without touching the filters at all. */}
+          <button
+            type="button"
+            onClick={() => setGrouped((g) => !g)}
+            aria-label={grouped ? "Switch to list view" : "Switch to grouped view"}
+            className="shrink-0 text-zinc-600"
           >
             {grouped ? (
               <GroupedViewIcon className="h-5 w-5" />
             ) : (
               <ListViewIcon className="h-5 w-5" />
             )}
-          </span>
-          {/* Icon toggles, not text - AM/PM/SP as TripTypeIcon, ES/MS/HS
-              as SchoolLevelIcon, each own group laid out inline (a row,
-              not a stacked column) so the icons themselves can be big
-              enough to actually read, the two groups still kept apart
-              by the same plain vertical rule the old stacked columns
-              used. Every toggle starts on/blue ("showing"); tapping one
-              off fades it, excluding that trip type/level from the list
-              below rather than picking a single exclusive view the old
-              "View" dropdown did. */}
+          </button>
+          <div className="h-5 w-px shrink-0 bg-zinc-300" aria-hidden="true" />
+          {/* Icon toggles, not text - AM/PM/SP as TripTypeIcon, school
+              level as one cycling icon, laid out inline (a row, not a
+              stacked column) so the icons themselves can be big enough
+              to actually read, kept apart from the view toggle above
+              and from each other by the same plain vertical rule.
+              Trip type is exclusive (tapping one drops whatever else
+              was active; tapping the active one again clears it) - see
+              toggleTripType - narrowing the list (in either view, see
+              `filtered`) to just that one trip type rather than
+              picking among several active at once. */}
           <div className="flex shrink-0 items-center gap-1.5">
             <div className="flex items-center gap-1">
               {TRIP_TYPE_TOGGLES.map((toggle) => {
-                const active = activeTripTypes.has(toggle.value);
+                const active = activeTripType === toggle.value;
                 return (
                   <button
                     key={toggle.value}
@@ -611,23 +615,32 @@ export function RouteListScreen({
               })}
             </div>
             <div className="h-5 w-px bg-zinc-300" aria-hidden="true" />
-            <div className="flex items-center gap-1">
-              {SCHOOL_LEVEL_TOGGLES.map((toggle) => {
-                const active = activeSchoolLevels.has(toggle.value);
-                return (
-                  <button
-                    key={toggle.value}
-                    type="button"
-                    onClick={() => toggleSchoolLevel(toggle.value)}
-                    aria-pressed={active}
-                    aria-label={toggle.label}
-                    className={active ? "text-blue-600" : "text-zinc-300"}
-                  >
-                    <SchoolLevelIcon level={toggle.value} className="h-5 w-5" />
-                  </button>
-                );
-              })}
-            </div>
+            {/* One icon, not three - cycles view all -> elementary ->
+                middle -> high -> view all on each tap (cycleSchoolLevel
+                above), showing the plain three-faded-figures glyph
+                (gray) while off and whichever level's own icon (blue,
+                one figure solid, two faded) once it's picked one. */}
+            <button
+              type="button"
+              onClick={cycleSchoolLevel}
+              aria-pressed={activeSchoolLevel !== null}
+              aria-label={
+                activeSchoolLevel === null
+                  ? "Filter by school level"
+                  : SCHOOL_LEVEL_TOGGLES.find(
+                      (t) => t.value === activeSchoolLevel,
+                    )?.label
+              }
+              className={
+                activeSchoolLevel === null ? "text-zinc-300" : "text-blue-600"
+              }
+            >
+              {activeSchoolLevel === null ? (
+                <SchoolLevelsIcon className="h-5 w-5" />
+              ) : (
+                <SchoolLevelIcon level={activeSchoolLevel} className="h-5 w-5" />
+              )}
+            </button>
             {/* Published/Hidden - admin mode only, same empty-set-shows-
                 everything convention as the two groups above. A normal
                 driver's list already excludes hidden routes outright, so
