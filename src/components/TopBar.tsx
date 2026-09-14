@@ -56,9 +56,10 @@ export function TopBar({
               relative/absolute rather than a flex row - the AM/PM icon
               floats off the route number's own left edge (right-full)
               so it never shifts the number itself off-center from the
-              "ROUTE" label above. am.svg/pm.svg carry their own label
-              lettering, so pickup/dropoff is the icon alone -
-              vertically centered against the number's full height and
+              "ROUTE" label above. Pickup/dropoff is the icon alone, no
+              separate "AM"/"PM" text beside it (TripTypeIcon.tsx's own
+              doc says why) - vertically centered against the number's
+              full height and
               sized to nearly match it. Every other TripType
               (fieldtrip/other) skips the badge entirely - those routes
               may not even have a morning/afternoon distinction to

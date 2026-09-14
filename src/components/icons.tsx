@@ -178,8 +178,14 @@ export { default as DownloadIcon } from "./icons/download.svg";
 export { default as EyeIcon } from "./icons/eye.svg";
 export { default as EyeOffIcon } from "./icons/eye-off.svg";
 export { default as SearchIcon } from "./icons/search.svg";
-export { default as AmIcon } from "./icons/am.svg";
-export { default as PmIcon } from "./icons/pm.svg";
+// am.svg/pm.svg (the original pair) are gone - these two names now
+// point at what used to be the alternate am-alt.svg/pm-alt.svg pair,
+// swapped in app-wide after a side-by-side look at both.
+export { default as AmIcon } from "./icons/am-alt.svg";
+export { default as PmIcon } from "./icons/pm-alt.svg";
+/** A driver's face - not wired into anything yet, ready for a future
+ * per-driver user-settings screen. */
+export { default as DriverIcon } from "./icons/driver.svg";
 export { default as GlobeIcon } from "./icons/globe.svg";
 export { default as SpinnerIcon } from "./icons/spinner.svg";
 export { default as CloseIcon } from "./icons/close.svg";
@@ -221,12 +227,16 @@ export function CheckboxIcon({
 /** A literal schoolhouse - used for the Schools heading
  * (SchoolListScreen) and RouteListScreen's own "Schools" link. */
 export { default as SchoolIcon } from "./icons/school.svg";
-/** Per-level school-building glyphs (elementary/middle/high) - see
+/** Three student figures (short/medium/tall, standing for elementary/
+ * middle/high), one drawn solid and the other two faded - see
  * SchoolLevelIcon.tsx for the SchoolLevel -> icon lookup that actually
- * uses these. */
-export { default as ElementarySchoolIcon } from "./icons/elementary-school.svg";
-export { default as MiddleSchoolIcon } from "./icons/middle-school.svg";
-export { default as HighSchoolIcon } from "./icons/high-school.svg";
+ * uses these three. school-level.svg itself (all three faded, none
+ * highlighted) isn't wired up anywhere yet - there's no "no level
+ * chosen" state in the app today for it to represent. */
+export { default as SchoolLevelsIcon } from "./icons/school-level.svg";
+export { default as SchoolLevelEsIcon } from "./icons/school-level-es.svg";
+export { default as SchoolLevelMsIcon } from "./icons/school-level-ms.svg";
+export { default as SchoolLevelHsIcon } from "./icons/school-level-hs.svg";
 
 /** A folded paper map with a dotted route line crossing it - used for
  * the Routes heading (RouteListScreen). */

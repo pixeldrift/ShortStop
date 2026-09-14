@@ -250,10 +250,10 @@ export function StartScreen({
                 the AM/PM icon floats off the text's own left edge
                 (right-full) so it never shifts the title text itself
                 off-center from the county label above, the way sharing
-                a centered flex row with it used to. am.svg/pm.svg carry
-                their own label lettering, so pickup/dropoff is the icon
-                alone - vertically centered against the title's full
-                height and sized to nearly match it. Every other
+                a centered flex row with it used to. No separate
+                "AM"/"PM" text beside this icon (TripTypeIcon.tsx's own
+                doc says why) - vertically centered against the title's
+                full height and sized to nearly match it. Every other
                 TripType (fieldtrip/other) skips the badge entirely -
                 those routes may not even have a morning/afternoon
                 distinction to badge, and there's no real example of

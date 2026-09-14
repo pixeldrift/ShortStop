@@ -3243,9 +3243,10 @@ export function EditRouteScreen({
               checks down the list themselves. */}
           <div className="flex w-full max-w-md shrink-0 flex-col items-center gap-0.5">
             <p className="flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0.5">
-              {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
-                  pickup/dropoff is just the icon alone, sized to the
-                  route number's own height. Every other TripType
+              {/* No separate "AM"/"PM" text beside this icon
+                  (TripTypeIcon.tsx's own doc says why) - just the icon
+                  alone, sized to the route number's own height. Every
+                  other TripType
                   (fieldtrip/other) skips the badge entirely - those
                   routes may not even have a morning/afternoon
                   distinction to badge, and there's no real example of
@@ -3566,9 +3567,10 @@ export function EditRouteScreen({
                 this is now literally the same text-4xl size that value
                 was tuned against. */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
-              {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
-                  pickup/dropoff is vertically centered against the
-                  title's full height and sized to nearly match it.
+              {/* No separate "AM"/"PM" text beside this icon
+                  (TripTypeIcon.tsx's own doc says why) - vertically
+                  centered against the title's full height and sized to
+                  nearly match it.
                   Every other TripType (fieldtrip/other) skips the
                   badge entirely - those routes may not even have a
                   morning/afternoon distinction to badge, and there's

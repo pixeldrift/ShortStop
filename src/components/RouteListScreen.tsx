@@ -919,9 +919,9 @@ export function RouteListScreen({
                         value - and were confirmed against the live
                         rendered box (not just canvas metrics) before
                         landing here. */}
-                    {/* am.svg/pm.svg have their own "AM"/"PM" lettering
-                        baked right into the glyph, so a pickup/dropoff
-                        badge is just that icon alone, sized to the
+                    {/* No separate "AM"/"PM" text next to this icon
+                        (see TripTypeIcon.tsx's own doc for why) - just
+                        the sunrise/full-sun glyph alone, sized to the
                         route number's own full height. Every other
                         TripType (fieldtrip/other) skips the badge
                         entirely rather than falling back to some other

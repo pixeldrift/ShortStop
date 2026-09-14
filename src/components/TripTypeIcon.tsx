@@ -5,13 +5,16 @@ import type { TripType } from "@/lib/types";
  * TripType only means updating this one component, not independently
  * re-deriving the same icon choice in every place (TopBar,
  * StartScreen, RouteListScreen, EditRouteScreen) that already shows
- * one of these badges. AmIcon/PmIcon (am.svg/pm.svg) carry their own
- * "AM"/"PM" lettering baked right into the glyph, so a pickup/dropoff
- * badge is just this icon alone now, sized to match whatever it sits
- * beside - no separate tripTypeLabel (lib/tripType.ts) text next to
- * it anymore. StarIcon has no such lettering of its own, so a
- * "fieldtrip"/"other" badge is the one case that still needs its
- * caller to show that text label alongside it. */
+ * one of these badges. AmIcon/PmIcon now point at what used to be the
+ * alternate am-alt.svg/pm-alt.svg pair (a sunrise/full-sun pictograph,
+ * swapped in app-wide) - unlike the original am.svg/pm.svg, neither
+ * carries literal "AM"/"PM" lettering baked into the glyph, so a
+ * pickup/dropoff badge now leans on the sunrise-vs-full-sun shape
+ * alone wherever it isn't already sitting next to its own text (a
+ * table header's own "AM"/"PM" column label, say). StarIcon has no
+ * lettering of its own either, so a "fieldtrip"/"other" badge is
+ * still the one case that needs its caller to show a text label
+ * alongside it. */
 export function TripTypeIcon({
   tripType,
   className,
