@@ -5,6 +5,7 @@ import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
+import { WaypointPreviewMap } from "./WaypointPreviewMap";
 import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
@@ -757,6 +758,7 @@ function StepRowEditor({
   fetchLocked,
   placementGuess,
   routeContext,
+  stopPins,
   onChange,
   onFetch,
   onManualCoordinates,
@@ -808,6 +810,12 @@ function StepRowEditor({
    * short array it is - PlaceCoordinatesModal itself is the one that
    * decides that's too few to bother drawing. */
   routeContext: { lat: number; lon: number }[];
+  /** Every already-resolved Stop's own coordinate (EditRouteScreen's
+   * own `stopPins`, a subset of `routeContext` above) - handed to the
+   * small read-only WaypointPreviewMap at the bottom of this card so
+   * an admin can see this row's own point next to its neighboring
+   * stops, not just the road-following line alone. */
+  stopPins: { lat: number; lon: number }[];
   onChange: (patch: Partial<RawRouteRow>) => void;
   onFetch: () => void;
   /** A coordinate typed/pasted directly into the Latitude/Longitude
@@ -991,6 +999,25 @@ function StepRowEditor({
     schools,
   );
 
+  // This row's own best-known point right now - a manually typed
+  // coordinate wins over an already-resolved one, which wins over the
+  // nearest-neighbor guess, which falls back to a fixed default -
+  // shared between PlaceCoordinatesModal's own opening center (below)
+  // and WaypointPreviewMap's highlighted pin, so both agree on where
+  // "this row" actually is.
+  const previewCenter =
+    (manualCoords && {
+      lat: manualCoords[0],
+      lon: manualCoords[1],
+    }) ??
+    (resolvedLat != null && resolvedLon != null
+      ? { lat: resolvedLat, lon: resolvedLon }
+      : null) ??
+    placementGuess ?? {
+      lat: LA_VERGNE_CENTER[0],
+      lon: LA_VERGNE_CENTER[1],
+    };
+
   return (
     <div
       className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
@@ -1053,19 +1080,7 @@ function StepRowEditor({
             // should start on that point, not somewhere else nearby.
             // The neighbor guess (placementGuess) only ever matters for
             // a row with no coordinate of its own yet.
-            initialCenter={
-              (manualCoords && {
-                lat: manualCoords[0],
-                lon: manualCoords[1],
-              }) ??
-              (resolvedLat != null && resolvedLon != null
-                ? { lat: resolvedLat, lon: resolvedLon }
-                : null) ??
-              placementGuess ?? {
-                lat: LA_VERGNE_CENTER[0],
-                lon: LA_VERGNE_CENTER[1],
-              }
-            }
+            initialCenter={previewCenter}
             routeContext={routeContext}
             onCancel={() => setShowPlaceModal(false)}
             onSetCoordinates={(lat, lon) => {
@@ -1075,24 +1090,24 @@ function StepRowEditor({
           />
         ) : (
           <>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-[3fr_2fr_3fr] gap-2">
               <Field label="Type">
                 <select
                   className={inputClass}
-                  // Falls back to "" (the "- Unspecified -" option
-                  // below) rather than passing an unrecognized
-                  // row.action straight through as this select's own
-                  // value - an imported row with a blank or misspelled
-                  // action cell would otherwise leave no option
-                  // actually selected, which a browser renders as if
-                  // "Stop" (the first real option) were picked instead.
-                  // The original value stays in `row` either way until
-                  // an admin actually changes this select - only
-                  // changing what's *shown*, not what's saved.
+                  // Falls back to "" (the "- Select -" option below)
+                  // rather than passing an unrecognized row.action
+                  // straight through as this select's own value - an
+                  // imported row with a blank or misspelled action cell
+                  // would otherwise leave no option actually selected,
+                  // which a browser renders as if "Stop" (the first
+                  // real option) were picked instead. The original
+                  // value stays in `row` either way until an admin
+                  // actually changes this select - only changing what's
+                  // *shown*, not what's saved.
                   value={canonicalWaypointType(row.action) ?? ""}
                   onChange={(e) => handleTypeChange(e.target.value)}
                 >
-                  <option value="">- Unspecified -</option>
+                  <option value="">- Select -</option>
                   <option value="Stop">Stop</option>
                   <option value="Left">Turn Left</option>
                   <option value="Right">Turn Right</option>
@@ -1113,10 +1128,31 @@ function StepRowEditor({
                     value={row.side}
                     onChange={(e) => onChange({ side: e.target.value })}
                   >
-                    <option value="">Side (none)</option>
+                    <option value="">(none)</option>
                     <option value="Left">Left</option>
                     <option value="Right">Right</option>
                   </select>
+                </Field>
+              ) : (
+                <span />
+              )}
+              {/* Beside the Type dropdown rather than down with Location
+              below - reads in real driving order ("from Main St, onto
+              Elm St") right next to the action it's context for, and
+              doubles as this row's only escape hatch for fixing a bad
+              inference or an explicit typo (e.g. 120-AM-HS.csv's real
+              "David Way," which should be "Davids Way"). Hidden for a
+              plain address or a matched school (see isPlainLocation
+              above) - neither is part of an intersection, so there's no
+              "from" road to name. */}
+              {!isPlainLocation ? (
+                <Field label="From">
+                  <input
+                    className={inputClass}
+                    value={row.fromLocation}
+                    onChange={(e) => onChange({ fromLocation: e.target.value })}
+                    placeholder={previousRoad || "start of route"}
+                  />
                 </Field>
               ) : (
                 <span />
@@ -1156,25 +1192,6 @@ function StepRowEditor({
             )}
 
             <div className="mt-2 flex flex-col gap-2">
-              {/* Comes before Location, not after - reads in real driving
-            order ("from Main St, onto Elm St"), and doubles as this
-            row's only escape hatch for fixing a bad inference or an
-            explicit typo (e.g. 120-AM-HS.csv's real "David Way," which
-            should be "Davids Way") - the old single-box editor never
-            exposed this at all, only a read-only label. Hidden for a
-            plain address or a matched school (see isPlainLocation
-            above) - neither is part of an intersection, so there's no
-            "from" road to name. */}
-              {!isPlainLocation && (
-                <Field label="From (optional)">
-                  <input
-                    className={inputClass}
-                    value={row.fromLocation}
-                    onChange={(e) => onChange({ fromLocation: e.target.value })}
-                    placeholder={previousRoad || "start of route"}
-                  />
-                </Field>
-              )}
               <Field label="Location">
                 <input
                   className={`${inputClass} ${
@@ -1206,6 +1223,29 @@ function StepRowEditor({
                 </p>
               )}
             </div>
+
+            {/* Above the coordinates box, not below it - checking this
+            is the thing that makes that box irrelevant (see the
+            coordsText-blanking onChange below), so it reads as the
+            gate for what follows rather than an afterthought under it. */}
+            <label className="mt-2 flex items-center gap-2 text-sm text-zinc-600">
+              <input
+                type="checkbox"
+                checked={row.skip}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  onChange({ skip: checked });
+                  // Reads as "no location coordinates" the moment it's
+                  // checked, not just once Save clears them server-side -
+                  // deriveWaypoints.ts already ignores a skipped row's
+                  // coordinates entirely, so this only changes what the
+                  // box itself displays.
+                  if (checked) setCoordsText("");
+                }}
+                className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+              />
+              Instructions only - no location coordinates
+            </label>
 
             <div className="mt-2">
               <Field
@@ -1308,22 +1348,17 @@ function StepRowEditor({
                   Verified coordinates
                 </p>
               ) : null}
-              <label className="mt-1.5 flex items-center gap-2 text-sm text-zinc-600">
-                <input
-                  type="checkbox"
-                  checked={row.skip}
-                  onChange={(e) => onChange({ skip: e.target.checked })}
-                  className="h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
-                />
-                Instructions only - no location coordinates
-              </label>
             </div>
 
-            {/* Notes ahead of Riders - a driver reads this box top to bottom,
-          and the note (a special instruction) matters regardless of
-          whether this row even has riders, so it shouldn't sit below a
-          field that sometimes isn't even shown at all. */}
-            <div className="mt-2">
+            {/* Riders only really means anything for a stop (a turn has
+          no one boarding/leaving at it) - live off `isStop` above, so
+          switching Type away from Stop drops it entirely, right along
+          with the column that held it, rather than leaving a disabled
+          field with nothing left to say. Notes then reclaims the full
+          row instead of sharing it with a field that isn't shown. */}
+            <div
+              className={`mt-2 grid gap-2 ${isStop ? "grid-cols-[1fr_6.5rem]" : "grid-cols-1"}`}
+            >
               <Field label="Driver Notes">
                 <input
                   className={inputClass}
@@ -1331,39 +1366,43 @@ function StepRowEditor({
                   onChange={(e) => onChange({ notes: e.target.value })}
                 />
               </Field>
+              {isStop && (
+                <Field
+                  label={
+                    <span className="inline-flex items-center gap-1">
+                      <PersonSolidIcon className="h-3.5 w-3.5" />
+                      Riders
+                    </span>
+                  }
+                >
+                  <select
+                    className={inputClass}
+                    value={row.riderCount}
+                    onChange={(e) => onChange({ riderCount: e.target.value })}
+                  >
+                    <option value="">—</option>
+                    {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                      <option key={n} value={String(n)}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
             </div>
 
-            {/* Riders only really means anything for a stop (a turn has no
-          one boarding/leaving at it) - live off `isStop` above, so
-          switching Type away from Stop fades it immediately rather
-          than leaving it looking just as active as every other field.
-          Faded rather than hidden outright (unlike Side, above,
-          which still disappears) - a non-stop row can still carry a
-          leftover count from before its Type changed, and hiding the
-          field entirely would hide that stale value too, instead of
-          showing it grayed out as the "this isn't being read for this
-          row" it now is. Its own full-width line, not sharing a row
-          with Driver Notes - the two aren't related enough to read as
-          a pair, and Driver Notes needs the room on longer entries. */}
-            <div className={`mt-2 ${isStop ? "" : "opacity-40"}`}>
-              <Field
-                label={
-                  <span className="inline-flex items-center gap-1">
-                    <PersonSolidIcon className="h-3.5 w-3.5" /># of Riders
-                  </span>
-                }
-              >
-                <input
-                  className={inputClass}
-                  inputMode="numeric"
-                  value={row.riderCount}
-                  onChange={(e) =>
-                    onChange({ riderCount: e.target.value.replace(/\D/g, "") })
-                  }
-                  disabled={!isStop}
-                />
-              </Field>
-            </div>
+            {/* Street-level context for this row's own point - the
+          route's own road-following line plus every other resolved
+          Stop, so an admin can sanity-check a fetched or manually
+          typed coordinate against its real neighbors without leaving
+          this card. Read-only (WaypointPreviewMap's own camera never
+          moves once mounted) - PlaceCoordinatesModal above is still
+          the one place to actually change this row's point. */}
+            <WaypointPreviewMap
+              center={previewCenter}
+              routeLine={routeContext}
+              stopPins={stopPins}
+            />
 
             <div className="mt-3 flex items-center gap-2">
               <button
@@ -1837,6 +1876,7 @@ export function EditRouteScreen({
   initialSteps,
   initialWaypointCache,
   schools,
+  initialSubScreen,
   onCancel,
   onSave,
 }: {
@@ -1867,6 +1907,13 @@ export function EditRouteScreen({
    * than free text, so a route's address and level are always looked
    * up here instead of typed or picked separately by an admin. */
   schools: Record<string, SchoolInfo>;
+  /** `mode: "edit"` only - opens straight to the Stops and Turns screen
+   * instead of the hub, for a caller (StartScreen's own View Stops
+   * popup, via its pencil-to-Edit-Waypoints button) that already knows
+   * an admin wants that screen specifically, not the hub they'd
+   * otherwise have to tap "Edit Waypoints" from. Defaults to "hub" -
+   * every other caller still opens where it always has. */
+  initialSubScreen?: "hub" | "stops";
   onCancel: () => void;
   /** `steps` here is always the *current* row list - `mode: "add"`'s
    * pasted/uploaded rows as parsed, or `mode: "edit"`'s edited row list
@@ -2106,7 +2153,9 @@ export function EditRouteScreen({
   // this - it stays the single combined screen it always was, since a
   // route that doesn't exist yet has no stops of its own to split off
   // into a second screen.
-  const [subScreen, setSubScreen] = useState<"hub" | "stops">("hub");
+  const [subScreen, setSubScreen] = useState<"hub" | "stops">(
+    initialSubScreen ?? "hub",
+  );
 
   // The school's own geocoded point, once known - reused across every
   // "Fetch"/"Fetch All" call in this edit session instead of
@@ -2243,6 +2292,23 @@ export function EditRouteScreen({
       ? [school, ...resolved]
       : [...resolved, school];
   }, [resolutionRows, schoolLat, schoolLon, tripType]);
+
+  // Every already-resolved Stop row's own coordinate (not a turn, not
+  // the school) - `resolutionRows` shares `rows`' own index order
+  // (deriveWaypointsWithContext builds `waypoints` via a plain
+  // `rows.map`, so `stepId` is just that index), so lining the two up
+  // by position is enough to tell which resolved point belongs to an
+  // actual Stop. WaypointPreviewMap draws these as plain dots, distinct
+  // from whichever one is this row's own (highlighted separately).
+  const stopPins = useMemo(() => {
+    const pins: { lat: number; lon: number }[] = [];
+    resolutionRows.forEach((r, i) => {
+      if (r.status === "resolved" && rows[i]?.action.toLowerCase() === "stop") {
+        pins.push({ lat: r.lat, lon: r.lon });
+      }
+    });
+    return pins;
+  }, [resolutionRows, rows]);
 
   // The row currently open in StepRowEditor's own waypoint, re-derived
   // from `draftRow` rather than read off `waypoints[expandedIndex]`
@@ -3177,14 +3243,10 @@ export function EditRouteScreen({
               checks down the list themselves. */}
           <div className="flex w-full max-w-md shrink-0 flex-col items-center gap-0.5">
             <p className="flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0.5">
-              <span className="font-heading text-lg font-black tracking-tight">
-                {routeNumber || (
-                  <span className="text-zinc-400 italic">No route number</span>
-                )}
-              </span>
-              {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
-                  pickup/dropoff is just the icon alone, sized to the
-                  route number's own height. Every other TripType
+              {/* No separate "AM"/"PM" text beside this icon
+                  (TripTypeIcon.tsx's own doc says why) - just the icon
+                  alone, sized to the route number's own height. Every
+                  other TripType
                   (fieldtrip/other) skips the badge entirely - those
                   routes may not even have a morning/afternoon
                   distinction to badge, and there's no real example of
@@ -3196,6 +3258,11 @@ export function EditRouteScreen({
                     className="h-3 w-3 text-zinc-400"
                   />
                 )}
+              <span className="font-heading text-lg font-black tracking-tight">
+                {routeNumber || (
+                  <span className="text-zinc-400 italic">No route number</span>
+                )}
+              </span>
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
                 {schoolName || "No school selected"}
               </span>
@@ -3391,6 +3458,7 @@ export function EditRouteScreen({
                 fetchLocked={singleFetchCoolingDown}
                 placementGuess={nearestResolvedGuess(resolutionRows, index)}
                 routeContext={routeContextPoints}
+                stopPins={stopPins}
                 onChange={handleDraftChange}
                 onFetch={() =>
                   draftWaypoint &&
@@ -3499,10 +3567,10 @@ export function EditRouteScreen({
                 this is now literally the same text-4xl size that value
                 was tuned against. */}
             <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
-              Route {route?.routeNumber ?? ""}
-              {/* am.svg/pm.svg carry their own "AM"/"PM" lettering, so
-                  pickup/dropoff is vertically centered against the
-                  title's full height and sized to nearly match it.
+              {/* No separate "AM"/"PM" text beside this icon
+                  (TripTypeIcon.tsx's own doc says why) - vertically
+                  centered against the title's full height and sized to
+                  nearly match it.
                   Every other TripType (fieldtrip/other) skips the
                   badge entirely - those routes may not even have a
                   morning/afternoon distinction to badge, and there's
@@ -3512,9 +3580,10 @@ export function EditRouteScreen({
                 (tripType === "pickup" || tripType === "dropoff") && (
                   <TripTypeIcon
                     tripType={tripType}
-                    className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
+                    className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
                   />
                 )}
+              Route {route?.routeNumber ?? ""}
             </h1>
           </div>
           <span className="w-10" />

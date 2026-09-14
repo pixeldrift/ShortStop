@@ -54,24 +54,25 @@ export function TopBar({
               right up against "ROUTE" above; a small positive gap
               instead of a negative one keeps them legibly apart.
               relative/absolute rather than a flex row - the AM/PM icon
-              floats off the route number's own right edge (left-full)
+              floats off the route number's own left edge (right-full)
               so it never shifts the number itself off-center from the
-              "ROUTE" label above. am.svg/pm.svg carry their own label
-              lettering, so pickup/dropoff is the icon alone -
-              vertically centered against the number's full height and
+              "ROUTE" label above. Pickup/dropoff is the icon alone, no
+              separate "AM"/"PM" text beside it (TripTypeIcon.tsx's own
+              doc says why) - vertically centered against the number's
+              full height and
               sized to nearly match it. Every other TripType
               (fieldtrip/other) skips the badge entirely - those routes
               may not even have a morning/afternoon distinction to
               badge, and there's no real example of one yet to design
               that case against. */}
           <p className="font-heading relative mt-0.5 text-3xl leading-[0.7083] font-black tracking-tight">
-            {routeNumber}
             {(tripType === "pickup" || tripType === "dropoff") && (
               <TripTypeIcon
                 tripType={tripType}
-                className="absolute top-1/2 left-full ml-1.5 h-[21px] w-[21px] -translate-y-1/2 text-zinc-400"
+                className="absolute top-1/2 right-full mr-1.5 h-[21px] w-[21px] -translate-y-1/2 text-zinc-400"
               />
             )}
+            {routeNumber}
           </p>
         </div>
 
