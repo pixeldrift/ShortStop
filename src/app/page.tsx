@@ -66,7 +66,15 @@ type Screen =
       autoStart?: boolean;
     }
   | { kind: "add-route" }
-  | { kind: "edit-route"; route: Route }
+  | {
+      kind: "edit-route";
+      route: Route;
+      /** Opens EditRouteScreen straight to its Stops and Turns screen
+       * instead of the hub - see EditRouteScreen's own initialSubScreen
+       * doc comment. Omitted (hub) everywhere except the View Stops
+       * popup's own pencil-to-Edit-Waypoints button. */
+      initialSubScreen?: "hub" | "stops";
+    }
   | { kind: "schools" }
   | { kind: "school-routes"; schoolName: string };
 
@@ -424,6 +432,7 @@ export default function Home() {
         initialSteps={initialSteps}
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schools={schools}
+        initialSubScreen={screen.initialSubScreen}
         onCancel={goBack}
         onSave={handleSaveRoute}
       />
@@ -437,6 +446,14 @@ export default function Home() {
         onEdit={() => {
           setAdminMode(true);
           navigate({ kind: "edit-route", route: screen.route });
+        }}
+        onEditStops={() => {
+          setAdminMode(true);
+          navigate({
+            kind: "edit-route",
+            route: screen.route,
+            initialSubScreen: "stops",
+          });
         }}
         onStartedChange={setTripStarted}
         onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
@@ -522,6 +539,7 @@ function RouteApp({
   autoStart,
   onBack,
   onEdit,
+  onEditStops,
   onStartedChange,
   onViewSchool,
   onArrived,
@@ -535,6 +553,10 @@ function RouteApp({
   autoStart?: boolean;
   onBack: () => void;
   onEdit: () => void;
+  /** Passed straight through to StartScreen's own View Stops popup -
+   * same destination as onEdit, but straight to the Stops and Turns
+   * screen rather than the hub. */
+  onEditStops: () => void;
   /** Reports RouteApp's own internal started flag (useRouteStepper) up
    * to page.tsx, purely so it knows whether to keep showing the pinned
    * logo (see showsPinnedLogo there) - RouteApp itself still owns
@@ -605,7 +627,14 @@ function RouteApp({
   // direction always follows `started` itself, no separate state
   // needed to track which way this particular flip just went.
   const content = !started ? (
-    <StartScreen route={route} onStart={start} onBack={onBack} onEdit={onEdit} onViewSchool={onViewSchool} />
+    <StartScreen
+      route={route}
+      onStart={start}
+      onBack={onBack}
+      onEdit={onEdit}
+      onEditStops={onEditStops}
+      onViewSchool={onViewSchool}
+    />
   ) : (
     <StepScreen
       route={route}

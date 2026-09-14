@@ -126,6 +126,7 @@ export function StartScreen({
   onStart,
   onBack,
   onEdit,
+  onEditStops,
   onViewSchool,
 }: {
   route: Route;
@@ -135,6 +136,11 @@ export function StartScreen({
    * Small and easy to miss on purpose: this is a district-admin tool
    * living on the same screen every driver sees, not a primary action. */
   onEdit: () => void;
+  /** Same destination as onEdit, but straight to the Stops and Turns
+   * screen - the View Stops popup's own pencil button uses this
+   * instead, since an admin opening that popup already wants that
+   * screen specifically. */
+  onEditStops: () => void;
   /** Opens the school's own school-routes screen (page.tsx) - the
    * school name/address block below is its tap target. */
   onViewSchool: (schoolName: string) => void;
@@ -364,7 +370,7 @@ export function StartScreen({
               onClick={() => setShowStopsModal(true)}
               className="btn-glossy-light font-heading flex w-1/2 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900"
             >
-              View All Stops
+              View Stops
             </button>
           </div>
         </div>
@@ -402,7 +408,11 @@ export function StartScreen({
       </button>
 
       {showStopsModal && (
-        <AllStopsModal route={route} onClose={() => setShowStopsModal(false)} />
+        <AllStopsModal
+          route={route}
+          onClose={() => setShowStopsModal(false)}
+          onEditStops={onEditStops}
+        />
       )}
     </div>
   );
@@ -448,7 +458,7 @@ function SchoolEntry({ route }: { route: Route }) {
 /** One turn step's row - same card shape as a stop's, but the turn
  * arrow (mirrored per direction, same as StepScreen's own big one)
  * stands in for the numbered map pin, and there's no rider count. Only
- * shown at all once the "Show turns" toggle is on (see AllStopsModal). */
+ * shown at all once the "Show directions" toggle is on (see AllStopsModal). */
 function TurnRow({ step }: { step: NavigationStep }) {
   return (
     <div className="py-3 text-left">
@@ -469,8 +479,8 @@ function TurnRow({ step }: { step: NavigationStep }) {
 }
 
 /** Scrolling list of every stop on the route, in order - tapping "View
- * All Stops" on the Route info screen above. Stops only by default
- * (matching how this always used to work); the "Show turns" toggle
+ * Stops" on the Route info screen above. Stops only by default
+ * (matching how this always used to work); the "Show directions" toggle
  * interleaves turn steps back in at their real position in the route
  * rather than appending them separately, so the order shown always
  * matches the real drive.
@@ -485,9 +495,11 @@ function TurnRow({ step }: { step: NavigationStep }) {
 function AllStopsModal({
   route,
   onClose,
+  onEditStops,
 }: {
   route: Route;
   onClose: () => void;
+  onEditStops: () => void;
 }) {
   const [showTurns, setShowTurns] = useState(false);
   const schoolEntry = <SchoolEntry route={route} />;
@@ -519,8 +531,6 @@ function AllStopsModal({
                 className="h-[15px] w-[15px] text-zinc-400"
               />
             )}
-            <span className="text-zinc-400">-</span>
-            All Stops
           </h2>
           <button
             type="button"
@@ -532,12 +542,25 @@ function AllStopsModal({
           </button>
         </div>
 
-        <div className="flex shrink-0 justify-end border-b border-zinc-200 px-5 py-2">
-          <ToggleSwitch
-            checked={showTurns}
-            onChange={setShowTurns}
-            label="Show turns"
-          />
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-5 py-2">
+          <span className="text-sm font-semibold text-zinc-500">
+            {stopCounter} stop{stopCounter === 1 ? "" : "s"}
+          </span>
+          <div className="flex items-center gap-2">
+            <ToggleSwitch
+              checked={showTurns}
+              onChange={setShowTurns}
+              label="Show directions"
+            />
+            <button
+              type="button"
+              onClick={onEditStops}
+              aria-label="Edit waypoints"
+              className="text-blue-600 active:text-blue-800"
+            >
+              <EditIcon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <div className="divide-y divide-zinc-200 overflow-y-auto px-5">
@@ -580,11 +603,6 @@ function AllStopsModal({
                       <StopSubheading subheading={step.subheading} />
                     )}
                   </p>
-                  {step.specialInstruction && (
-                    <p className="mt-0.5 text-sm text-zinc-500">
-                      {step.specialInstruction}
-                    </p>
-                  )}
                 </div>
               );
             }

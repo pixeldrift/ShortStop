@@ -1837,6 +1837,7 @@ export function EditRouteScreen({
   initialSteps,
   initialWaypointCache,
   schools,
+  initialSubScreen,
   onCancel,
   onSave,
 }: {
@@ -1867,6 +1868,13 @@ export function EditRouteScreen({
    * than free text, so a route's address and level are always looked
    * up here instead of typed or picked separately by an admin. */
   schools: Record<string, SchoolInfo>;
+  /** `mode: "edit"` only - opens straight to the Stops and Turns screen
+   * instead of the hub, for a caller (StartScreen's own View Stops
+   * popup, via its pencil-to-Edit-Waypoints button) that already knows
+   * an admin wants that screen specifically, not the hub they'd
+   * otherwise have to tap "Edit Waypoints" from. Defaults to "hub" -
+   * every other caller still opens where it always has. */
+  initialSubScreen?: "hub" | "stops";
   onCancel: () => void;
   /** `steps` here is always the *current* row list - `mode: "add"`'s
    * pasted/uploaded rows as parsed, or `mode: "edit"`'s edited row list
@@ -2106,7 +2114,9 @@ export function EditRouteScreen({
   // this - it stays the single combined screen it always was, since a
   // route that doesn't exist yet has no stops of its own to split off
   // into a second screen.
-  const [subScreen, setSubScreen] = useState<"hub" | "stops">("hub");
+  const [subScreen, setSubScreen] = useState<"hub" | "stops">(
+    initialSubScreen ?? "hub",
+  );
 
   // The school's own geocoded point, once known - reused across every
   // "Fetch"/"Fetch All" call in this edit session instead of
