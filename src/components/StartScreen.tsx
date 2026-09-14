@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RouteMap } from "./RouteMap";
 import type { StopMarker, TurnMarker } from "./RouteMap";
+import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
@@ -267,6 +268,10 @@ export function StartScreen({
                 />
               )}
               Route {route.routeNumber}
+              <SchoolLevelIcon
+                level={route.schoolLevel}
+                className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
+              />
             </h1>
           </div>
           {/* Balances the back button's own width so the title block

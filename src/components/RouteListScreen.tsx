@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { TripTypeIcon } from "./TripTypeIcon";
@@ -271,46 +271,24 @@ export function RouteListScreen({
   // sorted by departure time).
   const [sortField, setSortField] = useState<SortField>("routeNumber");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  // Lets a tap outside the red admin-mode box exit it (see the effect
-  // below) without also swallowing a tap on the "Exit Edit Mode"/"New
-  // Route" controls themselves - both live in these refs, specifically
-  // excluded so this effect never double-fires alongside their own
-  // click handler (Exit Edit Mode, New Route which needs adminMode to
-  // stay on across the navigation it triggers).
-  const boxRef = useRef<HTMLDivElement>(null);
-  const controlsRef = useRef<HTMLDivElement>(null);
-  // The Schools/Download routes row - its own ref, always attached
-  // regardless of adminMode, since (unlike controlsRef's own two rows,
-  // which are mutually exclusive by adminMode) this row and
-  // controlsRef's admin-mode row can both be on screen at once. It used
-  // to share controlsRef itself (attached only while !adminMode, on the
-  // theory that the admin-mode row below took over that same ref once
-  // it appeared) - which left this exact row with no ref at all once
-  // actually in admin mode, so clicking "Download routes" read as a
-  // click *outside* every exempted area and exited admin mode instead
-  // of doing what it says.
-  const secondaryControlsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!adminMode) return;
-    function handleOutsideClick(e: MouseEvent) {
-      // A confirm modal (delete/publish/unpublish) is its own in-progress
-      // action - exiting admin mode underneath it at the same time would
-      // be a jarring side effect of whatever the modal itself is doing.
-      if (confirmRequest) return;
-      const target = e.target as Node;
-      if (boxRef.current?.contains(target)) return;
-      if (controlsRef.current?.contains(target)) return;
-      if (secondaryControlsRef.current?.contains(target)) return;
+  // Lets a tap on actual open background exit admin mode - not a
+  // document-level "outside click" listener with its own growing list
+  // of exempted refs (every new button/row in this screen used to need
+  // adding to that list by hand, or it would read as "outside" and
+  // exit admin mode when tapped), just a plain onClick on the two
+  // layout wrappers below that only fires when the click landed on the
+  // wrapper itself (e.target === e.currentTarget) rather than bubbling
+  // up from some real control inside it - any child element, existing
+  // or future, is exempt automatically since a click on it never
+  // satisfies that check. A confirm modal (delete/publish/unpublish) is
+  // its own in-progress action - exiting admin mode underneath it at
+  // the same time would be a jarring side effect of whatever the modal
+  // itself is doing.
+  function handleBackgroundClick(e: React.MouseEvent) {
+    if (e.target === e.currentTarget && !confirmRequest) {
       onToggleAdminMode();
     }
-    // Capture phase - fires even if a row button or dropdown item
-    // stops propagation on the way up, same as any standard
-    // "click outside to close" pattern needs to.
-    document.addEventListener("click", handleOutsideClick, true);
-    return () =>
-      document.removeEventListener("click", handleOutsideClick, true);
-  }, [adminMode, confirmRequest, onToggleAdminMode]);
+  }
 
   const toggleSort = (field: SortField) => {
     if (field === sortField) {
@@ -465,7 +443,10 @@ export function RouteListScreen({
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center">
+    <div
+      className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center"
+      onClick={adminMode ? handleBackgroundClick : undefined}
+    >
       {/* Everything that can genuinely grow past the viewport (the
           route table especially) lives in this inner, scrollable
           region - the toolbar/links/copyright below stay outside it,
@@ -475,6 +456,7 @@ export function RouteListScreen({
         className={`flex min-h-0 w-full flex-1 flex-col items-center gap-4 ${
           slideInOnMount ? "animate-list-content-enter" : ""
         }`}
+        onClick={adminMode ? handleBackgroundClick : undefined}
       >
         {onBack ? (
           <div className="flex w-full flex-col items-center gap-1">
@@ -679,7 +661,6 @@ export function RouteListScreen({
         </div>
 
         <div
-          ref={boxRef}
           className={`flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border text-left ${
             adminMode ? "border-2 border-blue-400" : "border-zinc-300"
           }`}
@@ -688,7 +669,7 @@ export function RouteListScreen({
             <div className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto">
               {groupedTree.map((routeNumberGroup) => (
                 <div key={routeNumberGroup.routeNumber}>
-                  <div className="bg-zinc-100 px-3 py-1.5">
+                  <div className="px-3 py-1.5">
                     <span className="font-heading text-2xl font-black tracking-tight">
                       Route {routeNumberGroup.routeNumber}
                     </span>
@@ -701,7 +682,7 @@ export function RouteListScreen({
                   </div>
                   {routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => (
                     <div key={tripTypeGroup.tripType}>
-                      <div className="flex items-center gap-1.5 py-1 pr-3 pl-5 text-sm font-semibold text-zinc-500">
+                      <div className="flex items-center gap-1 py-1 pr-3 pl-5 text-sm font-semibold text-zinc-900">
                         <TripTypeIcon
                           tripType={tripTypeGroup.tripType}
                           className="h-[18px] w-[18px] shrink-0"
@@ -729,14 +710,16 @@ export function RouteListScreen({
                                 }
                                 className="flex min-w-0 flex-1 items-center gap-1.5 text-left active:bg-zinc-100"
                               >
-                                <SchoolLevelIcon
-                                  level={route.schoolLevel}
-                                  className="h-4 w-4 shrink-0 text-zinc-400"
-                                />
-                                <span className="w-6 shrink-0 text-xs font-bold text-zinc-400">
-                                  {SCHOOL_LEVEL_TOGGLES.find(
-                                    (t) => t.value === route.schoolLevel,
-                                  )?.label}
+                                <span className="flex shrink-0 items-center gap-1">
+                                  <SchoolLevelIcon
+                                    level={route.schoolLevel}
+                                    className="h-4 w-4 shrink-0 text-zinc-400"
+                                  />
+                                  <span className="w-6 shrink-0 text-xs font-bold text-zinc-400">
+                                    {SCHOOL_LEVEL_TOGGLES.find(
+                                      (t) => t.value === route.schoolLevel,
+                                    )?.label}
+                                  </span>
                                 </span>
                                 <SchoolNameLabel name={route.schoolName} />
                                 <span className="ml-auto shrink-0 text-right text-sm font-semibold text-zinc-500">
@@ -1036,10 +1019,7 @@ export function RouteListScreen({
           there's no admin-mode download link to place opposite it
           either. */}
       {(onViewSchools || !adminMode) && (
-        <div
-          ref={secondaryControlsRef}
-          className="flex w-full max-w-md shrink-0 items-center justify-between"
-        >
+        <div className="flex w-full max-w-md shrink-0 items-center justify-between">
           {onViewSchools ? (
             <button
               type="button"
@@ -1090,10 +1070,7 @@ export function RouteListScreen({
           exiting is deliberately the gray/neutral button of the pair,
           adding a route is the blue "forward" action. */}
       {adminMode && (
-        <div
-          ref={controlsRef}
-          className="flex w-full max-w-md shrink-0 items-center gap-3"
-        >
+        <div className="flex w-full max-w-md shrink-0 items-center gap-3">
           <button
             type="button"
             onClick={onToggleAdminMode}
@@ -1170,53 +1147,20 @@ export function RouteListScreen({
   );
 }
 
-/** A school name, single-line and non-wrapping - a long name used to
- * wrap "School" onto its own line (line-clamp-2), which read as an
- * orphaned word more than a real second line of content. A smaller
- * `text-sm` (down from the row's own default size) buys back some of
- * that room on its own before anything below even has to kick in.
- * Measures its own rendered width against its available column width
- * next: if the full name still doesn't fit, it drops a trailing
- * " School" (the only word actually worth shortening away -
- * "Elementary"/"Middle"/"High" all carry real information "School"
- * alone repeats) and re-measures on resize; a name that's still too
- * long even without that word (or one that never had it) just
- * truncates normally, browser ellipsis and all - there's no further
- * clever shortening beyond the one word this app's own real school
- * names, see schools.csv, prompted this for. */
+/** A school name, clipped to one line's height rather than truncated
+ * with an ellipsis - `leading-5`/`h-5` give this span exactly one
+ * line's own box, `overflow-hidden` with no `nowrap` lets the text
+ * wrap normally (so it breaks on a real word boundary, never mid-word)
+ * and simply hides whatever word(s) would have landed on a second
+ * line. Plain CSS, no JS measurement - an earlier version measured
+ * scrollWidth against clientWidth to conditionally drop a trailing
+ * " School" and re-measured on every resize, which could flicker
+ * between its two states as the browser's own layout rounding shifted
+ * by a fractional pixel during scroll. */
 function SchoolNameLabel({ name }: { name: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [dropSchoolWord, setDropSchoolWord] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || !/ School$/.test(name)) {
-      setDropSchoolWord(false);
-      return;
-    }
-    // A 1px tolerance, and skipping the state update entirely when the
-    // answer hasn't actually changed - without both, a name sitting
-    // right at the fit/no-fit boundary can flip a fractional pixel
-    // either way as the browser's own layout rounding shifts during
-    // scroll (subpixel jitter, not a real size change), which reads as
-    // this label's text flickering between its full and shortened form
-    // on every scroll frame instead of just holding still.
-    const checkFit = () => {
-      const shouldDrop = el.scrollWidth > el.clientWidth + 1;
-      setDropSchoolWord((prev) => (prev === shouldDrop ? prev : shouldDrop));
-    };
-    checkFit();
-    const observer = new ResizeObserver(checkFit);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [name]);
-
   return (
-    <span
-      ref={ref}
-      className="block truncate text-sm leading-snug text-zinc-700"
-    >
-      {dropSchoolWord ? name.replace(/ School$/, "") : name}
+    <span className="block h-5 overflow-hidden text-sm leading-5 text-zinc-700">
+      {name}
     </span>
   );
 }
