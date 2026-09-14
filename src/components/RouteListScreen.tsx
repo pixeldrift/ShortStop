@@ -99,18 +99,10 @@ const PUBLISH_STATUS_TOGGLES: {
   { value: "hidden", label: "Hid" },
 ];
 
-/** Whether a route currently reads as published - a real route's own
- * `status` says so directly; a demo route's `status` is always literally
- * "demo" (never actually changed, see page.tsx's own demoHiddenIds doc
- * comment), so its published/unpublished state lives in that separate
- * overlay instead. Shared by the search/filter pass and the row
- * rendering below so both agree on what "published" means for either
- * kind of route. */
-function isRoutePublished(
-  route: Route,
-  demoHiddenIds: ReadonlySet<string>,
-): boolean {
-  if (route.status === "demo") return !demoHiddenIds.has(route.id);
+/** Whether a route currently reads as published - shared by the
+ * search/filter pass and the row rendering below so both agree on what
+ * "published" means. */
+function isRoutePublished(route: Route): boolean {
   return route.status === "published";
 }
 
@@ -119,11 +111,7 @@ function isRoutePublished(
  * Start / favorite heart), filterable by a search box and AM/PM +
  * school-level toggles above it. Tapping a row goes to that route's
  * trip-summary screen (StartScreen), or opens its edit screen directly
- * once admin mode is on. Only one real route exists (see ROUTE_META in
- * page.tsx) - the rest are fabricated by buildDemoRoutes purely so this
- * screen has enough rows to actually exercise scrolling and search,
- * clearly flagged as fake in the generator itself rather than
- * pretending to be real district data.
+ * once admin mode is on.
  */
 export function RouteListScreen({
   routes,
@@ -140,7 +128,6 @@ export function RouteListScreen({
   onSetRouteStatus,
   onDeleteRoute,
   onToggleFavorite,
-  demoHiddenIds,
 }: {
   routes: Route[];
   /** Heading text - "Routes" (or "Edit Routes" in admin mode) when
@@ -201,13 +188,6 @@ export function RouteListScreen({
    * eyeball status toggle takes its place there instead, in admin
    * mode). */
   onToggleFavorite: (route: Route) => void;
-  /** Which fabricated demo routes are "unpublished" this session (see
-   * page.tsx) - a demo route's own `status` always stays literally
-   * "demo" (every real/fake distinction elsewhere depends on that), so
-   * this is the only place that knows one's been toggled off; combined
-   * with `route.status` via isRoutePublished below wherever a row needs
-   * to know whether it currently reads as published. */
-  demoHiddenIds: ReadonlySet<string>;
 }) {
   // Only ever read when onBack is set (the school-scoped reuse) - every
   // route here already carries its own school's address (Route.schoolAddress),
@@ -242,14 +222,6 @@ export function RouteListScreen({
   const [activePublishStatuses, setActivePublishStatuses] = useState<
     ReadonlySet<"published" | "hidden">
   >(() => new Set());
-  // The fabricated filler rows (buildDemoRoutes, page.tsx) - on by
-  // default, matching how this list always looked before this toggle
-  // existed. Off just hides them from view here; page.tsx keeps
-  // generating the same 24 regardless (nothing else - the school list's
-  // own route counts, a school-scoped reuse of this same screen -
-  // should look different just because this one screen's own toggle is
-  // off).
-  const [showDemoData, setShowDemoData] = useState(true);
   function toggleTripType(value: TripType) {
     setActiveTripTypes((prev) => {
       const next = new Set(prev);
@@ -289,16 +261,16 @@ export function RouteListScreen({
   // stay on across the navigation it triggers).
   const boxRef = useRef<HTMLDivElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
-  // The Schools/Hide Demo Data/Download routes row - its own ref,
-  // always attached regardless of adminMode, since (unlike
-  // controlsRef's own two rows, which are mutually exclusive by
-  // adminMode) this row and controlsRef's admin-mode row can both be on
-  // screen at once. It used to share controlsRef itself (attached only
-  // while !adminMode, on the theory that the admin-mode row below took
-  // over that same ref once it appeared) - which left this exact row
-  // with no ref at all once actually in admin mode, so clicking "Hide
-  // Demo Data" or "Download routes" read as a click *outside* every
-  // exempted area and exited admin mode instead of doing what it says.
+  // The Schools/Download routes row - its own ref, always attached
+  // regardless of adminMode, since (unlike controlsRef's own two rows,
+  // which are mutually exclusive by adminMode) this row and
+  // controlsRef's admin-mode row can both be on screen at once. It used
+  // to share controlsRef itself (attached only while !adminMode, on the
+  // theory that the admin-mode row below took over that same ref once
+  // it appeared) - which left this exact row with no ref at all once
+  // actually in admin mode, so clicking "Download routes" read as a
+  // click *outside* every exempted area and exited admin mode instead
+  // of doing what it says.
   const secondaryControlsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -334,25 +306,16 @@ export function RouteListScreen({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matching = routes.filter((route) => {
-      // "Show Demo Data" off - the fabricated filler rows disappear
-      // outright, regardless of anything else below (published status,
-      // search text, other toggles).
-      if (!showDemoData && route.status === "demo") return false;
-
       // A route that doesn't currently read as published only ever
       // shows up in admin mode - a normal driver never needs to see a
-      // route nobody's actually running, whether it's a real draft or
-      // a demo row toggled unpublished this session.
-      if (!isRoutePublished(route, demoHiddenIds) && !adminMode) return false;
+      // route nobody's actually running.
+      if (!isRoutePublished(route) && !adminMode) return false;
 
       const matchesQuery =
         !q ||
         route.name.toLowerCase().includes(q) ||
         route.routeNumber.includes(q);
-      const publishStatus: "published" | "hidden" = isRoutePublished(
-        route,
-        demoHiddenIds,
-      )
+      const publishStatus: "published" | "hidden" = isRoutePublished(route)
         ? "published"
         : "hidden";
       const matchesToggles =
@@ -381,11 +344,9 @@ export function RouteListScreen({
     activeTripTypes,
     activeSchoolLevels,
     activePublishStatuses,
-    showDemoData,
     sortField,
     sortDir,
     adminMode,
-    demoHiddenIds,
   ]);
 
   // The eyeball icon's own click handler - always opens the matching
@@ -398,19 +359,12 @@ export function RouteListScreen({
   // stop has actually resolved yet - purely informational now (see
   // handleActivateFromModal), so it never holds up the popup opening.
   function handleEyeClick(route: Route) {
-    if (isRoutePublished(route, demoHiddenIds)) {
+    if (isRoutePublished(route)) {
       setConfirmRequest({ type: "deactivate", route });
       return;
     }
     setConfirmRequest({ type: "draft-options", route });
     setDraftResolution(null);
-    if (route.status === "demo") {
-      // No real committed sidecar cache to check for a fabricated demo
-      // route - it's always "ready" the same way it always just
-      // activated outright below.
-      setDraftResolution({ routeId: route.id, ready: true });
-      return;
-    }
     void fetchCommittedWaypointCache().then((committed) => {
       const merged = { ...committed, ...(adminWaypointCaches[route.id] ?? {}) };
       setDraftResolution({
@@ -742,7 +696,7 @@ export function RouteListScreen({
           </div>
           <div className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto">
             {filtered.map((route) => {
-              const isPublished = isRoutePublished(route, demoHiddenIds);
+              const isPublished = isRoutePublished(route);
               const isAdminOnly = !isPublished;
               return (
                 <div
@@ -874,22 +828,6 @@ export function RouteListScreen({
             </button>
           ) : (
             <span />
-          )}
-          {/* Plain text, no icon (unlike Schools/Edit Routes either
-              side of it) - a quieter secondary control for hiding the
-              fabricated filler rows, not something that needs to
-              compete with either of those for attention. Only the
-              top-level list (onViewSchools) shows this at all - same
-              gate as Schools itself, since the school-scoped reuse of
-              this screen has nowhere for it to sit opposite. */}
-          {onViewSchools && (
-            <button
-              type="button"
-              onClick={() => setShowDemoData((prev) => !prev)}
-              className="text-sm font-semibold text-blue-600 active:text-blue-800"
-            >
-              {showDemoData ? "Hide Demo Data" : "Show Demo Data"}
-            </button>
           )}
           {/* The Home Screen's own entry point (adminMode off) stays the
               small `btn-glossy` chip this used to be everywhere - a

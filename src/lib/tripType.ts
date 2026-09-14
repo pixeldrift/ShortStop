@@ -22,13 +22,7 @@ export const TRIP_TYPE_ORDER: TripType[] = ["pickup", "dropoff", "fieldtrip", "o
 /** The longer "Morning Pickup"/"Afternoon Drop Off"/"Field Trip"/
  * "Other" form - used wherever a route's own name is built from its
  * trip type (EditRouteScreen's own buildMetaFields, parseRouteMasterList's
- * real master-list rows) rather than the short badge label above. Not
- * shared with demoRoutes.ts's own near-identical TRIP_LABELS - that one
- * picks a *random* label to derive a fabricated route's tripType from
- * (the reverse direction), and deliberately never fabricates a "Field
- * Trip" or "Other" demo row (see its own doc comment), so folding it
- * into this tripType-first helper would need unpicking more than it'd
- * save. */
+ * real master-list rows) rather than the short badge label above. */
 export function tripTypeFullLabel(tripType: TripType): string {
   if (tripType === "pickup") return "Morning Pickup";
   if (tripType === "dropoff") return "Afternoon Drop Off";

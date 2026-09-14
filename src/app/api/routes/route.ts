@@ -25,11 +25,9 @@ interface SaveRouteRequestBody {
    * an orphan under its old id. Omitted/null for a brand-new route. */
   previousId?: string | null;
   // Not RouteStatus - "demo" is a client-only concept (a fabricated
-  // filler route, see demoRoutes.ts) that never gets a database row at
-  // all, and page.tsx's own handleSaveRoute already short-circuits
-  // before ever calling this for one. Typed narrower here (and checked
-  // below) since this is a real request boundary, not a call this
-  // module controls both ends of.
+  // filler route) that never gets a database row at all. Typed
+  // narrower here (and checked below) since this is a real request
+  // boundary, not a call this module controls both ends of.
   status: Exclude<RouteStatus, "demo">;
   routeNumber: string;
   busNumber: string;
