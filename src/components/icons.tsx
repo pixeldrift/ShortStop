@@ -242,4 +242,10 @@ export { default as SchoolLevelHsIcon } from "./icons/school-level-hs.svg";
  * the Routes heading (RouteListScreen). */
 export { default as RouteIcon } from "./icons/route.svg";
 
+/** RouteListScreen's own grouped-vs-flat state, as a two-icon pair
+ * (grouped headers/sub-items vs. a plain bulleted list) rather than
+ * text - shows whichever one matches the list currently on screen. */
+export { default as GroupedViewIcon } from "./icons/grouped-view.svg";
+export { default as ListViewIcon } from "./icons/list-view.svg";
+
 export { default as MailIcon } from "./icons/mail.svg";
