@@ -13,6 +13,7 @@ import {
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
+import { cityFromAddress, streetFromAddress } from "@/lib/address";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import type { Route, SchoolLevel } from "@/lib/types";
 
@@ -21,24 +22,6 @@ import type { Route, SchoolLevel } from "@/lib/types";
  * beside the search bar rather than stacked above/below it, so the
  * bar has room to stay full height next to them. */
 const SCHOOL_LEVELS: SchoolLevel[] = ["elementary", "middle", "high"];
-
-/** The city out of a school's own "<street>, <city>, TN <zip>" address
- * (schools.csv/Postgres' `School` table - every real school's address
- * follows this exact three-part shape today) - its own table column,
- * rather than making a reader parse it back out of the full address
- * line under the school's name. */
-function cityFromAddress(address: string): string {
-  return address.split(",")[1]?.trim() ?? "";
-}
-
-/** Just the street part of a school's address, for the line under its
- * name - the city's already its own column, and the state/zip are
- * always "TN <zip>" (every real school is Rutherford County, TN), so
- * neither earns a second mention right below where the city already
- * reads. */
-function streetFromAddress(address: string): string {
-  return address.split(",")[0]?.trim() ?? address;
-}
 
 type SchoolSortField = "name" | "city" | "routes";
 
