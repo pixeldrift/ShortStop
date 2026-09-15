@@ -1,3 +1,59 @@
+import type { TripType } from "./types";
+
+// Hour, optional ":MM", optional further ":SS", optional trailing
+// whitespace + AM/PM (with or without periods, either case) - loose
+// enough to accept "7:30 AM", "7:30am", "07:30", "19:00", "7:30:15",
+// and a bare "7 AM", but still requires the whole string to match (no
+// leftover characters), so something like "730am" (no colon) or plain
+// garbage correctly fails rather than being half-parsed.
+const TIME_INPUT_PATTERN =
+  /^(\d{1,2})(?::(\d{2}))?(?::(\d{2}))?\s*([AaPp]\.?[Mm]\.?)?$/;
+
+/** Best-effort parse of whatever an admin actually typed into a Start
+ * Time field into a strict 24-hour "HH:MM:SS" string - the one shape
+ * this app now writes back to Route.startTime (see schema.prisma's own
+ * doc comment: a real district sheet can still arrive as "H:MM", but
+ * nothing this app itself saves should keep passing whatever shape a
+ * person happened to type straight through unstandardized). Returns
+ * null for anything that doesn't parse at all, so a caller can reject
+ * it outright rather than silently saving garbage.
+ *
+ * An hour with no AM/PM and no other way to tell (1-11) is genuinely
+ * ambiguous on its own - "3:15" could mean either 3:15 AM or 3:15 PM -
+ * so this takes an optional `tripTypeHint` ("dropoff" leans PM,
+ * anything else - "pickup" included - leaves the hour exactly as
+ * typed, i.e. treated as already 24-hour) the same morning/afternoon
+ * bias fillStartTimes.ts's own random fallback already uses. An hour
+ * of 12-23 (or 0) is never ambiguous either way and is always left
+ * alone. */
+export function parseTimeInput(
+  input: string,
+  tripTypeHint?: TripType,
+): string | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(TIME_INPUT_PATTERN);
+  if (!match) return null;
+
+  const [, hourStr, minuteStr = "00", secondStr = "00", periodRaw] = match;
+  let hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+  const second = parseInt(secondStr, 10);
+  if (minute > 59 || second > 59) return null;
+
+  const period = periodRaw?.trim().charAt(0).toLowerCase();
+  if (period === "a" || period === "p") {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (period === "p" ? 12 : 0);
+  } else {
+    if (hour > 23) return null;
+    if (hour >= 1 && hour <= 11 && tripTypeHint === "dropoff") hour += 12;
+  }
+
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`;
+}
+
 /** Adds minutes to a "H:MM AM/PM" string, wrapping across midnight.
  * Returns the input unchanged if it doesn't match that format. */
 export function addMinutesToTimeString(timeStr: string, minutes: number): string {
