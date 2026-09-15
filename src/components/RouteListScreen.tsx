@@ -599,13 +599,11 @@ export function RouteListScreen({
             <div className="h-5 w-px bg-zinc-300" aria-hidden="true" />
             {/* One icon, not three - cycles view all -> elementary ->
                 middle -> high -> view all on each tap (cycleSchoolLevel
-                above). SchoolLevelsIcon (the plain three-figures glyph,
-                all solid in the file itself) reads as gray/inactive
-                here the same way as every other filter icon - via this
-                button's own className, not a fixed opacity baked into
-                the SVG - and SchoolLevelIcon's own three (one figure
-                solid, two faded) read as blue/active once a level's
-                actually picked. */}
+                above). SchoolLevelsIcon (the plain three-figures glyph)
+                reads as gray/inactive here the same way as every other
+                filter icon - via this button's own className, not a
+                fixed opacity baked into the SVG - and SchoolLevelIcon
+                reads as blue/active once a level's actually picked. */}
             <button
               type="button"
               onClick={cycleSchoolLevel}

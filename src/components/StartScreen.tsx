@@ -536,6 +536,10 @@ function AllStopsModal({
               />
             )}
             Route {route.routeNumber}
+            <SchoolLevelIcon
+              level={route.schoolLevel}
+              className="h-[15px] w-[15px] text-zinc-400"
+            />
           </h2>
           <button
             type="button"
