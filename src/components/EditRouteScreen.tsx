@@ -2,15 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
+import { ScreenTransition } from "./ScreenTransition";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
+import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { WaypointPreviewMap } from "./WaypointPreviewMap";
 import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
   BackArrowIcon,
   CheckCircleIcon,
+  ChevronDownIcon,
   CloseIcon,
   DownloadIcon,
   DragHandleIcon,
@@ -755,6 +758,7 @@ function StepRowEditor({
   previousRoad,
   schools,
   routeSchoolName,
+  isNew,
   status,
   fetching,
   fetchLocked,
@@ -789,6 +793,11 @@ function StepRowEditor({
    * arriving at or departing from *some other* school is the rare case
    * (a field trip, say), not the default one. */
   routeSchoolName: string;
+  /** True only for the one row `addRow` just inserted, still unedited -
+   * shows "Add Waypoint" here instead of "Edit Waypoint" since there's
+   * nothing to edit yet, just fill in (EditRouteScreen's own
+   * newlyAddedIndex). */
+  isNew: boolean;
   status: RowResolutionStatus | undefined;
   /** This row's own request is actually in flight right now - drives
    * the globe button's spinner specifically. */
@@ -1101,7 +1110,7 @@ function StepRowEditor({
             ) : (
               <>
                 <h2 className="font-heading text-xl font-black tracking-tight">
-                  Edit Waypoint
+                  {isNew ? "Add Waypoint" : "Edit Waypoint"}
                 </h2>
                 {/* Same icon the collapsed StepRowView row above shows for
                   this same stop/turn (live off `isStop`/`turnDirection` -
@@ -1534,27 +1543,39 @@ function StepRowEditor({
  * stop or turn can be dropped in anywhere along the route's real
  * order, not only appended past the last one. Disabled while a
  * different row's own editor is open, same as every other action here
- * that would move rows out from under it. */
+ * that would move rows out from under it.
+ *
+ * Also doubles as the drag-and-drop landing indicator - `dropTarget`
+ * turns this exact box blue instead of applying a border to whichever
+ * row happens to be nearby, so hovering a drag over a new gap never
+ * changes anything's layout height (a border toggled on a row instead
+ * would - see the row wrapper's own doc comment below). Same border
+ * width either way, only its style/color change, so the box's own
+ * height never shifts between resting and drop-target states either. */
 function AddStepButton({
   onClick,
   disabled,
+  dropTarget,
 }: {
   onClick: () => void;
   disabled: boolean;
+  dropTarget?: boolean;
 }) {
   return (
-    <div className="relative flex items-center justify-center py-1">
-      <div className="absolute inset-x-0 border-t border-dashed border-zinc-300" />
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={disabled}
-        aria-label="Add step here"
-        className="btn-glossy-light relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
-      >
-        <PlusIcon className="h-3.5 w-3.5" />
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Add step here"
+      className={`my-1 flex w-full items-center justify-center gap-1.5 rounded-lg border py-1.5 text-xs font-semibold disabled:opacity-30 ${
+        dropTarget
+          ? "border-blue-500 bg-blue-500 text-white"
+          : "border-dashed border-zinc-300 text-zinc-400 active:bg-zinc-100"
+      }`}
+    >
+      <PlusIcon className="h-3 w-3" />
+      Insert Here
+    </button>
   );
 }
 
@@ -2242,6 +2263,34 @@ export function EditRouteScreen({
   const [subScreen, setSubScreen] = useState<"hub" | "stops">(
     initialSubScreen ?? "hub",
   );
+  // Which way ScreenTransition should animate the *next* hub<->stops
+  // switch - "forward" diving into Stops from the hub's own "Edit
+  // Waypoints" button, "backward" for Back/Cancel returning to the hub.
+  // Set alongside `subScreen` itself (see goToSubScreen below), same
+  // pairing page.tsx's own navDirection/screen do for the outer
+  // between-screens transition this one nests inside.
+  const [subScreenDirection, setSubScreenDirection] = useState<"forward" | "backward">("forward");
+
+  function goToSubScreen(next: "hub" | "stops", direction: "forward" | "backward") {
+    setSubScreenDirection(direction);
+    setSubScreen(next);
+  }
+
+  // Stops' own Back arrow and Cancel button both want the same target:
+  // the hub screen, *if* this session actually has one to return to.
+  // initialSubScreen === "stops" means it doesn't - this instance was
+  // opened straight into Stops (the View Stops popup's own pencil), so
+  // "hub" here would be a screen the user never chose to visit at all.
+  // In that case Back/Cancel should leave EditRouteScreen entirely via
+  // the real onCancel, same as the hub screen's own Back/Cancel already
+  // do, instead of dropping the user onto an unfamiliar Details form.
+  function handleStopsBack() {
+    if (initialSubScreen === "stops") {
+      onCancel();
+    } else {
+      goToSubScreen("hub", "backward");
+    }
+  }
 
   // The school's own geocoded point, once known - reused across every
   // "Fetch"/"Fetch All" call in this edit session instead of
@@ -3055,7 +3104,16 @@ export function EditRouteScreen({
   // this whole form); Bus number/Driver share a line last - least
   // important, neither means much without the other.
   const routeDetailsForm = (
-    <div className="w-full max-w-md rounded-2xl border border-zinc-300 p-5 text-left">
+    <div
+      className={`w-full max-w-md rounded-2xl border p-5 text-left ${
+        // Blue in edit mode - matches RouteListScreen's own admin-mode
+        // box border, same "this box is live and editable" signal. Not
+        // for mode "add" (a route that doesn't exist yet isn't "an
+        // individual route" being edited) - this same form is also
+        // that screen's own single card, unchanged there.
+        mode === "edit" ? "border-2 border-blue-400" : "border-zinc-300"
+      }`}
+    >
       <div className="grid grid-cols-3 gap-2">
         <Field label="Route #" required={routeNumberMissing}>
           <input
@@ -3319,6 +3377,7 @@ export function EditRouteScreen({
 
   if (subScreen === "stops") {
     return (
+      <ScreenTransition screenKey="stops" direction={subScreenDirection}>
       <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
         {/* Everything that can genuinely grow past the viewport (the
             stops table especially) lives in this inner, scrollable
@@ -3326,45 +3385,51 @@ export function EditRouteScreen({
             to the bottom of the screen instead of scrolling away with
             a long stops list. */}
         <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3">
-          <div className="flex w-full max-w-md items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setSubScreen("hub")}
-              aria-label="Back"
-              className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
-            >
-              <BackArrowIcon className="h-5 w-5" />
-            </button>
-            <h1 className="font-heading text-2xl font-black tracking-tight">
-              Stops and Turns
-            </h1>
-            <span className="w-10" />
-          </div>
-
-          {/* A secondary heading naming exactly which route this is -
-              route number/trip/school, same badge convention every
-              other route callout in the app uses (RouteListScreen's own
-              rows, StartScreen's title) - so this doesn't read as a
-              generic "stops" screen once Details is a separate tap
-              away and no longer visible alongside it. Quick-stats line
-              right under it answers the one question an admin actually
-              opens this screen to check, without having to count green
-              checks down the list themselves. */}
+          {/* Title and route name share one tight-gapped block (gap-0.5,
+              not this column's own gap-3) so the route name sits right
+              under the title instead of with the same breathing room
+              every other section here gets. */}
           <div className="flex w-full max-w-md shrink-0 flex-col items-center gap-0.5">
+            <div className="flex w-full items-center justify-between">
+              <button
+                type="button"
+                onClick={handleStopsBack}
+                aria-label="Back"
+                className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+              >
+                <BackArrowIcon className="h-5 w-5" />
+              </button>
+              <h1 className="font-heading text-2xl font-black tracking-tight">
+                Waypoints
+              </h1>
+              <span className="w-10" />
+            </div>
+
+            {/* A secondary heading naming exactly which route this is -
+                route number/trip/school, same badge convention every
+                other route callout in the app uses (RouteListScreen's own
+                rows, StartScreen's title) - so this doesn't read as a
+                generic "stops" screen once Details is a separate tap
+                away and no longer visible alongside it. */}
             <p className="flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0.5">
               {/* No separate "AM"/"PM" text beside this icon
                   (TripTypeIcon.tsx's own doc says why) - just the icon
-                  alone, sized to the route number's own height. Every
-                  other TripType
-                  (fieldtrip/other) skips the badge entirely - those
-                  routes may not even have a morning/afternoon
+                  alone, sized to nearly match the route number's own
+                  height (h-4 against text-lg), same ratio StartScreen's
+                  own title uses (h-6 against its text-4xl). Every other
+                  TripType (fieldtrip/other) skips the badge entirely -
+                  those routes may not even have a morning/afternoon
                   distinction to badge, and there's no real example of
-                  one yet to design that case against. */}
+                  one yet to design that case against. Full-opacity
+                  black (zinc-900), same as SchoolLevelIcon beside it,
+                  not the faded zinc-400 every other filter/context icon
+                  here uses - this pair names the route, it isn't a
+                  toggle that fades until picked. */}
               {routeNumber &&
                 (tripType === "pickup" || tripType === "dropoff") && (
                   <TripTypeIcon
                     tripType={tripType}
-                    className="h-3 w-3 text-zinc-400"
+                    className="h-4 w-4 text-zinc-900"
                   />
                 )}
               <span className="font-heading text-lg font-black tracking-tight">
@@ -3372,46 +3437,59 @@ export function EditRouteScreen({
                   <span className="text-zinc-400 italic">No route number</span>
                 )}
               </span>
+              <SchoolLevelIcon level={schoolLevel} className="h-4 w-4 text-zinc-900" />
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
                 {schoolName || "No school selected"}
               </span>
             </p>
-            {counts.total - counts.skipped > 0 &&
-              (() => {
-                // Every waypoint that actually needs a real coordinate -
-                // every row except one deriveWaypoints.ts flagged as
-                // "unresolvable" (a driver instruction, not a real
-                // road) or an admin marked Skip on by hand - neither of
-                // which this count (or the meter below) should ever
-                // penalize a route for not having geocoded, since
-                // neither one is ever going to get a coordinate at all.
-                const geocodable = counts.total - counts.skipped;
-                const allVerified = counts.resolved === geocodable;
-                const percentVerified = (counts.resolved / geocodable) * 100;
-                return (
-                  <div className="flex w-full max-w-[16rem] flex-col items-center gap-1">
-                    <p className="flex items-center gap-1 text-xs font-semibold text-zinc-500">
-                      {allVerified ? (
-                        <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                      ) : (
-                        <XCircleIcon className="h-3.5 w-3.5 shrink-0 text-red-500" />
-                      )}
-                      {allVerified
-                        ? `All ${geocodable} location${geocodable === 1 ? "" : "s"} verified`
-                        : `${counts.unresolved} of ${geocodable} coordinate${geocodable === 1 ? "" : "s"} could not be verified`}
-                    </p>
-                    <GeocodeRatioBar percent={percentVerified} />
-                  </div>
-                );
-              })()}
           </div>
 
+          {hasIncompleteRow && (
+            <p className="w-full max-w-md shrink-0 text-xs text-red-600">
+              Every stop needs at least a type and a location before locations
+              can be checked.
+            </p>
+          )}
+
+          {/* The verified-locations meter floats left, beside Fetch
+              Coordinates on its right, just above the main list box -
+              rather than its old spot up under the route name, once
+              disconnected from the toggles now living inside that box
+              below (see doc comment there). Left side stays present
+              (an empty flex-1) even with nothing geocodable yet, so the
+              button doesn't jump from centered to right-aligned once a
+              school/stop actually gets picked. */}
           <div className="flex w-full max-w-md shrink-0 items-center justify-between gap-3">
-            <ToggleSwitch
-              checked={stopsOnly}
-              onChange={setStopsOnly}
-              label="Stops only"
-            />
+            <div className="min-w-0 flex-1 text-left">
+              {counts.total - counts.skipped > 0 &&
+                (() => {
+                  // Every waypoint that actually needs a real coordinate -
+                  // every row except one deriveWaypoints.ts flagged as
+                  // "unresolvable" (a driver instruction, not a real
+                  // road) or an admin marked Skip on by hand - neither of
+                  // which this count (or the meter below) should ever
+                  // penalize a route for not having geocoded, since
+                  // neither one is ever going to get a coordinate at all.
+                  const geocodable = counts.total - counts.skipped;
+                  const allVerified = counts.resolved === geocodable;
+                  const percentVerified = (counts.resolved / geocodable) * 100;
+                  return (
+                    <div className="flex w-full max-w-[16rem] flex-col items-start gap-1">
+                      <p className="flex items-center gap-1 text-xs font-semibold text-zinc-500">
+                        {allVerified ? (
+                          <CheckCircleIcon className="h-3.5 w-3.5 shrink-0 text-green-600" />
+                        ) : (
+                          <XCircleIcon className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                        )}
+                        {allVerified
+                          ? `All ${geocodable} location${geocodable === 1 ? "" : "s"} verified`
+                          : `${counts.unresolved} of ${geocodable} coordinate${geocodable === 1 ? "" : "s"} could not be verified`}
+                      </p>
+                      <GeocodeRatioBar percent={percentVerified} />
+                    </div>
+                  );
+                })()}
+            </div>
             <button
               type="button"
               onClick={() => setShowFetchModal(true)}
@@ -3422,34 +3500,39 @@ export function EditRouteScreen({
             </button>
           </div>
 
-          <div className="flex w-full max-w-md shrink-0 items-center justify-between gap-3">
-            <ToggleSwitch
-              checked={showUnverifiedOnly}
-              onChange={setShowUnverifiedOnly}
-              label="Unverified only"
-            />
-            {/* Only offered from the full list - "Unverified only" above
-                already narrows to exactly these rows, so a shortcut to
-                find one among them would be redundant. */}
-            {!showUnverifiedOnly && unverifiedRowIndices.length > 0 && (
-              <button
-                type="button"
-                onClick={jumpToNextUnverified}
-                className="btn-glossy-light flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
-              >
-                <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
-                Jump to next unverified
-              </button>
-            )}
-          </div>
-          {hasIncompleteRow && (
-            <p className="w-full max-w-md shrink-0 text-xs text-red-600">
-              Every stop needs at least a type and a location before locations
-              can be checked.
-            </p>
-          )}
-
-          <div className="flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-300 text-left">
+          {/* Blue outline in edit mode, matching RouteListScreen's own
+              admin-mode box border - this screen is always mid-edit. */}
+          <div className="flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border-2 border-blue-400 text-left">
+            {/* Both toggles live at the top of the list box itself now,
+                next to each other, rather than each with its own
+                full-width row above it - they're both view filters on
+                the exact list directly below them, not route-level
+                settings like Fetch Coordinates. */}
+            <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-zinc-200 px-4 py-2.5">
+              <ToggleSwitch
+                checked={stopsOnly}
+                onChange={setStopsOnly}
+                label="Stops only"
+              />
+              <ToggleSwitch
+                checked={showUnverifiedOnly}
+                onChange={setShowUnverifiedOnly}
+                label="Unverified only"
+              />
+              {/* Only offered from the full list - "Unverified only"
+                  above already narrows to exactly these rows, so a
+                  shortcut to find one among them would be redundant. */}
+              {!showUnverifiedOnly && unverifiedRowIndices.length > 0 && (
+                <button
+                  type="button"
+                  onClick={jumpToNextUnverified}
+                  className="btn-glossy-light ml-auto flex shrink-0 items-center gap-1 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
+                >
+                  Next
+                  <ChevronDownIcon className="h-3 w-3" />
+                </button>
+              )}
+            </div>
             {/* An "Add Step" control before the first row and after
                 every row, not just once at the bottom - a new stop or
                 turn can be dropped in anywhere along the route's real
@@ -3465,6 +3548,7 @@ export function EditRouteScreen({
               <AddStepButton
                 onClick={() => addRow(0)}
                 disabled={expandedIndex !== null}
+                dropTarget={dragRowIndex !== null && dragOverIndex === 0}
               />
               {visibleRowIndices.map((index) => {
                 const row = rows[index];
@@ -3478,14 +3562,18 @@ export function EditRouteScreen({
                   <div
                     key={index}
                     data-row-index={index}
+                    // No more border-t-2-on-drop-target styling here - that
+                    // added real box height right on the row itself,
+                    // shifting every row below it down a couple pixels the
+                    // moment a drag entered a new gap. The landing
+                    // indicator lives on AddStepButton below instead (see
+                    // its own doc comment), which never changes size.
                     className={
                       highlightedRowIndex === index
                         ? "rounded-lg ring-2 ring-amber-400 transition-shadow"
                         : dragRowIndex === index
                           ? "opacity-40"
-                          : dragOverIndex === index && dragRowIndex !== null
-                            ? "border-t-2 border-blue-500"
-                            : ""
+                          : ""
                     }
                   >
                     <StepRowView
@@ -3525,6 +3613,9 @@ export function EditRouteScreen({
                     <AddStepButton
                       onClick={() => addRow(index + 1)}
                       disabled={expandedIndex !== null}
+                      dropTarget={
+                        dragRowIndex !== null && dragOverIndex === index + 1
+                      }
                     />
                   </div>
                 );
@@ -3558,6 +3649,7 @@ export function EditRouteScreen({
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
                 routeSchoolName={schoolName}
+                isNew={newlyAddedIndex === index}
                 status={draftStatus}
                 fetching={
                   draftWaypoint
@@ -3613,7 +3705,7 @@ export function EditRouteScreen({
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={onCancel}
+              onClick={handleStopsBack}
               className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
             >
               Cancel
@@ -3642,11 +3734,13 @@ export function EditRouteScreen({
           />
         )}
       </div>
+      </ScreenTransition>
     );
   }
 
   // subScreen "hub"
   return (
+    <ScreenTransition screenKey="hub" direction={subScreenDirection}>
     <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
       {/* Everything that can genuinely grow past the viewport (the
           Route Details form especially) lives in this inner, scrollable
@@ -3740,7 +3834,7 @@ export function EditRouteScreen({
       <div className="w-full max-w-md shrink-0">
         <button
           type="button"
-          onClick={() => setSubScreen("stops")}
+          onClick={() => goToSubScreen("stops", "forward")}
           className="btn-glossy-light font-heading flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-base font-semibold text-zinc-900"
         >
           <MapPinIcon className="h-5 w-5" />
@@ -3767,5 +3861,6 @@ export function EditRouteScreen({
         </button>
       </div>
     </div>
+    </ScreenTransition>
   );
 }

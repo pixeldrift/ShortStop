@@ -600,12 +600,13 @@ export function RouteListScreen({
             {/* One icon, not three - cycles view all -> elementary ->
                 middle -> high -> view all on each tap (cycleSchoolLevel
                 above). SchoolLevelsIcon (the plain three-figures glyph,
-                all solid in the file itself) reads as gray/inactive
-                here the same way as every other filter icon - via this
-                button's own className, not a fixed opacity baked into
-                the SVG - and SchoolLevelIcon's own three (one figure
-                solid, two faded) read as blue/active once a level's
-                actually picked. */}
+                every path fully solid) reads as gray/inactive here the
+                same way as every other filter icon, via this button's
+                own className - and once a level's picked, SchoolLevelIcon
+                takes over and reads as blue/active instead, that level's
+                own figure solid and the other two faded (baked into the
+                SVG itself, see icons.tsx), rather than three identical
+                figures with nothing to tell them apart. */}
             <button
               type="button"
               onClick={cycleSchoolLevel}
@@ -711,9 +712,13 @@ export function RouteListScreen({
                                 className="flex min-w-0 flex-1 items-center gap-1.5 text-left active:bg-zinc-100"
                               >
                                 <span className="flex shrink-0 items-center gap-1">
+                                  {/* Solid black, not faded - names this
+                                      route's real level, unlike the
+                                      filter cycle button above where the
+                                      same icon reads blue/gray. */}
                                   <SchoolLevelIcon
                                     level={route.schoolLevel}
-                                    className="h-4 w-4 shrink-0 text-zinc-400"
+                                    className="h-4 w-4 shrink-0 text-zinc-900"
                                   />
                                   <span className="w-6 shrink-0 text-xs font-bold text-zinc-400">
                                     {SCHOOL_LEVEL_TOGGLES.find(
@@ -949,9 +954,11 @@ export function RouteListScreen({
                       </span>
                     </div>
                     <span className="flex min-w-0 items-center gap-1">
+                      {/* Solid black, not faded - see the grouped view's
+                          own row above for why. */}
                       <SchoolLevelIcon
                         level={route.schoolLevel}
-                        className="h-4 w-4 shrink-0 text-zinc-400"
+                        className="h-4 w-4 shrink-0 text-zinc-900"
                       />
                       <SchoolNameLabel name={route.schoolName} />
                     </span>
