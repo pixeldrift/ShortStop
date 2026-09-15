@@ -28,7 +28,11 @@ function randomTime(minMinutes: number, maxMinutes: number): string {
   const rounded = Math.round(minutes / 5) * 5;
   const h = Math.floor(rounded / 60);
   const m = rounded % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  // HH:MM:SS - the strict 24-hour shape every other write path (the
+  // Route Details form's own Save, via parseTimeInput) now normalizes
+  // to, so a fake time here doesn't stand out as the one column value
+  // still missing its own seconds.
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`;
 }
 
 function randomStartTime(tripType: string): string {

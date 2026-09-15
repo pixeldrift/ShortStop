@@ -65,6 +65,7 @@ import type {
   RouteResolutionCounts,
   RowResolutionStatus,
 } from "@/lib/routeResolutionStatus";
+import { parseTimeInput } from "@/lib/time";
 import { tripTypeFullLabel } from "@/lib/tripType";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
@@ -2024,6 +2025,7 @@ export function EditRouteScreen({
   initialWaypointCache,
   schools,
   initialSubScreen,
+  justCreated,
   onCancel,
   onSave,
 }: {
@@ -2061,6 +2063,13 @@ export function EditRouteScreen({
    * otherwise have to tap "Edit Waypoints" from. Defaults to "hub" -
    * every other caller still opens where it always has. */
   initialSubScreen?: "hub" | "stops";
+  /** `mode: "edit"` only - this instance is the very first time this
+   * route is being shown, straight off a brand-new Save (page.tsx's own
+   * handleSaveRoute, called with its `justCreated` argument true) -
+   * shows a one-time "New Route Created!" confirmation on the hub
+   * screen instead of landing there with no acknowledgment that the
+   * Save actually did anything. */
+  justCreated?: boolean;
   onCancel: () => void;
   /** `steps` here is always the *current* row list - `mode: "add"`'s
    * pasted/uploaded rows as parsed, or `mode: "edit"`'s edited row list
@@ -2285,6 +2294,13 @@ export function EditRouteScreen({
   // mode "add" doesn't read this at all - Create Route has no prior
   // saved state to be dirty against.
   const [dirty, setDirty] = useState(false);
+  // Shows the hub screen's own "New Route Created!" confirmation while
+  // `justCreated` is true and nothing's been touched yet - derived
+  // straight off `dirty` rather than its own separate state, so the
+  // confirmation naturally disappears the instant an admin starts
+  // actually editing this route further, without needing to remember to
+  // clear it anywhere.
+  const showCreatedBanner = Boolean(justCreated) && !dirty;
   // mode "add" only - the paste box's own "Details" link, see
   // StopsFormatModal above.
   const [showFormatModal, setShowFormatModal] = useState(false);
@@ -2985,11 +3001,23 @@ export function EditRouteScreen({
   const routeNumberMissing = !routeNumber.trim();
   const tripTypeMissing = !tripType;
   const schoolNameMissing = !schoolName.trim();
+  // Not required (a blank Start is fine, same as busNumber/driver) -
+  // only flagged once something's actually typed in but parseTimeInput
+  // can't make sense of it, so Save doesn't silently write whatever
+  // unparseable text was left in the box.
+  const startTimeInvalid =
+    departureTime.trim() !== "" &&
+    parseTimeInput(departureTime, tripType || undefined) === null;
 
   async function handleSave(nextStatus: RouteStatus = status) {
     if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
       setShowRequiredErrors(true);
       setMessage("Route #, Trip, and School are required.");
+      return;
+    }
+    if (startTimeInvalid) {
+      setShowRequiredErrors(true);
+      setMessage(`Start time "${departureTime}" isn't a time this app can recognize.`);
       return;
     }
     if (saving) return;
@@ -3017,7 +3045,12 @@ export function EditRouteScreen({
           schoolName: built.schoolName,
           schoolLevel: built.schoolLevel,
           tripType: built.tripType,
-          startTime: built.departureTime,
+          // Normalized to strict 24-hour "HH:MM:SS" here, not whatever
+          // shape was typed - startTimeInvalid above already guarantees
+          // this parses whenever built.departureTime isn't blank.
+          startTime: built.departureTime.trim()
+            ? (parseTimeInput(built.departureTime, built.tripType) ?? "")
+            : "",
           nextRouteId: built.nextRouteId,
           steps: currentRows,
         }),
@@ -3193,7 +3226,11 @@ export function EditRouteScreen({
         </Field>
         <Field label="Start">
           <input
-            className={inputClass}
+            className={
+              showRequiredErrors && startTimeInvalid
+                ? errorInputClass
+                : inputClass
+            }
             value={departureTime}
             onChange={(e) => {
               setDepartureTime(e.target.value);
@@ -3840,6 +3877,13 @@ export function EditRouteScreen({
           </div>
           <span className="w-10" />
         </div>
+
+        {showCreatedBanner && (
+          <p className="flex w-full max-w-md shrink-0 items-center justify-center gap-1.5 text-sm font-semibold text-green-700">
+            <CheckCircleIcon className="h-4 w-4 shrink-0" />
+            New Route Created!
+          </p>
+        )}
 
         {routeDetailsForm}
 

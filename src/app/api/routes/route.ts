@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import type { RawRouteRow } from "@/lib/parseRouteCsv";
+import { parseTimeInput } from "@/lib/time";
 import type { RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 
 /**
@@ -34,12 +35,16 @@ interface SaveRouteRequestBody {
   schoolName: string;
   schoolLevel: SchoolLevel;
   tripType: TripType;
-  /** Whatever the admin typed in the Departure Time field, as-is - not
-   * necessarily the strict 24-hour text real district sheets use (see
-   * Route.startTime's own doc in schema.prisma), same "no real editing
-   * for this yet" honesty already true of endTime below. Round-trips
-   * fine either way: parseRouteMasterList's format24HourAsAmPm passes
-   * an already-"H:MM AM/PM" string through unchanged. */
+  /** Whatever EditRouteScreen's own Departure Time field sent - blank,
+   * or already normalized to strict 24-hour "HH:MM:SS" client-side (see
+   * that screen's own handleSave/parseTimeInput). Re-parsed here too
+   * rather than trusted outright, the same "the real boundary validates
+   * its own input" reasoning missingFields below already follows - a
+   * request from anywhere other than that screen's own Save button
+   * (there isn't one today, but this is the actual persistence
+   * boundary) still can't write an unparsed/malformed time to a column
+   * every other reader (parseRouteMasterList's format24HourAsAmPm,
+   * durationBetween24HourTimes) assumes is already clean. */
   startTime: string;
   /** EditRouteScreen's own "Next Action" field - another route's id, or
    * null to end the trip here (see Route.nextRouteId's own doc comment
@@ -113,6 +118,13 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!Array.isArray(steps)) {
     return NextResponse.json({ error: "steps must be an array." }, { status: 400 });
   }
+  const normalizedStartTime = startTime.trim() ? parseTimeInput(startTime, tripType) : "";
+  if (normalizedStartTime === null) {
+    return NextResponse.json(
+      { error: `Start time "${startTime}" isn't a time this app can recognize.` },
+      { status: 400 },
+    );
+  }
 
   if (previousId && previousId !== id) {
     // Never a real error even if it's already gone (a double-submit,
@@ -123,8 +135,27 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   await prisma.route.upsert({
     where: { id },
-    create: { id, status, routeNumber, busNumber, schoolName, schoolLevel, tripType, startTime, nextRouteId },
-    update: { status, routeNumber, busNumber, schoolName, schoolLevel, tripType, startTime, nextRouteId },
+    create: {
+      id,
+      status,
+      routeNumber,
+      busNumber,
+      schoolName,
+      schoolLevel,
+      tripType,
+      startTime: normalizedStartTime,
+      nextRouteId,
+    },
+    update: {
+      status,
+      routeNumber,
+      busNumber,
+      schoolName,
+      schoolLevel,
+      tripType,
+      startTime: normalizedStartTime,
+      nextRouteId,
+    },
   });
 
   // Replace-all rather than a per-row diff/update - same reasoning as

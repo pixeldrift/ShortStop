@@ -30,18 +30,6 @@ async function fetchJson<T>(path: string): Promise<T> {
   return res.json();
 }
 
-/** Fetches one route's own turn-by-turn steps from Postgres (see
- * src/app/api/routes/[id]/steps) - null for a master-list row with no
- * steps committed yet (e.g. 120-PM-HS, whose sheet came in visibly
- * incomplete, cutting off mid-neighborhood, so the master list marks it
- * "draft"), same skip-not-crash handling a missing sidecar file used to
- * get. */
-async function fetchSteps(routeId: string): Promise<RawRouteRow[] | null> {
-  const res = await fetch(`/api/routes/${routeId}/steps`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for /api/routes/${routeId}/steps`);
-  return res.json();
-}
 
 /** Which screen is showing, replacing a plain `selectedRoute: Route |
  * null` now that there's more than one non-list screen to be on.
@@ -74,6 +62,13 @@ type Screen =
        * doc comment. Omitted (hub) everywhere except the View Stops
        * popup's own pencil-to-Edit-Waypoints button. */
       initialSubScreen?: "hub" | "stops";
+      /** True only for the one replaceScreen handleSaveRoute itself
+       * fires right after a brand-new route's first-ever Save (see its
+       * own `justCreated` argument) - threaded straight through to
+       * EditRouteScreen's own `justCreated` prop for its "New Route
+       * Created!" confirmation. Never set by any other navigation into
+       * this screen kind. */
+      justCreated?: boolean;
     }
   | { kind: "schools" }
   | { kind: "school-routes"; schoolName: string };
@@ -236,27 +231,31 @@ export default function Home() {
     Promise.all([
       fetchJson<MasterListRoute[]>("/api/route-master-list"),
       fetchJson<Record<string, SchoolInfo>>("/api/schools"),
+      // Every route's steps in one request/one query, not one request
+      // per route (see /api/routes/steps's own doc comment for why the
+      // old per-route fan-out - Promise.all(allRows.map(fetchSteps)) -
+      // could leave the whole app stuck loading once enough real
+      // routes existed to outrun Neon's pooled connection limit).
+      fetchJson<Record<string, RawRouteRow[]>>("/api/routes/steps"),
     ])
-      .then(async ([allRows, schoolsTable]) => {
+      .then(([allRows, schoolsTable, stepsByRouteId]) => {
         setSchools(schoolsTable);
 
-        const built = await Promise.all(
-          allRows.map(async (row) => {
-            const steps = await fetchSteps(row.id);
-            if (!steps) return null;
+        const built = allRows.map((row) => {
+          const steps = stepsByRouteId[row.id];
+          if (!steps || steps.length === 0) return null;
 
-            const meta: RouteMeta = {
-              ...row,
-              driverName: PLACEHOLDER_DRIVER_NAME,
-              schoolAddress: schoolsTable[row.schoolName]?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
-              schoolLat: schoolsTable[row.schoolName]?.lat ?? null,
-              schoolLon: schoolsTable[row.schoolName]?.lon ?? null,
-              distance: PLACEHOLDER_DISTANCE,
-              isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
-            };
-            return { route: buildRouteFromRows(steps, meta), steps };
-          }),
-        );
+          const meta: RouteMeta = {
+            ...row,
+            driverName: PLACEHOLDER_DRIVER_NAME,
+            schoolAddress: schoolsTable[row.schoolName]?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
+            schoolLat: schoolsTable[row.schoolName]?.lat ?? null,
+            schoolLon: schoolsTable[row.schoolName]?.lon ?? null,
+            distance: PLACEHOLDER_DISTANCE,
+            isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
+          };
+          return { route: buildRouteFromRows(steps, meta), steps };
+        });
 
         const loaded = built.filter((r): r is { route: Route; steps: RawRouteRow[] } => r !== null);
         setRealRoutes(loaded.map((l) => l.route));
@@ -305,11 +304,16 @@ export default function Home() {
     setFavoriteOverrides((prev) => ({ ...prev, [route.id]: !route.isFavorite }));
   }
 
-  function handleSaveRoute(route: Route, steps: RawRouteRow[], waypointCache: WaypointCache) {
+  function handleSaveRoute(
+    route: Route,
+    steps: RawRouteRow[],
+    waypointCache: WaypointCache,
+    justCreated = false,
+  ) {
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
     setAdminStepsById((prev) => ({ ...prev, [route.id]: steps }));
     setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
-    replaceScreen({ kind: "edit-route", route });
+    replaceScreen({ kind: "edit-route", route, justCreated });
   }
 
   // Updating adminRoutes alone (as this used to, before
@@ -418,7 +422,7 @@ export default function Home() {
         initialSteps={[]}
         schools={schools}
         onCancel={goBack}
-        onSave={handleSaveRoute}
+        onSave={(route, steps, cache) => handleSaveRoute(route, steps, cache, true)}
       />
     );
   } else if (screen.kind === "edit-route") {
@@ -433,6 +437,7 @@ export default function Home() {
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schools={schools}
         initialSubScreen={screen.initialSubScreen}
+        justCreated={screen.justCreated}
         onCancel={goBack}
         onSave={handleSaveRoute}
       />
