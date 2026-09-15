@@ -11,9 +11,9 @@ import { WaypointPreviewMap } from "./WaypointPreviewMap";
 import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
+  ArrowDownToLineIcon,
   BackArrowIcon,
   CheckCircleIcon,
-  ChevronDownIcon,
   CloseIcon,
   DownloadIcon,
   DragHandleIcon,
@@ -37,6 +37,7 @@ import {
   buildRouteFromRows,
   formatWaypointInstruction,
   formatWaypointInstructionParts,
+  titleCaseAction,
   waypointConnectorWord,
 } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
@@ -606,7 +607,7 @@ function StepRowView({
                   action={row.action}
                   className="h-4 w-4 shrink-0 text-blue-600"
                 />
-                {row.action}
+                {titleCaseAction(row.action)}
               </>
             ) : turnDirection ? (
               <>
@@ -619,7 +620,7 @@ function StepRowView({
             ) : (
               <>
                 <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
-                {row.action || "Turn"}
+                {titleCaseAction(row.action) || "Turn"}
               </>
             )}
           </span>
@@ -754,6 +755,7 @@ function StepRowView({
  */
 function StepRowEditor({
   row,
+  rowIndex,
   stopNumber,
   previousRoad,
   schools,
@@ -776,6 +778,15 @@ function StepRowEditor({
   onNavigate,
 }: {
   row: RawRouteRow;
+  /** This row's own position among every row on the route (not just
+   * the currently-visible ones) - only used to `key` WaypointPreviewMap
+   * below, so navigating to a different row via the prev/next arrows
+   * (or Update/Cancel's own row-to-row jump) remounts that map with a
+   * fresh camera centered on the new row, instead of it staying frozen
+   * wherever the previous row's own mount last left it (see
+   * WaypointPreviewMap's own doc comment for why its camera never
+   * moves on its own once mounted). */
+  rowIndex: number;
   stopNumber: number | null;
   /** The road deriveWaypoints.ts already has tracked as "current"
    * heading into this row, from every row before it - null only for
@@ -1141,7 +1152,11 @@ function StepRowEditor({
                 onClick={() => onNavigate("prev")}
                 disabled={!canGoPrev}
                 aria-label="Previous waypoint"
-                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 disabled:opacity-30 active:bg-zinc-100"
+                className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+                  canGoPrev
+                    ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
+                    : "text-zinc-400"
+                }`}
               >
                 <BackArrowIcon className="h-4 w-4" />
               </button>
@@ -1150,7 +1165,11 @@ function StepRowEditor({
                 onClick={() => onNavigate("next")}
                 disabled={!canGoNext}
                 aria-label="Next waypoint"
-                className="flex h-6 w-6 items-center justify-center rounded text-zinc-400 disabled:opacity-30 active:bg-zinc-100"
+                className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+                  canGoNext
+                    ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
+                    : "text-zinc-400"
+                }`}
               >
                 <RightArrowIcon className="h-4 w-4" />
               </button>
@@ -1493,6 +1512,7 @@ function StepRowEditor({
           moves once mounted) - PlaceCoordinatesModal above is still
           the one place to actually change this row's point. */}
             <WaypointPreviewMap
+              key={rowIndex}
               center={previewCenter}
               routeLine={routeContext}
               stopPins={stopPins}
@@ -1545,37 +1565,58 @@ function StepRowEditor({
  * different row's own editor is open, same as every other action here
  * that would move rows out from under it.
  *
- * Also doubles as the drag-and-drop landing indicator - `dropTarget`
- * turns this exact box blue instead of applying a border to whichever
- * row happens to be nearby, so hovering a drag over a new gap never
- * changes anything's layout height (a border toggled on a row instead
- * would - see the row wrapper's own doc comment below). Same border
- * width either way, only its style/color change, so the box's own
- * height never shifts between resting and drop-target states either. */
+ * Also doubles as the drag-and-drop landing indicator while `dragging`
+ * (some row is actively being dragged) - the tappable "+" button
+ * swaps for a plain, non-interactive box (tapping "add" mid-drag isn't
+ * a real gesture), and whichever gap is the current `dropTarget` shows
+ * a solid blue line overlaying the same dashed divider - not a wider
+ * or taller box, and not a border added to a neighboring row (that
+ * shifted the whole list's layout by its own border-width every time a
+ * drag crossed into a new gap) - so nothing about the list's size
+ * changes as the drag moves between gaps, resting or dragging. */
 function AddStepButton({
   onClick,
   disabled,
+  dragging,
   dropTarget,
 }: {
   onClick: () => void;
   disabled: boolean;
+  dragging?: boolean;
   dropTarget?: boolean;
 }) {
+  if (dragging) {
+    return (
+      <div className="relative flex items-center justify-center py-1">
+        <div
+          className={
+            dropTarget
+              ? "absolute inset-x-0 border-t-2 border-blue-500"
+              : "absolute inset-x-0 border-t border-dashed border-zinc-300"
+          }
+        />
+        {dropTarget && (
+          <span className="relative z-10 rounded bg-blue-500 px-2 py-0.5 text-[10px] font-semibold text-white">
+            Drop Here
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label="Add step here"
-      className={`my-1 flex w-full items-center justify-center gap-1.5 rounded-lg border py-1.5 text-xs font-semibold disabled:opacity-30 ${
-        dropTarget
-          ? "border-blue-500 bg-blue-500 text-white"
-          : "border-dashed border-zinc-300 text-zinc-400 active:bg-zinc-100"
-      }`}
-    >
-      <PlusIcon className="h-3 w-3" />
-      Insert Here
-    </button>
+    <div className="relative flex items-center justify-center py-1">
+      <div className="absolute inset-x-0 border-t border-dashed border-zinc-300" />
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-label="Add step here"
+        className="btn-glossy-light relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
+      >
+        <PlusIcon className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 
@@ -3526,10 +3567,11 @@ export function EditRouteScreen({
                 <button
                   type="button"
                   onClick={jumpToNextUnverified}
-                  className="btn-glossy-light ml-auto flex shrink-0 items-center gap-1 rounded-lg bg-zinc-300 px-2.5 py-1.5 text-xs font-semibold text-zinc-900"
+                  className="ml-auto flex shrink-0 items-center gap-1 text-xs font-semibold text-zinc-900"
                 >
+                  <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
                   Next
-                  <ChevronDownIcon className="h-3 w-3" />
+                  <ArrowDownToLineIcon className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>
@@ -3548,7 +3590,8 @@ export function EditRouteScreen({
               <AddStepButton
                 onClick={() => addRow(0)}
                 disabled={expandedIndex !== null}
-                dropTarget={dragRowIndex !== null && dragOverIndex === 0}
+                dragging={dragRowIndex !== null}
+                dropTarget={dragOverIndex === 0}
               />
               {visibleRowIndices.map((index) => {
                 const row = rows[index];
@@ -3613,9 +3656,8 @@ export function EditRouteScreen({
                     <AddStepButton
                       onClick={() => addRow(index + 1)}
                       disabled={expandedIndex !== null}
-                      dropTarget={
-                        dragRowIndex !== null && dragOverIndex === index + 1
-                      }
+                      dragging={dragRowIndex !== null}
+                      dropTarget={dragOverIndex === index + 1}
                     />
                   </div>
                 );
@@ -3645,6 +3687,7 @@ export function EditRouteScreen({
             return (
               <StepRowEditor
                 row={draftRow}
+                rowIndex={index}
                 stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
@@ -3697,7 +3740,7 @@ export function EditRouteScreen({
                 className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800"
               >
                 <DownloadIcon className="h-4 w-4" />
-                Download stops
+                Download Waypoints
               </button>
             </div>
           )}

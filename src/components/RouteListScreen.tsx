@@ -108,17 +108,6 @@ const SCHOOL_LEVEL_CYCLE: (SchoolLevel | null)[] = [
   null,
   ...SCHOOL_LEVEL_ORDER,
 ];
-// Admin-mode only (see its own row below) - a normal driver's view
-// already excludes unpublished routes outright, so filtering by
-// published/hidden would have nothing to do there.
-const PUBLISH_STATUS_TOGGLES: {
-  value: "published" | "hidden";
-  label: string;
-}[] = [
-  { value: "published", label: "Pub" },
-  { value: "hidden", label: "Hid" },
-];
-
 /** Whether a route currently reads as published - shared by the
  * search/filter pass and the row rendering below so both agree on what
  * "published" means. */
@@ -242,9 +231,12 @@ export function RouteListScreen({
   );
   const [activeSchoolLevel, setActiveSchoolLevel] =
     useState<SchoolLevel | null>(null);
-  const [activePublishStatuses, setActivePublishStatuses] = useState<
-    ReadonlySet<"published" | "hidden">
-  >(() => new Set());
+  // Same null-is-"view all" cycling as activeSchoolLevel, one icon
+  // instead of two separate Pub/Hid buttons - null -> published only ->
+  // hidden only -> null.
+  const [activePublishFilter, setActivePublishFilter] = useState<
+    "published" | "hidden" | null
+  >(null);
   function toggleTripType(value: TripType) {
     setActiveTripType((prev) => (prev === value ? null : value));
   }
@@ -256,13 +248,10 @@ export function RouteListScreen({
       return SCHOOL_LEVEL_CYCLE[(index + 1) % SCHOOL_LEVEL_CYCLE.length];
     });
   }
-  function togglePublishStatus(value: "published" | "hidden") {
-    setActivePublishStatuses((prev) => {
-      const next = new Set(prev);
-      if (next.has(value)) next.delete(value);
-      else next.add(value);
-      return next;
-    });
+  function cyclePublishFilter() {
+    setActivePublishFilter((prev) =>
+      prev === null ? "published" : prev === "published" ? "hidden" : null,
+    );
   }
   // routeNumber/asc (tripType as its own tie-break, see
   // SORT_COMPARATORS) is the default a driver actually wants: routes
@@ -324,8 +313,8 @@ export function RouteListScreen({
         // silently filter the driver-facing list if admin mode toggles
         // off without this set happening to already be empty.
         (!adminMode ||
-          activePublishStatuses.size === 0 ||
-          activePublishStatuses.has(publishStatus));
+          activePublishFilter === null ||
+          activePublishFilter === publishStatus);
       return matchesQuery && matchesToggles;
     });
 
@@ -339,7 +328,7 @@ export function RouteListScreen({
     query,
     activeTripType,
     activeSchoolLevel,
-    activePublishStatuses,
+    activePublishFilter,
     sortField,
     sortDir,
     adminMode,
@@ -538,7 +527,7 @@ export function RouteListScreen({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search routes"
               aria-label="Search routes"
-              className="w-full rounded-xl border border-zinc-300 bg-white py-2.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              className="w-full rounded-xl border border-zinc-300 bg-white py-1.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
             />
             {query && (
               <button
@@ -629,33 +618,42 @@ export function RouteListScreen({
               )}
             </button>
             {/* Published/Hidden - admin mode only, same empty-set-shows-
-                everything convention as the two groups above. A normal
+                everything convention as the two groups above (a normal
                 driver's list already excludes hidden routes outright, so
-                this toggle would have nothing to do there. Stays plain
-                text, not an icon - unlike trip type/school level, there's
-                no existing glyph pair for "published"/"hidden" to reuse. */}
+                this toggle would have nothing to do there). One eye
+                icon, cycling like the school-level toggle instead of two
+                separate Pub/Hid buttons: gray/open eye = view all, blue/
+                open eye = published only, blue/closed eye = hidden only,
+                tap again back to view all. */}
             {adminMode && (
               <>
                 <div
                   className="w-px self-stretch bg-zinc-300"
                   aria-hidden="true"
                 />
-                <div className="flex flex-col gap-0.5">
-                  {PUBLISH_STATUS_TOGGLES.map((toggle) => {
-                    const active = activePublishStatuses.has(toggle.value);
-                    return (
-                      <button
-                        key={toggle.value}
-                        type="button"
-                        onClick={() => togglePublishStatus(toggle.value)}
-                        aria-pressed={active}
-                        className={`px-1 text-[10px] font-bold ${active ? "text-blue-600" : "text-zinc-400"}`}
-                      >
-                        {toggle.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                <button
+                  type="button"
+                  onClick={cyclePublishFilter}
+                  aria-pressed={activePublishFilter !== null}
+                  aria-label={
+                    activePublishFilter === null
+                      ? "Filter by published status"
+                      : activePublishFilter === "published"
+                        ? "Showing published routes only"
+                        : "Showing hidden routes only"
+                  }
+                  className={
+                    activePublishFilter === null
+                      ? "text-zinc-300"
+                      : "text-blue-600"
+                  }
+                >
+                  {activePublishFilter === "hidden" ? (
+                    <EyeOffIcon className="h-5 w-5" />
+                  ) : (
+                    <EyeIcon className="h-5 w-5" />
+                  )}
+                </button>
               </>
             )}
           </div>

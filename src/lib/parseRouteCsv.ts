@@ -114,6 +114,22 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
  * every action without a more specific word of its own - fall back to
  * "onto," the original default every one of these callers already
  * used before this existed. */
+/** Capitalizes each word of an action string, splitting on spaces and
+ * hyphens ("u-turn" -> "U-Turn", "turn around" -> "Turn Around") - the
+ * fixed action vocabulary (Stop/Left/Right/Continue/U-Turn/Turn Around/
+ * Proceed/Pull Over/Return/Depart/Arrive/Complete) is always typed in
+ * this exact casing from StepRowEditor's own Type select, but an older
+ * imported row can still carry it lowercase from its source sheet -
+ * every instruction/label built from a row's action reads through this
+ * so it displays the same regardless of which casing the row itself
+ * happens to store. */
+export function titleCaseAction(action: string): string {
+  return action.replace(
+    /[^\s-]+/g,
+    (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+  );
+}
+
 export function waypointConnectorWord(action: string): string {
   const a = action.trim().toLowerCase();
   if (a === "depart") return "from";
@@ -156,12 +172,13 @@ export function formatWaypointInstructionParts(
   const a = action.toLowerCase();
   if (a === "stop" || a === "depart" || a === "arrive" || a === "complete") {
     const fullLocation = effectiveFrom ? `${effectiveFrom} & ${location}` : location;
-    const label = a === "stop" ? (stopNumber ? `Stop ${stopNumber}` : "Stop") : action || "Stop";
+    const label =
+      a === "stop" ? (stopNumber ? `Stop ${stopNumber}` : "Stop") : titleCaseAction(action) || "Stop";
     return fullLocation
       ? { label, connector: waypointConnectorWord(a), location: fullLocation }
       : { label };
   }
-  const actionLabel = action || "Turn";
+  const actionLabel = titleCaseAction(action) || "Turn";
   return location
     ? { label: actionLabel, connector: waypointConnectorWord(a), location }
     : { label: actionLabel };
