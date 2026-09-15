@@ -1,0 +1,32 @@
+name: Fill blank route start times
+
+# Manual-only, same reason as db-migrate-seed.yml: this repo's sandboxed
+# dev environments can't reach a real Postgres server directly, so
+# actually writing to the hosted database (Neon, Vercel Postgres, etc.)
+# has to happen from somewhere with normal network access. A GitHub
+# Actions runner has that - see scripts/fillStartTimes.ts's own doc
+# comment for what this fills in and why.
+#
+# Needs a DATABASE_URL repo secret (Settings -> Secrets and variables ->
+# Actions -> New repository secret) pointing at the real database - the
+# same one db-migrate-seed.yml already uses.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (log what would change, write nothing)"
+        type: boolean
+        default: true
+
+jobs:
+  fill-start-times:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run fill-start-times -- ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
