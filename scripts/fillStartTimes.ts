@@ -46,10 +46,15 @@ async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 
   try {
-    const routes = await prisma.route.findMany({
-      where: { startTime: "" },
-      select: { id: true, routeNumber: true, schoolName: true, tripType: true },
+    // Filtered in JS, not `where: { startTime: "" }` - the first version
+    // of this script used that exact-match filter and missed real blank
+    // rows whose sheet-imported value was whitespace-only ("  ") rather
+    // than a true empty string, so it reported "nothing to fill in" on a
+    // database that still had real gaps. Trimming here catches both.
+    const allRoutes = await prisma.route.findMany({
+      select: { id: true, routeNumber: true, schoolName: true, tripType: true, startTime: true },
     });
+    const routes = allRoutes.filter((route) => route.startTime.trim() === "");
 
     if (routes.length === 0) {
       console.log("Every route already has a start time - nothing to fill in.");

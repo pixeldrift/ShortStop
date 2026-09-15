@@ -52,6 +52,7 @@ export function TurnArrow({
 // re-export - each one's own doc comment below says why.
 
 export { default as ChevronDownIcon } from "./icons/chevron-down.svg";
+export { default as ArrowDownToLineIcon } from "./icons/arrow-down-to-line.svg";
 export { default as PauseIcon } from "./icons/pause.svg";
 
 /** A filled triangle, pointing right by default and mirrored for

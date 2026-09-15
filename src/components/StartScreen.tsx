@@ -264,15 +264,15 @@ export function StartScreen({
                 route.tripType === "dropoff") && (
                 <TripTypeIcon
                   tripType={route.tripType}
-                  className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
+                  className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-900"
                 />
               )}
               Route {route.routeNumber}
-              {/* Solid black (zinc-900), not the faded zinc-400 every
-                  other context icon here uses - this names the route's
-                  real level, it isn't a toggle that fades until picked
-                  (the other two figures still read as a lighter gray,
-                  baked into the SVG itself - see icons.tsx). */}
+              {/* Solid black (zinc-900), same as TripTypeIcon beside it -
+                  this names the route's real level, it isn't a toggle
+                  that fades until picked (the other two figures still
+                  read as a lighter gray, baked into the SVG itself - see
+                  icons.tsx). */}
               <SchoolLevelIcon
                 level={route.schoolLevel}
                 className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-900"
@@ -537,12 +537,11 @@ function AllStopsModal({
             {(route.tripType === "pickup" || route.tripType === "dropoff") && (
               <TripTypeIcon
                 tripType={route.tripType}
-                className="h-[15px] w-[15px] text-zinc-400"
+                className="h-[15px] w-[15px] text-zinc-900"
               />
             )}
             Route {route.routeNumber}
-            {/* Solid black, not the faded zinc-400 TripTypeIcon uses
-                above - see StartScreen's own title for why. */}
+            {/* Both solid black - see StartScreen's own title for why. */}
             <SchoolLevelIcon
               level={route.schoolLevel}
               className="h-[15px] w-[15px] text-zinc-900"
