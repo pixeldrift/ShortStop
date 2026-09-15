@@ -253,9 +253,12 @@ export function SchoolListScreen({
                     one line instead of wrapping the way it did when
                     squeezed into just the School column. */}
                 <span className="col-span-2 flex min-w-0 items-center gap-1 text-base font-semibold text-zinc-900">
+                  {/* Solid black, not faded - this names the school's
+                      real level, unlike the filter buttons above where
+                      the same icon reads blue/gray for active/inactive. */}
                   <SchoolLevelIcon
                     level={info.schoolLevel}
-                    className="h-4 w-4 shrink-0 text-zinc-400"
+                    className="h-4 w-4 shrink-0 text-zinc-900"
                   />
                   {name}
                 </span>

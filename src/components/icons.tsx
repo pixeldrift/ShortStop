@@ -224,11 +224,17 @@ export function CheckboxIcon({
 /** A literal schoolhouse - used for the Schools heading
  * (SchoolListScreen) and RouteListScreen's own "Schools" link. */
 export { default as SchoolIcon } from "./icons/school.svg";
-/** Three student figures, one per school level (elementary/middle/
- * high) - every path in all four of these files renders fully solid,
- * no baked-in opacity, so a className's own color applies evenly
- * across the whole icon. See SchoolLevelIcon.tsx for the SchoolLevel ->
- * icon lookup that actually uses the three level-specific ones. */
+/** Three student figures (short/medium/tall, standing for elementary/
+ * middle/high) - SchoolLevelsIcon (the plain, level-agnostic version)
+ * has every path fully solid. Each of the three level-specific files
+ * below draws its own matching figure at full opacity and the other
+ * two at opacity .4, baked into the SVG itself - so a className's own
+ * currentColor (black for "this is the route/school's real level,"
+ * blue for "this level is the active filter") still tints the whole
+ * icon, but the other two figures read as a lighter shade of it
+ * automatically, without any per-render logic here. See
+ * SchoolLevelIcon.tsx for the SchoolLevel -> icon lookup that actually
+ * uses the three level-specific ones. */
 export { default as SchoolLevelsIcon } from "./icons/school-level.svg";
 export { default as SchoolLevelEsIcon } from "./icons/school-level-es.svg";
 export { default as SchoolLevelMsIcon } from "./icons/school-level-ms.svg";
