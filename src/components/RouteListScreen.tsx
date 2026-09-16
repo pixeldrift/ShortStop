@@ -50,19 +50,27 @@ type ConfirmRequest =
 
 type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
 
-// One comparator per sortable header - routeNumber compares numerically
-// (route numbers sort as text otherwise: "120" would land after "20"),
-// tripType ranks "pickup" (AM) before "dropoff" (PM) rather than
-// relying on string comparison to happen to agree, departureTime goes
-// through parseTimeToMinutes rather than comparing the displayed
-// "3:30 PM" strings directly, since those don't sort into chronological
-// order as text either. routeNumber breaks a tie with tripType (a bus
-// runs both an AM and a PM route under the same number) rather than
-// leaving same-number rows in whatever order they happened to arrive
-// in - the only pair here that ties often enough for that to matter.
+// One comparator per sortable header - routeNumber compares with
+// localeCompare's own `numeric` option (a "natural sort": embedded
+// digit runs compare by value, not character-by-character, so "120"
+// still lands after "20") rather than a plain Number() subtraction -
+// a Special/field-trip route's own routeNumber can be a free-text name
+// instead of a real number (EditRouteScreen's own Route #/Name field),
+// and Number() on anything non-numeric is NaN, which made the whole
+// comparator return NaN for any list containing even one such route -
+// numeric: true still sorts every ordinary numbered route exactly the
+// same way, just without that failure mode. tripType ranks "pickup"
+// (AM) before "dropoff" (PM) rather than relying on string comparison
+// to happen to agree, departureTime goes through parseTimeToMinutes
+// rather than comparing the displayed "3:30 PM" strings directly,
+// since those don't sort into chronological order as text either.
+// routeNumber breaks a tie with tripType (a bus runs both an AM and a
+// PM route under the same number) rather than leaving same-number rows
+// in whatever order they happened to arrive in - the only pair here
+// that ties often enough for that to matter.
 const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
   routeNumber: (a, b) =>
-    Number(a.routeNumber) - Number(b.routeNumber) ||
+    a.routeNumber.localeCompare(b.routeNumber, undefined, { numeric: true }) ||
     SORT_COMPARATORS.tripType(a, b),
   tripType: (a, b) =>
     TRIP_TYPE_ORDER.indexOf(a.tripType) - TRIP_TYPE_ORDER.indexOf(b.tripType),
@@ -362,8 +370,11 @@ export function RouteListScreen({
       if (list) list.push(route);
       else byRouteNumber.set(route.routeNumber, [route]);
     }
-    const routeNumbers = [...byRouteNumber.keys()].sort(
-      (a, b) => Number(a) - Number(b),
+    // Same natural-sort reasoning as SORT_COMPARATORS.routeNumber above -
+    // a Special/field-trip route's own routeNumber can be a free-text
+    // name, and Number() on that is NaN.
+    const routeNumbers = [...byRouteNumber.keys()].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
     );
     return routeNumbers.map((routeNumber) => {
       const routesForNumber = byRouteNumber.get(routeNumber)!;

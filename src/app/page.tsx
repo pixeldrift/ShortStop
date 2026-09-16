@@ -21,7 +21,7 @@ import {
 import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
-import type { Route, RouteStatus } from "@/lib/types";
+import type { Route, RouteStatus, TripType } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -53,7 +53,24 @@ type Screen =
        * without pulling the route up separately." */
       autoStart?: boolean;
     }
-  | { kind: "add-route" }
+  | {
+      kind: "add-route";
+      /** Set only when reached via EditRouteScreen's own split-to-new-
+       * route flow (the Stops and Turns list's own scissors icon) -
+       * pre-fills the paste box with the split-off half's waypoints,
+       * already in the exact text its own import parser reads
+       * (EditRouteScreen's onSplitToNewRoute prop, serialized via
+       * serializeRouteImport). Omitted for the ordinary "New Route"
+       * link, which still opens to a blank paste box. */
+      initialStepsText?: string;
+      /** This route's own School/Trip, carried over as a starting
+       * point for the new one - splitting off part of a route's
+       * waypoints almost always means the same school and the same
+       * AM/PM/Special run, just a second bus, so only a new Route #/
+       * Name is actually needed before the first Save. Omitted
+       * alongside initialStepsText for the ordinary "New Route" link. */
+      seedMeta?: { schoolName: string; tripType: TripType | "" };
+    }
   | {
       kind: "edit-route";
       route: Route;
@@ -420,6 +437,8 @@ export default function Home() {
         route={null}
         routes={routes}
         initialSteps={[]}
+        initialStepsText={screen.initialStepsText}
+        seedMeta={screen.seedMeta}
         schools={schools}
         onCancel={goBack}
         onSave={(route, steps, cache) => handleSaveRoute(route, steps, cache, true)}
@@ -438,6 +457,9 @@ export default function Home() {
         schools={schools}
         initialSubScreen={screen.initialSubScreen}
         justCreated={screen.justCreated}
+        onSplitToNewRoute={(stepsText, seedMeta) =>
+          navigate({ kind: "add-route", initialStepsText: stepsText, seedMeta })
+        }
         onCancel={goBack}
         onSave={handleSaveRoute}
       />

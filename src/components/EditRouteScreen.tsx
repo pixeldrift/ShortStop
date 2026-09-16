@@ -13,6 +13,7 @@ import {
   ActionIcon,
   AddressBookIcon,
   ArrowDownToLineIcon,
+  ArrowUpToLineIcon,
   BackArrowIcon,
   CheckCircleIcon,
   CloseIcon,
@@ -26,6 +27,7 @@ import {
   RightArrowIcon,
   RoundedTriangleIcon,
   SaveIcon,
+  ScissorsIcon,
   SearchIcon,
   SpinnerIcon,
   TrashIcon,
@@ -50,6 +52,7 @@ import type { GeocodableQuery } from "@/lib/geocode";
 import {
   matchSchoolFromRows,
   parseRouteImport,
+  serializeRouteImport,
   unresolvedRequiredFields,
 } from "@/lib/parseRouteImport";
 import { parseRouteFilename } from "@/lib/parseRouteMasterList";
@@ -1654,11 +1657,18 @@ function AddStepButton({
   disabled,
   dragging,
   dropTarget,
+  onSplit,
 }: {
   onClick: () => void;
   disabled: boolean;
   dragging?: boolean;
   dropTarget?: boolean;
+  /** Opens SplitRouteModal for this exact gap - omitted for the very
+   * first gap (before row 0) and the very last (after the final row),
+   * where "split" would just mean "the whole route" on one side and
+   * nothing on the other. Only ever passed on an internal gap, between
+   * two real rows. */
+  onSplit?: () => void;
 }) {
   if (dragging) {
     return (
@@ -1680,7 +1690,7 @@ function AddStepButton({
   }
 
   return (
-    <div className="relative flex items-center justify-center py-1">
+    <div className="relative flex items-center justify-center gap-1.5 py-1">
       <div className="absolute inset-x-0 border-t border-dashed border-zinc-300" />
       <button
         type="button"
@@ -1691,6 +1701,91 @@ function AddStepButton({
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
+      {onSplit && (
+        <button
+          type="button"
+          onClick={onSplit}
+          disabled={disabled}
+          aria-label="Split route here"
+          className="btn-glossy-light relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
+        >
+          <ScissorsIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Opened by AddStepButton's own scissors icon (an internal gap only -
+ * see its own doc comment) - offers to carve the waypoints on either
+ * side of that exact gap off into a brand-new route, rather than
+ * retyping a whole second route by hand for what's really the same
+ * stops, just riding two buses instead of one. Copies only: this
+ * route's own rows are never touched here, so nothing about the
+ * original is lost even if the new route's own first Save never
+ * happens. `onSplit` hands the chosen half's rows straight up to
+ * page.tsx (EditRouteScreen's own `onSplitToNewRoute` prop), which
+ * opens a fresh "add-route" screen pre-seeded with them - same shell
+ * as "New Route," just not starting from a blank paste box.
+ */
+function SplitRouteModal({
+  aboveCount,
+  belowCount,
+  onSplit,
+  onClose,
+}: {
+  aboveCount: number;
+  belowCount: number;
+  onSplit: (direction: "above" | "below") => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-heading text-xl font-black tracking-tight">
+          Split Route
+        </h2>
+        <p className="mt-2 text-sm text-zinc-500">
+          Copy the waypoints on one side of this split into a brand-new
+          route. This route stays exactly as it is.
+        </p>
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => onSplit("above")}
+            disabled={aboveCount === 0}
+            className="btn-glossy-blue font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            <ArrowUpToLineIcon className="h-4 w-4" />
+            Split Above to New Route
+            <span className="font-normal opacity-80">({aboveCount})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onSplit("below")}
+            disabled={belowCount === 0}
+            className="btn-glossy-blue font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            <ArrowDownToLineIcon className="h-4 w-4" />
+            Split Below to New Route
+            <span className="font-normal opacity-80">({belowCount})</span>
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-glossy-light font-heading rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2548,10 +2643,13 @@ export function EditRouteScreen({
   route,
   routes,
   initialSteps,
+  initialStepsText,
+  seedMeta,
   initialWaypointCache,
   schools,
   initialSubScreen,
   justCreated,
+  onSplitToNewRoute,
   onCancel,
   onSave,
 }: {
@@ -2570,6 +2668,20 @@ export function EditRouteScreen({
    * `mode: "add"`, which starts from its own empty paste/upload box
    * instead (see `stepsText`). */
   initialSteps: RawRouteRow[];
+  /** `mode: "add"` only - seeds the paste box itself (`stepsText`)
+   * rather than `rows`/`initialSteps` above, since `mode: "add"` reads
+   * its rows straight from that text (see `currentRows`), never from
+   * `rows` state. Set only by the split-to-new-route flow
+   * (page.tsx's own "add-route" screen kind, `initialStepsText`) -
+   * already in the exact format parseRouteImport reads, so this just
+   * needs to land in the box, not be parsed or validated again here. */
+  initialStepsText?: string;
+  /** `mode: "add"` only - a starting School/Trip for the new route,
+   * from whichever route it was split off of (page.tsx's own
+   * "add-route" screen kind, `seedMeta`). Omitted for the ordinary
+   * "New Route" link, which leaves both genuinely unset the way it
+   * always has. */
+  seedMeta?: { schoolName: string; tripType: TripType | "" };
   /** A previous edit session's own fetched cache for this exact route,
    * if page.tsx has one - takes priority over fetching the real
    * committed sidecar file, so coordinates fetched and saved earlier
@@ -2596,6 +2708,18 @@ export function EditRouteScreen({
    * screen instead of landing there with no acknowledgment that the
    * Save actually did anything. */
   justCreated?: boolean;
+  /** `mode: "edit"` only - opens a brand-new "add-route" screen already
+   * pasted with the waypoints on one side of a split (the Stops and
+   * Turns list's own scissors icon, between two waypoints), plus this
+   * route's own School/Trip as a starting point. `stepsText` is already
+   * in the exact paste-box format that screen's own import parser
+   * reads (see serializeRouteImport) - page.tsx only needs to seed it
+   * in, not parse or validate anything itself. Omitted entirely for
+   * `mode: "add"`, which has no existing rows of its own to split. */
+  onSplitToNewRoute?: (
+    stepsText: string,
+    seedMeta: { schoolName: string; tripType: TripType | "" },
+  ) => void;
   onCancel: () => void;
   /** `steps` here is always the *current* row list - `mode: "add"`'s
    * pasted/uploaded rows as parsed, or `mode: "edit"`'s edited row list
@@ -2616,7 +2740,9 @@ export function EditRouteScreen({
   // whichever name is selected here, below. Real address/level data
   // belongs in that one table, not duplicated into every route that
   // references it.
-  const [schoolName, setSchoolName] = useState(route?.schoolName ?? "");
+  const [schoolName, setSchoolName] = useState(
+    route?.schoolName ?? seedMeta?.schoolName ?? "",
+  );
   const schoolInfo: SchoolInfo | undefined = schools[schoolName];
   // A route already being edited whose school isn't in `schools` yet
   // (see schoolOptions below) keeps its own already-known address/
@@ -2659,7 +2785,7 @@ export function EditRouteScreen({
   // state to require *into*, the same way School already has one via
   // its own blank "Select a school" option.
   const [tripType, setTripType] = useState<TripType | "">(
-    route?.tripType ?? "",
+    route?.tripType ?? seedMeta?.tripType ?? "",
   );
   // Every other real route this bus could plausibly hand off to once
   // this one's done - same bus (a chain is one bus driving more than
@@ -2725,7 +2851,7 @@ export function EditRouteScreen({
   // still deals in CSV/TSV text at all (a human pasting or uploading a
   // route sheet - see parseRouteImport.ts). mode "edit" never reads
   // this; it's the structured `rows` state that's authoritative there.
-  const [stepsText, setStepsText] = useState("");
+  const [stepsText, setStepsText] = useState(initialStepsText ?? "");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stepsTextareaRef = useRef<HTMLTextAreaElement>(null);
   // mode "edit" only - seeded once from initialSteps (the route's own
@@ -2906,6 +3032,29 @@ export function EditRouteScreen({
   );
   const [fetchError, setFetchError] = useState<FetchErrorInfo | null>(null);
   const [showFetchModal, setShowFetchModal] = useState(false);
+
+  // The gap (a real index into `rows`, not `visibleRowIndices`) whose
+  // scissors icon is currently open in SplitRouteModal - null the rest
+  // of the time. Only ever set for an internal gap (see AddStepButton's
+  // own `onSplit` doc comment), so `rows.slice` on either side of it
+  // always has something in it.
+  const [splitGapIndex, setSplitGapIndex] = useState<number | null>(null);
+
+  /** "Split Above"/"Split Below" (SplitRouteModal) - hands the chosen
+   * half's rows up to page.tsx as ready-to-paste text (the same
+   * canonical format an admin's own upload/paste already produces),
+   * along with this route's own School/Trip as a starting point, so the
+   * new route needs only a Route #/Name before its first Save. This
+   * route's own `rows` are never touched - a split is a copy, not a
+   * move, regardless of whether the new route it creates is ever saved.
+   */
+  function handleSplit(direction: "above" | "below") {
+    if (splitGapIndex === null || !onSplitToNewRoute) return;
+    const selected =
+      direction === "above" ? rows.slice(0, splitGapIndex) : rows.slice(splitGapIndex);
+    onSplitToNewRoute(serializeRouteImport(selected), { schoolName, tripType });
+    setSplitGapIndex(null);
+  }
 
   // Every saved location (the address book's own "Other Locations"
   // list - StepRowEditor's own AddressBookIcon button, below) - fetched
@@ -3788,7 +3937,10 @@ export function EditRouteScreen({
       }`}
     >
       <div className="grid grid-cols-3 gap-2">
-        <Field label="Route #" required={routeNumberMissing}>
+        <Field
+          label={tripType === "fieldtrip" ? "Route # / Name" : "Route #"}
+          required={routeNumberMissing}
+        >
           <input
             className={
               showRequiredErrors && routeNumberMissing
@@ -3800,7 +3952,16 @@ export function EditRouteScreen({
               setRouteNumber(e.target.value);
               setDirty(true);
             }}
-            placeholder="123"
+            // A Special (field trip) run isn't one of a district's own
+            // numbered routes - it's a one-off, so this field doubles
+            // as a free-text name for it ("Zoo Trip", "Band Comp")
+            // rather than requiring a real route number that doesn't
+            // exist. Every other trip type keeps the plain numeric
+            // placeholder/hint - this field has always accepted any
+            // text typed into it either way (it's a plain input, never
+            // constrained to digits), so nothing about *validation*
+            // changes here, just what an admin is told to expect.
+            placeholder={tripType === "fieldtrip" ? "123 or Zoo Trip" : "123"}
           />
         </Field>
         <Field label="Trip" required={tripTypeMissing}>
@@ -4294,6 +4455,11 @@ export function EditRouteScreen({
                       disabled={expandedIndex !== null}
                       dragging={dragRowIndex !== null}
                       dropTarget={dragOverIndex === index + 1}
+                      onSplit={
+                        onSplitToNewRoute && index + 1 < rows.length
+                          ? () => setSplitGapIndex(index + 1)
+                          : undefined
+                      }
                     />
                   </div>
                 );
@@ -4301,6 +4467,14 @@ export function EditRouteScreen({
             </div>
           </div>
         </div>
+        {splitGapIndex !== null && (
+          <SplitRouteModal
+            aboveCount={splitGapIndex}
+            belowCount={rows.length - splitGapIndex}
+            onSplit={handleSplit}
+            onClose={() => setSplitGapIndex(null)}
+          />
+        )}
 
         {/* One row's own editor, as a modal popup rather than swapped
             in for its StepRowView above - only ever rendered for
