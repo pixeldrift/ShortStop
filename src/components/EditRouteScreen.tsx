@@ -11,6 +11,7 @@ import { WaypointPreviewMap } from "./WaypointPreviewMap";
 import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
+  AddressBookIcon,
   ArrowDownToLineIcon,
   BackArrowIcon,
   CheckCircleIcon,
@@ -25,6 +26,7 @@ import {
   RightArrowIcon,
   RoundedTriangleIcon,
   SaveIcon,
+  SearchIcon,
   SpinnerIcon,
   TrashIcon,
   TriangleIcon,
@@ -57,6 +59,7 @@ import {
   SCHOOL_ADDRESS_NOT_YET_PROVIDED,
 } from "@/lib/placeholderMeta";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
+import type { SavedLocationInfo } from "@/lib/savedLocations";
 import {
   resolutionCounts,
   summarizeRouteResolution,
@@ -760,6 +763,8 @@ function StepRowEditor({
   stopNumber,
   previousRoad,
   schools,
+  savedLocations,
+  onCreateSavedLocation,
   routeSchoolName,
   isNew,
   status,
@@ -795,11 +800,30 @@ function StepRowEditor({
    * yet. */
   previousRoad: string | null;
   /** Every known school, by name - the same lookup the Route Details
-   * form's own School <select> uses. Lets a Depart/Arrive row (or any
-   * row whose typed location happens to match) show that school's real
-   * address underneath, and offers a quick-pick shortcut for Depart/
-   * Arrive rows instead of having to type a school's exact name. */
+   * form's own School <select> uses. Lets a row whose typed location
+   * matches one show that school's real address underneath, and is one
+   * of the two lists (alongside savedLocations below) the address-book
+   * popup (AddressBookIcon, beside the Location field) picks from. */
   schools: Record<string, SchoolInfo>;
+  /** Every saved location (the depot, a driver's own home address,
+   * anywhere else worth picking by name instead of retyping - see
+   * prisma/schema.prisma's own SavedLocation doc comment), fetched once
+   * by EditRouteScreen on mount. The address book's own second list,
+   * alongside schools above - picking either one there fills Location
+   * with that exact name and, when it already has a cached lat/lon,
+   * resolves this row immediately (onManualCoordinates) instead of
+   * waiting on a fresh geocode. */
+  savedLocations: SavedLocationInfo[];
+  /** Creates a new saved location (the address book's own "+ Add
+   * Location" form) - POSTs to /api/saved-locations (which geocodes the
+   * address server-side) and, on success, adds it to EditRouteScreen's
+   * own savedLocations state so it's immediately pickable without a
+   * refetch. Returns the created record, or an error message the popup
+   * shows inline instead of closing. */
+  onCreateSavedLocation: (
+    name: string,
+    address: string,
+  ) => Promise<SavedLocationInfo | { error: string }>;
   /** This route's own school (Route Details form) - defaults a fresh
    * Depart/Arrive row's location the moment its Type is picked, since
    * arriving at or departing from *some other* school is the rare case
@@ -901,13 +925,35 @@ function StepRowEditor({
     return entry ? { name: entry[0], info: entry[1] } : null;
   }, [row.location, schools]);
 
-  // A plain address (a house number out front) or a matched school
-  // (see above) each name one specific point on their own - neither has
-  // a "from road" concept the way an intersection does, so the From
-  // field below stays hidden for either rather than asking for context
-  // that wouldn't mean anything.
+  // Same by-name match as matchedSchool above, against the address
+  // book's own saved locations (the depot, a driver's home address,
+  // anywhere else picked from AddressBookIcon's own popup below)
+  // instead of the schools table - same "reads as linked to a real
+  // entity, not just typed text" treatment either way.
+  const matchedSavedLocation = useMemo(() => {
+    const target = row.location.trim().toLowerCase();
+    if (!target) return null;
+    return (
+      savedLocations.find(
+        (loc) => loc.name.trim().toLowerCase() === target,
+      ) ?? null
+    );
+  }, [row.location, savedLocations]);
+
+  // A plain address (a house number out front) or a matched school/
+  // saved location (see above) each name one specific point on their
+  // own - neither has a "from road" concept the way an intersection
+  // does, so the From field below stays hidden for either rather than
+  // asking for context that wouldn't mean anything.
   const isPlainLocation =
-    /^\d/.test(row.location.trim()) || matchedSchool !== null;
+    /^\d/.test(row.location.trim()) ||
+    matchedSchool !== null ||
+    matchedSavedLocation !== null;
+
+  // The address-book popup (AddressBookIcon, beside Location below) -
+  // local to this one row's editor, not lifted to EditRouteScreen,
+  // since only one row's own editor is ever open at a time.
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
 
   function handleTypeChange(nextAction: string) {
     const nextIsSchoolAction =
@@ -1273,70 +1319,86 @@ function StepRowEditor({
               )}
             </div>
 
-            {/* Depart/Arrive's own quick-pick - fills Location with a
-          chosen school's exact name (below) rather than requiring one
-          typed out by hand. Left out for every other action - a turn
-          or a plain stop names a road or address, never a school. */}
-            {isSchoolAction && Object.keys(schools).length > 0 && (
-              <div className="mt-2">
-                <Field label="School">
-                  <select
-                    className={inputClass}
-                    value={matchedSchool?.name ?? ""}
-                    onChange={(e) => {
-                      if (e.target.value)
-                        onChange({ location: e.target.value });
-                    }}
-                  >
-                    <option value="">
-                      {matchedSchool
-                        ? "— Other (type below) —"
-                        : "— Not a listed school (type below) —"}
-                    </option>
-                    {Object.keys(schools)
-                      .sort((a, b) => a.localeCompare(b))
-                      .map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
-              </div>
-            )}
-
             <div className="mt-2 flex flex-col gap-2">
               <Field label="Location" required>
-                <input
-                  className={`${inputClass} ${
-                    status?.status === "unresolved"
-                      ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                      : ""
-                  }`}
-                  value={row.location}
-                  onChange={(e) => onChange({ location: e.target.value })}
-                  placeholder={
-                    isSchoolAction
-                      ? "LaVergne High School"
-                      : /^\d/.test(row.location)
-                        ? "123 Maple Dr"
-                        : "Elm St"
-                  }
-                />
+                <div className="flex items-center gap-2">
+                  {/* A matched school/saved location (see both above)
+                  renders as a gray pill instead of the plain text box -
+                  reads as one linked entity, the way a resolved
+                  recipient chip does in an email client's own To field,
+                  not just a text string a geocoder has to guess at. The
+                  X clears it back to a blank, freely-typed box; picking
+                  a *different* preset (the address-book button, right)
+                  just overwrites it directly, no need to clear first. */}
+                  {matchedSchool || matchedSavedLocation ? (
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-zinc-100 py-1.5 pr-2 pl-3">
+                      <span className="min-w-0 flex-1 truncate text-base font-semibold text-zinc-900">
+                        {matchedSchool?.name ?? matchedSavedLocation?.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onChange({ location: "" })}
+                        aria-label="Clear location"
+                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-200 active:text-zinc-600"
+                      >
+                        <CloseIcon className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      className={`min-w-0 flex-1 ${inputClass} ${
+                        status?.status === "unresolved"
+                          ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                          : ""
+                      }`}
+                      value={row.location}
+                      onChange={(e) => onChange({ location: e.target.value })}
+                      placeholder={
+                        isSchoolAction
+                          ? "LaVergne High School"
+                          : /^\d/.test(row.location)
+                            ? "123 Maple Dr"
+                            : "Elm St"
+                      }
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowLocationPicker(true)}
+                    aria-label="Choose from address book"
+                    className="btn-glossy-light flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+                  >
+                    <AddressBookIcon className="h-4 w-4" />
+                  </button>
+                </div>
               </Field>
-              {/* A location that matches a known school by name - typed by
-            hand, quick-picked above, or defaulted from this route's
-            own school - reads as linked to that real school entity,
-            not just a text string a geocoder has to guess at: its
-            actual street address shows right underneath as
-            confirmation. */}
-              {matchedSchool && (
+              {/* A location that matches a known school or saved location
+            by name - typed by hand, or picked from the address book
+            above - reads as linked to that real entity, not just a
+            text string a geocoder has to guess at: its actual street
+            address shows right underneath as confirmation. */}
+              {(matchedSchool || matchedSavedLocation) && (
                 <p className="-mt-1 flex items-center gap-1 text-xs text-zinc-500">
                   <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
-                  {matchedSchool.info.address}
+                  {matchedSchool?.info.address ?? matchedSavedLocation?.address}
                 </p>
               )}
             </div>
+            {showLocationPicker && (
+              <LocationPickerModal
+                schools={schools}
+                savedLocations={savedLocations}
+                onCreateSavedLocation={onCreateSavedLocation}
+                onSelect={(choice) => {
+                  onChange({ location: choice.name });
+                  if (choice.lat != null && choice.lon != null) {
+                    onManualCoordinates(choice.lat, choice.lon);
+                  }
+                  setShowLocationPicker(false);
+                }}
+                onClose={() => setShowLocationPicker(false)}
+              />
+            )}
 
             {/* Above the coordinates box, not below it - checking this
             is the thing that makes that box irrelevant (see the
@@ -1617,6 +1679,218 @@ function AddStepButton({
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
+    </div>
+  );
+}
+
+/** StepRowEditor's own "choose a known place" popup (AddressBookIcon,
+ * beside the Location field) - two lists, schools and saved locations
+ * (the depot, a driver's home address, anywhere else worth reusing by
+ * name instead of retyping - see prisma/schema.prisma's own
+ * SavedLocation doc comment). Picking either one hands its exact name
+ * and cached lat/lon (if it has one) back to `onSelect` - StepRowEditor
+ * fills Location with the name and, when a coordinate came with it,
+ * resolves this row immediately (onManualCoordinates) rather than
+ * waiting on a fresh geocode. Same modal shell as StopsFormatModal
+ * below (full-screen dim, centered card, backdrop tap or the corner X
+ * to close) - a search box up top filters both lists together, and a
+ * "+ Add Location" row under Other Locations opens a small inline
+ * name/address form instead of a whole separate screen, since creating
+ * one is rare enough not to need its own destination. z-30, one above
+ * every other card here (z-20) - opened from on top of StepRowEditor's
+ * own modal card, not instead of it. */
+function LocationPickerModal({
+  schools,
+  savedLocations,
+  onSelect,
+  onCreateSavedLocation,
+  onClose,
+}: {
+  schools: Record<string, SchoolInfo>;
+  savedLocations: SavedLocationInfo[];
+  onSelect: (choice: { name: string; lat: number | null; lon: number | null }) => void;
+  onCreateSavedLocation: (
+    name: string,
+    address: string,
+  ) => Promise<SavedLocationInfo | { error: string }>;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+
+  const q = query.trim().toLowerCase();
+  const schoolEntries = Object.entries(schools)
+    .filter(([name]) => !q || name.toLowerCase().includes(q))
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  const savedEntries = savedLocations
+    .filter((loc) => !q || loc.name.toLowerCase().includes(q))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  async function handleAddSubmit() {
+    if (!newName.trim() || !newAddress.trim() || saving) return;
+    setSaving(true);
+    setAddError(null);
+    const result = await onCreateSavedLocation(newName.trim(), newAddress.trim());
+    setSaving(false);
+    if ("error" in result) {
+      setAddError(result.error);
+      return;
+    }
+    onSelect({ name: result.name, lat: result.lat, lon: result.lon });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="animate-popup-pop flex max-h-[80vh] w-full max-w-sm flex-col rounded-xl bg-[var(--background)] shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
+          <h2 className="font-heading flex items-center gap-1.5 text-xl font-black tracking-tight">
+            <AddressBookIcon className="h-5 w-5 text-zinc-400" />
+            Address Book
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="shrink-0 border-b border-zinc-200 px-5 py-3">
+          <div className="relative">
+            <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search"
+              className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pr-3 pl-9 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 text-left">
+          <p className="text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            Schools
+          </p>
+          <div className="mt-1 flex flex-col divide-y divide-zinc-100">
+            {schoolEntries.length === 0 && (
+              <p className="py-2 text-sm text-zinc-400 italic">No matches</p>
+            )}
+            {schoolEntries.map(([name, info]) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => onSelect({ name, lat: info.lat, lon: info.lon })}
+                className="flex items-center gap-2 py-2 text-left active:bg-zinc-100"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-zinc-900">
+                    {name}
+                  </p>
+                  <p className="truncate text-xs text-zinc-500">{info.address}</p>
+                </div>
+                {info.lat != null ? (
+                  <CheckCircleIcon className="h-4 w-4 shrink-0 text-green-600" />
+                ) : (
+                  <XCircleIcon className="h-4 w-4 shrink-0 text-red-500" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          <p className="mt-4 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            Other Locations
+          </p>
+          <div className="mt-1 flex flex-col divide-y divide-zinc-100">
+            {savedEntries.length === 0 && !showAddForm && (
+              <p className="py-2 text-sm text-zinc-400 italic">No matches</p>
+            )}
+            {savedEntries.map((loc) => (
+              <button
+                key={loc.id}
+                type="button"
+                onClick={() =>
+                  onSelect({ name: loc.name, lat: loc.lat, lon: loc.lon })
+                }
+                className="flex items-center gap-2 py-2 text-left active:bg-zinc-100"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-zinc-900">
+                    {loc.name}
+                  </p>
+                  <p className="truncate text-xs text-zinc-500">{loc.address}</p>
+                </div>
+                {loc.lat != null ? (
+                  <CheckCircleIcon className="h-4 w-4 shrink-0 text-green-600" />
+                ) : (
+                  <XCircleIcon className="h-4 w-4 shrink-0 text-red-500" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {showAddForm ? (
+            <div className="mt-3 flex flex-col gap-2 rounded-lg border border-zinc-200 p-3">
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Name (e.g. Bus Depot)"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              />
+              <input
+                type="text"
+                value={newAddress}
+                onChange={(e) => setNewAddress(e.target.value)}
+                placeholder="Address"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              />
+              {addError && <p className="text-xs text-red-600">{addError}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddForm(false);
+                    setAddError(null);
+                  }}
+                  className="flex-1 rounded-lg bg-zinc-200 py-1.5 text-sm font-semibold text-zinc-900 active:bg-zinc-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddSubmit}
+                  disabled={saving || !newName.trim() || !newAddress.trim()}
+                  className="flex-1 rounded-lg bg-blue-600 py-1.5 text-sm font-semibold text-white disabled:opacity-40 active:bg-blue-700"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAddForm(true)}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 py-2 text-sm font-semibold text-blue-600 active:bg-zinc-100"
+            >
+              <PlusIcon className="h-3.5 w-3.5" />
+              Add Location
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2380,6 +2654,46 @@ export function EditRouteScreen({
   );
   const [fetchError, setFetchError] = useState<FetchErrorInfo | null>(null);
   const [showFetchModal, setShowFetchModal] = useState(false);
+
+  // Every saved location (the address book's own "Other Locations"
+  // list - StepRowEditor's own AddressBookIcon button, below) - fetched
+  // once per edit session, same "fetch on mount" shape page.tsx already
+  // uses for schools.
+  const [savedLocations, setSavedLocations] = useState<SavedLocationInfo[]>(
+    [],
+  );
+  useEffect(() => {
+    fetch("/api/saved-locations")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: SavedLocationInfo[]) => setSavedLocations(data))
+      .catch(() => {});
+  }, []);
+
+  // LocationPickerModal's own "+ Add Location" form - persists a new
+  // saved location (geocoded server-side, see /api/saved-locations's
+  // own POST handler) and adds it to `savedLocations` above so it's
+  // immediately pickable, without waiting on a refetch.
+  async function handleCreateSavedLocation(
+    name: string,
+    address: string,
+  ): Promise<SavedLocationInfo | { error: string }> {
+    try {
+      const res = await fetch("/api/saved-locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, address }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { error: data.error ?? "Couldn't save this location." };
+      }
+      const created = data as SavedLocationInfo;
+      setSavedLocations((prev) => [...prev, created]);
+      return created;
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
 
   // Whatever's already geocoded, if anything - the shared Postgres
   // cache (src/app/api/waypoints), covering every route at once now
@@ -3728,6 +4042,8 @@ export function EditRouteScreen({
                 stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
+                savedLocations={savedLocations}
+                onCreateSavedLocation={handleCreateSavedLocation}
                 routeSchoolName={schoolName}
                 isNew={newlyAddedIndex === index}
                 status={draftStatus}
