@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { extractCityState } from "@/lib/geocode";
-import { lookupCoordinates } from "@/lib/resolveWaypoint";
+import { geocodeSavedLocationAddress } from "@/lib/savedLocations";
 import type { SavedLocationInfo } from "@/lib/savedLocations";
 
 /**
@@ -20,18 +19,28 @@ export async function GET(): Promise<NextResponse> {
 interface CreateSavedLocationBody {
   name: string;
   address: string;
+  /** Already resolved client-side (EditSavedLocationModal's own Fetch/
+   * Place buttons) - when both are present, this skips the server-side
+   * auto-geocode entirely and saves exactly this point, the same
+   * "trust what's already in the box" rule PATCH .../[id] always
+   * follows. Omitted (the plain "type name+address, hit Save" path)
+   * still auto-geocodes below, same as this endpoint always has. */
+  lat?: number | null;
+  lon?: number | null;
 }
 
 /**
- * Creates a new saved location and geocodes its address immediately
- * (same ORS pipeline every other address in this app resolves through
- * - resolveWaypoint.ts's lookupCoordinates), so the address-book popup
- * that just created it can offer it as an already-resolved pick right
- * away, not one that still needs its own "Fetch Coordinates" click. A
- * geocode failure still creates the row (lat/lon stay null, same as an
- * ungeocoded School) rather than losing the name/address someone just
- * typed in - nothing prevents fixing the address and trying again
- * later.
+ * Creates a new saved location. When the caller already resolved a
+ * point client-side (EditSavedLocationModal's own Fetch/Place
+ * buttons), this just saves it as given - otherwise it geocodes the
+ * address immediately server-side (same ORS pipeline every other
+ * address in this app resolves through - resolveWaypoint.ts's
+ * lookupCoordinates), so a location added without touching the
+ * coordinates box still comes out already resolved rather than needing
+ * a separate fetch afterward. A geocode failure still creates the row
+ * (lat/lon stay null, same as an ungeocoded School) rather than losing
+ * the name/address someone just typed in - nothing prevents fixing the
+ * address and trying again later.
  */
 export async function POST(request: Request): Promise<NextResponse> {
   let body: CreateSavedLocationBody;
@@ -47,16 +56,15 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Both name and address are required." }, { status: 400 });
   }
 
-  const apiKey = process.env.ORS_API_KEY;
-  let lat: number | null = null;
-  let lon: number | null = null;
-  if (apiKey) {
-    const locationContext = extractCityState(address) ?? "";
-    const result = await lookupCoordinates({ kind: "address", text: address }, locationContext, { apiKey });
-    if (result.status === "ok") {
-      lat = result.lat;
-      lon = result.lon;
-    }
+  let lat: number | null;
+  let lon: number | null;
+  if (body.lat != null && body.lon != null) {
+    lat = body.lat;
+    lon = body.lon;
+  } else {
+    const geocoded = await geocodeSavedLocationAddress(address);
+    lat = "error" in geocoded ? null : geocoded.lat;
+    lon = "error" in geocoded ? null : geocoded.lon;
   }
 
   try {
