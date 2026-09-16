@@ -764,7 +764,8 @@ function StepRowEditor({
   previousRoad,
   schools,
   savedLocations,
-  onCreateSavedLocation,
+  onSaveSavedLocation,
+  onFetchSavedLocationCoords,
   routeSchoolName,
   isNew,
   status,
@@ -814,16 +815,26 @@ function StepRowEditor({
    * resolves this row immediately (onManualCoordinates) instead of
    * waiting on a fresh geocode. */
   savedLocations: SavedLocationInfo[];
-  /** Creates a new saved location (the address book's own "+ Add
-   * Location" form) - POSTs to /api/saved-locations (which geocodes the
-   * address server-side) and, on success, adds it to EditRouteScreen's
-   * own savedLocations state so it's immediately pickable without a
-   * refetch. Returns the created record, or an error message the popup
-   * shows inline instead of closing. */
-  onCreateSavedLocation: (
+  /** Creates (`id: null`) or updates (`id` set) a saved location - the
+   * address book's own "+ Add Location" footer button and each saved
+   * location's own pencil icon both open EditSavedLocationModal, and
+   * both funnel their Save through this one prop. POSTs/PATCHes
+   * /api/saved-locations and, on success, adds/updates the record in
+   * EditRouteScreen's own savedLocations state so it's immediately
+   * reflected without a refetch. Returns the saved record, or an error
+   * message the modal shows inline instead of closing. */
+  onSaveSavedLocation: (
+    id: number | null,
     name: string,
     address: string,
+    lat: number | null,
+    lon: number | null,
   ) => Promise<SavedLocationInfo | { error: string }>;
+  /** A preview-only geocode for EditSavedLocationModal's own Fetch
+   * button - resolves an address without persisting anything. */
+  onFetchSavedLocationCoords: (
+    address: string,
+  ) => Promise<{ lat: number; lon: number } | { error: string }>;
   /** This route's own school (Route Details form) - defaults a fresh
    * Depart/Arrive row's location the moment its Type is picked, since
    * arriving at or departing from *some other* school is the rare case
@@ -1388,7 +1399,8 @@ function StepRowEditor({
               <LocationPickerModal
                 schools={schools}
                 savedLocations={savedLocations}
-                onCreateSavedLocation={onCreateSavedLocation}
+                onSaveSavedLocation={onSaveSavedLocation}
+                onFetchCoordinates={onFetchSavedLocationCoords}
                 onSelect={(choice) => {
                   onChange({ location: choice.name });
                   if (choice.lat != null && choice.lon != null) {
@@ -1703,24 +1715,44 @@ function LocationPickerModal({
   schools,
   savedLocations,
   onSelect,
-  onCreateSavedLocation,
+  onSaveSavedLocation,
+  onFetchCoordinates,
   onClose,
 }: {
   schools: Record<string, SchoolInfo>;
   savedLocations: SavedLocationInfo[];
   onSelect: (choice: { name: string; lat: number | null; lon: number | null }) => void;
-  onCreateSavedLocation: (
+  /** Creates (`id: null`) or updates (`id` set) a saved location -
+   * EditSavedLocationModal's own Save button, opened either from the
+   * "+ Add Location" footer button below or a saved location's own
+   * pencil icon. POSTs/PATCHes /api/saved-locations, geocoding
+   * happens client-side first (see onFetchCoordinates) so this only
+   * ever persists whatever's already in that modal's own coordinates
+   * box - same split StepRowEditor's own onManualCoordinates uses. */
+  onSaveSavedLocation: (
+    id: number | null,
     name: string,
     address: string,
+    lat: number | null,
+    lon: number | null,
   ) => Promise<SavedLocationInfo | { error: string }>;
+  /** A preview-only geocode for EditSavedLocationModal's own Fetch
+   * button - resolves an address without persisting anything, so the
+   * admin can see/adjust the result before Save actually runs. */
+  onFetchCoordinates: (
+    address: string,
+  ) => Promise<{ lat: number; lon: number } | { error: string }>;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newAddress, setNewAddress] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
+  // "new" opens EditSavedLocationModal in create mode (the old inline
+  // Name/Address form, now the same full popup editing uses); a real
+  // record opens it in edit mode. Either way it's a separate modal
+  // stacked on top of this one, not inline content that had to fit in
+  // the scrollable list area below.
+  const [editingLocation, setEditingLocation] = useState<
+    SavedLocationInfo | "new" | null
+  >(null);
 
   const q = query.trim().toLowerCase();
   const schoolEntries = Object.entries(schools)
@@ -1730,26 +1762,13 @@ function LocationPickerModal({
     .filter((loc) => !q || loc.name.toLowerCase().includes(q))
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  async function handleAddSubmit() {
-    if (!newName.trim() || !newAddress.trim() || saving) return;
-    setSaving(true);
-    setAddError(null);
-    const result = await onCreateSavedLocation(newName.trim(), newAddress.trim());
-    setSaving(false);
-    if ("error" in result) {
-      setAddError(result.error);
-      return;
-    }
-    onSelect({ name: result.name, lat: result.lat, lon: result.lon });
-  }
-
   return (
     <div
       className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
       onClick={onClose}
     >
       <div
-        className="animate-popup-pop flex max-h-[80vh] w-full max-w-sm flex-col rounded-xl bg-[var(--background)] shadow-lg"
+        className="animate-popup-pop flex max-h-[85dvh] w-full max-w-sm flex-col overflow-hidden rounded-xl bg-[var(--background)] shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
@@ -1780,6 +1799,10 @@ function LocationPickerModal({
           </div>
         </div>
 
+        {/* The only scrolling region in this card - header and search
+        above, "+ Add Location" below, are both shrink-0 so they stay
+        on screen no matter how long either list gets, instead of the
+        whole card growing past the viewport the way it used to. */}
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 text-left">
           <p className="text-xs font-semibold tracking-wide text-zinc-400 uppercase">
             Schools
@@ -1814,82 +1837,311 @@ function LocationPickerModal({
             Other Locations
           </p>
           <div className="mt-1 flex flex-col divide-y divide-zinc-100">
-            {savedEntries.length === 0 && !showAddForm && (
+            {savedEntries.length === 0 && (
               <p className="py-2 text-sm text-zinc-400 italic">No matches</p>
             )}
             {savedEntries.map((loc) => (
-              <button
-                key={loc.id}
-                type="button"
-                onClick={() =>
-                  onSelect({ name: loc.name, lat: loc.lat, lon: loc.lon })
-                }
-                className="flex items-center gap-2 py-2 text-left active:bg-zinc-100"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-zinc-900">
-                    {loc.name}
-                  </p>
-                  <p className="truncate text-xs text-zinc-500">{loc.address}</p>
-                </div>
-                {loc.lat != null ? (
-                  <CheckCircleIcon className="h-4 w-4 shrink-0 text-green-600" />
-                ) : (
-                  <XCircleIcon className="h-4 w-4 shrink-0 text-red-500" />
-                )}
-              </button>
-            ))}
-          </div>
-
-          {showAddForm ? (
-            <div className="mt-3 flex flex-col gap-2 rounded-lg border border-zinc-200 p-3">
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Name (e.g. Bus Depot)"
-                className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-              />
-              <input
-                type="text"
-                value={newAddress}
-                onChange={(e) => setNewAddress(e.target.value)}
-                placeholder="Address"
-                className="w-full rounded-lg border border-zinc-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-              />
-              {addError && <p className="text-xs text-red-600">{addError}</p>}
-              <div className="flex gap-2">
+              // Two sibling buttons, not a button nested inside a
+              // button (invalid HTML, and it made the pencil tap also
+              // fire onSelect underneath it) - the row itself is a div,
+              // "select this location" and "edit this location" are two
+              // independent tap targets side by side.
+              <div key={loc.id} className="flex items-center gap-1 py-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setAddError(null);
-                  }}
-                  className="flex-1 rounded-lg bg-zinc-200 py-1.5 text-sm font-semibold text-zinc-900 active:bg-zinc-300"
+                  onClick={() =>
+                    onSelect({ name: loc.name, lat: loc.lat, lon: loc.lon })
+                  }
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left active:bg-zinc-100"
                 >
-                  Cancel
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-zinc-900">
+                      {loc.name}
+                    </p>
+                    <p className="truncate text-xs text-zinc-500">{loc.address}</p>
+                  </div>
+                  {loc.lat != null ? (
+                    <CheckCircleIcon className="h-4 w-4 shrink-0 text-green-600" />
+                  ) : (
+                    <XCircleIcon className="h-4 w-4 shrink-0 text-red-500" />
+                  )}
                 </button>
                 <button
                   type="button"
-                  onClick={handleAddSubmit}
-                  disabled={saving || !newName.trim() || !newAddress.trim()}
-                  className="flex-1 rounded-lg bg-blue-600 py-1.5 text-sm font-semibold text-white disabled:opacity-40 active:bg-blue-700"
+                  onClick={() => setEditingLocation(loc)}
+                  aria-label={`Edit ${loc.name}`}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-400 active:bg-zinc-100 active:text-zinc-600"
                 >
-                  {saving ? "Saving…" : "Save"}
+                  <EditIcon className="h-3.5 w-3.5" />
                 </button>
               </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowAddForm(true)}
-              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 py-2 text-sm font-semibold text-blue-600 active:bg-zinc-100"
-            >
-              <PlusIcon className="h-3.5 w-3.5" />
-              Add Location
-            </button>
-          )}
+            ))}
+          </div>
         </div>
+
+        <div className="shrink-0 border-t border-zinc-200 px-5 py-3">
+          <button
+            type="button"
+            onClick={() => setEditingLocation("new")}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 py-2 text-sm font-semibold text-blue-600 active:bg-zinc-100"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            Add Location
+          </button>
+        </div>
+      </div>
+
+      {editingLocation && (
+        <EditSavedLocationModal
+          location={editingLocation === "new" ? null : editingLocation}
+          onFetchCoordinates={onFetchCoordinates}
+          onSave={onSaveSavedLocation}
+          onSaved={(saved) => {
+            setEditingLocation(null);
+            // Adding a brand-new location from this popup still fills
+            // the waypoint row with it, same as picking an existing one
+            // from the list above always has - editing an existing
+            // entry in place, though, is just a correction, not a pick,
+            // so it only updates the list underneath rather than also
+            // closing this whole popup out from under the admin.
+            if (editingLocation === "new") {
+              onSelect({ name: saved.name, lat: saved.lat, lon: saved.lon });
+            }
+          }}
+          onClose={() => setEditingLocation(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** A saved location's own full editor - "Add Location" (from the
+ * address book's footer button, `location: null`) and "Edit Location"
+ * (from a saved location's own pencil icon) are the same form either
+ * way, just seeded differently. Deliberately its own separate popup
+ * layered on top of LocationPickerModal (z-40, one above that card's
+ * own z-30) rather than folded into StepRowEditor's Edit Waypoint card
+ * the way the old inline add-form was - a saved location isn't a
+ * waypoint, and StepRowEditor's card is busy enough already. Shares
+ * the same Latitude/Longitude box shape (manual text entry, a Fetch/
+ * globe button, a Place/map-pin button opening PlaceCoordinatesModal)
+ * StepRowEditor's own coordinates field uses, down to the same input
+ * classes and status-line copy, so resolving a saved location's point
+ * feels identical to resolving a waypoint's. */
+function EditSavedLocationModal({
+  location,
+  onFetchCoordinates,
+  onSave,
+  onSaved,
+  onClose,
+}: {
+  location: SavedLocationInfo | null;
+  onFetchCoordinates: (
+    address: string,
+  ) => Promise<{ lat: number; lon: number } | { error: string }>;
+  onSave: (
+    id: number | null,
+    name: string,
+    address: string,
+    lat: number | null,
+    lon: number | null,
+  ) => Promise<SavedLocationInfo | { error: string }>;
+  /** Fires only once Save actually succeeds, with the saved record -
+   * LocationPickerModal's own call site decides from there whether
+   * that also means picking it into the waypoint row (a brand-new
+   * location) or just refreshing the list (an edit). */
+  onSaved: (saved: SavedLocationInfo) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(location?.name ?? "");
+  const [address, setAddress] = useState(location?.address ?? "");
+  const [coordsText, setCoordsText] = useState(
+    location?.lat != null && location?.lon != null
+      ? `${location.lat}, ${location.lon}`
+      : "",
+  );
+  const hasCoordsText = coordsText.trim() !== "";
+  const manualCoords = useMemo(() => parseLatLon(coordsText), [coordsText]);
+
+  const [showPlaceModal, setShowPlaceModal] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function handleFetch() {
+    if (!address.trim() || fetching) return;
+    setFetching(true);
+    setFetchError(null);
+    const result = await onFetchCoordinates(address.trim());
+    setFetching(false);
+    if ("error" in result) {
+      setFetchError(result.error);
+      return;
+    }
+    setCoordsText(`${result.lat}, ${result.lon}`);
+  }
+
+  async function handleSave() {
+    if (!name.trim() || !address.trim() || saving) return;
+    if (hasCoordsText && !manualCoords) return; // the box below already shows why
+    setSaving(true);
+    setSaveError(null);
+    const result = await onSave(
+      location?.id ?? null,
+      name.trim(),
+      address.trim(),
+      manualCoords ? manualCoords[0] : null,
+      manualCoords ? manualCoords[1] : null,
+    );
+    setSaving(false);
+    if ("error" in result) {
+      setSaveError(result.error);
+      return;
+    }
+    onSaved(result);
+  }
+
+  const previewCenter = manualCoords
+    ? { lat: manualCoords[0], lon: manualCoords[1] }
+    : { lat: LA_VERGNE_CENTER[0], lon: LA_VERGNE_CENTER[1] };
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="animate-popup-pop flex max-h-[85dvh] w-full max-w-sm flex-col overflow-y-auto rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="font-heading text-xl font-black tracking-tight">
+            {showPlaceModal
+              ? "Place Coordinates"
+              : location
+                ? "Edit Location"
+                : "Add Location"}
+          </h2>
+          <button
+            type="button"
+            onClick={showPlaceModal ? () => setShowPlaceModal(false) : onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        {showPlaceModal ? (
+          <PlaceCoordinatesModal
+            initialCenter={previewCenter}
+            routeContext={[]}
+            onCancel={() => setShowPlaceModal(false)}
+            onSetCoordinates={(lat, lon) => {
+              setCoordsText(`${lat}, ${lon}`);
+              setShowPlaceModal(false);
+            }}
+          />
+        ) : (
+          <>
+            <div className="mt-3 flex flex-col gap-2">
+              <Field label="Name" required={!name.trim()}>
+                <input
+                  className={inputClass}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Bus Depot"
+                />
+              </Field>
+              <Field label="Address" required={!address.trim()}>
+                <input
+                  className={inputClass}
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="1425 Lake Forest Dr, Smyrna, TN 37167"
+                />
+              </Field>
+
+              <Field label="Latitude, longitude">
+                <div className="flex items-center gap-2">
+                  <input
+                    className={`${inputClass} flex-1 font-mono ${
+                      hasCoordsText && !manualCoords
+                        ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                        : manualCoords
+                          ? "border-green-400 focus:border-green-500 focus:ring-green-500"
+                          : ""
+                    }`}
+                    value={coordsText}
+                    onChange={(e) => setCoordsText(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleFetch}
+                    disabled={fetching || !address.trim()}
+                    aria-label="Fetch coordinates for this address"
+                    className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-50"
+                  >
+                    {fetching ? (
+                      <SpinnerIcon className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <GlobeIcon className="h-4 w-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPlaceModal(true)}
+                    aria-label="Manually place coordinates on a map"
+                    className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+                  >
+                    <MapPinIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </Field>
+              {hasCoordsText && !manualCoords ? (
+                <p className="-mt-1 flex items-start gap-1 text-xs text-red-600">
+                  <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Enter latitude and longitude, separated by a space, comma,
+                    or tab.
+                  </span>
+                </p>
+              ) : manualCoords ? (
+                <p className="-mt-1 flex items-center gap-1 text-xs text-green-600">
+                  <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
+                  Verified coordinates
+                </p>
+              ) : null}
+              {fetchError && <p className="text-xs text-red-600">{fetchError}</p>}
+              {saveError && <p className="text-xs text-red-600">{saveError}</p>}
+            </div>
+
+            <div className="mt-4 flex items-center gap-2">
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={onClose}
+                className="btn-glossy-light shrink-0 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={
+                  saving ||
+                  !name.trim() ||
+                  !address.trim() ||
+                  (hasCoordsText && !manualCoords)
+                }
+                className="btn-glossy-blue shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2669,27 +2921,60 @@ export function EditRouteScreen({
       .catch(() => {});
   }, []);
 
-  // LocationPickerModal's own "+ Add Location" form - persists a new
-  // saved location (geocoded server-side, see /api/saved-locations's
-  // own POST handler) and adds it to `savedLocations` above so it's
-  // immediately pickable, without waiting on a refetch.
-  async function handleCreateSavedLocation(
+  // EditSavedLocationModal's own Save button (opened either from the
+  // address book's "+ Add Location" footer button, `id: null`, or a
+  // saved location's own pencil icon, `id` set) - POSTs/PATCHes
+  // /api/saved-locations and updates `savedLocations` above so the
+  // list reflects it immediately, without waiting on a refetch.
+  async function handleSaveSavedLocation(
+    id: number | null,
     name: string,
     address: string,
+    lat: number | null,
+    lon: number | null,
   ): Promise<SavedLocationInfo | { error: string }> {
     try {
-      const res = await fetch("/api/saved-locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, address }),
-      });
+      const res = await fetch(
+        id == null ? "/api/saved-locations" : `/api/saved-locations/${id}`,
+        {
+          method: id == null ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, address, lat, lon }),
+        },
+      );
       const data = await res.json();
       if (!res.ok) {
         return { error: data.error ?? "Couldn't save this location." };
       }
-      const created = data as SavedLocationInfo;
-      setSavedLocations((prev) => [...prev, created]);
-      return created;
+      const saved = data as SavedLocationInfo;
+      setSavedLocations((prev) =>
+        id == null
+          ? [...prev, saved]
+          : prev.map((loc) => (loc.id === saved.id ? saved : loc)),
+      );
+      return saved;
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  // EditSavedLocationModal's own Fetch button - a preview-only geocode
+  // that doesn't touch the database, so the admin can see/adjust the
+  // result before Save actually persists anything.
+  async function handleFetchSavedLocationCoords(
+    address: string,
+  ): Promise<{ lat: number; lon: number } | { error: string }> {
+    try {
+      const res = await fetch("/api/saved-locations/geocode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { error: data.error ?? "Couldn't geocode this address." };
+      }
+      return data as { lat: number; lon: number };
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) };
     }
@@ -4043,7 +4328,8 @@ export function EditRouteScreen({
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
                 savedLocations={savedLocations}
-                onCreateSavedLocation={handleCreateSavedLocation}
+                onSaveSavedLocation={handleSaveSavedLocation}
+                onFetchSavedLocationCoords={handleFetchSavedLocationCoords}
                 routeSchoolName={schoolName}
                 isNew={newlyAddedIndex === index}
                 status={draftStatus}
