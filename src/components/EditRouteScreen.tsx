@@ -1366,7 +1366,7 @@ function StepRowEditor({
                     type="button"
                     onClick={() => setShowLocationPicker(true)}
                     aria-label="Choose from address book"
-                    className="btn-glossy-light flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+                    className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
                   >
                     <AddressBookIcon className="h-4 w-4" />
                   </button>
