@@ -94,7 +94,7 @@ export function detectDelimiter(headerLine: string): string {
 // steps sheet already committed abbreviates it "Cr" instead (see
 // public/data/120-*.csv's own "Rocky Ridge Cr"), so this matches that
 // existing real data over the style guide, same conformity note.
-const STREET_SUFFIX_ABBREVIATIONS: Record<string, string> = {
+export const STREET_SUFFIX_ABBREVIATIONS: Record<string, string> = {
   avenue: "Ave",
   boulevard: "Blvd",
   circle: "Cr",

@@ -77,6 +77,7 @@ import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { GeocodeResponseBody } from "@/app/api/geocode/route";
+import type { FallbackDetail } from "@/lib/resolveWaypoint";
 
 /** A failed "Fetch"/"Fetch Missing"/"Re-fetch All" call's own error -
  * `message` is this app's own explanation, `raw` (when there is one)
@@ -1841,6 +1842,98 @@ function SplitRouteModal({
   );
 }
 
+/** Human-readable copy for each FallbackDetail kind (resolveWaypoint.ts)
+ * - GeocodeConfirmModal's own explanation of what actually happened,
+ * distinct enough that an admin can tell a corrected typo apart from a
+ * same-road approximation without reading the raw `kind` value. */
+function fallbackExplanation(fallback: FallbackDetail): string {
+  switch (fallback.kind) {
+    case "street-type":
+      return `No exact match, but a nearby road with a different street type looks like the same one: "${fallback.correctedQuery}".`;
+    case "fuzzy-name":
+      return `No exact match, but a nearby road with a similar spelling looks like the same one: "${fallback.correctedQuery}".`;
+    case "loop-snap":
+      return `These two roads don't meet as a simple intersection here (often a loop or circle) - placed on "${fallback.correctedQuery}" instead, at the point closest to this route. Not a real crossing - only an approximation.`;
+  }
+}
+
+/**
+ * Opened by fetchLocation's own single-row Fetch (globe button) when
+ * the plain exact lookup failed but a fallback strategy
+ * (resolveWaypoint.ts's own lookupCoordinatesWithFallback) found
+ * something - street-type/spelling correction, or a same-road
+ * "loop-snap" placement neither of which is a lookup an admin should
+ * ever have saved silently. Shows what was originally searched, what
+ * was actually found and why, and the same street-level
+ * WaypointPreviewMap every row's own expanded editor already uses (this
+ * route's own road-following line, every other resolved Stop) centered
+ * on the proposed point - Accept persists it exactly like a plain
+ * match always has, Reject leaves the row exactly as unresolved as it
+ * was before this Fetch ran.
+ */
+function GeocodeConfirmModal({
+  originalLabel,
+  entry,
+  fallback,
+  routeLine,
+  stopPins,
+  onAccept,
+  onReject,
+}: {
+  originalLabel: string;
+  entry: Extract<WaypointCacheEntry, { status: "ok" }>;
+  fallback: FallbackDetail;
+  routeLine: { lat: number; lon: number }[];
+  stopPins: { lat: number; lon: number }[];
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
+      onClick={onReject}
+    >
+      <div
+        className="animate-popup-pop flex max-h-[85dvh] w-full max-w-sm flex-col overflow-y-auto rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-heading text-xl font-black tracking-tight">
+          Confirm Match
+        </h2>
+        <p className="mt-2 text-sm text-zinc-500">
+          Searched for <span className="font-semibold text-zinc-900">{originalLabel}</span>.{" "}
+          {fallbackExplanation(fallback)}
+        </p>
+
+        <div className="mt-3">
+          <WaypointPreviewMap
+            center={{ lat: entry.lat, lon: entry.lon }}
+            routeLine={routeLine}
+            stopPins={stopPins}
+          />
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={onReject}
+            className="btn-glossy-light font-heading flex-1 rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+          >
+            Reject
+          </button>
+          <button
+            type="button"
+            onClick={onAccept}
+            className="btn-glossy-blue font-heading flex-1 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white"
+          >
+            Accept
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** StepRowEditor's own "choose a known place" popup (AddressBookIcon,
  * beside the Location field) - two lists, schools and saved locations
  * (the depot, a driver's home address, anywhere else worth reusing by
@@ -3084,6 +3177,50 @@ export function EditRouteScreen({
   const [fetchError, setFetchError] = useState<FetchErrorInfo | null>(null);
   const [showFetchModal, setShowFetchModal] = useState(false);
 
+  // A single-row Fetch (globe button) that only found a coordinate via
+  // a fallback strategy (street-type/spelling correction, or a
+  // same-road "loop-snap" placement) - GeocodeConfirmModal shows this
+  // and waits for Accept/Reject before anything's persisted. Null the
+  // rest of the time, including for every plain exact match, which
+  // never touches this state at all (see fetchLocation above).
+  const [pendingFallbackConfirm, setPendingFallbackConfirm] = useState<{
+    waypoint: GeocodableQuery;
+    entry: Extract<WaypointCacheEntry, { status: "ok" }>;
+    fallback: FallbackDetail;
+  } | null>(null);
+
+  /** GeocodeConfirmModal's own Accept - persists exactly the same way
+   * a plain exact match already does (setCache + persistWaypoint),
+   * just gated behind this extra look-it-over step. */
+  function acceptFallbackMatch() {
+    if (!pendingFallbackConfirm) return;
+    const { waypoint, entry } = pendingFallbackConfirm;
+    const key = waypointCacheKey(waypoint);
+    setCache((prev) => ({ ...prev, [key]: entry }));
+    persistWaypoint(key, entry);
+    setPendingFallbackConfirm(null);
+  }
+
+  /** GeocodeConfirmModal's own Reject - leaves the row exactly as
+   * unresolved as it was before this Fetch ran, recorded as a real
+   * "error" cache entry (not just silently forgotten) so the row's own
+   * status line explains why nothing saved rather than reading as if
+   * Fetch was never tried at all. */
+  function rejectFallbackMatch() {
+    if (!pendingFallbackConfirm) return;
+    const { waypoint, fallback } = pendingFallbackConfirm;
+    const key = waypointCacheKey(waypoint);
+    const entry: WaypointCacheEntry = {
+      status: "error",
+      message: `Rejected a suggested match ("${fallback.correctedQuery}") - no coordinate saved.`,
+      notFound: true,
+      source: waypointLabel(waypoint),
+      provider: "overpass",
+    };
+    setCache((prev) => ({ ...prev, [key]: entry }));
+    setPendingFallbackConfirm(null);
+  }
+
   // The gap (a real index into `rows`, not `visibleRowIndices`) whose
   // scissors icon is currently open in SplitRouteModal - null the rest
   // of the time. Only ever set for an internal gap (see AddStepButton's
@@ -3505,6 +3642,7 @@ export function EditRouteScreen({
 
   async function callGeocodeApi(
     query: GeocodableQuery,
+    allowFallback = false,
   ): Promise<GeocodeResponseBody> {
     const res = await fetch("/api/geocode", {
       method: "POST",
@@ -3513,6 +3651,7 @@ export function EditRouteScreen({
         query,
         schoolAddress,
         anchor: schoolAnchor ?? undefined,
+        allowFallback,
       }),
     });
     const data = await res.json();
@@ -3589,9 +3728,25 @@ export function EditRouteScreen({
     setSingleFetchCoolingDown(true);
     setFetchingStepIds((prev) => new Set(prev).add(waypoint.stepId));
     try {
-      const data = await callGeocodeApi(waypoint);
+      const data = await callGeocodeApi(waypoint, true);
       if (data.anchor) setSchoolAnchor(data.anchor);
       persistSchoolAnchorIfFresh(data.anchorEntry);
+
+      // A fallback strategy is what actually found this (street-type/
+      // spelling correction, or a same-road "loop-snap" placement) -
+      // hold off on persisting anything until GeocodeConfirmModal's own
+      // Accept, rather than saving a guess an admin hasn't actually
+      // looked at yet. A plain exact match (the overwhelming majority)
+      // skips this entirely and saves exactly as it always has, below.
+      if (data.result.status === "ok" && data.fallback) {
+        setPendingFallbackConfirm({
+          waypoint,
+          entry: data.result,
+          fallback: data.fallback,
+        });
+        return;
+      }
+
       const key = waypointCacheKey(waypoint);
       setCache((prev) => ({ ...prev, [key]: data.result }));
       persistWaypoint(key, data.result);
@@ -4573,6 +4728,17 @@ export function EditRouteScreen({
               setSplitGapIndex(null);
               setSplitError(null);
             }}
+          />
+        )}
+        {pendingFallbackConfirm && (
+          <GeocodeConfirmModal
+            originalLabel={waypointLabel(pendingFallbackConfirm.waypoint)}
+            entry={pendingFallbackConfirm.entry}
+            fallback={pendingFallbackConfirm.fallback}
+            routeLine={routeContextPoints}
+            stopPins={stopPins}
+            onAccept={acceptFallbackMatch}
+            onReject={rejectFallbackMatch}
           />
         )}
 

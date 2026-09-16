@@ -147,6 +147,95 @@ function isRetryableStatus(status: number): boolean {
 }
 
 /**
+ * Every named road inside `box`, regardless of which (if any) road it
+ * actually crosses - the ground truth geocodeFallback.ts's own
+ * bestStreetMatch matches a failed road name against, either by
+ * common street-type-word substitution ("Road" typed for what OSM
+ * calls "Drive") or by approximate spelling ("Swayze" for the real
+ * "Swayse"). One query covers the whole box; `out tags` is enough
+ * since only each way's own `name` tag is read here, never its
+ * geometry - `out body` (fetchStreetNodes below) is the one that
+ * actually needs coordinates. Best-effort: returns an empty list
+ * rather than throwing on a real HTTP failure, since every caller here
+ * is itself already a fallback path for a lookup that's already
+ * failed - one more failure just means giving up on the fallback too,
+ * not taking down the whole request.
+ */
+export async function fetchAreaStreetNames(
+  box: BoundingBox,
+  fetchImpl: typeof fetch = fetch,
+): Promise<string[]> {
+  const query = `[out:json][timeout:25];\nway["name"]["highway"]${bboxFilter(box)};\nout tags;`;
+  try {
+    const res = await fetchImpl(OVERPASS_URL, {
+      method: "POST",
+      body: `data=${encodeURIComponent(query)}`,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": OVERPASS_USER_AGENT,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      elements: { tags?: { name?: string } }[];
+    };
+    const names = new Set<string>();
+    for (const el of body.elements) {
+      if (el.tags?.name) names.add(el.tags.name);
+    }
+    return [...names];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Every node belonging to `streetName`'s own way(s) inside `box` - the
+ * "search for that street by itself" fallback for an intersection that
+ * still won't resolve even after street-type/spelling correction (a
+ * loop or circle Overpass's own node(w.a)(w.b) query can't find a
+ * single shared node for, or a real road this box's own graph just
+ * doesn't connect to the other one at all). A caller picks whichever
+ * of these nodes actually makes sense (see resolveWaypoint.ts's own
+ * pickNearest, against the route's last-known point) rather than this
+ * function guessing which one that is - it only ever answers "where
+ * does this street actually run through this box," never "where's the
+ * right spot on it." Empty on any failure, same reasoning as
+ * fetchAreaStreetNames above.
+ */
+export async function fetchStreetNodes(
+  streetName: string,
+  box: BoundingBox,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ lat: number; lon: number }[]> {
+  const name = escapeForRegex(streetName);
+  const query =
+    `[out:json][timeout:25];\n` +
+    `way["name"~"^${name}$",i]${bboxFilter(box)}->.s;\n` +
+    `node(w.s);\n` +
+    `out body;`;
+  try {
+    const res = await fetchImpl(OVERPASS_URL, {
+      method: "POST",
+      body: `data=${encodeURIComponent(query)}`,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": OVERPASS_USER_AGENT,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as OverpassResponse;
+    return body.elements
+      .filter((el) => el.type === "node")
+      .map((n) => ({ lat: n.lat, lon: n.lon }));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Resolves one intersection against Overpass, retrying up to
  * MAX_RETRIES times (with a fixed pause between attempts) on a 429/504,
  * and otherwise throwing immediately - a caller pacing multiple calls

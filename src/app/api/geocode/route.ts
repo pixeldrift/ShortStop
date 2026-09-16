@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { extractCityState } from "@/lib/geocode";
 import type { GeocodableQuery } from "@/lib/geocode";
 import { fetchOneLocation } from "@/lib/resolveWaypoint";
+import type { FallbackDetail } from "@/lib/resolveWaypoint";
 import type { WaypointCacheEntry } from "@/lib/waypointCache";
 
 /**
@@ -40,6 +41,14 @@ interface GeocodeRequestBody {
    * one from an earlier call this session - skips re-geocoding the
    * school address for every single "Fetch Location" click. */
   anchor?: { lat: number; lon: number };
+  /** True only for EditRouteScreen.tsx's own single-row Fetch button -
+   * opts this request into the street-type/spelling/loop-snap fallback
+   * pipeline (resolveWaypoint.ts's own lookupCoordinatesWithFallback)
+   * when the plain lookup fails, rather than just reporting the plain
+   * miss. Omitted (or false) for a batch call ("Fetch Missing"/
+   * "Re-fetch All"), which has no way to pause and ask an admin to
+   * confirm a fallback match the way GeocodeConfirmModal does. */
+  allowFallback?: boolean;
 }
 
 export interface GeocodeResponseBody {
@@ -57,6 +66,12 @@ export interface GeocodeResponseBody {
    * not just this session's own `anchor` state above. */
   anchorEntry: WaypointCacheEntry | null;
   result: WaypointCacheEntry;
+  /** Set only when `allowFallback` was sent and a fallback strategy is
+   * what actually produced `result` - null for a plain exact match, or
+   * whenever `allowFallback` wasn't sent at all. EditRouteScreen.tsx's
+   * fetchLocation holds off on persisting `result` and shows
+   * GeocodeConfirmModal instead whenever this isn't null. */
+  fallback: FallbackDetail | null;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -101,6 +116,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     locationContext,
     apiKey,
     anchor,
+    allowFallback: body.allowFallback,
   });
   if ("error" in result)
     return NextResponse.json(
@@ -112,6 +128,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     anchor: result.anchor,
     anchorEntry: result.anchorEntry,
     result: result.entry,
+    fallback: result.fallback,
   };
   return NextResponse.json(responseBody);
 }
