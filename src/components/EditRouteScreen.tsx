@@ -1691,7 +1691,7 @@ function AddStepButton({
   }
 
   return (
-    <div className="relative flex items-center justify-center gap-1.5 py-1">
+    <div className="relative flex items-center justify-center py-1">
       <div className="absolute inset-x-0 border-t border-dashed border-zinc-300" />
       <button
         type="button"
@@ -1708,9 +1708,17 @@ function AddStepButton({
           onClick={onSplit}
           disabled={disabled}
           aria-label="Split route here"
-          className="btn-glossy-light relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
+          className="btn-glossy-light absolute right-2 z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
         >
-          <ScissorsIcon className="h-3.5 w-3.5" />
+          {/* The source art is a right-pointing (open) pair of blades -
+              mirrored so the scissors read as "cutting into" the line
+              from the right edge, the same way the app's own TurnArrow
+              image already flips for a left turn (style-forwarded onto
+              the imported SVG's own root element, not a second file). */}
+          <ScissorsIcon
+            className="h-3.5 w-3.5"
+            style={{ transform: "scaleX(-1)" }}
+          />
         </button>
       )}
     </div>
