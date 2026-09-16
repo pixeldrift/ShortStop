@@ -81,6 +81,31 @@ model School {
   @@map("schools")
 }
 
+// A reusable, pre-geocoded place - the bus depot, a driver's own home
+// address, anywhere else a route's own Stop/Depart/Arrive besides a
+// school comes up again and again across routes - picked from
+// StepRowEditor's own address-book button (EditRouteScreen.tsx) instead
+// of retyping (and re-geocoding) the same address on every route that
+// touches it. Deliberately flat, no `category` column - "Bus Depot,"
+// "J. Smith (Driver)" already say what a location is in its own name,
+// and a real district would rather add descriptive names than maintain
+// a second taxonomy for a handful of one-off places. Geocoded once,
+// same lat/lon-nullable-until-resolved shape as School above (src/app/
+// api/saved-locations/route.ts geocodes a new one's address the moment
+// it's created, same ORS pipeline resolveWaypoint.ts's lookupCoordinates
+// already does for everything else) - a route step that picks one gets
+// its coordinate immediately (EditRouteScreen's own onManualCoordinates
+// path), no separate Fetch Coordinates click needed.
+model SavedLocation {
+  id      Int    @id @default(autoincrement())
+  name    String @unique
+  address String
+  lat     Float?
+  lon     Float?
+
+  @@map("saved_locations")
+}
+
 // One row per real route (Route.id's `${routeNumber}-${tripType}-
 // ${schoolLevel}` convention - see src/lib/types.ts), mirroring
 // route-master-list.csv. schoolName is kept as its own column rather

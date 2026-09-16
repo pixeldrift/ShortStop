@@ -1287,7 +1287,20 @@ function mountMapLibre(args: MountArgs): () => void {
                       "line-color": ROUTE_LINE_COLOR,
                       "line-width": 4,
                       "line-opacity": 0.85,
-                      "line-dasharray": [0, 2],
+                      // A dash length of 0 here used to render as a
+                      // solid line instead of a dotted one (dasharray
+                      // values are in line-width units, so [0, 2] meant
+                      // "0px dash, 8px gap" at width 4 - GL's dash
+                      // shader treats that degenerate case as always-on
+                      // rather than always-off) - route-remaining (the
+                      // portion still ahead) was showing up solid while
+                      // route-traveled below (correctly plain/solid)
+                      // read as the dotted one by comparison. [0.25, 2.5]
+                      // mirrors mountLeaflet's own "1, 10" dashArray
+                      // (raw pixels there vs. line-width units here, at
+                      // the same line-width: 4) - a real, small dot with
+                      // a real gap, not a value that can invert itself.
+                      "line-dasharray": [0.25, 2.5],
                     },
                   },
                   "roads-major-label",
