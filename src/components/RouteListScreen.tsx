@@ -707,7 +707,7 @@ export function RouteListScreen({
                                     ? onEditRoute(route)
                                     : onSelect(route)
                                 }
-                                className="flex min-w-0 flex-1 items-center gap-1.5 text-left active:bg-zinc-100"
+                                className="row-tap-gold flex min-w-0 flex-1 items-center gap-1.5 text-left active:bg-amber-400"
                               >
                                 <span className="flex shrink-0 items-center gap-1">
                                   {/* Solid black, not faded - names this
@@ -913,7 +913,7 @@ export function RouteListScreen({
                     onClick={() =>
                       adminMode ? onEditRoute(route) : onSelect(route)
                     }
-                    className="col-span-3 grid grid-cols-[4.5rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-zinc-100"
+                    className="row-tap-gold col-span-3 grid grid-cols-[4.5rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-amber-400"
                   >
                     {/* leading-none (line-height: 1) still isn't tight -
                         Ubuntu at this weight reports a font-box taller

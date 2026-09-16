@@ -125,6 +125,29 @@ body {
   box-shadow: none;
 }
 
+/* A tappable list row's own press feedback (RouteListScreen's own
+   route rows) - the same glossy sheen + pressed-in bevel every
+   .btn-glossy-* button shows while held down, in the app's own gold
+   rather than any of those buttons' own blue/red/light fills. Unlike
+   the .btn-glossy-* trio above, there's no resting-state rule here at
+   all - a plain list row isn't a button and shouldn't look raised
+   before anyone's touched it, only pressed-in for the moment a finger
+   actually is (:active), replacing the plain active:bg-zinc-100 wash
+   every other in-app link still uses. Pair with active:bg-amber-400
+   on the element itself, same "color comes from the caller's own
+   Tailwind class, this only supplies the sheen/shadow" split the
+   .btn-glossy-* trio already uses. */
+.row-tap-gold:active {
+  background-image: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.35),
+    rgba(255, 255, 255, 0) 55%
+  );
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.12),
+    inset 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
 /* Same white-sheen highlight as the .btn-glossy-* trio above, but an
    inset shadow in place of their outer drop shadow - a button pops out,
    a meter's own track should read as a groove the fill sits inside
