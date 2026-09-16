@@ -53,6 +53,8 @@ export function TurnArrow({
 
 export { default as ChevronDownIcon } from "./icons/chevron-down.svg";
 export { default as ArrowDownToLineIcon } from "./icons/arrow-down-to-line.svg";
+export { default as ArrowUpToLineIcon } from "./icons/arrow-up-to-line.svg";
+export { default as ScissorsIcon } from "./icons/scissors.svg";
 export { default as AddressBookIcon } from "./icons/address-book.svg";
 export { default as PauseIcon } from "./icons/pause.svg";
 
