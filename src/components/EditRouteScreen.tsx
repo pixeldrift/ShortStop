@@ -4249,7 +4249,7 @@ export function EditRouteScreen({
                     // its own doc comment), which never changes size.
                     className={
                       highlightedRowIndex === index
-                        ? "rounded-lg ring-2 ring-amber-400 transition-shadow"
+                        ? "-mx-2 rounded-lg border-2 border-red-500 px-2 transition-colors"
                         : dragRowIndex === index
                           ? "opacity-40"
                           : ""
