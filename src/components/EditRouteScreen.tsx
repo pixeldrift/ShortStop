@@ -1721,29 +1721,41 @@ function AddStepButton({
  * see its own doc comment) - offers to carve the waypoints on either
  * side of that exact gap off into a brand-new route, rather than
  * retyping a whole second route by hand for what's really the same
- * stops, just riding two buses instead of one. Copies only: this
- * route's own rows are never touched here, so nothing about the
- * original is lost even if the new route's own first Save never
- * happens. `onSplit` hands the chosen half's rows straight up to
- * page.tsx (EditRouteScreen's own `onSplitToNewRoute` prop), which
- * opens a fresh "add-route" screen pre-seeded with them - same shell
- * as "New Route," just not starting from a blank paste box.
+ * stops, just riding two buses instead of one (or, per the driver-
+ * substitution use case this was actually built for, separating a
+ * depot/home leg into its own linkable route - see EditRouteScreen's
+ * own Next Action field). Two steps, not one: which side of the gap
+ * first (`direction`, this component's own local state), then Move or
+ * Copy for that side - a real fork in what happens to *this* route,
+ * not a detail worth burying in the first step's own button label.
+ * `onSplit` hands both choices up to EditRouteScreen's own handleSplit,
+ * which does the actual work; `saving`/`error` reflect Move's own save
+ * of the shortened original back to the caller, so this step 2 can
+ * disable its buttons and show why a Move failed without losing the
+ * admin's place in the flow.
  */
 function SplitRouteModal({
   aboveCount,
   belowCount,
+  saving,
+  error,
   onSplit,
   onClose,
 }: {
   aboveCount: number;
   belowCount: number;
-  onSplit: (direction: "above" | "below") => void;
+  saving: boolean;
+  error: string | null;
+  onSplit: (direction: "above" | "below", action: "move" | "copy") => void;
   onClose: () => void;
 }) {
+  const [direction, setDirection] = useState<"above" | "below" | null>(null);
+  const count = direction === "above" ? aboveCount : belowCount;
+
   return (
     <div
       className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
-      onClick={onClose}
+      onClick={saving ? undefined : onClose}
     >
       <div
         className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
@@ -1752,39 +1764,78 @@ function SplitRouteModal({
         <h2 className="font-heading text-xl font-black tracking-tight">
           Split Route
         </h2>
-        <p className="mt-2 text-sm text-zinc-500">
-          Copy the waypoints on one side of this split into a brand-new
-          route. This route stays exactly as it is.
-        </p>
-        <div className="mt-4 flex flex-col gap-2">
-          <button
-            type="button"
-            onClick={() => onSplit("above")}
-            disabled={aboveCount === 0}
-            className="btn-glossy-blue font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            <ArrowUpToLineIcon className="h-4 w-4" />
-            Split Above to New Route
-            <span className="font-normal opacity-80">({aboveCount})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSplit("below")}
-            disabled={belowCount === 0}
-            className="btn-glossy-blue font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
-          >
-            <ArrowDownToLineIcon className="h-4 w-4" />
-            Split Below to New Route
-            <span className="font-normal opacity-80">({belowCount})</span>
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn-glossy-light font-heading rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
-          >
-            Cancel
-          </button>
-        </div>
+        {direction === null ? (
+          <>
+            <p className="mt-2 text-sm text-zinc-500">
+              Carve the waypoints on one side of this split off into a
+              brand-new route.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setDirection("above")}
+                disabled={aboveCount === 0}
+                className="btn-glossy-blue font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                <ArrowUpToLineIcon className="h-4 w-4" />
+                Split Above to New Route
+                <span className="font-normal opacity-80">({aboveCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirection("below")}
+                disabled={belowCount === 0}
+                className="btn-glossy-blue font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                <ArrowDownToLineIcon className="h-4 w-4" />
+                Split Below to New Route
+                <span className="font-normal opacity-80">({belowCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="btn-glossy-light font-heading rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-sm text-zinc-500">
+              Splitting {count} waypoint{count === 1 ? "" : "s"} into a
+              separate route. Do you want to remove them from this route, or
+              keep them and just make a copy?
+            </p>
+            {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => onSplit(direction, "move")}
+                disabled={saving}
+                className="btn-glossy-blue font-heading rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {saving ? "Moving…" : "Move"}
+              </button>
+              <button
+                type="button"
+                onClick={() => onSplit(direction, "copy")}
+                disabled={saving}
+                className="btn-glossy-blue font-heading rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+                className="btn-glossy-light font-heading rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -3039,19 +3090,51 @@ export function EditRouteScreen({
   // own `onSplit` doc comment), so `rows.slice` on either side of it
   // always has something in it.
   const [splitGapIndex, setSplitGapIndex] = useState<number | null>(null);
+  // Move's own save of the shortened original - separate from the hub
+  // screen's own `saving`/`message` (the main Save button) so a Move
+  // failure shows up inside SplitRouteModal itself, next to the retry,
+  // rather than on a screen the admin's already navigating away from.
+  const [splitSaving, setSplitSaving] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
 
-  /** "Split Above"/"Split Below" (SplitRouteModal) - hands the chosen
-   * half's rows up to page.tsx as ready-to-paste text (the same
-   * canonical format an admin's own upload/paste already produces),
-   * along with this route's own School/Trip as a starting point, so the
-   * new route needs only a Route #/Name before its first Save. This
-   * route's own `rows` are never touched - a split is a copy, not a
-   * move, regardless of whether the new route it creates is ever saved.
+  /** SplitRouteModal's own Move/Copy step - hands the chosen half's
+   * rows up to page.tsx as ready-to-paste text (the same canonical
+   * format an admin's own upload/paste already produces), along with
+   * this route's own School/Trip as a starting point, so the new route
+   * needs only a Route #/Name before its first Save.
+   *
+   * Copy leaves this route's own `rows` untouched, same as always.
+   * Move actually removes the split-off half from `rows` *and* saves
+   * that shortened list right away (handleSave's own `overrideRows`) -
+   * a "move" that only ever showed up in this screen's own unsaved
+   * draft would silently undo itself the next time this route loads
+   * from Postgres without an admin ever coming back to hit Save on it,
+   * which isn't what "moved" means. A failed save reverts `rows` back
+   * to its full, pre-split state and leaves the modal open on its
+   * Move/Copy step (splitError) rather than quietly discarding the
+   * admin's own removal or forging ahead to the new route screen as if
+   * the original still reflected it.
    */
-  function handleSplit(direction: "above" | "below") {
+  async function handleSplit(direction: "above" | "below", action: "move" | "copy") {
     if (splitGapIndex === null || !onSplitToNewRoute) return;
     const selected =
       direction === "above" ? rows.slice(0, splitGapIndex) : rows.slice(splitGapIndex);
+
+    if (action === "move") {
+      const remaining =
+        direction === "above" ? rows.slice(splitGapIndex) : rows.slice(0, splitGapIndex);
+      setSplitSaving(true);
+      setSplitError(null);
+      setRows(remaining);
+      const ok = await handleSave(status, remaining);
+      setSplitSaving(false);
+      if (!ok) {
+        setRows(rows);
+        setSplitError("Couldn't save the shortened route - try again.");
+        return;
+      }
+    }
+
     onSplitToNewRoute(serializeRouteImport(selected), { schoolName, tripType });
     setSplitGapIndex(null);
   }
@@ -3757,19 +3840,30 @@ export function EditRouteScreen({
     departureTime.trim() !== "" &&
     parseTimeInput(departureTime, tripType || undefined) === null;
 
-  async function handleSave(nextStatus: RouteStatus = status) {
+  /** `overrideRows` - Move-a-split's own way of saving a shortened row
+   * list immediately (see handleSplit below) without waiting on a
+   * `setRows` re-render first, which a plain read of the `rows` closure
+   * here wouldn't see yet in the same tick. Omitted (every other
+   * caller), this reads the same `rows`/`parseResult.rows` it always
+   * has. Returns whether the save actually succeeded, so a caller that
+   * has something conditional to do next (handleSplit's own "don't
+   * navigate to the new route on a failed Move save") can tell. */
+  async function handleSave(
+    nextStatus: RouteStatus = status,
+    overrideRows?: RawRouteRow[],
+  ): Promise<boolean> {
     if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
       setShowRequiredErrors(true);
       setMessage("Route #, Trip, and School are required.");
-      return;
+      return false;
     }
     if (startTimeInvalid) {
       setShowRequiredErrors(true);
       setMessage(`Start time "${departureTime}" isn't a time this app can recognize.`);
-      return;
+      return false;
     }
-    if (saving) return;
-    const currentRows = mode === "add" ? parseResult.rows : rows;
+    if (saving) return false;
+    const currentRows = overrideRows ?? (mode === "add" ? parseResult.rows : rows);
     const built = buildRouteFromRows(currentRows, buildMetaFields(nextStatus));
 
     setSaving(true);
@@ -3806,13 +3900,13 @@ export function EditRouteScreen({
       if (!res.ok) {
         const data: { error?: string } = await res.json().catch(() => ({}));
         setMessage(`Couldn't save: ${data.error ?? res.statusText}`);
-        return;
+        return false;
       }
     } catch (err) {
       setMessage(
         `Couldn't save: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return;
+      return false;
     } finally {
       setSaving(false);
     }
@@ -3820,6 +3914,7 @@ export function EditRouteScreen({
     setStatus(nextStatus);
     setDirty(false);
     onSave(built, currentRows, cache);
+    return true;
   }
 
   // A live snapshot of the route as currently edited (not just as last
@@ -4471,8 +4566,13 @@ export function EditRouteScreen({
           <SplitRouteModal
             aboveCount={splitGapIndex}
             belowCount={rows.length - splitGapIndex}
+            saving={splitSaving}
+            error={splitError}
             onSplit={handleSplit}
-            onClose={() => setSplitGapIndex(null)}
+            onClose={() => {
+              setSplitGapIndex(null);
+              setSplitError(null);
+            }}
           />
         )}
 
