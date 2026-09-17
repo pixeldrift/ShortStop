@@ -423,8 +423,8 @@ function MatchedLocationChip({
   clearLabel: string;
 }) {
   return (
-    <div className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-zinc-300 bg-white px-1.5">
-      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-400 bg-zinc-200 py-1 pr-1.5 pl-2.5">
+    <div className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-zinc-200 bg-white px-1.5">
+      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-zinc-400 bg-zinc-200 py-1 pr-1.5 pl-2.5">
         <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">
           {name}
         </span>
