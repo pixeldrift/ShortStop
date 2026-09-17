@@ -719,10 +719,21 @@ export function RouteListScreen({
                           return (
                             <div
                               key={route.id}
-                              className={`flex w-full items-center gap-2 py-2 pr-2 pl-8 ${
+                              className={`flex w-full items-center gap-2 pr-2 ${
                                 isAdminOnly ? "opacity-50" : ""
                               }`}
                             >
+                              {/* py-2.5/pl-8 (the row's own spacing) live
+                                  on the button now, not the row div - the
+                                  active:bg-amber-400 tap highlight below
+                                  needs to actually cover that space, not
+                                  just the text/icons sitting inside it,
+                                  to read as "this whole row responded,"
+                                  not a highlight that stops short of the
+                                  row's own edges. rounded-lg for the same
+                                  reason - a flash with square corners
+                                  butting up against this list's own
+                                  rounded card reads like a clipping bug. */}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -730,7 +741,7 @@ export function RouteListScreen({
                                     ? onEditRoute(route)
                                     : onSelect(route)
                                 }
-                                className="row-tap-gold flex min-w-0 flex-1 items-center gap-1.5 text-left active:bg-amber-400"
+                                className="row-tap-gold flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-2.5 pl-8 text-left active:bg-amber-400"
                               >
                                 <span className="flex shrink-0 items-center gap-1">
                                   {/* Solid black, not faded - names this
