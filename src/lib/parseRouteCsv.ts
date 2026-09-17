@@ -20,7 +20,9 @@ export interface RouteMeta {
   departureTime: string;
   schoolName: string;
   schoolAddress: string;
-  schoolLevel: SchoolLevel;
+  // See Route.schoolLevel's own doc comment (types.ts) - null for a
+  // route not anchored on a real school.
+  schoolLevel: SchoolLevel | null;
   schoolLat: number | null;
   schoolLon: number | null;
   tripType: TripType;

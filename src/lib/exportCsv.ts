@@ -97,7 +97,11 @@ function routeRow(route: Route): (string | number)[] {
     route.busNumber,
     route.tripType,
     route.schoolName,
-    route.schoolLevel,
+    // Blank rather than the literal string "null" for a route with no
+    // real school level (see Route.schoolLevel's own doc comment,
+    // types.ts) - same "just leave it out" treatment durationMinutes
+    // already gets right below.
+    route.schoolLevel ?? "",
     route.departureTime,
     route.status,
     totalStops,

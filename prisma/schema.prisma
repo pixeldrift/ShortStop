@@ -107,7 +107,7 @@ model SavedLocation {
 }
 
 // One row per real route (Route.id's `${routeNumber}-${tripType}-
-// ${schoolLevel}` convention - see src/lib/types.ts), mirroring
+// ${schoolLevel ?? "none"}` convention - see src/lib/types.ts), mirroring
 // route-master-list.csv. schoolName is kept as its own column rather
 // than a foreign key to School - the master list and schools sheet are
 // two independently-maintained district documents today, joined by
@@ -119,8 +119,21 @@ model Route {
   status        RouteStatusDb
   routeNumber   String
   busNumber     String
+  // The route's own anchor point - a real school's name almost always,
+  // but not necessarily: a Special/field-trip run's own starting point
+  // (or a saved address-book location standing in for one) is just as
+  // valid a value here, matched by name against Schools first and
+  // SavedLocations second at read time (see EditRouteScreen.tsx's own
+  // matchedSchool/matchedSavedLocation) - never required to resolve to
+  // either.
   schoolName    String
-  schoolLevel   SchoolLevelDb
+  // Null whenever schoolName doesn't resolve to a real School row (a
+  // Special route with no school at all, or one anchored on a saved
+  // location instead) - a school level is real routing data (see
+  // src/lib/types.ts's own SchoolLevel doc comment) that genuinely
+  // doesn't exist for either case, not a value to fake just to keep
+  // this column non-null.
+  schoolLevel   SchoolLevelDb?
   tripType      TripTypeDb
   // 24-hour "H:MM" / "HH:MM:SS" text, exactly as the district's sheet
   // writes it - see parseRouteMasterList's format24HourAsAmPm/

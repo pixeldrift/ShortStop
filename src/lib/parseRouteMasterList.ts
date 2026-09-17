@@ -125,7 +125,16 @@ export function parseRouteMasterList(csvText: string): MasterListRoute[] {
  * and sidecar waypoint cache.
  */
 export function stepsCsvBaseName(
-  route: Pick<MasterListRoute, "routeNumber" | "tripType" | "schoolLevel">,
+  // Deliberately its own explicit shape rather than
+  // Pick<MasterListRoute, ...> - MasterListRoute.schoolLevel is
+  // nullable now (a route can be anchored on something other than a
+  // real school), but every real caller here (prisma/seed.ts,
+  // scripts/geocodeRoute.ts) only ever runs this against a route
+  // freshly parsed straight off the district's own master list, which
+  // always has a real school_type column - so this stays non-null
+  // rather than pushing a null-check onto call sites that can never
+  // actually hit one.
+  route: { routeNumber: string; tripType: TripType; schoolLevel: SchoolLevel },
 ): string {
   return `${route.routeNumber}-${TRIP_TYPE_TO_AM_PM[route.tripType]}-${LEVEL_TO_SCHOOL_TYPE[route.schoolLevel]}`;
 }

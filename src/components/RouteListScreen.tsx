@@ -108,6 +108,14 @@ const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
 const SCHOOL_LEVEL_ORDER: SchoolLevel[] = SCHOOL_LEVEL_TOGGLES.map(
   (t) => t.value,
 );
+// Same order as SCHOOL_LEVEL_ORDER, but tolerates a route with no real
+// school level at all (a Special route, or one anchored on a saved
+// location - see Route.schoolLevel's own doc comment, types.ts) -
+// ranked after every real level rather than needing its own branch
+// wherever schoolLevel drives a sort.
+function schoolLevelRank(level: SchoolLevel | null): number {
+  return level === null ? SCHOOL_LEVEL_ORDER.length : SCHOOL_LEVEL_ORDER.indexOf(level);
+}
 // The school-level filter is a single icon that cycles through these
 // four states on each tap (view all -> elementary -> middle -> high ->
 // back to view all) rather than three separate toggle buttons - see
@@ -390,8 +398,7 @@ export function RouteListScreen({
         tripType,
         routes: [...byTripType.get(tripType)!].sort(
           (a, b) =>
-            SCHOOL_LEVEL_ORDER.indexOf(a.schoolLevel) -
-            SCHOOL_LEVEL_ORDER.indexOf(b.schoolLevel),
+            schoolLevelRank(a.schoolLevel) - schoolLevelRank(b.schoolLevel),
         ),
       }));
       return {

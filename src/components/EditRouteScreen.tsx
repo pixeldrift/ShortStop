@@ -2887,50 +2887,95 @@ export function EditRouteScreen({
 }) {
   const [routeNumber, setRouteNumber] = useState(route?.routeNumber ?? "");
   const [busNumber, setBusNumber] = useState(route?.busNumber ?? "");
-  // School address and level are never typed or picked separately -
-  // both are looked up from `schools` (Postgres, via /api/schools) by
-  // whichever name is selected here, below. Real address/level data
-  // belongs in that one table, not duplicated into every route that
-  // references it.
+  // Every saved location (the address book's own "Other Locations"
+  // list - StepRowEditor's own AddressBookIcon button, below, and this
+  // form's own School field further down) - fetched once per edit
+  // session, same "fetch on mount" shape page.tsx already uses for
+  // schools. Declared up here (rather than alongside
+  // handleSaveSavedLocation below) so the School field's own
+  // matchedSavedLocation, right below, can read it.
+  const [savedLocations, setSavedLocations] = useState<SavedLocationInfo[]>(
+    [],
+  );
+  useEffect(() => {
+    fetch("/api/saved-locations")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: SavedLocationInfo[]) => setSavedLocations(data))
+      .catch(() => {});
+  }, []);
+  // The route's own anchor - a free-typed name, matched by exact
+  // name (case/whitespace-insensitive) against Schools first and
+  // SavedLocations second, same as StepRowEditor's own matchedSchool/
+  // matchedSavedLocation do for a single waypoint - never required to
+  // resolve to either, since a Special route's own starting point (or
+  // any route anchored on a saved location instead of a school) is a
+  // genuinely valid, permanent state, not just "not looked up yet."
   const [schoolName, setSchoolName] = useState(
     route?.schoolName ?? seedMeta?.schoolName ?? "",
   );
-  const schoolInfo: SchoolInfo | undefined = schools[schoolName];
-  // A route already being edited whose school isn't in `schools` yet
-  // (see schoolOptions below) keeps its own already-known address/
-  // level instead of falling back to the generic placeholder/default -
-  // picking a *different* school from the dropdown always overrides
-  // this with that school's own real table entry.
+  const matchedSchool = useMemo(() => {
+    const target = schoolName.trim().toLowerCase();
+    if (!target) return null;
+    const entry = Object.entries(schools).find(
+      ([name]) => name.trim().toLowerCase() === target,
+    );
+    return entry ? { name: entry[0], info: entry[1] } : null;
+  }, [schoolName, schools]);
+  const matchedSavedLocation = useMemo(() => {
+    const target = schoolName.trim().toLowerCase();
+    if (!target) return null;
+    return (
+      savedLocations.find((loc) => loc.name.trim().toLowerCase() === target) ??
+      null
+    );
+  }, [schoolName, savedLocations]);
+  // A route already being edited whose anchor doesn't match either
+  // list (yet, or ever - a Special route's own one-off starting point
+  // never will) keeps its own already-known address/level/point
+  // instead of falling back to the generic placeholder/default -
+  // typing or picking a *different*, matching name always overrides
+  // this with that entity's own real table entry.
   const isOriginalUnmatchedSchool =
-    route != null && route.schoolName === schoolName && !schoolInfo;
+    route != null &&
+    route.schoolName === schoolName &&
+    !matchedSchool &&
+    !matchedSavedLocation;
   const schoolAddress =
-    schoolInfo?.address ??
+    matchedSchool?.info.address ??
+    matchedSavedLocation?.address ??
     (isOriginalUnmatchedSchool
       ? route.schoolAddress
       : SCHOOL_ADDRESS_NOT_YET_PROVIDED);
-  const schoolLevel: SchoolLevel =
-    schoolInfo?.schoolLevel ??
-    (isOriginalUnmatchedSchool ? route.schoolLevel : "elementary");
+  // Null whenever the anchor isn't a real school (no match at all, or
+  // matched to a saved location instead) - a school level genuinely
+  // doesn't exist for either case (see Route.schoolLevel's own doc
+  // comment, types.ts).
+  const schoolLevel: SchoolLevel | null =
+    matchedSchool?.info.schoolLevel ??
+    (isOriginalUnmatchedSchool ? route.schoolLevel : null);
   const schoolLat =
-    schoolInfo?.lat ?? (isOriginalUnmatchedSchool ? route.schoolLat : null);
+    matchedSchool?.info.lat ??
+    matchedSavedLocation?.lat ??
+    (isOriginalUnmatchedSchool ? route.schoolLat : null);
   const schoolLon =
-    schoolInfo?.lon ?? (isOriginalUnmatchedSchool ? route.schoolLon : null);
+    matchedSchool?.info.lon ??
+    matchedSavedLocation?.lon ??
+    (isOriginalUnmatchedSchool ? route.schoolLon : null);
   // Whether `schoolAddress` above is a real, geocodable address rather
   // than the generic "not yet provided" placeholder it falls back to
-  // when nothing's selected - unlike that state-backed field before
-  // this pass, `schoolAddress` is never actually blank anymore, so
-  // gating on this instead of `schoolAddress.trim()` is what still
-  // keeps `waypoints` from treating an unselected school as ready.
-  const hasRealSchoolAddress = Boolean(schoolInfo) || isOriginalUnmatchedSchool;
-  // Every known school, plus - only if it wouldn't otherwise be a real
-  // option - whatever school this route already had, so re-opening an
-  // existing route never silently drops or blanks out a school the
-  // schools table doesn't have a row for yet.
-  const schoolOptions = useMemo(() => {
-    const names = Object.keys(schools).sort((a, b) => a.localeCompare(b));
-    if (schoolName && !schools[schoolName]) names.push(schoolName);
-    return names;
-  }, [schools, schoolName]);
+  // when nothing's typed or matched yet - unlike that state-backed
+  // field before this pass, `schoolAddress` is never actually blank
+  // anymore, so gating on this instead of `schoolAddress.trim()` is
+  // what still keeps `waypoints` from treating an unresolved anchor as
+  // ready.
+  const hasRealSchoolAddress =
+    Boolean(matchedSchool) || Boolean(matchedSavedLocation) || isOriginalUnmatchedSchool;
+  // StepRowEditor's own address-book popup (AddressBookIcon, beside
+  // this field below) - same LocationPickerModal every row's own
+  // Location field already opens, just picking this route's own
+  // anchor instead of one waypoint's.
+  const [showSchoolLocationPicker, setShowSchoolLocationPicker] =
+    useState(false);
   // Blank (never "pickup" by default) for a brand-new route - Trip is
   // one of the three fields this screen actually requires (see
   // requiredFieldErrors below), so it needs a genuine "not chosen yet"
@@ -3283,20 +3328,6 @@ export function EditRouteScreen({
     onSplitToNewRoute(serializeRouteImport(selected), { schoolName, tripType });
     setSplitGapIndex(null);
   }
-
-  // Every saved location (the address book's own "Other Locations"
-  // list - StepRowEditor's own AddressBookIcon button, below) - fetched
-  // once per edit session, same "fetch on mount" shape page.tsx already
-  // uses for schools.
-  const [savedLocations, setSavedLocations] = useState<SavedLocationInfo[]>(
-    [],
-  );
-  useEffect(() => {
-    fetch("/api/saved-locations")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data: SavedLocationInfo[]) => setSavedLocations(data))
-      .catch(() => {});
-  }, []);
 
   // EditSavedLocationModal's own Save button (opened either from the
   // address book's "+ Add Location" footer button, `id: null`, or a
@@ -3944,8 +3975,15 @@ export function EditRouteScreen({
       // own live preview of a still-incomplete form, never in anything
       // that actually gets saved.
       const effectiveTripType: TripType = tripType || "pickup";
+      // "none" for a route with no real school level - a Special run,
+      // or one anchored on a saved location - rather than requiring
+      // every id segment to be non-null. Collision risk is the same
+      // "unique as long as..." best-effort this id convention already
+      // accepts (see the Route model's own doc comment,
+      // schema.prisma): two schoolless routes for the same bus/trip
+      // type on the same day is rare enough not to design around here.
       return {
-        id: `${routeNumber}-${effectiveTripType}-${schoolLevel}`,
+        id: `${routeNumber}-${effectiveTripType}-${schoolLevel ?? "none"}`,
         status: nextStatus,
         name: `${schoolName} — ${tripTypeFullLabel(effectiveTripType)}`,
         routeNumber,
@@ -4259,30 +4297,56 @@ export function EditRouteScreen({
         </Field>
       </div>
 
-      {/* School level and address are never picked or typed separately
-          - both come from whichever school is chosen here, looked up
-          in `schools` (Postgres, via /api/schools). */}
+      {/* Free text, matched by name against Schools then
+          SavedLocations (matchedSchool/matchedSavedLocation above) -
+          level/address/point come from whichever matched, exactly the
+          way StepRowEditor's own Location field already works. Doesn't
+          have to match anything at all: a Special route's own one-off
+          starting point is just as valid typed in plain. */}
       <div className="mt-3">
         <Field label="School" required={schoolNameMissing}>
-          <select
-            className={
-              showRequiredErrors && schoolNameMissing
-                ? errorInputClass
-                : inputClass
-            }
-            value={schoolName}
-            onChange={(e) => {
-              setSchoolName(e.target.value);
-              setDirty(true);
-            }}
-          >
-            <option value="">Select a school</option>
-            {schoolOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            {matchedSchool || matchedSavedLocation ? (
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-zinc-100 py-1.5 pr-2 pl-3">
+                <span className="min-w-0 flex-1 truncate text-base font-semibold text-zinc-900">
+                  {matchedSchool?.name ?? matchedSavedLocation?.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSchoolName("");
+                    setDirty(true);
+                  }}
+                  aria-label="Clear school"
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-200 active:text-zinc-600"
+                >
+                  <CloseIcon className="h-3 w-3" />
+                </button>
+              </div>
+            ) : (
+              <input
+                className={`min-w-0 flex-1 ${
+                  showRequiredErrors && schoolNameMissing
+                    ? errorInputClass
+                    : inputClass
+                }`}
+                value={schoolName}
+                onChange={(e) => {
+                  setSchoolName(e.target.value);
+                  setDirty(true);
+                }}
+                placeholder="LaVergne High School"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => setShowSchoolLocationPicker(true)}
+              aria-label="Choose from address book"
+              className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+            >
+              <AddressBookIcon className="h-4 w-4" />
+            </button>
+          </div>
         </Field>
       </div>
 
@@ -4291,6 +4355,21 @@ export function EditRouteScreen({
           <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
           {schoolAddress}
         </p>
+      )}
+
+      {showSchoolLocationPicker && (
+        <LocationPickerModal
+          schools={schools}
+          savedLocations={savedLocations}
+          onSaveSavedLocation={handleSaveSavedLocation}
+          onFetchCoordinates={handleFetchSavedLocationCoords}
+          onSelect={(choice) => {
+            setSchoolName(choice.name);
+            setDirty(true);
+            setShowSchoolLocationPicker(false);
+          }}
+          onClose={() => setShowSchoolLocationPicker(false)}
+        />
       )}
 
       <div className="mt-3 grid grid-cols-2 gap-3">
@@ -4313,7 +4392,7 @@ export function EditRouteScreen({
             what actually sets this), or DEPOT_NEXT_ACTION, a fixed
             sentinel this app recognizes but no real Route.id could ever
             collide with (every real one is `${routeNumber}-${tripType}-
-            ${schoolLevel}`, always hyphenated) - "the driver heads back
+            ${schoolLevel ?? "none"}`, always hyphenated) - "the driver heads back
             to base," not "hand off into another route's own directions"
             the way a real chain does (handleRouteArrived in page.tsx),
             which still ends the trip exactly like leaving this blank
