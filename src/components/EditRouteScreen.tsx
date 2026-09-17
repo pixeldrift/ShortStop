@@ -56,6 +56,7 @@ import {
   unresolvedRequiredFields,
 } from "@/lib/parseRouteImport";
 import { parseRouteFilename } from "@/lib/parseRouteMasterList";
+import { routeTitleSizeClass } from "@/lib/routeTitle";
 import {
   PLACEHOLDER_DISTANCE,
   PLACEHOLDER_DURATION_MINUTES,
@@ -398,6 +399,45 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+/** A location field that's resolved to a real School or SavedLocation
+ * by name (StepRowEditor's own Location field, EditRouteScreen's own
+ * School field) - the outer box still reads as the same text-input
+ * shape every other field here uses (border, rounded, white), with the
+ * matched name as its own distinct chip nested inside rather than
+ * stretched to fill the whole box, so a resolved match and a plain
+ * typed-but-unmatched value both still look like "a text box," just
+ * with something concrete sitting in this one. The chip's own darker
+ * fill plus a 1px border of its own is what actually makes a real
+ * match read clearly, rather than a near-white tint against this same
+ * white box that a glance could mistake for empty. */
+function MatchedLocationChip({
+  name,
+  onClear,
+  clearLabel,
+}: {
+  name: string;
+  onClear: () => void;
+  clearLabel: string;
+}) {
+  return (
+    <div className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-zinc-300 bg-white px-1.5">
+      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-md border border-zinc-400 bg-zinc-200 py-1 pr-1.5 pl-2.5">
+        <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">
+          {name}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label={clearLabel}
+          className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-300 active:text-zinc-700"
+        >
+          <CloseIcon className="h-2.5 w-2.5" />
+        </button>
+      </span>
+    </div>
   );
 }
 
@@ -1338,27 +1378,20 @@ function StepRowEditor({
               <Field label="Location" required>
                 <div className="flex items-center gap-2">
                   {/* A matched school/saved location (see both above)
-                  renders as a gray pill instead of the plain text box -
-                  reads as one linked entity, the way a resolved
-                  recipient chip does in an email client's own To field,
-                  not just a text string a geocoder has to guess at. The
-                  X clears it back to a blank, freely-typed box; picking
-                  a *different* preset (the address-book button, right)
-                  just overwrites it directly, no need to clear first. */}
+                  renders as a chip nested in the text box instead of a
+                  plain typed string - reads as one linked entity, the
+                  way a resolved recipient chip does in an email
+                  client's own To field, not just a text string a
+                  geocoder has to guess at. The X clears it back to a
+                  blank, freely-typed box; picking a *different* preset
+                  (the address-book button, right) just overwrites it
+                  directly, no need to clear first. */}
                   {matchedSchool || matchedSavedLocation ? (
-                    <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-zinc-100 py-1.5 pr-2 pl-3">
-                      <span className="min-w-0 flex-1 truncate text-base font-semibold text-zinc-900">
-                        {matchedSchool?.name ?? matchedSavedLocation?.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onChange({ location: "" })}
-                        aria-label="Clear location"
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-200 active:text-zinc-600"
-                      >
-                        <CloseIcon className="h-3 w-3" />
-                      </button>
-                    </div>
+                    <MatchedLocationChip
+                      name={matchedSchool?.name ?? matchedSavedLocation?.name ?? ""}
+                      onClear={() => onChange({ location: "" })}
+                      clearLabel="Clear location"
+                    />
                   ) : (
                     <input
                       className={`min-w-0 flex-1 ${inputClass} ${
@@ -2985,22 +3018,31 @@ export function EditRouteScreen({
     route?.tripType ?? seedMeta?.tripType ?? "",
   );
   // Every other real route this bus could plausibly hand off to once
-  // this one's done - same bus (a chain is one bus driving more than
-  // one leg back-to-back) and same trip type (an AM route handing off
-  // into a PM one, or vice versa, would mean the bus sits idle for
-  // hours mid-"trip"), excluding this route itself and every demo/
+  // this one's done - same trip type (an AM route handing off into a
+  // PM one, or vice versa, would mean the bus sits idle for hours
+  // mid-"trip"), excluding this route itself and every demo/
   // fabricated filler route (chaining only ever makes sense between
   // real, scheduled routes - see Route.nextRouteId's own doc comment
-  // in types.ts).
+  // in types.ts). Deliberately NOT filtered to the same busNumber -
+  // that used to be a hard requirement ("a chain is one bus driving
+  // more than one leg back-to-back"), but a transition leg split off
+  // to its own route (a depot-to-first-stop hop, say) is exactly the
+  // case that's created before its own bus number is ever filled in,
+  // and a strict match just hid every real route it should be able to
+  // chain into. The sort below still surfaces a same-bus route first
+  // when there is one, without excluding every other real candidate.
   const nextRouteOptions = useMemo(
     () =>
-      routes.filter(
-        (r) =>
-          r.status !== "demo" &&
-          r.id !== route?.id &&
-          r.busNumber === busNumber &&
-          r.tripType === tripType,
-      ),
+      routes
+        .filter(
+          (r) =>
+            r.status !== "demo" && r.id !== route?.id && r.tripType === tripType,
+        )
+        .sort((a, b) => {
+          const aSameBus = a.busNumber === busNumber && busNumber !== "" ? 0 : 1;
+          const bSameBus = b.busNumber === busNumber && busNumber !== "" ? 0 : 1;
+          return aSameBus - bSameBus;
+        }),
     [routes, route?.id, busNumber, tripType],
   );
   // The dropdown's own default the first time this route's editor opens
@@ -4234,7 +4276,7 @@ export function EditRouteScreen({
     >
       <div className="grid grid-cols-3 gap-2">
         <Field
-          label={tripType === "fieldtrip" ? "Route # / Name" : "Route #"}
+          label={tripType === "fieldtrip" ? "# / Name" : "#"}
           required={routeNumberMissing}
         >
           <input
@@ -4307,22 +4349,14 @@ export function EditRouteScreen({
         <Field label="School" required={schoolNameMissing}>
           <div className="flex items-center gap-2">
             {matchedSchool || matchedSavedLocation ? (
-              <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-zinc-100 py-1.5 pr-2 pl-3">
-                <span className="min-w-0 flex-1 truncate text-base font-semibold text-zinc-900">
-                  {matchedSchool?.name ?? matchedSavedLocation?.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSchoolName("");
-                    setDirty(true);
-                  }}
-                  aria-label="Clear school"
-                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-200 active:text-zinc-600"
-                >
-                  <CloseIcon className="h-3 w-3" />
-                </button>
-              </div>
+              <MatchedLocationChip
+                name={matchedSchool?.name ?? matchedSavedLocation?.name ?? ""}
+                onClear={() => {
+                  setSchoolName("");
+                  setDirty(true);
+                }}
+                clearLabel="Clear school"
+              />
             ) : (
               <input
                 className={`min-w-0 flex-1 ${
@@ -4957,7 +4991,7 @@ export function EditRouteScreen({
           to the bottom of the screen instead of scrolling away, same
           pattern subScreen "stops" already uses for its own footer. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-4 overflow-y-auto">
-        <div className="flex w-full max-w-md items-center justify-between">
+        <div className="flex w-full max-w-md items-start justify-between">
           <button
             type="button"
             onClick={onCancel}
@@ -4966,25 +5000,28 @@ export function EditRouteScreen({
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
-          <div>
+          <div className="min-w-0 flex-1 px-1 text-center">
             {/* Same small district label StartScreen/RouteListScreen/
                 SchoolListScreen each carry above their own heading - see
                 StartScreen's own doc comment for why this isn't folded
-                into the heading itself. Same text-4xl size as that
-                screen's own title now too, not the smaller text-2xl
-                this used to be - this is the same "Route N" callout,
-                just reached from Edit Mode instead of tapping a row, so
-                it reads the same size either way. */}
+                into the heading itself. Same size scale as that
+                screen's own title now too (routeTitleSizeClass) - this
+                is the same "Route N" callout, just reached from Edit
+                Mode instead of tapping a row, so it reads the same way
+                either way. */}
             <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
               Rutherford County
             </span>
-            {/* mt-[1.25px] - the exact same leading-[0.7083]-collapses-
-                the-gap fix as StartScreen's own title (see that h1's
-                own doc comment for the full canvas-metrics
-                explanation) - reused unchanged, not re-measured, since
-                this is now literally the same text-4xl size that value
-                was tuned against. */}
-            <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
+            {/* items-start + a flex row (not the old relative/absolute
+                layout) - see StartScreen's own title for why: a
+                Special/transition route's own free-typed name can wrap
+                to more than one line, and a fixed top-1/2 badge
+                position (or centering this row against the back
+                button) only ever accounted for a single short line. No
+                "Route " prefix either, same reasoning. */}
+            <h1
+              className={`font-heading flex items-start justify-center gap-1.5 font-black tracking-tight ${routeTitleSizeClass(route?.routeNumber ?? "")}`}
+            >
               {/* No separate "AM"/"PM" text beside this icon
                   (TripTypeIcon.tsx's own doc says why) - vertically
                   centered against the title's full height and sized to
@@ -4998,10 +5035,10 @@ export function EditRouteScreen({
                 (tripType === "pickup" || tripType === "dropoff") && (
                   <TripTypeIcon
                     tripType={tripType}
-                    className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
+                    className="mt-1 h-6 w-6 shrink-0 text-zinc-400"
                   />
                 )}
-              Route {route?.routeNumber ?? ""}
+              <span className="min-w-0">{route?.routeNumber ?? ""}</span>
             </h1>
           </div>
           <span className="w-10" />

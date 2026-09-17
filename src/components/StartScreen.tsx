@@ -19,6 +19,7 @@ import {
   TurnArrow,
   XCircleIcon,
 } from "./icons";
+import { routeTitleSizeClass } from "@/lib/routeTitle";
 import { addressWithoutZip } from "@/lib/schoolAddress";
 import type { NavigationStep, Route } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
@@ -218,7 +219,7 @@ export function StartScreen({
           bottom of the screen instead of scrolling away with a long
           route. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto pb-1">
-        <div className="flex w-full max-w-md shrink-0 items-center justify-between">
+        <div className="flex w-full max-w-md shrink-0 items-start justify-between">
           <button
             type="button"
             onClick={onBack}
@@ -227,7 +228,7 @@ export function StartScreen({
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
-          <div>
+          <div className="min-w-0 flex-1 px-1 text-center">
             {/* Same small district label SchoolListScreen carries above
                 its own heading - hardcoded for now, every real route
                 here is a Rutherford County one (see that screen's own
@@ -236,38 +237,33 @@ export function StartScreen({
             <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
               Rutherford County
             </span>
-            {/* mt-[1.25px] - once leading-[0.7083] below trimmed this
-                h1's own line box down to the digits' true ink height (see
-                that class's own doc comment), the -mt-1 tuned against the
-                old leading-none box collapsed the gap against the county
-                label above to nothing (leading-none's line box carried
-                enough of its own top padding to read as a gap on its
-                own). Re-measured via canvas actualBoundingBoxAscent
-                against the live rendered box so the visual gap here
-                matches RouteListScreen's own "Routes" title - which still
-                uses leading-none/-mt-1 and never needed retuning - to
-                1.5px, rather than guessing a value against this tighter
-                line-height. relative/absolute rather than a flex row -
-                the AM/PM icon floats off the text's own left edge
-                (right-full) so it never shifts the title text itself
-                off-center from the county label above, the way sharing
-                a centered flex row with it used to. No separate
-                "AM"/"PM" text beside this icon (TripTypeIcon.tsx's own
-                doc says why) - vertically centered against the title's
-                full height and sized to nearly match it. Every other
-                TripType (fieldtrip/other) skips the badge entirely -
-                those routes may not even have a morning/afternoon
-                distinction to badge, and there's no real example of
-                one yet to design that case against. */}
-            <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
+            {/* A plain routeNumber ("171") is almost always short - a
+                Special/transition route's own free-typed name ("Depot to
+                Elementary") isn't, and can run considerably longer, so
+                this scales down by length (routeTitleSizeClass) rather
+                than assuming a fixed size that only the numeric case
+                ever fits. No more literal "Route" prefix either - it
+                read fine in front of a bare number, but doubled up
+                awkwardly in front of a route's own free-typed name
+                ("Route Depot to Elementary"). items-start (both this
+                row and the icon+text row below) rather than centering
+                the back button against a title block that can now wrap
+                to two lines - centering would either push the button
+                down past the title's own top or, for a short title,
+                pull it up past the title's own middle, and a fixed
+                top-1/2/-translate-y-1/2 badge position (the old
+                approach) only ever accounted for a single-line block. */}
+            <h1
+              className={`font-heading flex items-start justify-center gap-1.5 font-black tracking-tight ${routeTitleSizeClass(route.routeNumber)}`}
+            >
               {(route.tripType === "pickup" ||
                 route.tripType === "dropoff") && (
                 <TripTypeIcon
                   tripType={route.tripType}
-                  className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-900"
+                  className="mt-1 h-6 w-6 shrink-0 text-zinc-900"
                 />
               )}
-              Route {route.routeNumber}
+              <span className="min-w-0">{route.routeNumber}</span>
               {/* Solid black (zinc-900), same as TripTypeIcon beside it -
                   this names the route's real level, it isn't a toggle
                   that fades until picked (the other two figures still
@@ -275,7 +271,7 @@ export function StartScreen({
                   icons.tsx). */}
               <SchoolLevelIcon
                 level={route.schoolLevel}
-                className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-900"
+                className="mt-1 h-6 w-6 shrink-0 text-zinc-900"
               />
             </h1>
           </div>
@@ -540,7 +536,7 @@ function AllStopsModal({
                 className="h-[15px] w-[15px] text-zinc-900"
               />
             )}
-            Route {route.routeNumber}
+            {route.routeNumber}
             {/* Both solid black - see StartScreen's own title for why. */}
             <SchoolLevelIcon
               level={route.schoolLevel}
