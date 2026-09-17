@@ -12,6 +12,7 @@ import { buildRouteFromRows } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import type { MasterListRoute } from "@/lib/parseRouteMasterList";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
+import type { SavedLocationInfo } from "@/lib/savedLocations";
 import {
   FAVORITE_ROUTE_IDS,
   PLACEHOLDER_DISTANCE,
@@ -254,20 +255,35 @@ export default function Home() {
       // could leave the whole app stuck loading once enough real
       // routes existed to outrun Neon's pooled connection limit).
       fetchJson<Record<string, RawRouteRow[]>>("/api/routes/steps"),
+      // A route's own anchor doesn't have to be a real school (see
+      // Route.schoolLevel's own doc comment, types.ts) - a saved
+      // address-book location is just as valid, so this list is
+      // checked too, by name, the same "Schools first, SavedLocations
+      // second" order EditRouteScreen.tsx's own matchedSchool/
+      // matchedSavedLocation already use.
+      fetchJson<SavedLocationInfo[]>("/api/saved-locations"),
     ])
-      .then(([allRows, schoolsTable, stepsByRouteId]) => {
+      .then(([allRows, schoolsTable, stepsByRouteId, savedLocations]) => {
         setSchools(schoolsTable);
+        const savedLocationsByName = new Map(
+          savedLocations.map((loc) => [loc.name.trim().toLowerCase(), loc]),
+        );
 
         const built = allRows.map((row) => {
           const steps = stepsByRouteId[row.id];
           if (!steps || steps.length === 0) return null;
 
+          const school = schoolsTable[row.schoolName];
+          const savedLocation = savedLocationsByName.get(
+            row.schoolName.trim().toLowerCase(),
+          );
           const meta: RouteMeta = {
             ...row,
             driverName: PLACEHOLDER_DRIVER_NAME,
-            schoolAddress: schoolsTable[row.schoolName]?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
-            schoolLat: schoolsTable[row.schoolName]?.lat ?? null,
-            schoolLon: schoolsTable[row.schoolName]?.lon ?? null,
+            schoolAddress:
+              school?.address ?? savedLocation?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
+            schoolLat: school?.lat ?? savedLocation?.lat ?? null,
+            schoolLon: school?.lon ?? savedLocation?.lon ?? null,
             distance: PLACEHOLDER_DISTANCE,
             isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
           };

@@ -79,17 +79,29 @@ export interface Route {
   driverName: string;
   busNumber: string;
   departureTime: string;
+  /** The route's own anchor point - almost always a real school's name,
+   * but not necessarily: a Special/field-trip route's own starting
+   * point (or any other saved address-book location standing in for
+   * one) is just as valid a value here, matched by name against
+   * Schools first and SavedLocations second (see EditRouteScreen.tsx's
+   * own matchedSchool/matchedSavedLocation) - never required to
+   * resolve to either. */
   schoolName: string;
   schoolAddress: string;
-  schoolLevel: SchoolLevel;
+  /** Null whenever schoolName doesn't resolve to a real school (a
+   * Special route with no school at all, or one anchored on a saved
+   * location instead) - a school level is real routing data (see this
+   * file's own SchoolLevel doc comment) that genuinely doesn't exist
+   * for either case, not a value to fake just to keep this non-null. */
+  schoolLevel: SchoolLevel | null;
   /** The school's own geocoded location (School.lat/lon - see
    * scripts/geocodeSchools.ts), independent of the Waypoint cache -
-   * null for a demo/fabricated route or a real school
-   * that hasn't been geocoded yet. This is what RouteMap's blue school
-   * pin actually draws from now, not a Waypoint cache lookup - so
-   * changing a route's school (EditRouteScreen) reflects on the map
-   * immediately, with no separate "fetch location" step needed for
-   * the school pin itself. */
+   * null for a demo/fabricated route, a real school that hasn't been
+   * geocoded yet, or a route anchored on something other than a real
+   * school. This is what RouteMap's blue school pin actually draws
+   * from now, not a Waypoint cache lookup - so changing a route's
+   * school (EditRouteScreen) reflects on the map immediately, with no
+   * separate "fetch location" step needed for the school pin itself. */
   schoolLat: number | null;
   schoolLon: number | null;
   /** A pickup route arrives somewhere (school); a dropoff route doesn't

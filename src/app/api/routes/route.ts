@@ -33,7 +33,11 @@ interface SaveRouteRequestBody {
   routeNumber: string;
   busNumber: string;
   schoolName: string;
-  schoolLevel: SchoolLevel;
+  // Null whenever the client's own schoolName doesn't resolve to a
+  // real school (see Route.schoolLevel's own doc comment,
+  // schema.prisma) - not required here the way id/tripType/status are,
+  // since a Special route's own free-typed anchor genuinely has none.
+  schoolLevel: SchoolLevel | null;
   tripType: TripType;
   /** Whatever EditRouteScreen's own Departure Time field sent - blank,
    * or already normalized to strict 24-hour "HH:MM:SS" client-side (see
@@ -85,19 +89,21 @@ export async function POST(request: Request): Promise<NextResponse> {
   // publishing is a separate, later concern (routeReadiness.ts's own
   // geocoding check, gated at Publish time) - a draft stub with
   // nothing but a route number and its stops should always be
-  // saveable. id/schoolLevel/tripType/status stay required: the first
-  // three are what Route.id itself is built from (see types.ts), and
-  // every one of them already has a real, non-blank value from
-  // EditRouteScreen's own form controls (a select's own default, never
-  // an empty string) whenever this is actually called from the app's
-  // own UI - so listing exactly which of these five is missing, on the
-  // rare request that isn't, stays genuinely informative rather than a
-  // blanket "something's missing" a person has to guess at.
+  // saveable. schoolLevel is the same story now that it can be
+  // genuinely absent (a Special route with no real school) rather than
+  // just unfilled-in-yet - id/tripType/status stay required: they're
+  // what Route.id itself is built from alongside schoolLevel (see
+  // types.ts), and every one of them already has a real, non-blank
+  // value from EditRouteScreen's own form controls (a select's own
+  // default, never an empty string) whenever this is actually called
+  // from the app's own UI - so listing exactly which of these is
+  // missing, on the rare request that isn't, stays genuinely
+  // informative rather than a blanket "something's missing" a person
+  // has to guess at.
   const missingFields = (
     [
       ["id", id],
       ["routeNumber", routeNumber],
-      ["schoolLevel", schoolLevel],
       ["tripType", tripType],
       ["status", status],
     ] as const
