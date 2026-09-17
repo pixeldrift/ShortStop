@@ -687,8 +687,12 @@ export function RouteListScreen({
               {groupedTree.map((routeNumberGroup) => (
                 <div key={routeNumberGroup.routeNumber}>
                   <div className="px-3 py-1.5">
+                    {/* No "Route " prefix - read fine in front of a bare
+                        number, but doubles up awkwardly in front of a
+                        Special/transition route's own free-typed name
+                        ("Route Depot to Elementary"). */}
                     <span className="font-heading text-2xl font-black tracking-tight">
-                      Route {routeNumberGroup.routeNumber}
+                      {routeNumberGroup.routeNumber}
                     </span>
                     {routeNumberGroup.city && (
                       <span className="text-sm text-zinc-500">
