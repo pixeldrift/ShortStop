@@ -341,11 +341,42 @@ export default function Home() {
     route: Route,
     steps: RawRouteRow[],
     waypointCache: WaypointCache,
-    justCreated = false,
+    justCreated: boolean,
+    previousId: string | null,
   ) {
-    setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
-    setAdminStepsById((prev) => ({ ...prev, [route.id]: steps }));
-    setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
+    // A rename (EditRouteScreen's own handleSave changed
+    // routeNumber/tripType/schoolLevel enough that Route.id itself
+    // changed - see that screen's own doc comment) is NOT a second
+    // route appearing alongside the first: the server already deleted
+    // the old row (see /api/routes' own previousId cleanup), so the
+    // old id needs to disappear from every local overlay here too,
+    // not just gain a new entry under the new id - otherwise this
+    // session's initial realRoutes snapshot keeps showing the old id
+    // as a leftover "copy," and Delete on whatever's shown under it
+    // 404s against a row that's already gone (see handleDeleteRoute).
+    const renamedFrom =
+      previousId != null && previousId !== route.id ? previousId : null;
+    setAdminRoutes((prev) => {
+      const next = { ...prev };
+      if (renamedFrom) delete next[renamedFrom];
+      next[route.id] = route;
+      return next;
+    });
+    setAdminStepsById((prev) => {
+      const next = { ...prev };
+      if (renamedFrom) delete next[renamedFrom];
+      next[route.id] = steps;
+      return next;
+    });
+    setAdminWaypointCaches((prev) => {
+      const next = { ...prev };
+      if (renamedFrom) delete next[renamedFrom];
+      next[route.id] = waypointCache;
+      return next;
+    });
+    if (renamedFrom) {
+      setDeletedRouteIds((prev) => new Set(prev).add(renamedFrom));
+    }
     replaceScreen({ kind: "edit-route", route, justCreated });
   }
 
@@ -457,7 +488,9 @@ export default function Home() {
         seedMeta={screen.seedMeta}
         schools={schools}
         onCancel={goBack}
-        onSave={(route, steps, cache) => handleSaveRoute(route, steps, cache, true)}
+        onSave={(route, steps, cache, previousId) =>
+          handleSaveRoute(route, steps, cache, true, previousId)
+        }
       />
     );
   } else if (screen.kind === "edit-route") {
@@ -477,7 +510,9 @@ export default function Home() {
           navigate({ kind: "add-route", initialStepsText: stepsText, seedMeta })
         }
         onCancel={goBack}
-        onSave={handleSaveRoute}
+        onSave={(route, steps, cache, previousId) =>
+          handleSaveRoute(route, steps, cache, false, previousId)
+        }
       />
     );
   } else if (screen.kind === "trip") {

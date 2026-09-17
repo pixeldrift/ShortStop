@@ -2915,8 +2915,20 @@ export function EditRouteScreen({
    * alongside the route itself so a later re-open of this same route
    * (or the list's own "Publish" readiness check) sees it too, instead
    * of every fetched coordinate vanishing the moment this screen
-   * closes. */
-  onSave: (route: Route, steps: RawRouteRow[], cache: WaypointCache) => void;
+   * closes. `previousId` is this same route's id *before* this save
+   * (see handleSave's own doc comment) - null unless this was an
+   * "edit" of an already-existing route whose own routeNumber/
+   * tripType/schoolLevel changed enough to change Route.id itself
+   * (a Special route's own free-typed name doubles as routeNumber, so
+   * a plain rename hits this constantly, not just an edge case). The
+   * caller needs this to know a rename happened, not a second route
+   * appearing - see page.tsx's own handleSaveRoute. */
+  onSave: (
+    route: Route,
+    steps: RawRouteRow[],
+    cache: WaypointCache,
+    previousId: string | null,
+  ) => void;
 }) {
   const [routeNumber, setRouteNumber] = useState(route?.routeNumber ?? "");
   const [busNumber, setBusNumber] = useState(route?.busNumber ?? "");
@@ -4108,6 +4120,16 @@ export function EditRouteScreen({
     if (saving) return false;
     const currentRows = overrideRows ?? (mode === "add" ? parseResult.rows : rows);
     const built = buildRouteFromRows(currentRows, buildMetaFields(nextStatus));
+    // Only set in "edit" mode - a brand-new route (mode "add") has no
+    // previous row to clean up after, even if its own freshly-typed
+    // routeNumber/tripType/schoolLevel happen to collide with
+    // something already saved (a real id collision, not a rename -
+    // the upsert below already handles that case correctly on its
+    // own). Passed to onSave below too, not just the request body here -
+    // page.tsx's own local route overlay needs to know the same thing
+    // the server does: that a rename means this route's own id just
+    // changed, not that a second route now exists alongside the first.
+    const previousId = mode === "edit" ? (route?.id ?? null) : null;
 
     setSaving(true);
     setMessage(null);
@@ -4117,13 +4139,7 @@ export function EditRouteScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: built.id,
-          // Only set in "edit" mode - a brand-new route (mode "add")
-          // has no previous row to clean up after, even if its own
-          // freshly-typed routeNumber/tripType/schoolLevel happen to
-          // collide with something already saved (a real id collision,
-          // not a rename - the upsert below already handles that case
-          // correctly on its own).
-          previousId: mode === "edit" ? (route?.id ?? null) : null,
+          previousId,
           status: nextStatus,
           routeNumber: built.routeNumber,
           busNumber: built.busNumber,
@@ -4156,7 +4172,7 @@ export function EditRouteScreen({
 
     setStatus(nextStatus);
     setDirty(false);
-    onSave(built, currentRows, cache);
+    onSave(built, currentRows, cache, previousId);
     return true;
   }
 
