@@ -42,8 +42,9 @@ import type { SortDir } from "./SortableHeader";
  * inline per row, so at most one is ever open at a time. Every action
  * here is single-route now that the eyeball icon replaced the
  * checkbox/bulk-select toolbar: "deactivate" is the one-button
- * published->draft confirm, "draft-options" is the Delete/Activate
- * pair offered for a route that's already draft. */
+ * published->draft confirm (shown to the admin as "Unpublish"),
+ * "draft-options" is the Delete/Publish pair offered for a route
+ * that's already draft. */
 type ConfirmRequest =
   | { type: "deactivate"; route: Route }
   | { type: "draft-options"; route: Route };
@@ -201,7 +202,7 @@ export function RouteListScreen({
   onSelect: (route: Route) => void;
   /** Opens EditRouteScreen directly for this route - fired by tapping
    * a row's own body in admin mode, or by an eyeball-icon tap on a
-   * draft route that turns out not to be ready to activate yet (see
+   * draft route that turns out not to be ready to publish yet (see
    * handleEyeClick). */
   onEditRoute: (route: Route) => void;
   onAddRoute: () => void;
@@ -230,7 +231,7 @@ export function RouteListScreen({
   // still be in flight when the popup closes/reopens for a different
   // row; null (not just "unknown") while nothing's resolved yet, same
   // as any other "haven't gotten an answer" case in this app. Doesn't
-  // block Activate either way anymore (see handleActivateFromModal) -
+  // block Publish either way anymore (see handlePublishFromModal) -
   // just decides whether that popup shows a plain message or a warning.
   const [draftResolution, setDraftResolution] = useState<{
     routeId: string;
@@ -412,12 +413,12 @@ export function RouteListScreen({
   // The eyeball icon's own click handler - always opens the matching
   // popup immediately, published or draft, so a tap never silently
   // does something other than what tapping the eye reads as. A
-  // published route gets the one-button "Deactivate" confirm (hiding
+  // published route gets the one-button "Unpublish" confirm (hiding
   // never needs a readiness check, see canToggleStatus's own reasoning
-  // in EditRouteScreen.tsx); a draft one gets the Delete/Activate
+  // in EditRouteScreen.tsx); a draft one gets the Delete/Publish
   // popup, plus a background check (below) of whether every geocodable
   // stop has actually resolved yet - purely informational now (see
-  // handleActivateFromModal), so it never holds up the popup opening.
+  // handlePublishFromModal), so it never holds up the popup opening.
   function handleEyeClick(route: Route) {
     if (isRoutePublished(route)) {
       setConfirmRequest({ type: "deactivate", route });
@@ -434,13 +435,13 @@ export function RouteListScreen({
     });
   }
 
-  // The draft-options popup's own "Activate" button - a route with
-  // unresolved coordinates can activate too now (a warning in the
+  // The draft-options popup's own "Publish" button - a route with
+  // unresolved coordinates can publish too now (a warning in the
   // popup above this button already said so, via draftResolution) -
   // this just always publishes rather than redirecting to the edit
   // screen the way it used to when something wasn't fully resolved
   // yet.
-  function handleActivateFromModal(route: Route) {
+  function handlePublishFromModal(route: Route) {
     onSetRouteStatus(route, "published");
     setConfirmRequest(null);
   }
@@ -757,8 +758,8 @@ export function RouteListScreen({
                                   onClick={() => handleEyeClick(route)}
                                   aria-label={
                                     isPublished
-                                      ? `Deactivate route ${route.routeNumber}`
-                                      : `Activate route ${route.routeNumber}`
+                                      ? `Unpublish route ${route.routeNumber}`
+                                      : `Publish route ${route.routeNumber}`
                                   }
                                   className="shrink-0 p-1 text-blue-600 active:opacity-70"
                                 >
@@ -992,8 +993,8 @@ export function RouteListScreen({
                       onClick={() => handleEyeClick(route)}
                       aria-label={
                         isPublished
-                          ? `Deactivate route ${route.routeNumber}`
-                          : `Activate route ${route.routeNumber}`
+                          ? `Unpublish route ${route.routeNumber}`
+                          : `Publish route ${route.routeNumber}`
                       }
                       className="justify-self-center p-1 text-blue-600 active:opacity-70"
                     >
@@ -1127,9 +1128,9 @@ export function RouteListScreen({
 
       {confirmRequest?.type === "deactivate" && (
         <ConfirmModal
-          title={`Deactivate Route ${confirmRequest.route.routeNumber}?`}
-          message="This puts it in draft mode - drivers won't see it until it's activated again."
-          confirmLabel="Deactivate"
+          title={`Unpublish Route ${confirmRequest.route.routeNumber}?`}
+          message="Are you sure you want to deactivate this route so it will not be seen by drivers? It will remain in draft mode so it can still be edited without being live."
+          confirmLabel="Unpublish"
           confirmIcon={<EyeOffIcon className="h-4 w-4" />}
           onCancel={() => setConfirmRequest(null)}
           onConfirm={() => {
@@ -1151,13 +1152,13 @@ export function RouteListScreen({
                   <span className="flex items-center justify-center gap-1.5 text-amber-600">
                     <WarningIcon className="h-4 w-4 shrink-0" />
                     Some locations aren&rsquo;t verified yet - the map may not
-                    accurately display this route once activated.
+                    accurately display this route once published.
                   </span>
                 ) : (
-                  "It won't be visible to drivers until it's activated."
+                  "Are you sure you want to publish this draft so it will be active for drivers?"
                 )
               }
-              confirmLabel="Activate"
+              confirmLabel="Publish"
               confirmIcon={<EyeIcon className="h-4 w-4" />}
               secondaryLabel="Delete"
               secondaryIcon={<TrashIcon className="h-4 w-4" />}
@@ -1166,7 +1167,7 @@ export function RouteListScreen({
                 setConfirmRequest(null);
               }}
               onCancel={() => setConfirmRequest(null)}
-              onConfirm={() => handleActivateFromModal(confirmRequest.route)}
+              onConfirm={() => handlePublishFromModal(confirmRequest.route)}
             />
           );
         })()}
