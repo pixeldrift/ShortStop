@@ -546,7 +546,15 @@ export function RouteListScreen({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search routes"
               aria-label="Search routes"
-              className="w-full rounded-xl border border-zinc-300 bg-white py-1.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              // pr-9 (room for the clear button) only while that button
+              // is actually rendered below - reserving it unconditionally
+              // cost the same ~36px even with nothing there to clear,
+              // which is exactly what was clipping "Search routes" down
+              // to "Search route" once the row's other icons left this
+              // box narrower.
+              className={`w-full rounded-xl border border-zinc-300 bg-white py-1.5 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none ${
+                query ? "pr-9" : "pr-3"
+              }`}
             />
             {query && (
               <button
