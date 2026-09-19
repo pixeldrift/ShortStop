@@ -128,3 +128,28 @@ Vercel value).
   with `overflow-y-auto` once dragged past where the current sizing
   was designed for, not just naive shrinking - plus a stored split
   ratio and double-tap-to-reset back to the default.
+- Full-screen map toggle — every map box (RouteMap.tsx, wherever it's
+  embedded: StepScreen's own nav map, PlaceCoordinatesModal, the All
+  Stops modal, StartScreen's overview) gets a small expand icon in its
+  own top-right corner; tapping it grows that one map to fill the
+  screen, and the icon becomes an X to shrink it back.
+- Autoroute — auto-generates turn-by-turn directions (a real ORS
+  routing call, not just geocoding) between any two stops, either
+  inserted between one specific pair or run across a whole route to
+  fill in every gap that doesn't have driving instructions yet. The
+  result is editable afterward like any other waypoint, and saved as
+  real route steps (RouteStep rows), not just an on-the-fly overlay -
+  so it's still there offline, same as hand-typed directions. A
+  compass icon sits between stops the same way the scissors icon
+  (split) already does, mirrored to the left instead of the right.
+  Both the scissors and the compass become plain blue links at that
+  point, not the button-styled controls they are today.
+- Bus-specific auto-instructions — automatically inserts instructions
+  a generic map app has no reason to know about (stopping before a
+  railroad crossing is the concrete example), the kind of thing a new
+  driver forgets and an experienced one does by habit. Likely needs
+  its own geodata source (e.g. an Overpass query for
+  `railway=level_crossing` along the route's own line, the same kind
+  of lookup `overpassGeocode.ts` already does for intersections) to
+  find where these apply, then auto-inserts a real "Stop" step at that
+  point the same way any other route step works.
