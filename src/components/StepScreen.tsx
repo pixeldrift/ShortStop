@@ -755,16 +755,6 @@ function DepotContent({ route, departing }: { route: Route; departing: boolean }
           above. */}
       <div className="flex flex-col items-center gap-0.5">
         <p className="flex items-center justify-center gap-1.5 text-[clamp(0.875rem,2.5vh,1.25rem)] font-semibold text-zinc-700">
-          {/* Pickup and a one-off field trip both default to heading
-              *to* the school (not "pickup only" - a fieldtrip route
-              would otherwise get no arrow at all, having matched
-              neither branch) - the arrow leads into the name. Dropoff
-              gets no arrow at all here - the bus is leaving *from* the
-              school, and a trailing arrow after the name read as
-              pointing at nothing in particular. */}
-          {route.tripType !== "dropoff" && (
-            <TriangleIcon direction="right" className="h-[0.7em] w-[0.7em] shrink-0 text-blue-500" />
-          )}
           {route.tripType === "dropoff" ? "From " : "To "}
           {route.schoolName}
         </p>
