@@ -1,0 +1,37 @@
+name: Fix D&R Transportation's stuck California geocode
+
+# Manual-only, same reasoning as db-migrate-seed.yml/geocode-schools.yml:
+# this repo's sandboxed dev environments can't reach a real Postgres
+# server or make outbound calls with the real ORS_API_KEY directly, so
+# this one-off correction (scripts/fixDrTransportationAddress.ts's own
+# doc comment has the full story - a wrong ORS match for this depot
+# landed in California once and has been cached and reused ever since)
+# has to run from somewhere with normal network access.
+#
+# Needs DATABASE_URL and ORS_API_KEY repo secrets (Settings -> Secrets
+# and variables -> Actions) - the same ones geocode-schools.yml already
+# uses.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (log what would change, write nothing)"
+        type: boolean
+        default: true
+
+jobs:
+  fix-dr-transportation-address:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - run: npm run fix-dr-transportation-address -- ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
