@@ -16,6 +16,7 @@
     "fix-misplaced-rider-notes": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fixMisplacedRiderNotes.js",
     "fill-stop-details": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fillStopDetails.js",
     "fill-start-times": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fillStartTimes.js",
+    "fix-dr-transportation-address": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fixDrTransportationAddress.js",
     "prototype:overpass": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/prototypeOverpassGeocode.js"
   },
   "dependencies": {
