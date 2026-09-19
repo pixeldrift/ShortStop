@@ -1,6 +1,6 @@
 import { Logo } from "./Logo";
 import { TripTypeIcon } from "./TripTypeIcon";
-import { BackArrowIcon, PersonSolidIcon } from "./icons";
+import { BackArrowIcon, PersonSolidIcon, WarningIcon } from "./icons";
 import type { TripType } from "@/lib/types";
 
 export function TopBar({
@@ -80,13 +80,15 @@ export function TopBar({
           <p className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase">
             Bus
           </p>
-          <p
-            className={`font-heading -mt-1 text-xl leading-none font-bold tracking-tight ${
-              isAlternateBus
-                ? "rounded-md border border-red-500 px-1 py-0.5"
-                : ""
-            }`}
-          >
+          {/* A warning triangle ahead of the number, not a red box
+              around it - a box reads as "this value is wrong/invalid,"
+              but an alternate bus is a legitimate, expected state (see
+              isAlternateBus's own doc comment), just one worth flagging
+              so a driver doesn't miss it. */}
+          <p className="font-heading -mt-1 flex items-center justify-end gap-1 text-xl leading-none font-bold tracking-tight">
+            {isAlternateBus && (
+              <WarningIcon className="h-4 w-4 shrink-0 text-amber-600" />
+            )}
             {busNumber}
           </p>
         </div>
