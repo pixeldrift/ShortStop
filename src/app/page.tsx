@@ -70,7 +70,7 @@ type Screen =
        * AM/PM/Special run, just a second bus, so only a new Route #/
        * Name is actually needed before the first Save. Omitted
        * alongside initialStepsText for the ordinary "New Route" link. */
-      seedMeta?: { schoolName: string; tripType: TripType | "" };
+      seedMeta?: { schoolName: string; tripType: TripType | ""; routeNumber?: string };
     }
   | {
       kind: "edit-route";

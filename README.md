@@ -128,22 +128,37 @@ Vercel value).
   with `overflow-y-auto` once dragged past where the current sizing
   was designed for, not just naive shrinking - plus a stored split
   ratio and double-tap-to-reset back to the default.
-- Full-screen map toggle — every map box (RouteMap.tsx, wherever it's
-  embedded: StepScreen's own nav map, PlaceCoordinatesModal, the All
-  Stops modal, StartScreen's overview) gets a small expand icon in its
-  own top-right corner; tapping it grows that one map to fill the
-  screen, and the icon becomes an X to shrink it back.
-- Autoroute — auto-generates turn-by-turn directions (a real ORS
-  routing call, not just geocoding) between any two stops, either
+- Full-screen map toggle — done for StepScreen's own nav map and
+  StartScreen's overview map (`ExpandableMap.tsx`, a small expand icon
+  in the map's own top-right corner that opens a second, full-screen
+  instance of the same map with an X to close it). Still needs the same
+  treatment on PlaceCoordinatesModal's map and the All Stops modal's.
+- Autoroute — the UI is teed up (a compass icon sits between stops the
+  same way the scissors icon (split) already does, mirrored to the
+  left instead of the right; both are plain blue links now, not the
+  button-styled controls they used to be) but the compass isn't wired
+  to anything yet. Still needed: the actual auto-generation - a real
+  ORS routing call, not just geocoding - between any two stops, either
   inserted between one specific pair or run across a whole route to
   fill in every gap that doesn't have driving instructions yet. The
-  result is editable afterward like any other waypoint, and saved as
-  real route steps (RouteStep rows), not just an on-the-fly overlay -
-  so it's still there offline, same as hand-typed directions. A
-  compass icon sits between stops the same way the scissors icon
-  (split) already does, mirrored to the left instead of the right.
-  Both the scissors and the compass become plain blue links at that
-  point, not the button-styled controls they are today.
+  result should be editable afterward like any other waypoint, and
+  saved as real route steps (RouteStep rows), not just an on-the-fly
+  overlay - so it's still there offline, same as hand-typed directions.
+- Reverse Route — reverses the order of a route's stops and attempts to
+  flip its turn-by-turn driving instructions to match (left/right turns
+  swapped, since the same roads driven the other way need the opposite
+  turns), so an admin can turn a morning pickup route into an afternoon
+  dropoff run (or vice versa) without re-entering every waypoint by
+  hand. The flipped instructions are only ever a starting point - the
+  UI needs to make clear the result hasn't been confirmed against the
+  real roads yet and still needs manual review before it's trusted for
+  driving, the same "draft until reviewed" caution Duplicate Route's
+  own copies already get via `status: "draft"`.
+- Desktop admin: live-edit-while-previewing navigation — a view where
+  an admin can be in edit mode for a route's turn-by-turn instructions
+  while simultaneously seeing them rendered the way a driver would see
+  them on StepScreen, both from the same screen, so a change's effect
+  is visible immediately rather than needing a separate preview step.
 - Bus-specific auto-instructions — automatically inserts instructions
   a generic map app has no reason to know about (stopping before a
   railroad crossing is the concrete example), the kind of thing a new
