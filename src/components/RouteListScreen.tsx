@@ -546,7 +546,15 @@ export function RouteListScreen({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search routes"
               aria-label="Search routes"
-              className="w-full rounded-xl border border-zinc-300 bg-white py-1.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              // pr-9 (room for the clear button) only while that button
+              // is actually rendered below - reserving it unconditionally
+              // cost the same ~36px even with nothing there to clear,
+              // which is exactly what was clipping "Search routes" down
+              // to "Search route" once the row's other icons left this
+              // box narrower.
+              className={`w-full rounded-xl border border-zinc-300 bg-white py-1.5 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none ${
+                query ? "pr-9" : "pr-3"
+              }`}
             />
             {query && (
               <button
@@ -719,21 +727,25 @@ export function RouteListScreen({
                           return (
                             <div
                               key={route.id}
-                              className={`flex w-full items-center gap-2 pr-2 ${
+                              // row-tap-gold/active:bg-amber-400 live on
+                              // this outer row, not the inner select
+                              // button - the heart/eye button beside it
+                              // is its own separate click target
+                              // (favorite vs. select shouldn't be the
+                              // same tap), but a press on either one
+                              // should still read as "this whole row
+                              // responded." :active bubbles to ancestors
+                              // in CSS, so pressing either inner button
+                              // still lights up this div's own
+                              // background - the highlight just needs to
+                              // actually live on the element that spans
+                              // both of them, rounded-lg included, rather
+                              // than stopping at whichever inner button
+                              // happened to be pressed.
+                              className={`row-tap-gold flex w-full items-center gap-2 rounded-lg py-2.5 pr-2 pl-8 active:bg-amber-400 ${
                                 isAdminOnly ? "opacity-50" : ""
                               }`}
                             >
-                              {/* py-2.5/pl-8 (the row's own spacing) live
-                                  on the button now, not the row div - the
-                                  active:bg-amber-400 tap highlight below
-                                  needs to actually cover that space, not
-                                  just the text/icons sitting inside it,
-                                  to read as "this whole row responded,"
-                                  not a highlight that stops short of the
-                                  row's own edges. rounded-lg for the same
-                                  reason - a flash with square corners
-                                  butting up against this list's own
-                                  rounded card reads like a clipping bug. */}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -741,7 +753,7 @@ export function RouteListScreen({
                                     ? onEditRoute(route)
                                     : onSelect(route)
                                 }
-                                className="row-tap-gold flex min-w-0 flex-1 items-center gap-1.5 rounded-lg py-2.5 pl-8 text-left active:bg-amber-400"
+                                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                               >
                                 <span className="flex shrink-0 items-center gap-1">
                                   {/* Solid black, not faded - names this
