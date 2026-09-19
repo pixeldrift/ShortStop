@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ExpandableMap } from "./ExpandableMap";
 import { RouteMap } from "./RouteMap";
 import type { StopMarker, TurnMarker } from "./RouteMap";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
@@ -393,15 +394,22 @@ export function StartScreen({
             context and can paint above a z-20 overlay like
             AllStopsModal below despite being earlier in the DOM and
             visually "behind" it. */}
-        <RouteMap
-          className="relative z-0 min-h-32 w-full max-w-md flex-1 overflow-hidden rounded-2xl border border-zinc-300"
-          stops={stopMarkers}
-          turns={turnMarkers}
-          path={routePath}
-          school={schoolPoint}
-          tripType={route.tripType}
-          waypointsUrl="/api/waypoints"
-          mode="overview"
+        <ExpandableMap
+          className="min-h-32 w-full max-w-md flex-1"
+          renderMap={(mapClassName, isExpanded) => (
+            <RouteMap
+              className={`relative z-0 ${mapClassName} ${
+                isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
+              }`}
+              stops={stopMarkers}
+              turns={turnMarkers}
+              path={routePath}
+              school={schoolPoint}
+              tripType={route.tripType}
+              waypointsUrl="/api/waypoints"
+              mode="overview"
+            />
+          )}
         />
       </div>
 

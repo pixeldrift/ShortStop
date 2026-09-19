@@ -17,6 +17,7 @@ import {
   BackArrowIcon,
   CheckCircleIcon,
   CloseIcon,
+  CompassIcon,
   DownloadIcon,
   DragHandleIcon,
   EditIcon,
@@ -1736,23 +1737,42 @@ function AddStepButton({
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
       {onSplit && (
-        <button
-          type="button"
-          onClick={onSplit}
-          disabled={disabled}
-          aria-label="Split route here"
-          className="btn-glossy-light absolute right-2 z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
-        >
-          {/* The source art is a right-pointing (open) pair of blades -
-              mirrored so the scissors read as "cutting into" the line
-              from the right edge, the same way the app's own TurnArrow
-              image already flips for a left turn (style-forwarded onto
-              the imported SVG's own root element, not a second file). */}
-          <ScissorsIcon
-            className="h-3.5 w-3.5"
-            style={{ transform: "scaleX(-1)" }}
-          />
-        </button>
+        <>
+          {/* Plain blue links, not button-styled boxes like Add/the
+              rest of this screen - split and (eventually) Autoroute are
+              both secondary, occasional actions on this one dashed
+              line, not something that needs to visually compete with
+              it the way the always-relevant Add button does. Left/right
+              of Add respectively, so a future Autoroute (compass, right)
+              reads as the equal-and-opposite counterpart to Split
+              (scissors, left) rather than crowding the same side. */}
+          <button
+            type="button"
+            onClick={onSplit}
+            disabled={disabled}
+            aria-label="Split route here"
+            className="absolute left-2 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+          >
+            {/* The source art is a right-pointing (open) pair of blades -
+                unmirrored now that this sits on the left edge, so it
+                still reads as "cutting into" the line from its own
+                side (see CompassIcon just below for the mirror-image
+                case, on the right). */}
+            <ScissorsIcon className="h-3.5 w-3.5" />
+          </button>
+          {/* Autoroute itself isn't wired up yet (see the README's own
+              roadmap) - this is only here as a preview of where it'll
+              live, not a real control yet, so it deliberately has no
+              onClick of its own. */}
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="Autoroute (coming soon)"
+            className="absolute right-2 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+          >
+            <CompassIcon className="h-3.5 w-3.5" />
+          </button>
+        </>
       )}
     </div>
   );
