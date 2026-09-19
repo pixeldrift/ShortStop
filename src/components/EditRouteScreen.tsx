@@ -18,6 +18,7 @@ import {
   CheckCircleIcon,
   CloseIcon,
   CompassIcon,
+  CopyIcon,
   DownloadIcon,
   DragHandleIcon,
   EditIcon,
@@ -2886,7 +2887,7 @@ export function EditRouteScreen({
    * "add-route" screen kind, `seedMeta`). Omitted for the ordinary
    * "New Route" link, which leaves both genuinely unset the way it
    * always has. */
-  seedMeta?: { schoolName: string; tripType: TripType | "" };
+  seedMeta?: { schoolName: string; tripType: TripType | ""; routeNumber?: string };
   /** A previous edit session's own fetched cache for this exact route,
    * if page.tsx has one - takes priority over fetching the real
    * committed sidecar file, so coordinates fetched and saved earlier
@@ -2923,7 +2924,7 @@ export function EditRouteScreen({
    * `mode: "add"`, which has no existing rows of its own to split. */
   onSplitToNewRoute?: (
     stepsText: string,
-    seedMeta: { schoolName: string; tripType: TripType | "" },
+    seedMeta: { schoolName: string; tripType: TripType | ""; routeNumber?: string },
   ) => void;
   onCancel: () => void;
   /** `steps` here is always the *current* row list - `mode: "add"`'s
@@ -2950,7 +2951,9 @@ export function EditRouteScreen({
     previousId: string | null,
   ) => void;
 }) {
-  const [routeNumber, setRouteNumber] = useState(route?.routeNumber ?? "");
+  const [routeNumber, setRouteNumber] = useState(
+    route?.routeNumber ?? seedMeta?.routeNumber ?? "",
+  );
   const [busNumber, setBusNumber] = useState(route?.busNumber ?? "");
   // Every saved location (the address book's own "Other Locations"
   // list - StepRowEditor's own AddressBookIcon button, below, and this
@@ -3360,6 +3363,10 @@ export function EditRouteScreen({
   // rather than on a screen the admin's already navigating away from.
   const [splitSaving, setSplitSaving] = useState(false);
   const [splitError, setSplitError] = useState<string | null>(null);
+  // Guards the hub screen's own "Duplicate Route" link the same way
+  // `saving` guards Save - a duplicate is its own immediate POST, not
+  // routed through handleSave, so it needs its own in-flight flag.
+  const [duplicating, setDuplicating] = useState(false);
 
   /** SplitRouteModal's own Move/Copy step - hands the chosen half's
    * rows up to page.tsx as ready-to-paste text (the same canonical
@@ -3399,7 +3406,11 @@ export function EditRouteScreen({
       }
     }
 
-    onSplitToNewRoute(serializeRouteImport(selected), { schoolName, tripType });
+    onSplitToNewRoute(serializeRouteImport(selected), {
+      schoolName,
+      tripType,
+      routeNumber: `Split-${routeNumber}`,
+    });
     setSplitGapIndex(null);
   }
 
@@ -4194,6 +4205,69 @@ export function EditRouteScreen({
     setDirty(false);
     onSave(built, currentRows, cache, previousId);
     return true;
+  }
+
+  /** The hub screen's own "Duplicate Route" link - saves an immediate,
+   * full copy of this route under a new id/routeNumber (a `Copy-`
+   * prefix, same convention handleSplit's own `Split-` prefix above
+   * uses) rather than routing through handleSave, since this needs a
+   * *different* id built from a *different* routeNumber than the one
+   * still sitting in the form - `previousId: null` (a new route
+   * appearing alongside this one, not a rename of it) and `status:
+   * "draft"` (never publish a copy nobody's reviewed yet, whatever this
+   * route's own current status is). Always leaves the original route's
+   * own unsaved form state untouched either way - a failed duplicate is
+   * just a message, nothing here was ever written to `rows`/`status`/etc. */
+  async function handleDuplicate() {
+    if (mode !== "edit" || duplicating) return;
+    if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
+      setShowRequiredErrors(true);
+      setMessage("Route #, Trip, and School are required.");
+      return;
+    }
+    const newRouteNumber = `Copy-${routeNumber}`;
+    const meta = buildMetaFields("draft");
+    meta.routeNumber = newRouteNumber;
+    meta.id = `${newRouteNumber}-${meta.tripType}-${meta.schoolLevel ?? "none"}`;
+    const built = buildRouteFromRows(rows, meta);
+
+    setDuplicating(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: built.id,
+          previousId: null,
+          status: "draft",
+          routeNumber: built.routeNumber,
+          busNumber: built.busNumber,
+          schoolName: built.schoolName,
+          schoolLevel: built.schoolLevel,
+          tripType: built.tripType,
+          startTime: built.departureTime.trim()
+            ? (parseTimeInput(built.departureTime, built.tripType) ?? "")
+            : "",
+          nextRouteId: built.nextRouteId,
+          steps: rows,
+        }),
+      });
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        setMessage(`Couldn't duplicate: ${data.error ?? res.statusText}`);
+        return;
+      }
+    } catch (err) {
+      setMessage(
+        `Couldn't duplicate: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    } finally {
+      setDuplicating(false);
+    }
+
+    onSave(built, rows, cache, null);
   }
 
   // A live snapshot of the route as currently edited (not just as last
@@ -5118,6 +5192,26 @@ export function EditRouteScreen({
           })()}
 
         {message && <p className="text-sm text-zinc-500">{message}</p>}
+      </div>
+
+      {/* A plain text link, not a button - same "Download Waypoints"
+          convention the Stops and Turns screen's own footer uses.
+          Makes an immediate, saved copy of this route (see
+          handleDuplicate's own doc comment) rather than opening
+          anything to review first - Split's own review step exists
+          because it's carving up this route's live rows; a duplicate
+          has nothing to reconcile, it's just a new draft. */}
+      <div className="flex w-full max-w-md shrink-0 justify-end">
+        <button
+          type="button"
+          onClick={handleDuplicate}
+          disabled={duplicating}
+          aria-label="Duplicate this route as a new draft"
+          className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800 disabled:opacity-40"
+        >
+          <CopyIcon className="h-4 w-4" />
+          Duplicate Route
+        </button>
       </div>
 
       <div className="w-full max-w-md shrink-0">
