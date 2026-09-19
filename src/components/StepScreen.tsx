@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ExpandableMap } from "./ExpandableMap";
 import { RouteMap } from "./RouteMap";
 import type { StopMarker, TurnMarker } from "./RouteMap";
 import { RouteProgressBar } from "./RouteProgressBar";
@@ -203,16 +204,21 @@ export function StepScreen({
             panes escape to the nearest ancestor stacking context and can
             paint above the roster popup below despite being earlier in
             the DOM. */}
-        <RouteMap
-          className="h-full w-full z-0"
-          stops={stopMarkers}
-          turns={turnMarkers}
-          path={routePath}
-          school={schoolPoint}
-          tripType={route.tripType}
-          waypointsUrl={waypointsUrl}
-          mode={phase === "depot" ? "overview" : "driving"}
-          activeWaypointKey={step.waypointKey}
+        <ExpandableMap
+          className="h-full w-full"
+          renderMap={(mapClassName) => (
+            <RouteMap
+              className={`${mapClassName} z-0`}
+              stops={stopMarkers}
+              turns={turnMarkers}
+              path={routePath}
+              school={schoolPoint}
+              tripType={route.tripType}
+              waypointsUrl={waypointsUrl}
+              mode={phase === "depot" ? "overview" : "driving"}
+              activeWaypointKey={step.waypointKey}
+            />
+          )}
         />
 
         {showRoster && (
