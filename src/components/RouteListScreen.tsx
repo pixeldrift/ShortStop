@@ -1198,19 +1198,31 @@ export function RouteListScreen({
   );
 }
 
-/** A school name, clipped to one line's height rather than truncated
- * with an ellipsis - `leading-5`/`h-5` give this span exactly one
- * line's own box, `overflow-hidden` with no `nowrap` lets the text
- * wrap normally (so it breaks on a real word boundary, never mid-word)
- * and simply hides whatever word(s) would have landed on a second
- * line. Plain CSS, no JS measurement - an earlier version measured
- * scrollWidth against clientWidth to conditionally drop a trailing
- * " School" and re-measured on every resize, which could flicker
- * between its two states as the browser's own layout rounding shifted
- * by a fractional pixel during scroll. */
+/** A school name, truncated to one line with a trailing ellipsis
+ * (`truncate` - white-space: nowrap; overflow: hidden; text-overflow:
+ * ellipsis) rather than an earlier version's wrap-then-hide-the-second-
+ * line clip, which could silently drop an entire trailing word (all of
+ * "Elementary," say) with no visual sign anything was cut off at all -
+ * letting the name run right up against the truncation with a "…"
+ * reads as far more legible than losing a whole word with nothing to
+ * show for it. This isn't the same as the flicker bug this component's
+ * very first version had, either - that came from a JS scrollWidth/
+ * clientWidth measurement re-run on every resize/scroll to decide
+ * whether to drop a trailing " School," which could flip back and
+ * forth as the browser's own layout rounding shifted by a fractional
+ * pixel mid-scroll. `truncate` is pure CSS with no measurement and no
+ * state to flicker between - the browser decides where to cut at
+ * layout time, same as any other truncated text in this app.
+ * `min-w-0 flex-1` are load-bearing, not decorative - every caller
+ * renders this alongside `shrink-0` siblings (an icon, a departure
+ * time) inside a flex row with no other flexible child, so this is
+ * what actually claims the row's own leftover width and lets it shrink
+ * below its full text width in the first place; drop either one and
+ * `truncate` has no bounded box to truncate against, so it just
+ * overflows the row instead. */
 function SchoolNameLabel({ name }: { name: string }) {
   return (
-    <span className="block h-5 overflow-hidden text-sm leading-5 text-zinc-700">
+    <span className="min-w-0 flex-1 truncate text-sm text-zinc-700">
       {name}
     </span>
   );

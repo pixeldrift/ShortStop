@@ -31,5 +31,11 @@ declare module "leaflet" {
     /** Rotates the map to this heading (degrees, 0 = north-up) -
      * added by leaflet-rotate, not part of stock Leaflet. */
     setBearing(theta: number): this;
+    /** This map's current heading (degrees, 0 = north-up) - added by
+     * leaflet-rotate, not part of stock Leaflet. RouteMap.tsx's own
+     * animateBearing reads this as the starting point for a hand-rolled
+     * rotation tween, since setBearing itself has no animation option
+     * of its own (unlike MapLibre's flyTo). */
+    getBearing(): number;
   }
 }

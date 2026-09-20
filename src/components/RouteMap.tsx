@@ -58,6 +58,11 @@ const DEFAULT_ZOOM = 13;
 // Roughly "which side of the street" zoom - what driving mode flies to
 // for the current step, once its own coordinates are known.
 const STREET_ZOOM = 17;
+// One full second for driving mode's own step-to-step camera move AND
+// its bearing rotation (see bearingAt's own doc comment) - both
+// renderers animate them together as one motion, not a fast position
+// flight with an instant, separately-timed spin.
+const DRIVING_FLY_DURATION_MS = 1000;
 // Overview mode only shows every stop/turn once the admin has zoomed in
 // this far past the route's own auto-fit framing - below it, only the
 // first and last waypoint pins show (drawOverviewEndpoints), same as
@@ -220,12 +225,25 @@ function initialBearing(
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-// Driving mode's own "which way is the bus facing" - the bearing
-// toward the NEXT waypoint after the active one, so the map faces where
-// the bus is about to go, falling back to the bearing FROM the previous
-// waypoint at the route's own last stop, where there's no "next" to
-// face. Null if there's nothing to compute a direction from (the active
-// key isn't in `ordered`, or it's the route's only waypoint).
+// Driving mode's own "which way is the bus facing" - the bearing FROM
+// the previous waypoint TO the active one, i.e. the road the bus is
+// actually already on, not the road it's about to turn onto. This is
+// deliberate, not an oversight: rotating to face the *next* leg the
+// instant a turn becomes the active step would spin the map toward a
+// road the bus hasn't reached yet, before the turn is actually
+// executed - both wrong (the bus is still traveling the old heading)
+// and disorienting (a driver mid-approach to a left turn would see the
+// map already facing the new road, with no reliable way to tell left
+// from right against what's actually still in front of them). Using
+// the leg just driven means the map only ever rotates once the bus is
+// really on the new road - and since "up" is however MapLibre/
+// leaflet-rotate render the *current* heading, "where we came from" is
+// always straight down, so an on-screen left/right always matches a
+// real left/right turn. Falls back to the bearing TOWARD the next
+// waypoint only at the route's very first step (Depart), where there's
+// no "came from" leg yet to face along. Null if there's nothing to
+// compute a direction from (the active key isn't in `ordered`, or it's
+// the route's only waypoint).
 function bearingAt(
   ordered: OrderedWaypoint[],
   activeWaypointKey: string | null | undefined,
@@ -233,10 +251,31 @@ function bearingAt(
   if (!activeWaypointKey) return null;
   const index = ordered.findIndex((w) => w.key === activeWaypointKey);
   if (index === -1) return null;
+  if (index - 1 >= 0) return initialBearing(ordered[index - 1], ordered[index]);
   if (index + 1 < ordered.length)
     return initialBearing(ordered[index], ordered[index + 1]);
-  if (index - 1 >= 0) return initialBearing(ordered[index - 1], ordered[index]);
   return null;
+}
+
+/** Leaflet-rotate's own setBearing() is an instant jump with no
+ * animation option of its own - unlike MapLibre's flyTo, which can
+ * interpolate position and bearing together over one duration (see
+ * mountMapLibre's own identical driving-mode sync). This hand-rolls the
+ * same smooth rotation via requestAnimationFrame so both renderers
+ * actually behave the same way. Takes the shorter way around the
+ * compass (never the "long way" past 180 degrees), so a turn from,
+ * say, 350 to 10 degrees rotates 20 degrees forward, not 340 degrees
+ * backward. */
+function animateBearing(map: LeafletMap, targetBearing: number, durationMs: number): void {
+  const startBearing = map.getBearing();
+  const delta = ((targetBearing - startBearing + 540) % 360) - 180;
+  const startTime = performance.now();
+  function step(now: number) {
+    const t = Math.min((now - startTime) / durationMs, 1);
+    map.setBearing(startBearing + delta * t);
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
 /** Which point along a route's own road-geometry coordinates (lon/lat
@@ -936,7 +975,7 @@ function mountLeaflet(
             orderedWaypointsRef.current,
             activeWaypointKeyRef.current,
           );
-          if (bearing != null) map.setBearing(bearing);
+          if (bearing != null) animateBearing(map, bearing, DRIVING_FLY_DURATION_MS);
           const key = activeWaypointKeyRef.current;
           const entry = key ? cache[key] : undefined;
           if (!entry || entry.status !== "ok") {
@@ -953,7 +992,7 @@ function mountLeaflet(
             });
           }
           map.flyTo([entry.lat, entry.lon], STREET_ZOOM, {
-            duration: 0.75,
+            duration: DRIVING_FLY_DURATION_MS / 1000,
           });
         };
         syncToModeRef.current();
@@ -1475,14 +1514,16 @@ function mountMapLibre(args: MountArgs): () => void {
               orderedWaypointsRef.current,
               activeWaypointKeyRef.current,
             );
-            // Instant, not animated - same as mountLeaflet's own
-            // setBearing call, which flyTo below deliberately excludes
-            // from its own (animated) options so the two don't fight
-            // over the rotation.
-            if (bearing != null) mapInstance.setBearing(bearing);
             const key = activeWaypointKeyRef.current;
             const entry = key ? cache[key] : undefined;
             if (!entry || entry.status !== "ok") {
+              // No coordinate to fly to yet - still rotate on its own,
+              // animated the same 1s as every other camera move here,
+              // rather than leaving bearing stuck at whatever it last
+              // was until a real flyTo eventually comes along.
+              if (bearing != null) {
+                mapInstance.easeTo({ bearing, duration: DRIVING_FLY_DURATION_MS });
+              }
               if (!drivingPinsRevealedRef.current) {
                 drawDrivingPins();
                 drivingPinsRevealedRef.current = true;
@@ -1495,10 +1536,16 @@ function mountMapLibre(args: MountArgs): () => void {
                 drivingPinsRevealedRef.current = true;
               });
             }
+            // bearing folded straight into this flyTo (MapLibre
+            // interpolates position and bearing together over one
+            // duration) rather than a separate setBearing call - one
+            // motion, not a fast position flight with an instantly
+            // snapped, separately-timed spin.
             mapInstance.flyTo({
               center: toLngLat(entry),
               zoom: STREET_ZOOM,
-              duration: 750,
+              ...(bearing != null ? { bearing } : {}),
+              duration: DRIVING_FLY_DURATION_MS,
             });
           };
           syncToModeRef.current();
