@@ -8,7 +8,7 @@ import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { WaypointPreviewMap } from "./WaypointPreviewMap";
-import type { StopPin, TurnPin } from "./WaypointPreviewMap";
+import type { StopPin } from "./WaypointPreviewMap";
 import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
@@ -823,7 +823,6 @@ function StepRowEditor({
   placementGuess,
   routeContext,
   stopPins,
-  turnPins,
   onChange,
   onLocationChange,
   onClickWaypointPin,
@@ -932,16 +931,11 @@ function StepRowEditor({
    * alone. `rowIndex` is what lets tapping one of those dots open that
    * row's own editor (onClickWaypointPin below). */
   stopPins: StopPin[];
-  /** Every other already-resolved waypoint (EditRouteScreen's own
-   * `turnPins`) - the same WaypointPreviewMap draws these too, plain
-   * yellow dots alongside stopPins' own red, numbered ones. */
-  turnPins: TurnPin[];
   onChange: (patch: Partial<RawRouteRow>) => void;
   /** Opens a different row's own editor in place of this one - the
    * same "save this row's draft, then open the target" goToRowIndex
    * does for the header's own prev/next arrows (EditRouteScreen), now
-   * also reachable by tapping one of stopPins'/turnPins' own dots on
-   * the map. */
+   * also reachable by tapping one of stopPins' own dots on the map. */
   onClickWaypointPin: (rowIndex: number) => void;
   /** The Location field's own onChange, in place of the plain
    * `onChange({ location })` every other field here uses directly - see
@@ -1691,9 +1685,9 @@ function StepRowEditor({
             <WaypointPreviewMap
               center={previewCenter}
               centerStopNumber={stopNumber}
+              centerIsTurn={!isStop}
               routeLine={routeContext}
               stopPins={stopPins}
-              turnPins={turnPins}
               onClickPin={onClickWaypointPin}
             />
 
@@ -2004,7 +1998,6 @@ function GeocodeConfirmModal({
   fallback,
   routeLine,
   stopPins,
-  turnPins,
   onAccept,
   onReject,
 }: {
@@ -2013,7 +2006,6 @@ function GeocodeConfirmModal({
   fallback: FallbackDetail;
   routeLine: { lat: number; lon: number }[];
   stopPins: StopPin[];
-  turnPins: TurnPin[];
   onAccept: () => void;
   onReject: () => void;
 }) {
@@ -2038,9 +2030,9 @@ function GeocodeConfirmModal({
           <WaypointPreviewMap
             center={{ lat: entry.lat, lon: entry.lon }}
             centerStopNumber={null}
+            centerIsTurn={false}
             routeLine={routeLine}
             stopPins={stopPins}
-            turnPins={turnPins}
           />
         </div>
 
@@ -3700,19 +3692,6 @@ export function EditRouteScreen({
     return pins;
   }, [resolutionRows, rows, absoluteStopNumbers]);
 
-  // Every other already-resolved waypoint - a turn, a Depart/Arrive,
-  // any row that isn't a Stop - WaypointPreviewMap draws these as plain
-  // yellow dots, no number of its own (only a Stop has one).
-  const turnPins = useMemo(() => {
-    const pins: TurnPin[] = [];
-    resolutionRows.forEach((r, i) => {
-      if (r.status === "resolved" && rows[i]?.action.toLowerCase() !== "stop") {
-        pins.push({ lat: r.lat, lon: r.lon, rowIndex: i });
-      }
-    });
-    return pins;
-  }, [resolutionRows, rows]);
-
   // The row currently open in StepRowEditor's own waypoint, re-derived
   // from `draftRow` rather than read off `waypoints[expandedIndex]`
   // above - that array only ever reflects the last *committed* rows,
@@ -5193,7 +5172,6 @@ export function EditRouteScreen({
             fallback={pendingFallbackConfirm.fallback}
             routeLine={routeContextPoints}
             stopPins={stopPins}
-            turnPins={turnPins}
             onAccept={acceptFallbackMatch}
             onReject={rejectFallbackMatch}
           />
@@ -5239,7 +5217,6 @@ export function EditRouteScreen({
                 placementGuess={nearestResolvedGuess(resolutionRows, index)}
                 routeContext={routeContextPoints}
                 stopPins={stopPins}
-                turnPins={turnPins}
                 onChange={handleDraftChange}
                 onLocationChange={handleLocationChange}
                 onClickWaypointPin={goToRowIndex}
