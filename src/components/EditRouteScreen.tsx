@@ -834,6 +834,7 @@ function StepRowEditor({
   canGoPrev,
   canGoNext,
   onNavigate,
+  onAddWaypointAfter,
 }: {
   row: RawRouteRow;
   stopNumber: number | null;
@@ -964,6 +965,16 @@ function StepRowEditor({
    * meaning whatever "Stops only" currently leaves on screen, so this
    * never lands on a turn that's hidden right now. */
   onNavigate: (direction: "prev" | "next") => void;
+  /** Saves this row's own draft (same as Update) and inserts a brand
+   * new blank waypoint immediately after it, opening *that* row's own
+   * editor in its place - the same "Insert Here" AddStepButton already
+   * does between two rows in the list behind this popup, reachable
+   * without closing this one first. Lets an admin who's mid-edit and
+   * realizes a stop or turn is missing right after this one (most often
+   * a direction - "oh, there's a turn between this stop and the next")
+   * add it in context, rather than closing this editor, scrolling to
+   * find the right gap in the list, and reopening. */
+  onAddWaypointAfter: () => void;
 }) {
   // Live off the draft's own Type select, not the `stopNumber` prop
   // (only recomputed by the parent from the *committed* rows, see
@@ -1284,32 +1295,49 @@ function StepRowEditor({
             )}
           </div>
           {!showPlaceModal && (
-            <div className="flex shrink-0 items-center gap-1 pt-1">
+            <div className="flex shrink-0 flex-col items-center gap-1 pt-1">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onNavigate("prev")}
+                  disabled={!canGoPrev}
+                  aria-label="Previous waypoint"
+                  className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+                    canGoPrev
+                      ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
+                      : "text-zinc-400"
+                  }`}
+                >
+                  <BackArrowIcon className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("next")}
+                  disabled={!canGoNext}
+                  aria-label="Next waypoint"
+                  className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+                    canGoNext
+                      ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
+                      : "text-zinc-400"
+                  }`}
+                >
+                  <RightArrowIcon className="h-4 w-4" />
+                </button>
+              </div>
+              {/* Same round plus button AddStepButton draws between two
+                  rows in the list behind this popup - inserts a blank
+                  waypoint right after this one and opens its own editor
+                  in place, without closing this one first. Under the
+                  arrows (not beside them) so it reads as "add a new
+                  waypoint after this one," not a third navigation
+                  direction alongside prev/next. */}
               <button
                 type="button"
-                onClick={() => onNavigate("prev")}
-                disabled={!canGoPrev}
-                aria-label="Previous waypoint"
-                className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
-                  canGoPrev
-                    ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
-                    : "text-zinc-400"
-                }`}
+                onClick={onAddWaypointAfter}
+                aria-label="Insert a new waypoint after this one"
+                className="btn-glossy-light flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
               >
-                <BackArrowIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate("next")}
-                disabled={!canGoNext}
-                aria-label="Next waypoint"
-                className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
-                  canGoNext
-                    ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
-                    : "text-zinc-400"
-                }`}
-              >
-                <RightArrowIcon className="h-4 w-4" />
+                <PlusIcon className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
@@ -3833,20 +3861,28 @@ export function EditRouteScreen({
   // old always-at-the-end behavior this replaces) and opens it for
   // editing immediately - a new stop or turn always needs its details
   // filled in right away, so there's no point leaving it collapsed
-  // first. Only ever called while nothing else is expanded (every
-  // "Add Step" control below is disabled otherwise), so inserting
-  // partway through never has to shift an already-open row's own index
-  // out from under it. See handleCancelRow above for what backing out
-  // of this specific row does differently from canceling an edit to
-  // one that already existed.
+  // first. Called two ways: every "Add Step" control in the list below
+  // (disabled whenever a row is already expanded, so `expandedIndex` is
+  // always null there - inserting partway through never has to shift an
+  // already-open row's own index out from under it), and StepRowEditor's
+  // own "insert after this one" button, called *while* this exact row
+  // is still open - the currently-open draft is committed into `rows`
+  // first (same as goToRowIndex does for prev/next), so whatever was
+  // typed there isn't lost under the fresh blank row this opens next.
+  // See handleCancelRow above for what backing out of this specific row
+  // does differently from canceling an edit to one that already existed.
   function addRow(index: number) {
-    // fromLocation starts blank, same as every other new row - the
-    // road already tracked heading into this exact position shows
-    // live as StepRowEditor's own "From" placeholder (its own
-    // `previousRoad` prop), so there's nothing to pre-fill into the
-    // row's real data just to avoid a moment of "no context shown."
     setRows((prev) => {
-      const next = [...prev];
+      const committed =
+        expandedIndex !== null && draftRow
+          ? prev.map((r, i) => (i === expandedIndex ? draftRow : r))
+          : prev;
+      const next = [...committed];
+      // fromLocation starts blank, same as every other new row - the
+      // road already tracked heading into this exact position shows
+      // live as StepRowEditor's own "From" placeholder (its own
+      // `previousRoad` prop), so there's nothing to pre-fill into the
+      // row's real data just to avoid a moment of "no context shown."
       next.splice(index, 0, BLANK_ROW);
       return next;
     });
@@ -5236,6 +5272,7 @@ export function EditRouteScreen({
                   visibleRowIndices.length - 1
                 }
                 onNavigate={goToRow}
+                onAddWaypointAfter={() => addRow(index + 1)}
                 onCancel={handleCancelRow}
                 onDelete={() => handleDeleteRow(index)}
                 onUpdate={handleUpdateRow}
