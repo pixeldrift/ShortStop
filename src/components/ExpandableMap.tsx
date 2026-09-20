@@ -12,16 +12,15 @@ import { CloseIcon, ExpandIcon } from "./icons";
  *
  * Deliberately a second instance, not the original map resized in
  * place - neither RouteMap.tsx nor WaypointPreviewMap.tsx currently
- * tells Leaflet/MapLibre to re-measure its container after a resize
- * (no ResizeObserver, no invalidateSize()/resize() call anywhere in
- * either file), because nothing before this ever needed to: every map
- * box on screen today is a fixed size for its own whole mounted
- * lifetime. Growing the *existing* map's own container to fill the
- * screen would silently leave both engines still measuring against
- * their old, small size (cropped/blank tiles) unless that plumbing got
- * added and tested against both engines - a second instance sidesteps
- * that entirely by being born at full size from its very first paint,
- * which is exactly the size it's ever asked to render at.
+ * tells MapLibre to re-measure its container after a resize (no
+ * ResizeObserver, no resize() call anywhere in either file), because
+ * nothing before this ever needed to: every map box on screen today is
+ * a fixed size for its own whole mounted lifetime. Growing the
+ * *existing* map's own container to fill the screen would silently
+ * leave it still measuring against its old, small size (cropped/blank
+ * tiles) unless that plumbing got added and tested - a second instance
+ * sidesteps that entirely by being born at full size from its very
+ * first paint, which is exactly the size it's ever asked to render at.
  *
  * Portaled to document.body rather than rendered in place - a plain
  * `fixed inset-0` can still end up boxed inside whatever ancestor

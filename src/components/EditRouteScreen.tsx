@@ -8,6 +8,7 @@ import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { WaypointPreviewMap } from "./WaypointPreviewMap";
+import type { StopPin, TurnPin } from "./WaypointPreviewMap";
 import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
@@ -822,7 +823,10 @@ function StepRowEditor({
   placementGuess,
   routeContext,
   stopPins,
+  turnPins,
   onChange,
+  onLocationChange,
+  onClickWaypointPin,
   onFetch,
   onManualCoordinates,
   onCancel,
@@ -920,13 +924,31 @@ function StepRowEditor({
    * short array it is - PlaceCoordinatesModal itself is the one that
    * decides that's too few to bother drawing. */
   routeContext: { lat: number; lon: number }[];
-  /** Every already-resolved Stop's own coordinate (EditRouteScreen's
-   * own `stopPins`, a subset of `routeContext` above) - handed to the
-   * small read-only WaypointPreviewMap at the bottom of this card so
-   * an admin can see this row's own point next to its neighboring
-   * stops, not just the road-following line alone. */
-  stopPins: { lat: number; lon: number }[];
+  /** Every already-resolved Stop's own coordinate, numbered
+   * (EditRouteScreen's own `stopPins`, a subset of `routeContext`
+   * above) - handed to the WaypointPreviewMap at the bottom of this
+   * card, red and numbered, so an admin can see this row's own point
+   * next to its neighboring stops, not just the road-following line
+   * alone. `rowIndex` is what lets tapping one of those dots open that
+   * row's own editor (onClickWaypointPin below). */
+  stopPins: StopPin[];
+  /** Every other already-resolved waypoint (EditRouteScreen's own
+   * `turnPins`) - the same WaypointPreviewMap draws these too, plain
+   * yellow dots alongside stopPins' own red, numbered ones. */
+  turnPins: TurnPin[];
   onChange: (patch: Partial<RawRouteRow>) => void;
+  /** Opens a different row's own editor in place of this one - the
+   * same "save this row's draft, then open the target" goToRowIndex
+   * does for the header's own prev/next arrows (EditRouteScreen), now
+   * also reachable by tapping one of stopPins'/turnPins' own dots on
+   * the map. */
+  onClickWaypointPin: (rowIndex: number) => void;
+  /** The Location field's own onChange, in place of the plain
+   * `onChange({ location })` every other field here uses directly - see
+   * EditRouteScreen's own handleLocationChange for the extra step this
+   * adds (an immediate coordinate resolve when the new text exactly
+   * matches a School/SavedLocation that already has one). */
+  onLocationChange: (value: string) => void;
   onFetch: () => void;
   /** A coordinate typed/pasted directly into the Latitude/Longitude
    * box, parsed and handed up on Save (see handleSave below) - writes
@@ -1421,7 +1443,7 @@ function StepRowEditor({
                             : ""
                         }`}
                         value={row.location}
-                        onChange={(e) => onChange({ location: e.target.value })}
+                        onChange={(e) => onLocationChange(e.target.value)}
                         placeholder={
                           isSchoolAction
                             ? "LaVergne High School"
@@ -1664,11 +1686,15 @@ function StepRowEditor({
           actually change this row's point. Navigating to a different
           row via the prev/next arrows flies the camera to the new
           row's own point instead of jumping straight there (see
-          WaypointPreviewMap's own doc comment). */}
+          WaypointPreviewMap's own doc comment) - tapping a stop's own
+          dot directly does the same thing, straight to that stop. */}
             <WaypointPreviewMap
               center={previewCenter}
+              centerStopNumber={stopNumber}
               routeLine={routeContext}
               stopPins={stopPins}
+              turnPins={turnPins}
+              onClickPin={onClickWaypointPin}
             />
 
             <div className="mt-3 flex items-center gap-2">
@@ -1978,6 +2004,7 @@ function GeocodeConfirmModal({
   fallback,
   routeLine,
   stopPins,
+  turnPins,
   onAccept,
   onReject,
 }: {
@@ -1985,7 +2012,8 @@ function GeocodeConfirmModal({
   entry: Extract<WaypointCacheEntry, { status: "ok" }>;
   fallback: FallbackDetail;
   routeLine: { lat: number; lon: number }[];
-  stopPins: { lat: number; lon: number }[];
+  stopPins: StopPin[];
+  turnPins: TurnPin[];
   onAccept: () => void;
   onReject: () => void;
 }) {
@@ -2009,8 +2037,10 @@ function GeocodeConfirmModal({
         <div className="mt-3">
           <WaypointPreviewMap
             center={{ lat: entry.lat, lon: entry.lon }}
+            centerStopNumber={null}
             routeLine={routeLine}
             stopPins={stopPins}
+            turnPins={turnPins}
           />
         </div>
 
@@ -3632,18 +3662,52 @@ export function EditRouteScreen({
       : [...resolved, school];
   }, [resolutionRows, schoolLat, schoolLon, tripType]);
 
+  // Every Stop row's own "Stop N" number, counted straight through
+  // `rows` in order rather than `visibleRowIndices` - a stop's number is
+  // its fixed position in the real route, not a count of whatever
+  // "Stops only"/"Unverified only" currently leave visible. Used
+  // everywhere a "Stop N" number is shown (the visible list's own row
+  // header, StepRowEditor's header, WaypointPreviewMap's dots) so a
+  // stop's number never changes just because a filter toggled - only
+  // reordering/adding/removing a Stop row itself should ever do that.
+  const absoluteStopNumbers = useMemo(() => {
+    const numbers = new Map<number, number>();
+    let counter = 0;
+    rows.forEach((row, index) => {
+      if (row.action.toLowerCase() === "stop") numbers.set(index, ++counter);
+    });
+    return numbers;
+  }, [rows]);
+
   // Every already-resolved Stop row's own coordinate (not a turn, not
   // the school) - `resolutionRows` shares `rows`' own index order
   // (deriveWaypointsWithContext builds `waypoints` via a plain
   // `rows.map`, so `stepId` is just that index), so lining the two up
   // by position is enough to tell which resolved point belongs to an
-  // actual Stop. WaypointPreviewMap draws these as plain dots, distinct
-  // from whichever one is this row's own (highlighted separately).
+  // actual Stop. WaypointPreviewMap draws these as red, numbered dots,
+  // distinct from whichever one is this row's own (highlighted
+  // separately). `rowIndex` (a real index into `rows`) is only ever
+  // read by StepRowEditor's own call site (goToRowIndex, below) -
+  // tapping one of these dots on the map opens that row's own editor
+  // in place of whichever one is currently open.
   const stopPins = useMemo(() => {
-    const pins: { lat: number; lon: number }[] = [];
+    const pins: StopPin[] = [];
     resolutionRows.forEach((r, i) => {
       if (r.status === "resolved" && rows[i]?.action.toLowerCase() === "stop") {
-        pins.push({ lat: r.lat, lon: r.lon });
+        pins.push({ lat: r.lat, lon: r.lon, rowIndex: i, stopNumber: absoluteStopNumbers.get(i) ?? 0 });
+      }
+    });
+    return pins;
+  }, [resolutionRows, rows, absoluteStopNumbers]);
+
+  // Every other already-resolved waypoint - a turn, a Depart/Arrive,
+  // any row that isn't a Stop - WaypointPreviewMap draws these as plain
+  // yellow dots, no number of its own (only a Stop has one).
+  const turnPins = useMemo(() => {
+    const pins: TurnPin[] = [];
+    resolutionRows.forEach((r, i) => {
+      if (r.status === "resolved" && rows[i]?.action.toLowerCase() !== "stop") {
+        pins.push({ lat: r.lat, lon: r.lon, rowIndex: i });
       }
     });
     return pins;
@@ -3659,28 +3723,35 @@ export function EditRouteScreen({
   // the only way to get this row's own `previousRoad` context exactly
   // right too. Same guard as `waypoints` above, so this stays undefined
   // in exactly the situations that array would have been empty in.
-  const draftWaypoint = useMemo(() => {
-    if (expandedIndex === null || !draftRow) return undefined;
-    if (
-      mode !== "edit" ||
-      hasIncompleteRow ||
-      !hasRealSchoolAddress ||
-      rows.length === 0
-    )
-      return undefined;
-    const draftRows = rows.map((r, i) => (i === expandedIndex ? draftRow : r));
-    return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[
-      expandedIndex
-    ];
-  }, [
-    expandedIndex,
-    draftRow,
-    rows,
-    schoolAddress,
-    mode,
-    hasIncompleteRow,
-    hasRealSchoolAddress,
-  ]);
+  //
+  // A function, not just the memo below directly - handleLocationChange
+  // needs this same derivation for a row it hasn't actually committed
+  // to `draftRow` yet (the new Location text, applied on top of a copy
+  // of the draft), so a school/saved-location match can resolve to the
+  // *new* text's own cache key immediately rather than the stale one
+  // `draftWaypoint` itself is still holding at the moment that change
+  // first comes in.
+  const computeDraftWaypointFor = useCallback(
+    (row: RawRouteRow) => {
+      if (expandedIndex === null) return undefined;
+      if (
+        mode !== "edit" ||
+        hasIncompleteRow ||
+        !hasRealSchoolAddress ||
+        rows.length === 0
+      )
+        return undefined;
+      const draftRows = rows.map((r, i) => (i === expandedIndex ? row : r));
+      return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[
+        expandedIndex
+      ];
+    },
+    [expandedIndex, rows, schoolAddress, mode, hasIncompleteRow, hasRealSchoolAddress],
+  );
+  const draftWaypoint = useMemo(
+    () => (draftRow ? computeDraftWaypointFor(draftRow) : undefined),
+    [draftRow, computeDraftWaypointFor],
+  );
   const draftStatus = useMemo(
     () =>
       draftWaypoint
@@ -3701,6 +3772,34 @@ export function EditRouteScreen({
   }
   function handleDraftChange(patch: Partial<RawRouteRow>) {
     setDraftRow((prev) => (prev ? { ...prev, ...patch } : prev));
+  }
+  /** The Location field's own onChange (typing, or picking one of its
+   * own <datalist> suggestions - both fire the same input event) - same
+   * patch as handleDraftChange above, plus one extra step: if the new
+   * text exactly matches a School or SavedLocation that already has its
+   * own lat/lon, resolve this row immediately (setManualCoordinates)
+   * instead of leaving it unresolved until Save/Update - the same
+   * "resolves this row immediately" treatment LocationPickerModal's own
+   * onSelect already gives a pick from the address book popup, now also
+   * true of typing (or datalist-picking) that exact same name by hand.
+   * Computes the new row's own waypoint fresh (computeDraftWaypointFor,
+   * with `value` applied) rather than reading `draftWaypoint` itself -
+   * that memo hasn't recomputed yet at the moment this fires
+   * (handleDraftChange's own setDraftRow is still in flight), so it's
+   * still holding the *previous* text's own cache key. */
+  function handleLocationChange(value: string) {
+    handleDraftChange({ location: value });
+
+    const target = value.trim().toLowerCase();
+    if (!target || !draftRow) return;
+    const matched: { lat: number | null; lon: number | null } | undefined =
+      Object.entries(schools).find(([name]) => name.trim().toLowerCase() === target)?.[1] ??
+      savedLocations.find((loc) => loc.name.trim().toLowerCase() === target);
+    if (matched?.lat == null || matched.lon == null) return;
+
+    const waypoint = computeDraftWaypointFor({ ...draftRow, location: value });
+    if (!waypoint || waypoint.kind === "unresolvable") return;
+    setManualCoordinates(waypoint, matched.lat, matched.lon);
   }
   function handleUpdateRow() {
     if (expandedIndex === null || !draftRow) return;
@@ -4446,13 +4545,13 @@ export function EditRouteScreen({
   // hiding. No-op past either end of `visibleRowIndices` - the arrows
   // themselves are disabled there too (see canGoPrev/canGoNext below),
   // this is just the same guard on the handler itself.
-  function goToRow(direction: "prev" | "next") {
-    if (expandedIndex === null || !draftRow) return;
-    const currentPos = visibleRowIndices.indexOf(expandedIndex);
-    if (currentPos === -1) return;
-    const nextIndex =
-      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
-    if (nextIndex === undefined) return;
+  // Shared by goToRow (the prev/next arrows) and onClickStopPin (a tap
+  // on one of WaypointPreviewMap's own dots) - both are really just
+  // "save the current draft, then open row `nextIndex` in its place,"
+  // differing only in how `nextIndex` gets picked.
+  function goToRowIndex(nextIndex: number) {
+    if (expandedIndex === null || !draftRow || nextIndex === expandedIndex)
+      return;
     setRows((prev) =>
       prev.map((r, i) => (i === expandedIndex ? draftRow : r)),
     );
@@ -4460,6 +4559,15 @@ export function EditRouteScreen({
     setDirty(true);
     setExpandedIndex(nextIndex);
     setDraftRow({ ...rows[nextIndex] });
+  }
+  function goToRow(direction: "prev" | "next") {
+    if (expandedIndex === null) return;
+    const currentPos = visibleRowIndices.indexOf(expandedIndex);
+    if (currentPos === -1) return;
+    const nextIndex =
+      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
+    if (nextIndex === undefined) return;
+    goToRowIndex(nextIndex);
   }
 
   function jumpToNextUnverified() {
@@ -4480,16 +4588,6 @@ export function EditRouteScreen({
         setHighlightedRowIndex((prev) => (prev === nextIndex ? null : prev)),
       1500,
     );
-  }
-
-  // Precomputed outside the JSX map below (not incremented inline in the
-  // render callback) so React Compiler's per-item memoization doesn't see a
-  // mutated closure variable - each stop row looks up its own number here.
-  let stopCounter = 0;
-  const stopNumbers = new Map<number, number>();
-  for (const index of visibleRowIndices) {
-    if (rows[index].action.toLowerCase() === "stop")
-      stopNumbers.set(index, ++stopCounter);
   }
 
   // Shared by mode "add"'s single screen and mode "edit"'s own
@@ -5002,7 +5100,7 @@ export function EditRouteScreen({
                 const row = rows[index];
                 const isStop = row.action.toLowerCase() === "stop";
                 const stopNumber = isStop
-                  ? (stopNumbers.get(index) ?? null)
+                  ? (absoluteStopNumbers.get(index) ?? null)
                   : null;
                 const waypoint = waypoints[index];
 
@@ -5095,6 +5193,7 @@ export function EditRouteScreen({
             fallback={pendingFallbackConfirm.fallback}
             routeLine={routeContextPoints}
             stopPins={stopPins}
+            turnPins={turnPins}
             onAccept={acceptFallbackMatch}
             onReject={rejectFallbackMatch}
           />
@@ -5121,7 +5220,7 @@ export function EditRouteScreen({
             return (
               <StepRowEditor
                 row={draftRow}
-                stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
+                stopNumber={isStop ? (absoluteStopNumbers.get(index) ?? null) : null}
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
                 savedLocations={savedLocations}
@@ -5140,7 +5239,10 @@ export function EditRouteScreen({
                 placementGuess={nearestResolvedGuess(resolutionRows, index)}
                 routeContext={routeContextPoints}
                 stopPins={stopPins}
+                turnPins={turnPins}
                 onChange={handleDraftChange}
+                onLocationChange={handleLocationChange}
+                onClickWaypointPin={goToRowIndex}
                 onFetch={() =>
                   draftWaypoint &&
                   draftWaypoint.kind !== "unresolvable" &&

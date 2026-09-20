@@ -27,9 +27,9 @@ can only be published once every stop has resolved.
 - Prisma 7 + Postgres — routes, schools, stops, and the geocoding cache
   all live here
 - [MapLibre GL JS](https://maplibre.org) rendering a self-hosted
-  [PMTiles](https://protomaps.com) vector basemap when one's deployed
-  (`src/lib/mapEngine.ts`), falling back automatically to Leaflet +
-  CARTO raster tiles otherwise; [OpenRouteService](https://openrouteservice.org)
+  [PMTiles](https://protomaps.com) vector basemap (`src/lib/mapEngine.ts`) —
+  requires WebGL, no raster-tile fallback (see that file's own doc
+  comment for why); [OpenRouteService](https://openrouteservice.org)
   for geocoding and the road-following route line
 
 ## Running locally
@@ -45,7 +45,6 @@ Fill in `.env.local` (see that file for where each value is used):
   fine for dev (e.g. `postgresql://postgres:postgres@localhost:5432/shortstop`);
   a free hosted one works too (Neon, Vercel Postgres, Supabase, ...).
 - `ORS_API_KEY` — free at [openrouteservice.org](https://openrouteservice.org/dev/#/signup).
-- `NEXT_PUBLIC_CARTO_API_KEY` — free at [carto.com](https://carto.com/).
 
 Then:
 
@@ -89,9 +88,8 @@ looked up twice.
 Push to GitHub, then in Vercel: **Add New Project** → import this repo.
 No build settings to change — Vercel auto-detects Next.js.
 
-Set `DATABASE_URL`, `ORS_API_KEY`, and `NEXT_PUBLIC_CARTO_API_KEY` in
-Vercel (Project Settings → Environment Variables, Production and
-Preview both). `next build` runs `prisma migrate deploy` first, so
+Set `DATABASE_URL` and `ORS_API_KEY` in Vercel (Project Settings →
+Environment Variables, Production and Preview both). `next build` runs `prisma migrate deploy` first, so
 schema changes apply automatically on every deploy once `DATABASE_URL`
 is set — but a brand-new database still needs seeding once, via the
 **Postgres migrate + seed** GitHub Actions workflow (manually
@@ -114,11 +112,6 @@ Vercel value).
   driver/routing data exists.
 - Printable, per-route sheets for handing to a substitute driver — the
   admin "Download stops" link is a flat CSV export today.
-- No `public/maps/middle-tennessee.pmtiles` file is committed yet, so
-  every map still renders on the Leaflet fallback in production. See
-  `src/lib/mapEngine.ts`'s doc comment for the exact steps to generate
-  and place one (a Protomaps extract for the service area) and switch
-  both maps over to MapLibre automatically.
 - Draggable map/content split on the turn-by-turn navigation screen
   (`StepScreen.tsx`) — currently a fixed 30vh/70vh (portrait) or
   42%/58% (landscape) split, with the content pane's own text/icon/
