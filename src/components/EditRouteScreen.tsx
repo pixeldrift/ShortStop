@@ -807,11 +807,11 @@ function StepRowView({
  */
 function StepRowEditor({
   row,
-  rowIndex,
   stopNumber,
   previousRoad,
   schools,
   savedLocations,
+  streetNames,
   onSaveSavedLocation,
   onFetchSavedLocationCoords,
   routeSchoolName,
@@ -833,15 +833,6 @@ function StepRowEditor({
   onNavigate,
 }: {
   row: RawRouteRow;
-  /** This row's own position among every row on the route (not just
-   * the currently-visible ones) - only used to `key` WaypointPreviewMap
-   * below, so navigating to a different row via the prev/next arrows
-   * (or Update/Cancel's own row-to-row jump) remounts that map with a
-   * fresh camera centered on the new row, instead of it staying frozen
-   * wherever the previous row's own mount last left it (see
-   * WaypointPreviewMap's own doc comment for why its camera never
-   * moves on its own once mounted). */
-  rowIndex: number;
   stopNumber: number | null;
   /** The road deriveWaypoints.ts already has tracked as "current"
    * heading into this row, from every row before it - null only for
@@ -863,6 +854,13 @@ function StepRowEditor({
    * resolves this row immediately (onManualCoordinates) instead of
    * waiting on a fresh geocode. */
   savedLocations: SavedLocationInfo[];
+  /** Every road name this app already has a resolved coordinate for,
+   * anywhere in the district (EditRouteScreen's own streetNames, fetched
+   * once on mount from /api/street-names) - powers the Location field's
+   * own <datalist> suggestions below, a plain browser-native
+   * autocomplete against what's already been geocoded rather than a
+   * live map/geocoder search. */
+  streetNames: string[];
   /** Creates (`id: null`) or updates (`id` set) a saved location - the
    * address book's own "+ Add Location" footer button and each saved
    * location's own pencil icon both open EditSavedLocationModal, and
@@ -1397,22 +1395,40 @@ function StepRowEditor({
                       clearLabel="Clear location"
                     />
                   ) : (
-                    <input
-                      className={`min-w-0 flex-1 ${inputClass} ${
-                        status?.status === "unresolved"
-                          ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                          : ""
-                      }`}
-                      value={row.location}
-                      onChange={(e) => onChange({ location: e.target.value })}
-                      placeholder={
-                        isSchoolAction
-                          ? "LaVergne High School"
-                          : /^\d/.test(row.location)
-                            ? "123 Maple Dr"
-                            : "Elm St"
-                      }
-                    />
+                    <>
+                      <input
+                        className={`min-w-0 flex-1 ${inputClass} ${
+                          status?.status === "unresolved"
+                            ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                            : ""
+                        }`}
+                        value={row.location}
+                        onChange={(e) => onChange({ location: e.target.value })}
+                        placeholder={
+                          isSchoolAction
+                            ? "LaVergne High School"
+                            : /^\d/.test(row.location)
+                              ? "123 Maple Dr"
+                              : "Elm St"
+                        }
+                        list="street-name-suggestions"
+                      />
+                      {/* A plain browser-native <datalist>, not a real
+                          autocomplete component - streetNames is every
+                          road name this app already has a resolved
+                          coordinate for (see EditRouteScreen's own
+                          streetNames prop doc comment), so typing
+                          "Oak" here can suggest "Oak Ave" back exactly
+                          as it resolved before, without a live map/
+                          geocoder search. Still a free-typed field
+                          either way - picking a suggestion or ignoring
+                          it entirely both just set `value` above. */}
+                      <datalist id="street-name-suggestions">
+                        {streetNames.map((name) => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
+                    </>
                   )}
                   <button
                     type="button"
@@ -1624,11 +1640,13 @@ function StepRowEditor({
           route's own road-following line plus every other resolved
           Stop, so an admin can sanity-check a fetched or manually
           typed coordinate against its real neighbors without leaving
-          this card. Read-only (WaypointPreviewMap's own camera never
-          moves once mounted) - PlaceCoordinatesModal above is still
-          the one place to actually change this row's point. */}
+          this card. Scroll/drag/pinch freely to look around -
+          PlaceCoordinatesModal above is still the one place to
+          actually change this row's point. Navigating to a different
+          row via the prev/next arrows flies the camera to the new
+          row's own point instead of jumping straight there (see
+          WaypointPreviewMap's own doc comment). */}
             <WaypointPreviewMap
-              key={rowIndex}
               center={previewCenter}
               routeLine={routeContext}
               stopPins={stopPins}
@@ -1754,7 +1772,7 @@ function AddStepButton({
             onClick={onSplit}
             disabled={disabled}
             aria-label="Split route here"
-            className="absolute left-2 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+            className="absolute left-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
           >
             {/* The source art is a right-pointing (open) pair of blades -
                 unmirrored now that this sits on the left edge, so it
@@ -1771,7 +1789,7 @@ function AddStepButton({
             type="button"
             disabled={disabled}
             aria-label="Autoroute (coming soon)"
-            className="absolute right-2 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+            className="absolute right-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
           >
             <CompassIcon className="h-3.5 w-3.5" />
           </button>
@@ -2971,6 +2989,18 @@ export function EditRouteScreen({
     fetch("/api/saved-locations")
       .then((res) => (res.ok ? res.json() : []))
       .then((data: SavedLocationInfo[]) => setSavedLocations(data))
+      .catch(() => {});
+  }, []);
+  // Every road name this app already has a resolved coordinate for,
+  // anywhere in the district - fetched once per edit session, same
+  // "fetch on mount" shape as savedLocations just above. Feeds
+  // StepRowEditor's own Location field suggestions (a plain <datalist>,
+  // not a live map search) - see /api/street-names's own doc comment.
+  const [streetNames, setStreetNames] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/street-names")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: string[]) => setStreetNames(data))
       .catch(() => {});
   }, []);
   // The route's own anchor - a free-typed name, matched by exact
@@ -5070,11 +5100,11 @@ export function EditRouteScreen({
             return (
               <StepRowEditor
                 row={draftRow}
-                rowIndex={index}
                 stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
                 savedLocations={savedLocations}
+                streetNames={streetNames}
                 onSaveSavedLocation={handleSaveSavedLocation}
                 onFetchSavedLocationCoords={handleFetchSavedLocationCoords}
                 routeSchoolName={schoolName}

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as LeafletMap } from "leaflet";
+import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import {
   collapseAttribution,
   PMTILES_ATTRIBUTION,
@@ -15,15 +16,42 @@ import { TILE_ATTRIBUTION, TILE_SUBDOMAINS, TILE_URL } from "./RouteMap";
 import type { RoutingResult } from "@/lib/routing/types";
 
 const PREVIEW_ZOOM = 15;
+// Same 750ms RouteMap.tsx's own driving-mode flyTo already uses for
+// "jump to a new step" - familiar motion for the same kind of camera
+// move, not a value picked fresh for this component.
+const FLY_TO_DURATION_MS = 750;
+
+/** What either renderer hands back once mounted, so this component can
+ * react to a later prop change (StepRowEditor's own prev/next arrows,
+ * above all) by moving the *existing* map instead of tearing it down
+ * and rebuilding a fresh one - see this file's own top doc comment for
+ * why that distinction is the whole point. */
+interface PreviewMapController {
+  flyToCenter(center: { lat: number; lon: number }): void;
+  setStopPins(stopPins: { lat: number; lon: number }[]): void;
+  destroy(): void;
+}
 
 /**
- * A small, read-only street-level preview inside StepRowEditor - just
+ * A small, interactive street-level preview inside StepRowEditor - just
  * enough spatial context (this route's own road-following line, every
  * other resolved Stop as a plain dot, this row's own point highlighted
  * in blue) to sanity-check a coordinate against its neighbors without
- * leaving the popup. Unlike PlaceCoordinatesModal's own map, the
- * camera is set once on mount and never moves again - there's nothing
- * here for an admin to drag or tap, only to look at.
+ * leaving the popup. An admin can drag/scroll/pinch to look around it
+ * freely - PlaceCoordinatesModal is still the only place to actually
+ * *change* a coordinate, this is just for looking.
+ *
+ * The map instance itself is mounted once and never rebuilt - StepRowEditor's
+ * own prev/next arrows change `center` (and `stopPins`) as the admin
+ * steps through rows, and this reacts to that with a real camera flight
+ * (flyToCenter, called from the effect below) rather than remounting
+ * with a fresh camera, which is what an earlier version's `key={rowIndex}`
+ * at the call site did - every navigation looked like the view cutting
+ * straight to the next stop with no sense of where it was relative to
+ * the last one. `routeLine`'s own road-following fetch still only
+ * happens once, on mount - unlike `center`, it's the same whole-route
+ * line regardless of which row is open, so there's nothing for a
+ * row-to-row navigation to update there.
  */
 export function WaypointPreviewMap({
   center,
@@ -45,17 +73,17 @@ export function WaypointPreviewMap({
   stopPins: { lat: number; lon: number }[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const controllerRef = useRef<PreviewMapController | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     let cancelled = false;
-    let cleanup: (() => void) | undefined;
 
     void resolveMapEngine().then((engine) => {
       if (cancelled) return;
-      cleanup =
+      controllerRef.current =
         engine === "maplibre"
           ? mountMapLibre(container, center, routeLine, stopPins, () => cancelled)
           : mountLeaflet(container, center, routeLine, stopPins, () => cancelled);
@@ -63,15 +91,27 @@ export function WaypointPreviewMap({
 
     return () => {
       cancelled = true;
-      cleanup?.();
+      controllerRef.current?.destroy();
+      controllerRef.current = null;
     };
-    // center/routeLine/stopPins are only ever read on mount - this
-    // preview is a fixed snapshot, not a live view, so there's nothing
-    // to re-fetch or redraw as StepRowEditor's own draft keeps changing
-    // underneath it (same reasoning PlaceCoordinatesModal's identical
-    // mount effect already documents).
+    // Mount once - center/routeLine/stopPins's *initial* values seed
+    // the very first paint only; every later change is picked up by
+    // the two effects below instead (this component's own doc comment
+    // on why that split exists).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    controllerRef.current?.flyToCenter(center);
+    // Compares the two numbers, not the object literal StepRowEditor
+    // hands down fresh every render - this only needs to fly when the
+    // coordinate itself actually changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [center.lat, center.lon]);
+
+  useEffect(() => {
+    controllerRef.current?.setStopPins(stopPins);
+  }, [stopPins]);
 
   return (
     <div className="relative mt-3 h-40 w-full overflow-hidden rounded-2xl border border-zinc-300">
@@ -80,30 +120,29 @@ export function WaypointPreviewMap({
   );
 }
 
-// Every interaction handler is switched off below (dragging, zoom,
-// etc.) - this is a fixed snapshot for spatial context, not a real
-// map an admin can pan around inside a card this small.
 function mountLeaflet(
   container: HTMLDivElement,
   center: { lat: number; lon: number },
   routeLine: { lat: number; lon: number }[],
   stopPins: { lat: number; lon: number }[],
   cancelledRef: () => boolean,
-): () => void {
+): PreviewMapController {
   let map: LeafletMap | undefined;
+  // Leaflet's own module, kept around after the dynamic import resolves
+  // so flyToCenter/setStopPins (called well after mount, from a later
+  // prop-change effect) can still reach L.circleMarker/L.latLng without
+  // importing it a second time.
+  let leaflet: typeof import("leaflet") | undefined;
+  let currentMarker: ReturnType<typeof import("leaflet").circleMarker> | undefined;
+  let stopMarkers: ReturnType<typeof import("leaflet").circleMarker>[] = [];
+  let destroyed = false;
 
   void import("leaflet").then((L) => {
-    if (cancelledRef()) return;
+    if (cancelledRef() || destroyed) return;
+    leaflet = L;
     map = L.map(container, {
       center: [center.lat, center.lon],
       zoom: PREVIEW_ZOOM,
-      zoomControl: false,
-      dragging: false,
-      scrollWheelZoom: false,
-      doubleClickZoom: false,
-      touchZoom: false,
-      boxZoom: false,
-      keyboard: false,
     });
     L.tileLayer(TILE_URL, {
       maxZoom: 20,
@@ -112,7 +151,7 @@ function mountLeaflet(
       detectRetina: true,
     }).addTo(map);
 
-    for (const pin of stopPins) {
+    stopMarkers = stopPins.map((pin) =>
       L.circleMarker([pin.lat, pin.lon], {
         radius: 5,
         color: "#ffffff",
@@ -120,12 +159,12 @@ function mountLeaflet(
         fillColor: "#ef4444",
         fillOpacity: 1,
         interactive: false,
-      }).addTo(map);
-    }
-    // This row's own point, drawn last (on top of every plain stop dot
+      }).addTo(map!),
+    );
+    // This row's own point, added last (on top of every plain stop dot
     // above) and in blue - the one pin among the others an admin is
     // actually here to check.
-    L.circleMarker([center.lat, center.lon], {
+    currentMarker = L.circleMarker([center.lat, center.lon], {
       radius: 6,
       color: "#ffffff",
       weight: 2,
@@ -158,8 +197,50 @@ function mountLeaflet(
     }
   });
 
-  return () => {
-    map?.remove();
+  return {
+    flyToCenter(next) {
+      if (!map) return;
+      map.flyTo([next.lat, next.lon], PREVIEW_ZOOM, {
+        duration: FLY_TO_DURATION_MS / 1000,
+      });
+      currentMarker?.setLatLng([next.lat, next.lon]);
+    },
+    setStopPins(next) {
+      if (!map || !leaflet) return;
+      for (const marker of stopMarkers) marker.remove();
+      stopMarkers = next.map((pin) =>
+        leaflet!
+          .circleMarker([pin.lat, pin.lon], {
+            radius: 5,
+            color: "#ffffff",
+            weight: 1.5,
+            fillColor: "#ef4444",
+            fillOpacity: 1,
+            interactive: false,
+          })
+          .addTo(map!),
+      );
+      currentMarker?.bringToFront();
+    },
+    destroy() {
+      destroyed = true;
+      map?.remove();
+    },
+  };
+}
+
+function pointFeature(point: { lat: number; lon: number }) {
+  return {
+    type: "Feature" as const,
+    properties: {},
+    geometry: { type: "Point" as const, coordinates: [point.lon, point.lat] },
+  };
+}
+
+function stopPinsCollection(stopPins: { lat: number; lon: number }[]) {
+  return {
+    type: "FeatureCollection" as const,
+    features: stopPins.map(pointFeature),
   };
 }
 
@@ -169,8 +250,14 @@ function mountMapLibre(
   routeLine: { lat: number; lon: number }[],
   stopPins: { lat: number; lon: number }[],
   cancelledRef: () => boolean,
-): () => void {
-  let map: import("maplibre-gl").Map | undefined;
+): PreviewMapController {
+  let map: MapLibreMap | undefined;
+  let loaded = false;
+  // A flyToCenter/setStopPins call can land before the map's own "load"
+  // event fires (StepRowEditor can navigate rows faster than a fresh
+  // map mounts) - held here and applied once loaded instead of dropped.
+  let pendingCenter = center;
+  let pendingStopPins = stopPins;
 
   void import("maplibre-gl").then((maplibregl) =>
     import("pmtiles").then(({ Protocol }) => {
@@ -186,7 +273,6 @@ function mountMapLibre(
         style: protomapsStyle(PMTILES_URL),
         center: [center.lon, center.lat],
         zoom: PREVIEW_ZOOM,
-        interactive: false,
         attributionControl: { customAttribution: PMTILES_ATTRIBUTION, compact: true },
       });
       const mapInstance = map;
@@ -194,17 +280,11 @@ function mountMapLibre(
 
       mapInstance.once("load", () => {
         if (cancelledRef()) return;
+        loaded = true;
 
         mapInstance.addSource("preview-stops", {
           type: "geojson",
-          data: {
-            type: "FeatureCollection",
-            features: stopPins.map((p) => ({
-              type: "Feature",
-              properties: {},
-              geometry: { type: "Point", coordinates: [p.lon, p.lat] },
-            })),
-          },
+          data: stopPinsCollection(pendingStopPins),
         });
         mapInstance.addLayer({
           id: "preview-stops",
@@ -221,11 +301,7 @@ function mountMapLibre(
         // every plain stop dot above.
         mapInstance.addSource("preview-current", {
           type: "geojson",
-          data: {
-            type: "Feature",
-            properties: {},
-            geometry: { type: "Point", coordinates: [center.lon, center.lat] },
-          },
+          data: pointFeature(pendingCenter),
         });
         mapInstance.addLayer({
           id: "preview-current",
@@ -239,42 +315,74 @@ function mountMapLibre(
           },
         });
 
-        if (routeLine.length <= 1) return;
-        fetch("/api/route-geometry", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ waypoints: routeLine }),
-        })
-          .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
-          .then((result) => {
-            if (cancelledRef() || !result) return;
-            mapInstance.addSource("preview-route-line", {
-              type: "geojson",
-              data: {
-                type: "Feature",
-                properties: {},
-                geometry: { type: "LineString", coordinates: result.geometry.coordinates },
-              },
-            });
-            // Inserted below the stop dots (beforeId) so the line
-            // never draws over them.
-            mapInstance.addLayer(
-              {
-                id: "preview-route-line",
-                type: "line",
-                source: "preview-route-line",
-                layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
-              },
-              "preview-stops",
-            );
+        if (routeLine.length > 1) {
+          fetch("/api/route-geometry", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ waypoints: routeLine }),
           })
-          .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+            .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+            .then((result) => {
+              if (cancelledRef() || !result) return;
+              mapInstance.addSource("preview-route-line", {
+                type: "geojson",
+                data: {
+                  type: "Feature",
+                  properties: {},
+                  geometry: { type: "LineString", coordinates: result.geometry.coordinates },
+                },
+              });
+              // Inserted below the stop dots (beforeId) so the line
+              // never draws over them.
+              mapInstance.addLayer(
+                {
+                  id: "preview-route-line",
+                  type: "line",
+                  source: "preview-route-line",
+                  layout: { "line-cap": "round", "line-join": "round" },
+                  paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
+                },
+                "preview-stops",
+              );
+            })
+            .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+        }
+
+        // A flyToCenter/setStopPins already called before "load" fired
+        // only ever updated `pending*` above - applied for real now
+        // that the sources actually exist to update.
+        if (pendingCenter !== center) {
+          (mapInstance.getSource("preview-current") as GeoJSONSource | undefined)?.setData(
+            pointFeature(pendingCenter),
+          );
+        }
+        if (pendingStopPins !== stopPins) {
+          (mapInstance.getSource("preview-stops") as GeoJSONSource | undefined)?.setData(
+            stopPinsCollection(pendingStopPins),
+          );
+        }
       });
     }),
   );
 
-  return () => {
-    map?.remove();
+  return {
+    flyToCenter(next) {
+      pendingCenter = next;
+      if (!map || !loaded) return;
+      map.flyTo({ center: [next.lon, next.lat], duration: FLY_TO_DURATION_MS });
+      (map.getSource("preview-current") as GeoJSONSource | undefined)?.setData(
+        pointFeature(next),
+      );
+    },
+    setStopPins(next) {
+      pendingStopPins = next;
+      if (!map || !loaded) return;
+      (map.getSource("preview-stops") as GeoJSONSource | undefined)?.setData(
+        stopPinsCollection(next),
+      );
+    },
+    destroy() {
+      map?.remove();
+    },
   };
 }
