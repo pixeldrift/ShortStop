@@ -58,6 +58,7 @@ export { default as ScissorsIcon } from "./icons/scissors.svg";
 export { default as CompassIcon } from "./icons/compass.svg";
 export { default as ExpandIcon } from "./icons/expand.svg";
 export { default as CopyIcon } from "./icons/copy.svg";
+export { default as ReverseIcon } from "./icons/reverse.svg";
 export { default as AddressBookIcon } from "./icons/address-book.svg";
 export { default as PauseIcon } from "./icons/pause.svg";
 

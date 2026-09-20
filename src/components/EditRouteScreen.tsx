@@ -26,6 +26,7 @@ import {
   MapPinIcon,
   PersonSolidIcon,
   PlusIcon,
+  ReverseIcon,
   RightArrowIcon,
   RoundedTriangleIcon,
   SaveIcon,
@@ -59,6 +60,7 @@ import {
 } from "@/lib/parseRouteImport";
 import { parseRouteFilename } from "@/lib/parseRouteMasterList";
 import { routeTitleSizeClass } from "@/lib/routeTitle";
+import { reverseRouteRows, reverseTripType } from "@/lib/reverseRoute";
 import {
   PLACEHOLDER_DISTANCE,
   PLACEHOLDER_DURATION_MINUTES,
@@ -3367,6 +3369,8 @@ export function EditRouteScreen({
   // `saving` guards Save - a duplicate is its own immediate POST, not
   // routed through handleSave, so it needs its own in-flight flag.
   const [duplicating, setDuplicating] = useState(false);
+  // Same guard, for the hub screen's own "Reverse Route" link.
+  const [reversing, setReversing] = useState(false);
 
   /** SplitRouteModal's own Move/Copy step - hands the chosen half's
    * rows up to page.tsx as ready-to-paste text (the same canonical
@@ -4268,6 +4272,78 @@ export function EditRouteScreen({
     }
 
     onSave(built, rows, cache, null);
+  }
+
+  /** The hub screen's own "Reverse Route" link - same immediate-save
+   * shape as handleDuplicate above (`Reverse-` prefix, `previousId:
+   * null`, forced `status: "draft"`), but the rows themselves are
+   * genuinely transformed, not just carried over: reverseRouteRows
+   * (src/lib/reverseRoute.ts) reverses their order and flips
+   * everything about each row that depends on which way it's being
+   * driven (left/right, side of road, Depart/Arrive), and tripType
+   * flips pickup<->dropoff to match - the whole point being a quick
+   * starting point for "the same stops, the other direction" (morning
+   * pickup -> afternoon dropoff) without retyping every waypoint.
+   * departureTime is deliberately dropped rather than carried over - an
+   * AM route's own start time is never right for the PM run this
+   * becomes. This is explicitly a *naive* reversal (see
+   * reverseRouteRows's own doc comment on exactly where) - real
+   * verification against the actual road network (are these turns
+   * still legal/possible the other way) is a later, separate pass, not
+   * this button. */
+  async function handleReverse() {
+    if (mode !== "edit" || reversing) return;
+    if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
+      setShowRequiredErrors(true);
+      setMessage("Route #, Trip, and School are required.");
+      return;
+    }
+    const newRouteNumber = `Reverse-${routeNumber}`;
+    const newTripType = reverseTripType(tripType || "pickup");
+    const reversedRows = reverseRouteRows(rows);
+    const meta = buildMetaFields("draft");
+    meta.routeNumber = newRouteNumber;
+    meta.tripType = newTripType;
+    meta.name = `${meta.schoolName} — ${tripTypeFullLabel(newTripType)}`;
+    meta.departureTime = "";
+    meta.id = `${newRouteNumber}-${newTripType}-${meta.schoolLevel ?? "none"}`;
+    const built = buildRouteFromRows(reversedRows, meta);
+
+    setReversing(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: built.id,
+          previousId: null,
+          status: "draft",
+          routeNumber: built.routeNumber,
+          busNumber: built.busNumber,
+          schoolName: built.schoolName,
+          schoolLevel: built.schoolLevel,
+          tripType: built.tripType,
+          startTime: "",
+          nextRouteId: built.nextRouteId,
+          steps: reversedRows,
+        }),
+      });
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        setMessage(`Couldn't reverse: ${data.error ?? res.statusText}`);
+        return;
+      }
+    } catch (err) {
+      setMessage(
+        `Couldn't reverse: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    } finally {
+      setReversing(false);
+    }
+
+    onSave(built, reversedRows, cache, null);
   }
 
   // A live snapshot of the route as currently edited (not just as last
@@ -5194,14 +5270,25 @@ export function EditRouteScreen({
         {message && <p className="text-sm text-zinc-500">{message}</p>}
       </div>
 
-      {/* A plain text link, not a button - same "Download Waypoints"
-          convention the Stops and Turns screen's own footer uses.
-          Makes an immediate, saved copy of this route (see
-          handleDuplicate's own doc comment) rather than opening
-          anything to review first - Split's own review step exists
-          because it's carving up this route's live rows; a duplicate
-          has nothing to reconcile, it's just a new draft. */}
-      <div className="flex w-full max-w-md shrink-0 justify-end">
+      {/* Plain text links, not buttons - same "Download Waypoints"
+          convention the Stops and Turns screen's own footer uses. Both
+          make an immediate, saved copy of this route (see
+          handleDuplicate's/handleReverse's own doc comments) rather
+          than opening anything to review first - Split's own review
+          step exists because it's carving up this route's live rows;
+          neither of these has anything to reconcile, they're just new
+          drafts. */}
+      <div className="flex w-full max-w-md shrink-0 items-center justify-end gap-4">
+        <button
+          type="button"
+          onClick={handleReverse}
+          disabled={reversing}
+          aria-label="Reverse this route's stops and directions as a new draft"
+          className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800 disabled:opacity-40"
+        >
+          <ReverseIcon className="h-4 w-4" />
+          Reverse Route
+        </button>
         <button
           type="button"
           onClick={handleDuplicate}
