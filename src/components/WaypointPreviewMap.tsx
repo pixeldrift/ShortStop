@@ -21,6 +21,16 @@ const PREVIEW_ZOOM = 15;
 // move, not a value picked fresh for this component.
 const FLY_TO_DURATION_MS = 1000;
 
+/** One already-resolved Stop's own dot on the map - `rowIndex` (a real
+ * index into EditRouteScreen's own `rows`) is what lets tapping one of
+ * these open that row's own editor (onClickPin below), not just look at
+ * it. */
+export interface StopPin {
+  lat: number;
+  lon: number;
+  rowIndex: number;
+}
+
 /** What either renderer hands back once mounted, so this component can
  * react to a later prop change (StepRowEditor's own prev/next arrows,
  * above all) by moving the *existing* map instead of tearing it down
@@ -28,7 +38,7 @@ const FLY_TO_DURATION_MS = 1000;
  * why that distinction is the whole point. */
 interface PreviewMapController {
   flyToCenter(center: { lat: number; lon: number }): void;
-  setStopPins(stopPins: { lat: number; lon: number }[]): void;
+  setStopPins(stopPins: StopPin[]): void;
   destroy(): void;
 }
 
@@ -57,6 +67,7 @@ export function WaypointPreviewMap({
   center,
   routeLine,
   stopPins,
+  onClickPin,
 }: {
   /** This row's own current coordinate (resolved, or manually typed) -
    * StepRowEditor falls back to the same neighbor guess/default it
@@ -70,10 +81,25 @@ export function WaypointPreviewMap({
   /** Every already-resolved Stop (not a turn, not the school) on this
    * route (EditRouteScreen's own stopPins) - drawn as plain dots,
    * distinct from this row's own highlighted point. */
-  stopPins: { lat: number; lon: number }[];
+  stopPins: StopPin[];
+  /** Tapping one of `stopPins`' own dots - omitted (GeocodeConfirmModal's
+   * own read-only instance) leaves every dot non-interactive, same as
+   * before this existed. StepRowEditor's own instance wires this to
+   * "open that row's editor instead," the same jump its own prev/next
+   * arrows already do. */
+  onClickPin?: (pin: StopPin) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<PreviewMapController | null>(null);
+  // Read by both renderers' own click handlers, which are attached once
+  // (at pin-creation time) and would otherwise close over whatever
+  // `onClickPin` happened to be at that moment - a ref keeps every
+  // click reading the *latest* prop instead, without needing to tear
+  // down and re-attach a listener every time it changes identity.
+  const onClickPinRef = useRef(onClickPin);
+  useEffect(() => {
+    onClickPinRef.current = onClickPin;
+  }, [onClickPin]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -85,8 +111,8 @@ export function WaypointPreviewMap({
       if (cancelled) return;
       controllerRef.current =
         engine === "maplibre"
-          ? mountMapLibre(container, center, routeLine, stopPins, () => cancelled)
-          : mountLeaflet(container, center, routeLine, stopPins, () => cancelled);
+          ? mountMapLibre(container, center, routeLine, stopPins, onClickPinRef, () => cancelled)
+          : mountLeaflet(container, center, routeLine, stopPins, onClickPinRef, () => cancelled);
     });
 
     return () => {
@@ -124,7 +150,8 @@ function mountLeaflet(
   container: HTMLDivElement,
   center: { lat: number; lon: number },
   routeLine: { lat: number; lon: number }[],
-  stopPins: { lat: number; lon: number }[],
+  stopPins: StopPin[],
+  onClickPinRef: React.RefObject<((pin: StopPin) => void) | undefined>,
   cancelledRef: () => boolean,
 ): PreviewMapController {
   let map: LeafletMap | undefined;
@@ -136,6 +163,29 @@ function mountLeaflet(
   let currentMarker: ReturnType<typeof import("leaflet").circleMarker> | undefined;
   let stopMarkers: ReturnType<typeof import("leaflet").circleMarker>[] = [];
   let destroyed = false;
+
+  // Shared by the initial mount and setStopPins below, so a stop dot's
+  // own styling/click-wiring only ever lives in one place. Interactive
+  // whenever a click handler is actually wanted (Leaflet's own default
+  // `.leaflet-interactive` CSS already gives it a pointer cursor for
+  // free) - a plain, un-clickable dot otherwise, same as before this
+  // existed (GeocodeConfirmModal's own read-only instance, which never
+  // passes onClickPin).
+  function makeStopMarker(
+    L: typeof import("leaflet"),
+    pin: StopPin,
+  ): ReturnType<typeof import("leaflet").circleMarker> {
+    const marker = L.circleMarker([pin.lat, pin.lon], {
+      radius: 5,
+      color: "#ffffff",
+      weight: 1.5,
+      fillColor: "#ef4444",
+      fillOpacity: 1,
+      interactive: onClickPinRef.current != null,
+    });
+    marker.on("click", () => onClickPinRef.current?.(pin));
+    return marker;
+  }
 
   void import("leaflet").then((L) => {
     if (cancelledRef() || destroyed) return;
@@ -151,16 +201,7 @@ function mountLeaflet(
       detectRetina: true,
     }).addTo(map);
 
-    stopMarkers = stopPins.map((pin) =>
-      L.circleMarker([pin.lat, pin.lon], {
-        radius: 5,
-        color: "#ffffff",
-        weight: 1.5,
-        fillColor: "#ef4444",
-        fillOpacity: 1,
-        interactive: false,
-      }).addTo(map!),
-    );
+    stopMarkers = stopPins.map((pin) => makeStopMarker(L, pin).addTo(map!));
     // This row's own point, added last (on top of every plain stop dot
     // above) and in blue - the one pin among the others an admin is
     // actually here to check.
@@ -208,18 +249,7 @@ function mountLeaflet(
     setStopPins(next) {
       if (!map || !leaflet) return;
       for (const marker of stopMarkers) marker.remove();
-      stopMarkers = next.map((pin) =>
-        leaflet!
-          .circleMarker([pin.lat, pin.lon], {
-            radius: 5,
-            color: "#ffffff",
-            weight: 1.5,
-            fillColor: "#ef4444",
-            fillOpacity: 1,
-            interactive: false,
-          })
-          .addTo(map!),
-      );
+      stopMarkers = next.map((pin) => makeStopMarker(leaflet!, pin).addTo(map!));
       currentMarker?.bringToFront();
     },
     destroy() {
@@ -237,10 +267,22 @@ function pointFeature(point: { lat: number; lon: number }) {
   };
 }
 
-function stopPinsCollection(stopPins: { lat: number; lon: number }[]) {
+// Same shape as pointFeature above, plus `rowIndex` carried in
+// `properties` - the click handler below reads it back off
+// `e.features[0].properties.rowIndex` (GeoJSON geometry has no room for
+// anything but coordinates) to know which row a tapped dot belongs to.
+function stopPinFeature(pin: StopPin) {
+  return {
+    type: "Feature" as const,
+    properties: { rowIndex: pin.rowIndex },
+    geometry: { type: "Point" as const, coordinates: [pin.lon, pin.lat] },
+  };
+}
+
+function stopPinsCollection(stopPins: StopPin[]) {
   return {
     type: "FeatureCollection" as const,
-    features: stopPins.map(pointFeature),
+    features: stopPins.map(stopPinFeature),
   };
 }
 
@@ -248,7 +290,8 @@ function mountMapLibre(
   container: HTMLDivElement,
   center: { lat: number; lon: number },
   routeLine: { lat: number; lon: number }[],
-  stopPins: { lat: number; lon: number }[],
+  stopPins: StopPin[],
+  onClickPinRef: React.RefObject<((pin: StopPin) => void) | undefined>,
   cancelledRef: () => boolean,
 ): PreviewMapController {
   let map: MapLibreMap | undefined;
@@ -296,6 +339,25 @@ function mountMapLibre(
             "circle-stroke-width": 1.5,
             "circle-stroke-color": "#ffffff",
           },
+        });
+        // Attached once, unconditionally - reads onClickPinRef fresh on
+        // every click (see that ref's own doc comment), so this never
+        // needs to know whether a real handler exists yet, only whether
+        // one does at the moment a tap actually lands. The hover cursor
+        // swap is the same "this is clickable" affordance Leaflet's own
+        // `.leaflet-interactive` CSS gives its circleMarkers for free -
+        // MapLibre has no equivalent default, so it's done by hand here.
+        mapInstance.on("click", "preview-stops", (e) => {
+          const rowIndex = e.features?.[0]?.properties?.rowIndex;
+          if (typeof rowIndex === "number") {
+            onClickPinRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng, rowIndex });
+          }
+        });
+        mapInstance.on("mouseenter", "preview-stops", () => {
+          mapInstance.getCanvas().style.cursor = "pointer";
+        });
+        mapInstance.on("mouseleave", "preview-stops", () => {
+          mapInstance.getCanvas().style.cursor = "";
         });
         // This row's own point - added after (and so drawn on top of)
         // every plain stop dot above.

@@ -824,6 +824,7 @@ function StepRowEditor({
   stopPins,
   onChange,
   onLocationChange,
+  onClickStopPin,
   onFetch,
   onManualCoordinates,
   onCancel,
@@ -923,11 +924,17 @@ function StepRowEditor({
   routeContext: { lat: number; lon: number }[];
   /** Every already-resolved Stop's own coordinate (EditRouteScreen's
    * own `stopPins`, a subset of `routeContext` above) - handed to the
-   * small read-only WaypointPreviewMap at the bottom of this card so
-   * an admin can see this row's own point next to its neighboring
-   * stops, not just the road-following line alone. */
-  stopPins: { lat: number; lon: number }[];
+   * WaypointPreviewMap at the bottom of this card so an admin can see
+   * this row's own point next to its neighboring stops, not just the
+   * road-following line alone. `rowIndex` is what lets tapping one of
+   * those dots open that row's own editor (onClickStopPin below). */
+  stopPins: { lat: number; lon: number; rowIndex: number }[];
   onChange: (patch: Partial<RawRouteRow>) => void;
+  /** Opens a different row's own editor in place of this one - the
+   * same "save this row's draft, then open the target" goToRowIndex
+   * does for the header's own prev/next arrows (EditRouteScreen), now
+   * also reachable by tapping one of stopPins' own dots on the map. */
+  onClickStopPin: (rowIndex: number) => void;
   /** The Location field's own onChange, in place of the plain
    * `onChange({ location })` every other field here uses directly - see
    * EditRouteScreen's own handleLocationChange for the extra step this
@@ -1671,11 +1678,13 @@ function StepRowEditor({
           actually change this row's point. Navigating to a different
           row via the prev/next arrows flies the camera to the new
           row's own point instead of jumping straight there (see
-          WaypointPreviewMap's own doc comment). */}
+          WaypointPreviewMap's own doc comment) - tapping a stop's own
+          dot directly does the same thing, straight to that stop. */}
             <WaypointPreviewMap
               center={previewCenter}
               routeLine={routeContext}
               stopPins={stopPins}
+              onClickPin={(pin) => onClickStopPin(pin.rowIndex)}
             />
 
             <div className="mt-3 flex items-center gap-2">
@@ -1992,7 +2001,7 @@ function GeocodeConfirmModal({
   entry: Extract<WaypointCacheEntry, { status: "ok" }>;
   fallback: FallbackDetail;
   routeLine: { lat: number; lon: number }[];
-  stopPins: { lat: number; lon: number }[];
+  stopPins: { lat: number; lon: number; rowIndex: number }[];
   onAccept: () => void;
   onReject: () => void;
 }) {
@@ -3646,11 +3655,15 @@ export function EditRouteScreen({
   // by position is enough to tell which resolved point belongs to an
   // actual Stop. WaypointPreviewMap draws these as plain dots, distinct
   // from whichever one is this row's own (highlighted separately).
+  // `rowIndex` (a real index into `rows`) is only ever read by
+  // StepRowEditor's own call site (goToRowIndex, below) - tapping one
+  // of these dots on the map opens that row's own editor in place of
+  // whichever one is currently open.
   const stopPins = useMemo(() => {
-    const pins: { lat: number; lon: number }[] = [];
+    const pins: { lat: number; lon: number; rowIndex: number }[] = [];
     resolutionRows.forEach((r, i) => {
       if (r.status === "resolved" && rows[i]?.action.toLowerCase() === "stop") {
-        pins.push({ lat: r.lat, lon: r.lon });
+        pins.push({ lat: r.lat, lon: r.lon, rowIndex: i });
       }
     });
     return pins;
@@ -4488,13 +4501,13 @@ export function EditRouteScreen({
   // hiding. No-op past either end of `visibleRowIndices` - the arrows
   // themselves are disabled there too (see canGoPrev/canGoNext below),
   // this is just the same guard on the handler itself.
-  function goToRow(direction: "prev" | "next") {
-    if (expandedIndex === null || !draftRow) return;
-    const currentPos = visibleRowIndices.indexOf(expandedIndex);
-    if (currentPos === -1) return;
-    const nextIndex =
-      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
-    if (nextIndex === undefined) return;
+  // Shared by goToRow (the prev/next arrows) and onClickStopPin (a tap
+  // on one of WaypointPreviewMap's own dots) - both are really just
+  // "save the current draft, then open row `nextIndex` in its place,"
+  // differing only in how `nextIndex` gets picked.
+  function goToRowIndex(nextIndex: number) {
+    if (expandedIndex === null || !draftRow || nextIndex === expandedIndex)
+      return;
     setRows((prev) =>
       prev.map((r, i) => (i === expandedIndex ? draftRow : r)),
     );
@@ -4502,6 +4515,15 @@ export function EditRouteScreen({
     setDirty(true);
     setExpandedIndex(nextIndex);
     setDraftRow({ ...rows[nextIndex] });
+  }
+  function goToRow(direction: "prev" | "next") {
+    if (expandedIndex === null) return;
+    const currentPos = visibleRowIndices.indexOf(expandedIndex);
+    if (currentPos === -1) return;
+    const nextIndex =
+      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
+    if (nextIndex === undefined) return;
+    goToRowIndex(nextIndex);
   }
 
   function jumpToNextUnverified() {
@@ -5184,6 +5206,7 @@ export function EditRouteScreen({
                 stopPins={stopPins}
                 onChange={handleDraftChange}
                 onLocationChange={handleLocationChange}
+                onClickStopPin={goToRowIndex}
                 onFetch={() =>
                   draftWaypoint &&
                   draftWaypoint.kind !== "unresolvable" &&
