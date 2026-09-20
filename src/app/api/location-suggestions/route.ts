@@ -10,12 +10,13 @@ import { extractLocationSuggestions } from "@/lib/locationSuggestions";
  * Feeds StepRowEditor's own Location field suggestions, alongside every
  * School and SavedLocation name (EditRouteScreen already has both of
  * those loaded, so this only covers what neither of those two lists
- * would - a street, a business address, anything else that's been
- * successfully typed and geocoded before) - a quick way to reuse
- * something this route (or any other route in the system) has already
- * resolved, spelled exactly the way it resolved before, rather than
- * retyping it from memory and risking a fresh typo landing in a
- * brand-new, unresolved cache entry.
+ * would - a road name, a business name, anything else that's been
+ * successfully typed and geocoded before) - a quick way to reuse a road
+ * this route (or any other route in the system) has already resolved,
+ * rather than retyping it from memory and risking a fresh typo landing
+ * in a brand-new, unresolved cache entry. See extractLocationSuggestions'
+ * own doc comment for why a house-numbered address suggests as just its
+ * road name, not the exact address it was originally typed as.
  */
 export async function GET(): Promise<NextResponse> {
   const rows = await prisma.waypoint.findMany({

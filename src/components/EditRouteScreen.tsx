@@ -823,6 +823,7 @@ function StepRowEditor({
   routeContext,
   stopPins,
   onChange,
+  onLocationChange,
   onFetch,
   onManualCoordinates,
   onCancel,
@@ -927,6 +928,12 @@ function StepRowEditor({
    * stops, not just the road-following line alone. */
   stopPins: { lat: number; lon: number }[];
   onChange: (patch: Partial<RawRouteRow>) => void;
+  /** The Location field's own onChange, in place of the plain
+   * `onChange({ location })` every other field here uses directly - see
+   * EditRouteScreen's own handleLocationChange for the extra step this
+   * adds (an immediate coordinate resolve when the new text exactly
+   * matches a School/SavedLocation that already has one). */
+  onLocationChange: (value: string) => void;
   onFetch: () => void;
   /** A coordinate typed/pasted directly into the Latitude/Longitude
    * box, parsed and handed up on Save (see handleSave below) - writes
@@ -1421,7 +1428,7 @@ function StepRowEditor({
                             : ""
                         }`}
                         value={row.location}
-                        onChange={(e) => onChange({ location: e.target.value })}
+                        onChange={(e) => onLocationChange(e.target.value)}
                         placeholder={
                           isSchoolAction
                             ? "LaVergne High School"
@@ -3659,28 +3666,35 @@ export function EditRouteScreen({
   // the only way to get this row's own `previousRoad` context exactly
   // right too. Same guard as `waypoints` above, so this stays undefined
   // in exactly the situations that array would have been empty in.
-  const draftWaypoint = useMemo(() => {
-    if (expandedIndex === null || !draftRow) return undefined;
-    if (
-      mode !== "edit" ||
-      hasIncompleteRow ||
-      !hasRealSchoolAddress ||
-      rows.length === 0
-    )
-      return undefined;
-    const draftRows = rows.map((r, i) => (i === expandedIndex ? draftRow : r));
-    return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[
-      expandedIndex
-    ];
-  }, [
-    expandedIndex,
-    draftRow,
-    rows,
-    schoolAddress,
-    mode,
-    hasIncompleteRow,
-    hasRealSchoolAddress,
-  ]);
+  //
+  // A function, not just the memo below directly - handleLocationChange
+  // needs this same derivation for a row it hasn't actually committed
+  // to `draftRow` yet (the new Location text, applied on top of a copy
+  // of the draft), so a school/saved-location match can resolve to the
+  // *new* text's own cache key immediately rather than the stale one
+  // `draftWaypoint` itself is still holding at the moment that change
+  // first comes in.
+  const computeDraftWaypointFor = useCallback(
+    (row: RawRouteRow) => {
+      if (expandedIndex === null) return undefined;
+      if (
+        mode !== "edit" ||
+        hasIncompleteRow ||
+        !hasRealSchoolAddress ||
+        rows.length === 0
+      )
+        return undefined;
+      const draftRows = rows.map((r, i) => (i === expandedIndex ? row : r));
+      return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[
+        expandedIndex
+      ];
+    },
+    [expandedIndex, rows, schoolAddress, mode, hasIncompleteRow, hasRealSchoolAddress],
+  );
+  const draftWaypoint = useMemo(
+    () => (draftRow ? computeDraftWaypointFor(draftRow) : undefined),
+    [draftRow, computeDraftWaypointFor],
+  );
   const draftStatus = useMemo(
     () =>
       draftWaypoint
@@ -3701,6 +3715,34 @@ export function EditRouteScreen({
   }
   function handleDraftChange(patch: Partial<RawRouteRow>) {
     setDraftRow((prev) => (prev ? { ...prev, ...patch } : prev));
+  }
+  /** The Location field's own onChange (typing, or picking one of its
+   * own <datalist> suggestions - both fire the same input event) - same
+   * patch as handleDraftChange above, plus one extra step: if the new
+   * text exactly matches a School or SavedLocation that already has its
+   * own lat/lon, resolve this row immediately (setManualCoordinates)
+   * instead of leaving it unresolved until Save/Update - the same
+   * "resolves this row immediately" treatment LocationPickerModal's own
+   * onSelect already gives a pick from the address book popup, now also
+   * true of typing (or datalist-picking) that exact same name by hand.
+   * Computes the new row's own waypoint fresh (computeDraftWaypointFor,
+   * with `value` applied) rather than reading `draftWaypoint` itself -
+   * that memo hasn't recomputed yet at the moment this fires
+   * (handleDraftChange's own setDraftRow is still in flight), so it's
+   * still holding the *previous* text's own cache key. */
+  function handleLocationChange(value: string) {
+    handleDraftChange({ location: value });
+
+    const target = value.trim().toLowerCase();
+    if (!target || !draftRow) return;
+    const matched: { lat: number | null; lon: number | null } | undefined =
+      Object.entries(schools).find(([name]) => name.trim().toLowerCase() === target)?.[1] ??
+      savedLocations.find((loc) => loc.name.trim().toLowerCase() === target);
+    if (matched?.lat == null || matched.lon == null) return;
+
+    const waypoint = computeDraftWaypointFor({ ...draftRow, location: value });
+    if (!waypoint || waypoint.kind === "unresolvable") return;
+    setManualCoordinates(waypoint, matched.lat, matched.lon);
   }
   function handleUpdateRow() {
     if (expandedIndex === null || !draftRow) return;
@@ -5141,6 +5183,7 @@ export function EditRouteScreen({
                 routeContext={routeContextPoints}
                 stopPins={stopPins}
                 onChange={handleDraftChange}
+                onLocationChange={handleLocationChange}
                 onFetch={() =>
                   draftWaypoint &&
                   draftWaypoint.kind !== "unresolvable" &&
