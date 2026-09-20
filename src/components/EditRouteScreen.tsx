@@ -811,7 +811,7 @@ function StepRowEditor({
   previousRoad,
   schools,
   savedLocations,
-  streetNames,
+  locationSuggestions,
   onSaveSavedLocation,
   onFetchSavedLocationCoords,
   routeSchoolName,
@@ -854,13 +854,16 @@ function StepRowEditor({
    * resolves this row immediately (onManualCoordinates) instead of
    * waiting on a fresh geocode. */
   savedLocations: SavedLocationInfo[];
-  /** Every road name this app already has a resolved coordinate for,
-   * anywhere in the district (EditRouteScreen's own streetNames, fetched
-   * once on mount from /api/street-names) - powers the Location field's
-   * own <datalist> suggestions below, a plain browser-native
-   * autocomplete against what's already been geocoded rather than a
-   * live map/geocoder search. */
-  streetNames: string[];
+  /** Every location this app already has a resolved coordinate for,
+   * anywhere in the district (EditRouteScreen's own locationSuggestions,
+   * fetched once on mount from /api/location-suggestions) - a street, a
+   * business, anything successfully geocoded before, school names and
+   * saved-location addresses included. Combined with every School/
+   * SavedLocation name (locationDatalistOptions below) to power the
+   * Location field's own <datalist> suggestions, a plain browser-native
+   * autocomplete against what's already known rather than a live map/
+   * geocoder search. */
+  locationSuggestions: string[];
   /** Creates (`id: null`) or updates (`id` set) a saved location - the
    * address book's own "+ Add Location" footer button and each saved
    * location's own pencil icon both open EditSavedLocationModal, and
@@ -996,6 +999,21 @@ function StepRowEditor({
       ) ?? null
     );
   }, [row.location, savedLocations]);
+
+  // The Location field's own <datalist> options - every already-
+  // geocoded location (locationSuggestions, fetched once by
+  // EditRouteScreen) plus every School and SavedLocation name outright,
+  // so picking one of those from the datalist fills Location with the
+  // exact text matchedSchool/matchedSavedLocation above already know
+  // how to recognize, turning straight into the linked-entity chip the
+  // same tap through AddressBookIcon's own popup would have produced -
+  // just a faster path to the same result for a name already memorized.
+  const locationDatalistOptions = useMemo(() => {
+    const names = new Set(locationSuggestions);
+    for (const name of Object.keys(schools)) names.add(name);
+    for (const loc of savedLocations) names.add(loc.name);
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [locationSuggestions, schools, savedLocations]);
 
   // A plain address (a house number out front) or a matched school/
   // saved location (see above) each name one specific point on their
@@ -1411,20 +1429,21 @@ function StepRowEditor({
                               ? "123 Maple Dr"
                               : "Elm St"
                         }
-                        list="street-name-suggestions"
+                        list="location-suggestions"
                       />
                       {/* A plain browser-native <datalist>, not a real
-                          autocomplete component - streetNames is every
-                          road name this app already has a resolved
-                          coordinate for (see EditRouteScreen's own
-                          streetNames prop doc comment), so typing
-                          "Oak" here can suggest "Oak Ave" back exactly
-                          as it resolved before, without a live map/
-                          geocoder search. Still a free-typed field
-                          either way - picking a suggestion or ignoring
-                          it entirely both just set `value` above. */}
-                      <datalist id="street-name-suggestions">
-                        {streetNames.map((name) => (
+                          autocomplete component - locationDatalistOptions
+                          is every location this app already knows about
+                          (see its own doc comment just above: already-
+                          geocoded addresses/roads plus every School and
+                          SavedLocation name outright), so typing "Oak"
+                          here can suggest "Oak Ave" back exactly as it
+                          resolved before, without a live map/geocoder
+                          search. Still a free-typed field either way -
+                          picking a suggestion or ignoring it entirely
+                          both just set `value` above. */}
+                      <datalist id="location-suggestions">
+                        {locationDatalistOptions.map((name) => (
                           <option key={name} value={name} />
                         ))}
                       </datalist>
@@ -2991,16 +3010,18 @@ export function EditRouteScreen({
       .then((data: SavedLocationInfo[]) => setSavedLocations(data))
       .catch(() => {});
   }, []);
-  // Every road name this app already has a resolved coordinate for,
-  // anywhere in the district - fetched once per edit session, same
-  // "fetch on mount" shape as savedLocations just above. Feeds
-  // StepRowEditor's own Location field suggestions (a plain <datalist>,
-  // not a live map search) - see /api/street-names's own doc comment.
-  const [streetNames, setStreetNames] = useState<string[]>([]);
+  // Every location (street, business, anything) this app already has a
+  // resolved coordinate for, anywhere in the district - fetched once
+  // per edit session, same "fetch on mount" shape as savedLocations
+  // just above. Feeds StepRowEditor's own Location field suggestions
+  // alongside every School/SavedLocation name (a plain <datalist>, not
+  // a live map search) - see /api/location-suggestions's own doc
+  // comment.
+  const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
   useEffect(() => {
-    fetch("/api/street-names")
+    fetch("/api/location-suggestions")
       .then((res) => (res.ok ? res.json() : []))
-      .then((data: string[]) => setStreetNames(data))
+      .then((data: string[]) => setLocationSuggestions(data))
       .catch(() => {});
   }, []);
   // The route's own anchor - a free-typed name, matched by exact
@@ -5104,7 +5125,7 @@ export function EditRouteScreen({
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
                 savedLocations={savedLocations}
-                streetNames={streetNames}
+                locationSuggestions={locationSuggestions}
                 onSaveSavedLocation={handleSaveSavedLocation}
                 onFetchSavedLocationCoords={handleFetchSavedLocationCoords}
                 routeSchoolName={schoolName}

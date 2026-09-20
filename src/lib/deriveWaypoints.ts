@@ -44,10 +44,8 @@ function isUnresolvableDescription(road: string): boolean {
 /** Strips a leading house number off a literal street address, e.g.
  * "216 Lake Forest Dr" -> "Lake Forest Dr", so an address-form stop can
  * still hand later turns a road name to track "the current road" off
- * of. Exported for streetNames.ts's own use - the same strip, reused
- * rather than re-derived, when pulling road names back out of already-
- * geocoded addresses for StepRowEditor's own suggestions. */
-export function roadNameFromAddress(address: string): string {
+ * of. */
+function roadNameFromAddress(address: string): string {
   return address.replace(/^\d+\s+/, "");
 }
 
@@ -62,10 +60,8 @@ export function roadNameFromAddress(address: string): string {
  * ("216 Lake Forest Dr") ends in a suffix too, so that case is always
  * checked first (see isPlaceAction below); a place name with no suffix
  * at all ("LaVergne Lake Elementary School", "D&R Transportation
- * Headquarters") never matches here regardless. Exported for
- * streetNames.ts's own use - see roadNameFromAddress's own doc comment
- * just above for why. */
-export function looksLikeRoadName(text: string): boolean {
+ * Headquarters") never matches here regardless. */
+function looksLikeRoadName(text: string): boolean {
   return /\b(rd|road|ln|lane|dr|drive|st|street|ave|avenue|blvd|boulevard|ct|court|cir|cr|circle|way|trl|trail|pl|place|pkwy|parkway|hwy|highway|loop|ter|terrace|sq|square|xing|crossing|cres|crescent|cv|cove)\.?$/i.test(
     text.trim(),
   );

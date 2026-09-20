@@ -16,10 +16,10 @@ import { TILE_ATTRIBUTION, TILE_SUBDOMAINS, TILE_URL } from "./RouteMap";
 import type { RoutingResult } from "@/lib/routing/types";
 
 const PREVIEW_ZOOM = 15;
-// Same 750ms RouteMap.tsx's own driving-mode flyTo already uses for
+// Same 1s RouteMap.tsx's own driving-mode flyTo already uses for
 // "jump to a new step" - familiar motion for the same kind of camera
 // move, not a value picked fresh for this component.
-const FLY_TO_DURATION_MS = 750;
+const FLY_TO_DURATION_MS = 1000;
 
 /** What either renderer hands back once mounted, so this component can
  * react to a later prop change (StepRowEditor's own prev/next arrows,
