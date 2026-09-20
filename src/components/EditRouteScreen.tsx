@@ -3663,14 +3663,13 @@ export function EditRouteScreen({
   }, [resolutionRows, schoolLat, schoolLon, tripType]);
 
   // Every Stop row's own "Stop N" number, counted straight through
-  // `rows` in order - deliberately *not* the same filtered count the
-  // visible list below builds for its own header text (stopNumbers,
-  // scoped to whatever "Stops only"/"Unverified only" currently leave
-  // in `visibleRowIndices`) - a resolved stop stopPins itself needs a
-  // number for is exactly the kind "Unverified only" hides from that
-  // filtered count entirely, which would otherwise leave WaypointPreviewMap's
-  // own dots unnumbered the moment that toggle's on. The map's own
-  // dots show this route's real, filter-independent numbering instead.
+  // `rows` in order rather than `visibleRowIndices` - a stop's number is
+  // its fixed position in the real route, not a count of whatever
+  // "Stops only"/"Unverified only" currently leave visible. Used
+  // everywhere a "Stop N" number is shown (the visible list's own row
+  // header, StepRowEditor's header, WaypointPreviewMap's dots) so a
+  // stop's number never changes just because a filter toggled - only
+  // reordering/adding/removing a Stop row itself should ever do that.
   const absoluteStopNumbers = useMemo(() => {
     const numbers = new Map<number, number>();
     let counter = 0;
@@ -4591,16 +4590,6 @@ export function EditRouteScreen({
     );
   }
 
-  // Precomputed outside the JSX map below (not incremented inline in the
-  // render callback) so React Compiler's per-item memoization doesn't see a
-  // mutated closure variable - each stop row looks up its own number here.
-  let stopCounter = 0;
-  const stopNumbers = new Map<number, number>();
-  for (const index of visibleRowIndices) {
-    if (rows[index].action.toLowerCase() === "stop")
-      stopNumbers.set(index, ++stopCounter);
-  }
-
   // Shared by mode "add"'s single screen and mode "edit"'s own
   // dedicated Details screen (see subScreen below) - identical either
   // way, so it's built once here rather than duplicated. Route #/Trip/
@@ -5111,7 +5100,7 @@ export function EditRouteScreen({
                 const row = rows[index];
                 const isStop = row.action.toLowerCase() === "stop";
                 const stopNumber = isStop
-                  ? (stopNumbers.get(index) ?? null)
+                  ? (absoluteStopNumbers.get(index) ?? null)
                   : null;
                 const waypoint = waypoints[index];
 
@@ -5231,7 +5220,7 @@ export function EditRouteScreen({
             return (
               <StepRowEditor
                 row={draftRow}
-                stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
+                stopNumber={isStop ? (absoluteStopNumbers.get(index) ?? null) : null}
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
                 savedLocations={savedLocations}

@@ -755,9 +755,18 @@ function mountLeaflet(
               })),
             }),
           })
-            .then((res): Promise<RoutingResult> | null =>
-              res.ok ? res.json() : null,
-            )
+            .then((res): Promise<RoutingResult> | null => {
+              // A non-OK response (quota exceeded, a bad key, the
+              // provider unreachable) resolves rather than rejects, so
+              // it never reached the .catch below - silently leaving no
+              // line at all with no way to tell why. Logged here, same
+              // as the network-failure path already is, so a route
+              // that never draws a line is at least diagnosable from
+              // the console instead of a dead end.
+              if (res.ok) return res.json();
+              console.warn(`Couldn't fetch route geometry: HTTP ${res.status} ${res.statusText}`);
+              return null;
+            })
             .then((result) => {
               if (cancelledRef() || !map || !result) return;
               const roadLngLats = result.geometry.coordinates;
@@ -1287,9 +1296,16 @@ function mountMapLibre(args: MountArgs): () => void {
                 })),
               }),
             })
-              .then((res): Promise<RoutingResult> | null =>
-                res.ok ? res.json() : null,
-              )
+              .then((res): Promise<RoutingResult> | null => {
+                // Same silent-failure gap as mountLeaflet's own
+                // identical fetch above - a non-OK response resolves
+                // rather than rejects, so it never reaches the .catch
+                // below on its own. Logged here so it doesn't vanish
+                // with no trace.
+                if (res.ok) return res.json();
+                console.warn(`Couldn't fetch route geometry: HTTP ${res.status} ${res.statusText}`);
+                return null;
+              })
               .then((result) => {
                 if (cancelledRef() || !result) return;
                 const roadLngLats = result.geometry.coordinates;

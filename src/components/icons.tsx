@@ -129,6 +129,12 @@ export function SortIcon({
 export { default as PersonIcon } from "./icons/person-outline.svg";
 export { default as PersonSolidIcon } from "./icons/person-solid.svg";
 export { default as MapPinIcon } from "./icons/map-pin.svg";
+/** A planted flag, marking the school specifically wherever it shows up
+ * among a route's ordinary stops (StartScreen's own View Stops popup) -
+ * distinct from MapPinIcon, which already means "an ordinary
+ * stop/location" everywhere else, so the school reads as its own kind
+ * of waypoint rather than one more pin in the list. */
+export { default as FlagIcon } from "./icons/flag.svg";
 
 export { default as ContinueIcon } from "./icons/continue.svg";
 export { default as ProceedIcon } from "./icons/proceed.svg";

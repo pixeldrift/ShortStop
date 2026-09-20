@@ -58,7 +58,7 @@ export interface TurnPin {
 /** One colored, optionally-numbered dot's own HTML, shared by both
  * renderers (Leaflet's L.divIcon takes this as a string outright;
  * MapLibre's Marker takes a real DOM element, built from this same
- * string via elementFromHtml below) so a stop/turn/current dot's actual
+ * string via elementFromHtml below) so a stop/current dot's actual
  * look never has to be written twice. `size` is a full diameter, not a
  * radius - unlike the old circleMarker-based version this replaced,
  * which took radii. */
@@ -71,6 +71,24 @@ function dotHtml(size: number, color: string, text?: number): string {
     "color:#ffffff;font-weight:800;font-family:inherit;line-height:1;" +
     (text != null ? `font-size:${Math.round(size * 0.5)}px;` : "") +
     `">${text ?? ""}</div>`
+  );
+}
+
+/** A turn/direction's own HTML - a small diamond (a square rotated 45deg,
+ * via an inner element so the rotation doesn't fight the outer element's
+ * own positioning/click box, which MapLibre's Marker and Leaflet's
+ * iconAnchor both expect to be an unrotated square of `size`x`size`) -
+ * visually distinct from a Stop's numbered circle at a glance, no text of
+ * its own (only a Stop has a number to show). */
+function diamondHtml(size: number, color: string): string {
+  const inner = Math.round(size * 0.72);
+  return (
+    `<div style="width:${size}px;height:${size}px;display:flex;` +
+    'align-items:center;justify-content:center;">' +
+    `<div style="width:${inner}px;height:${inner}px;background:${color};` +
+    "border:1.5px solid #ffffff;box-shadow:0 1px 2px rgba(0,0,0,0.35);" +
+    'transform:rotate(45deg);"></div>' +
+    "</div>"
   );
 }
 
@@ -89,9 +107,10 @@ interface PreviewMapController {
 /**
  * A small, interactive street-level preview inside StepRowEditor - just
  * enough spatial context (this route's own road-following line, every
- * other already-resolved waypoint as a plain dot - red for a Stop,
- * yellow for anything else - this row's own point highlighted bigger
- * and in blue) to sanity-check a coordinate against its neighbors
+ * other already-resolved waypoint - a red numbered dot for a Stop, a
+ * small yellow diamond for anything else - this row's own point
+ * highlighted bigger and in blue) to sanity-check a coordinate against
+ * its neighbors
  * without leaving the popup. An admin can drag/scroll/pinch to look
  * around it freely, and tap any other dot to jump straight to editing
  * that waypoint instead (onClickPin) - PlaceCoordinatesModal is still
@@ -137,7 +156,7 @@ export function WaypointPreviewMap({
    * highlighted point. */
   stopPins: StopPin[];
   /** Every other already-resolved waypoint - a turn, a Depart/Arrive -
-   * drawn as plain yellow dots (EditRouteScreen's own turnPins). */
+   * drawn as small yellow diamonds (EditRouteScreen's own turnPins). */
   turnPins: TurnPin[];
   /** Tapping one of stopPins'/turnPins' own dots - omitted
    * (GeocodeConfirmModal's own read-only instance) leaves every dot
@@ -227,24 +246,25 @@ function mountLeaflet(
   let turnMarkers: ReturnType<typeof import("leaflet").marker>[] = [];
   let destroyed = false;
 
-  // Shared by every dot this renderer ever draws (stop/turn/current
+  // Shared by every marker this renderer ever draws (stop/turn/current
   // alike, both at initial mount and every later setStopPins/
-  // setTurnPins/flyToCenter) - a colored, optionally-numbered
-  // L.divIcon marker, clickable only when a real handler exists
-  // (Leaflet's own default `.leaflet-interactive` CSS already gives an
-  // interactive marker a pointer cursor for free).
+  // setTurnPins/flyToCenter) - takes the already-built HTML (dotHtml for
+  // a Stop/the current point, diamondHtml for a turn) rather than a
+  // color/text pair itself, so this doesn't need to know which shape
+  // it's placing. Clickable only when a real handler exists (Leaflet's
+  // own default `.leaflet-interactive` CSS already gives an interactive
+  // marker a pointer cursor for free).
   function makeDotMarker(
     L: typeof import("leaflet"),
     lat: number,
     lon: number,
     size: number,
-    color: string,
-    text: number | undefined,
+    html: string,
     rowIndex: number | undefined,
   ): ReturnType<typeof import("leaflet").marker> {
     const clickable = rowIndex != null && onClickPinRef.current != null;
     const marker = L.marker([lat, lon], {
-      icon: L.divIcon({ html: dotHtml(size, color, text), className: "", iconSize: [size, size], iconAnchor: [size / 2, size / 2] }),
+      icon: L.divIcon({ html, className: "", iconSize: [size, size], iconAnchor: [size / 2, size / 2] }),
       interactive: clickable,
     });
     if (rowIndex != null) marker.on("click", () => onClickPinRef.current?.(rowIndex));
@@ -266,10 +286,10 @@ function mountLeaflet(
     }).addTo(map);
 
     turnMarkers = turnPins.map((pin) =>
-      makeDotMarker(L, pin.lat, pin.lon, TURN_SIZE, TURN_COLOR, undefined, pin.rowIndex).addTo(map!),
+      makeDotMarker(L, pin.lat, pin.lon, TURN_SIZE, diamondHtml(TURN_SIZE, TURN_COLOR), pin.rowIndex).addTo(map!),
     );
     stopMarkers = stopPins.map((pin) =>
-      makeDotMarker(L, pin.lat, pin.lon, STOP_SIZE, STOP_COLOR, pin.stopNumber, pin.rowIndex).addTo(map!),
+      makeDotMarker(L, pin.lat, pin.lon, STOP_SIZE, dotHtml(STOP_SIZE, STOP_COLOR, pin.stopNumber), pin.rowIndex).addTo(map!),
     );
     // This row's own point, added last (on top of every plain dot
     // above, via a high zIndexOffset - L.Marker sorts by latitude by
@@ -292,7 +312,15 @@ function mountLeaflet(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ waypoints: routeLine }),
       })
-        .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+        .then((res): Promise<RoutingResult> | null => {
+          // A non-OK response (quota exceeded, provider down) resolves
+          // rather than rejects, so it never reaches the .catch below -
+          // logged here so a missing line stays diagnosable instead of
+          // silently vanishing (see RouteMap.tsx's own identical fix).
+          if (res.ok) return res.json();
+          console.warn(`Couldn't fetch route geometry: HTTP ${res.status} ${res.statusText}`);
+          return null;
+        })
         .then((result) => {
           if (cancelledRef() || !map || !result) return;
           const roadLatLngs: [number, number][] = result.geometry.coordinates.map(
@@ -330,14 +358,14 @@ function mountLeaflet(
       if (!map || !leaflet) return;
       for (const marker of stopMarkers) marker.remove();
       stopMarkers = next.map((pin) =>
-        makeDotMarker(leaflet!, pin.lat, pin.lon, STOP_SIZE, STOP_COLOR, pin.stopNumber, pin.rowIndex).addTo(map!),
+        makeDotMarker(leaflet!, pin.lat, pin.lon, STOP_SIZE, dotHtml(STOP_SIZE, STOP_COLOR, pin.stopNumber), pin.rowIndex).addTo(map!),
       );
     },
     setTurnPins(next) {
       if (!map || !leaflet) return;
       for (const marker of turnMarkers) marker.remove();
       turnMarkers = next.map((pin) =>
-        makeDotMarker(leaflet!, pin.lat, pin.lon, TURN_SIZE, TURN_COLOR, undefined, pin.rowIndex).addTo(map!),
+        makeDotMarker(leaflet!, pin.lat, pin.lon, TURN_SIZE, diamondHtml(TURN_SIZE, TURN_COLOR), pin.rowIndex).addTo(map!),
       );
     },
     destroy() {
@@ -372,23 +400,21 @@ function mountMapLibre(
   let stopMarkers: MapLibreMarker[] = [];
   let turnMarkers: MapLibreMarker[] = [];
 
-  // Shared by every dot this renderer ever draws - a real DOM element
-  // (elementFromHtml, same dotHtml string Leaflet's own L.divIcon
-  // takes) wrapped in a maplibregl.Marker, same "small colored,
-  // optionally-numbered circle" this file's Leaflet renderer draws.
-  // Markers aren't part of the map's own style/layers, so unlike the
-  // route line below, none of this needs to wait on the map's "load"
-  // event - safe to add right away.
+  // Shared by every marker this renderer ever draws - a real DOM element
+  // (elementFromHtml, same html string Leaflet's own L.divIcon takes)
+  // wrapped in a maplibregl.Marker, same shapes this file's Leaflet
+  // renderer draws (dotHtml for a Stop/the current point, diamondHtml
+  // for a turn). Markers aren't part of the map's own style/layers, so
+  // unlike the route line below, none of this needs to wait on the
+  // map's "load" event - safe to add right away.
   function makeDotMarker(
     maplibregl: typeof import("maplibre-gl"),
     lat: number,
     lon: number,
-    size: number,
-    color: string,
-    text: number | undefined,
+    html: string,
     rowIndex: number | undefined,
   ): MapLibreMarker {
-    const element = elementFromHtml(dotHtml(size, color, text));
+    const element = elementFromHtml(html);
     if (rowIndex != null && onClickPinRef.current != null) {
       element.style.cursor = "pointer";
       element.addEventListener("click", () => onClickPinRef.current?.(rowIndex));
@@ -417,12 +443,12 @@ function mountMapLibre(
       collapseAttribution(container);
 
       turnMarkers = turnPins.map((pin) =>
-        makeDotMarker(maplibregl, pin.lat, pin.lon, TURN_SIZE, TURN_COLOR, undefined, pin.rowIndex).addTo(
+        makeDotMarker(maplibregl, pin.lat, pin.lon, diamondHtml(TURN_SIZE, TURN_COLOR), pin.rowIndex).addTo(
           mapInstance,
         ),
       );
       stopMarkers = stopPins.map((pin) =>
-        makeDotMarker(maplibregl, pin.lat, pin.lon, STOP_SIZE, STOP_COLOR, pin.stopNumber, pin.rowIndex).addTo(
+        makeDotMarker(maplibregl, pin.lat, pin.lon, dotHtml(STOP_SIZE, STOP_COLOR, pin.stopNumber), pin.rowIndex).addTo(
           mapInstance,
         ),
       );
@@ -433,9 +459,7 @@ function mountMapLibre(
         maplibregl,
         center.lat,
         center.lon,
-        CURRENT_SIZE,
-        CURRENT_COLOR,
-        undefined,
+        dotHtml(CURRENT_SIZE, CURRENT_COLOR, undefined),
         undefined,
       ).addTo(mapInstance);
       currentMarker.getElement().style.zIndex = "10";
@@ -448,7 +472,13 @@ function mountMapLibre(
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ waypoints: routeLine }),
           })
-            .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+            .then((res): Promise<RoutingResult> | null => {
+              // Same silent-failure gap as the Leaflet renderer's own
+              // identical fetch above - logged here for the same reason.
+              if (res.ok) return res.json();
+              console.warn(`Couldn't fetch route geometry: HTTP ${res.status} ${res.statusText}`);
+              return null;
+            })
             .then((result) => {
               if (cancelledRef() || !result) return;
               mapInstance.addSource("preview-route-line", {
@@ -486,7 +516,7 @@ function mountMapLibre(
       if (!map || !maplibreModule) return;
       for (const marker of stopMarkers) marker.remove();
       stopMarkers = next.map((pin) =>
-        makeDotMarker(maplibreModule!, pin.lat, pin.lon, STOP_SIZE, STOP_COLOR, pin.stopNumber, pin.rowIndex).addTo(
+        makeDotMarker(maplibreModule!, pin.lat, pin.lon, dotHtml(STOP_SIZE, STOP_COLOR, pin.stopNumber), pin.rowIndex).addTo(
           map!,
         ),
       );
@@ -495,7 +525,7 @@ function mountMapLibre(
       if (!map || !maplibreModule) return;
       for (const marker of turnMarkers) marker.remove();
       turnMarkers = next.map((pin) =>
-        makeDotMarker(maplibreModule!, pin.lat, pin.lon, TURN_SIZE, TURN_COLOR, undefined, pin.rowIndex).addTo(
+        makeDotMarker(maplibreModule!, pin.lat, pin.lon, diamondHtml(TURN_SIZE, TURN_COLOR), pin.rowIndex).addTo(
           map!,
         ),
       );

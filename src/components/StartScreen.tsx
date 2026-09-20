@@ -13,6 +13,7 @@ import {
   CloseIcon,
   EditIcon,
   EyeIcon,
+  FlagIcon,
   MapPinIcon,
   PersonSolidIcon,
   RoundedTriangleIcon,
@@ -453,16 +454,20 @@ function StopSubheading({ subheading }: { subheading: string }) {
   );
 }
 
-/** The school row in AllStopsModal - no stop number, since it isn't one
- * of the route's actual numbered stops. Styled like every other
- * school-address callout in the app (MapPinIcon + address, under the
- * school's name) rather than like a Stop row. */
+/** The school's own row in AllStopsModal, shown only when a route.steps
+ * row explicitly names it (a Depart/Arrive action - see
+ * explicitSchoolStepId below) rather than always, since a route with no
+ * such row never actually visits the school as one of its own real
+ * waypoints. FlagIcon (rather than MapPinIcon, which already reads as
+ * "an ordinary stop" everywhere else in this list) marks it as its own
+ * kind of waypoint - the route's fixed start/end point, not one more
+ * numbered stop. */
 function SchoolEntry({ route }: { route: Route }) {
   return (
     <div className="py-3 text-left">
       <span className="font-heading font-black">{route.schoolName}</span>
       <p className="mt-0.5 flex items-center gap-1 text-sm text-zinc-500">
-        <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+        <FlagIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
         {route.schoolAddress}
       </p>
     </div>
@@ -499,13 +504,15 @@ function TurnRow({ step }: { step: NavigationStep }) {
  * rather than appending them separately, so the order shown always
  * matches the real drive.
  *
- * The school itself isn't one of route.steps' own stops (see
- * parseRouteCsv.ts - it only ever turns route-125.csv's rows into
- * steps, and the school is where those rows start or end, not a row of
- * its own), so it's rendered here as its own entry rather than folded
- * into the stops list - first for a dropoff route (the bus starts
- * there), last for a pickup route (the bus ends there), matching which
- * end of the real trip it actually is. */
+ * The school is *not* auto-added as its own entry the way it used to be
+ * - route.steps only ever gets a real row for it when a Depart/Arrive
+ * action was explicitly typed for it (StepRowEditor's own Type select),
+ * and a route with no such row genuinely never visits the school as one
+ * of its own waypoints (a route already anchored elsewhere, say). When
+ * one *does* exist (explicitSchoolStepId below), it's swapped out for
+ * SchoolEntry's own styling in place of a plain TurnRow, and shown
+ * regardless of "Show directions" - the school is real route context,
+ * not an optional turn-by-turn detail. */
 function AllStopsModal({
   route,
   onClose,
@@ -516,7 +523,16 @@ function AllStopsModal({
   onEditStops: () => void;
 }) {
   const [showTurns, setShowTurns] = useState(false);
-  const schoolEntry = <SchoolEntry route={route} />;
+
+  // The one route.steps row (if any) that explicitly names the school -
+  // Depart/Arrive are the two actions reserved for it (see
+  // deriveWaypoints.ts's own PLACE_ACTIONS doc comment: "depart"/
+  // "arrive" resolve the same way "stop" always has, almost always the
+  // school by name or address). Any other route just doesn't visit it
+  // as a waypoint of its own.
+  const explicitSchoolStepId = route.steps.find(
+    (step) => step.heading === "DEPART" || step.heading === "ARRIVE",
+  )?.id;
 
   // Precomputed outside the JSX map below (not incremented inline in the
   // render callback) so React Compiler's per-item memoization doesn't see a
@@ -536,20 +552,26 @@ function AllStopsModal({
         className="animate-popup-pop flex max-h-[80vh] w-full max-w-sm flex-col rounded-xl bg-[var(--background)] shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
-          <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-5 py-4">
+          <h2 className="font-heading flex min-w-0 flex-1 items-center gap-1.5 text-xl font-black tracking-tight">
             {(route.tripType === "pickup" || route.tripType === "dropoff") && (
               <TripTypeIcon
                 tripType={route.tripType}
-                className="h-[15px] w-[15px] text-zinc-900"
+                className="h-[15px] w-[15px] shrink-0 text-zinc-900"
               />
             )}
-            {route.routeNumber}
+            <span className="shrink-0">{route.routeNumber}</span>
             {/* Both solid black - see StartScreen's own title for why. */}
             <SchoolLevelIcon
               level={route.schoolLevel}
-              className="h-[15px] w-[15px] text-zinc-900"
+              className="h-[15px] w-[15px] shrink-0 text-zinc-900"
             />
+            {/* Truncated, never wrapped - a long school name would
+                otherwise push this title onto a second line, or (with
+                flex-wrap instead) wrap mid-name just as awkwardly. */}
+            <span className="min-w-0 truncate text-base font-semibold text-zinc-400">
+              {route.schoolName}
+            </span>
           </h2>
           <button
             type="button"
@@ -583,9 +605,10 @@ function AllStopsModal({
         </div>
 
         <div className="divide-y divide-zinc-200 overflow-y-auto px-5">
-          {route.tripType === "dropoff" && schoolEntry}
-
           {route.steps.map((step) => {
+            if (step.id === explicitSchoolStepId) {
+              return <SchoolEntry key={step.id} route={route} />;
+            }
             if (step.kind === "stop") {
               const number = stopNumbers.get(step.id);
               return (
@@ -630,13 +653,6 @@ function AllStopsModal({
             }
             return null;
           })}
-
-          {/* Dropoff starts at the school (see the "before" branch
-              above); pickup and a one-off field trip both default to
-              ending there instead - not "pickup only" (a fieldtrip
-              route would otherwise show no school entry at all, having
-              matched neither branch). */}
-          {route.tripType !== "dropoff" && schoolEntry}
         </div>
       </div>
     </div>
