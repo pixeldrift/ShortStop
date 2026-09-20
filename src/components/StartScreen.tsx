@@ -387,14 +387,13 @@ export function StartScreen({
             stops/turns/school markers and road-following line
             StepScreen's own map draws while actually driving, just
             smaller and not yet tracking a live position against any of
-            it. relative z-0 gives Leaflet's own internal panes/controls
-            (tile pane, zoom control, attribution - several carry their
-            own explicit, fairly high z-index) a stacking context of
-            their own to escalate within, same reasoning as StepScreen's
-            own map - without it they escape to the page's root stacking
-            context and can paint above a z-20 overlay like
-            AllStopsModal below despite being earlier in the DOM and
-            visually "behind" it. */}
+            it. relative z-0 gives MapLibre's own internal canvas/
+            controls (several carry their own explicit, fairly high
+            z-index) a stacking context of their own to escalate
+            within, same reasoning as StepScreen's own map - without it
+            they escape to the page's root stacking context and can
+            paint above a z-20 overlay like AllStopsModal below despite
+            being earlier in the DOM and visually "behind" it. */}
         <ExpandableMap
           className="min-h-32 w-full max-w-md flex-1"
           renderMap={(mapClassName, isExpanded) => (

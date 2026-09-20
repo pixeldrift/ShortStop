@@ -1,8 +1,8 @@
 /** A single point along a route's geometry, GeoJSON order: [lon, lat] -
  * NOT [lat, lon]. Every routing provider returns/consumes geometry in
- * this order; only Leaflet (and this app's own WaypointCacheEntry/
- * School fields) use [lat, lon] - see RouteMap.tsx's own conversion at
- * the one place a provider's geometry actually gets drawn. */
+ * this order; this app's own WaypointCacheEntry/School fields use
+ * [lat, lon] instead - see RouteMap.tsx's own conversion at the one
+ * place a provider's geometry actually gets drawn. */
 export type RouteCoordinate = [lon: number, lat: number];
 
 /** One stop along the route to be routed through, in this app's own
@@ -17,7 +17,7 @@ export interface RouteWaypoint {
 
 /** The provider-agnostic shape of a route's road geometry - a plain
  * GeoJSON LineString, not tied to any particular provider's own
- * response format or to Leaflet's own [lat, lon] convention (see
+ * response format or to this app's own [lat, lon] convention (see
  * RouteCoordinate above). This is the one shape every routing provider
  * normalizes its own response down to. */
 export interface RouteGeometry {

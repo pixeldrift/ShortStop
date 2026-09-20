@@ -183,10 +183,9 @@ export function StepScreen({
           guarantee and shrink-if-crazy-long fallback - see StopContent/
           TurnContent below - rather than by the map yielding space. */}
       <div className="relative h-[30vh] w-full shrink-0 overflow-hidden landscape:h-full landscape:w-[42%]">
-        {/* h-full/w-full, not absolute+inset-0 - both Leaflet and
-            MapLibre's own stylesheets force `position: relative` on
-            whatever container element they're handed
-            (.leaflet-container/.maplibregl-map), overriding any
+        {/* h-full/w-full, not absolute+inset-0 - MapLibre's own
+            stylesheet forces `position: relative` on whatever container
+            element it's handed (.maplibregl-map), overriding any
             `position: absolute` Tailwind class placed on that same
             element. Under the resulting position:relative, `inset-0`
             (top/right/bottom/left) does nothing - it only sizes an
@@ -196,14 +195,13 @@ export function StepScreen({
             explicit height works under any positioning scheme, which
             is why it's used here instead.
 
-            z-0 gives Leaflet's own internal panes/controls (tile pane,
-            zoom control, attribution - several of which carry their own
-            explicit, fairly high z-index, e.g. the zoom control's 1000) a
-            stacking context of their own to escalate within. Without it,
-            since neither this div nor its parent set a z-index, those
-            panes escape to the nearest ancestor stacking context and can
-            paint above the roster popup below despite being earlier in
-            the DOM. */}
+            z-0 gives MapLibre's own internal canvas/controls (zoom
+            control, attribution - several of which carry their own
+            explicit, fairly high z-index) a stacking context of their
+            own to escalate within. Without it, since neither this div
+            nor its parent set a z-index, those controls escape to the
+            nearest ancestor stacking context and can paint above the
+            roster popup below despite being earlier in the DOM. */}
         <ExpandableMap
           className="h-full w-full"
           renderMap={(mapClassName) => (

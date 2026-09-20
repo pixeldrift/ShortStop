@@ -1,17 +1,21 @@
 /**
- * Which map renderer RouteMap.tsx and PlaceCoordinatesModal.tsx should
- * use - MapLibre GL (self-hosted vector tiles, PMTILES_URL below) when
- * it can actually work, Leaflet + CARTO's raster tiles (RouteMap.tsx's
- * own long-standing TILE_URL) otherwise. Both callers make this same
- * check rather than each hardcoding one engine, so a browser without
- * WebGL, or a deployment that hasn't generated/placed a PMTiles file
- * yet, silently and identically falls back everywhere instead of only
- * some maps working.
+ * Shared MapLibre GL setup for every map in this app (RouteMap.tsx,
+ * WaypointPreviewMap.tsx, PlaceCoordinatesModal.tsx) - self-hosted
+ * vector tiles (PMTILES_URL below), no other renderer. This app
+ * requires WebGL; there is no raster-tile/Canvas2D fallback for a
+ * browser without it. That was a real, deliberate call, not an
+ * oversight - WebGL has shipped in every mainstream mobile browser
+ * (iOS Safari since iOS 8/2014, Android Chrome since ~2013) for over a
+ * decade, well past any device this app plausibly runs on, and
+ * maintaining a second renderer cost real, ongoing double-implementation
+ * work for every map feature with no evidence it was ever actually
+ * needed. If a real device without WebGL ever does turn up (a locked-
+ * down kiosk tablet on a GPU driver blocklist, say), that's the time to
+ * design a real fallback for it - not before.
  *
- * This repo does NOT ship middle-tennessee.pmtiles itself - it's a
- * real (tens-of-MB, depending on the drawn extent) binary data file
- * built from OpenStreetMap, not something to commit speculatively. To
- * generate one:
+ * This repo ships public/maps/middle-tennessee.pmtiles directly - a
+ * real (tens-of-MB) binary data file built from OpenStreetMap. To
+ * regenerate it for a different service area:
  *   1. https://app.protomaps.com/downloads - draw a box covering the
  *      service area (and a little padding for routes that touch its
  *      edges), download the .pmtiles extract. This doesn't need to
@@ -22,10 +26,6 @@
  *   2. Save it as public/maps/middle-tennessee.pmtiles in this repo
  *      (matching PMTILES_URL below - rename both together if the
  *      extract's own coverage changes again).
- *   3. Reload the app - resolveMapEngine() finds it via the HEAD check
- *      below and both maps switch to it automatically, no other code
- *      changes needed. Until then, every map keeps working exactly as
- *      it does today, on Leaflet.
  *
  * package.json pins maplibre-gl to 5.24.0, not the newer 6.x this was
  * originally built against - 6.2.0 through at least 6.9.0 have a
@@ -44,13 +44,12 @@
  * maplibre-gl-js#8186's status before ever bumping past 5.x again.
  */
 
-/** Where both callers expect the self-hosted PMTiles file, if one has
- * been generated and placed per this module's own doc comment above -
- * a plain static asset under /public, no server-side tile endpoint of
- * this app's own needed. Named for the extract's actual coverage
- * (currently a central-TN rectangle spanning roughly Clarksville to
- * Chattanooga, not just Rutherford County) so the filename doesn't go
- * stale the next time the drawn area changes. */
+/** Where the self-hosted PMTiles file lives - a plain static asset
+ * under /public, no server-side tile endpoint of this app's own
+ * needed. Named for the extract's actual coverage (currently a
+ * central-TN rectangle spanning roughly Clarksville to Chattanooga,
+ * not just Rutherford County) so the filename doesn't go stale the
+ * next time the drawn area changes. */
 export const PMTILES_URL = "/maps/middle-tennessee.pmtiles";
 
 /** Required corner attribution for the MapLibre/PMTiles path - this
@@ -58,84 +57,32 @@ export const PMTILES_URL = "/maps/middle-tennessee.pmtiles";
  * basemaps licensing guidelines (github.com/protomaps/basemaps -
  * LICENSE_DATA.md), which requires visible "© OpenStreetMap"
  * attribution on any web map using it, plus their own requested (not
- * required, but appreciated) Protomaps credit. Distinct from
- * TILE_ATTRIBUTION (RouteMap.tsx) - that one credits CARTO, the
- * Leaflet fallback's own tile provider, and would be wrong to reuse
- * here now that these maps render real OSM-via-Protomaps data instead
- * of CARTO's. */
+ * required, but appreciated) Protomaps credit. */
 export const PMTILES_ATTRIBUTION =
   '<a href="https://github.com/protomaps/basemaps">Protomaps</a> © ' +
   '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
 /** Forces MapLibre's own attribution control (a native `<details>`
  * element, `compact: true` in the Map constructor's own
- * `attributionControl` option) to start collapsed - RouteMap.tsx and
- * PlaceCoordinatesModal.tsx both call this right after constructing
- * their map. `compact: true` alone only lets the control auto-collapse
- * once the map gets too narrow for the full credit to fit
- * (MapLibre's own doc comment on that option is explicit about this);
- * it does nothing when there's room, which every map in this app
- * always has. OSM's own attribution guidelines
- * (osmfoundation.org/wiki/Licence/Attribution_Guidelines) explicitly
- * allow a small expandable icon in place of spelled-out credit on
- * space-constrained displays, so collapsing it unconditionally here -
- * not just when MapLibre's own width check happens to agree - is
- * still within those terms. A plain DOM tweak (toggling the native
- * `open` attribute) rather than fighting MapLibre for a real API to
- * do this with, since it doesn't expose one - safe because MapLibre's
- * own expand/collapse click handling reads that same attribute
- * natively, it doesn't track a separate open/closed state of its own
- * to fight with. */
+ * `attributionControl` option) to start collapsed - every map caller
+ * in this app calls this right after constructing its map. `compact:
+ * true` alone only lets the control auto-collapse once the map gets
+ * too narrow for the full credit to fit (MapLibre's own doc comment on
+ * that option is explicit about this); it does nothing when there's
+ * room, which every map in this app always has. OSM's own attribution
+ * guidelines (osmfoundation.org/wiki/Licence/Attribution_Guidelines)
+ * explicitly allow a small expandable icon in place of spelled-out
+ * credit on space-constrained displays, so collapsing it
+ * unconditionally here - not just when MapLibre's own width check
+ * happens to agree - is still within those terms. A plain DOM tweak
+ * (toggling the native `open` attribute) rather than fighting MapLibre
+ * for a real API to do this with, since it doesn't expose one - safe
+ * because MapLibre's own expand/collapse click handling reads that
+ * same attribute natively, it doesn't track a separate open/closed
+ * state of its own to fight with. */
 export function collapseAttribution(container: HTMLElement): void {
   const details = container.querySelector<HTMLDetailsElement>(
     ".maplibregl-ctrl-attrib",
   );
   if (details) details.open = false;
-}
-
-function supportsWebGL(): boolean {
-  if (typeof document === "undefined") return false;
-  try {
-    const canvas = document.createElement("canvas");
-    return !!(
-      canvas.getContext("webgl2") ||
-      canvas.getContext("webgl") ||
-      canvas.getContext("experimental-webgl")
-    );
-  } catch {
-    return false;
-  }
-}
-
-/** A cheap existence check, not a real tile request - confirms the
- * PMTiles file is actually deployed before either map caller commits
- * to the MapLibre code path at all. Without this, a missing file would
- * only surface as MapLibre failing to load individual vector tiles one
- * by one, well after the map already started rendering blank - this
- * way it falls back to Leaflet up front instead, same as the
- * no-WebGL case. */
-async function pmtilesAvailable(): Promise<boolean> {
-  try {
-    const res = await fetch(PMTILES_URL, { method: "HEAD" });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-// Checked once per page load and cached - the file isn't going to
-// appear or a browser's WebGL support isn't going to change mid-session,
-// so there's no reason for a second map mounted later on the same page
-// (RouteMap and PlaceCoordinatesModal can both be on screen in the same
-// session) to redo either check.
-let cachedEngine: Promise<"maplibre" | "leaflet"> | null = null;
-
-export function resolveMapEngine(): Promise<"maplibre" | "leaflet"> {
-  if (!cachedEngine) {
-    cachedEngine = (async () => {
-      if (!supportsWebGL()) return "leaflet";
-      return (await pmtilesAvailable()) ? "maplibre" : "leaflet";
-    })();
-  }
-  return cachedEngine;
 }
