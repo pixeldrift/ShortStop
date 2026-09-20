@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Map as LeafletMap } from "leaflet";
-import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 import {
   collapseAttribution,
   PMTILES_ATTRIBUTION,
@@ -21,14 +21,57 @@ const PREVIEW_ZOOM = 15;
 // move, not a value picked fresh for this component.
 const FLY_TO_DURATION_MS = 1000;
 
+// Diameters, in CSS pixels - both renderers size their own dots off
+// these same three numbers, so Leaflet and MapLibre never drift apart.
+// Stops get a real number to show, so they're bigger than a turn's
+// plain dot; the current row's own dot is bigger again ("slightly
+// bigger than it is already," and the one place a number is guaranteed
+// legible even if a stop's own plain dot ever felt tight).
+const STOP_SIZE = 18;
+const TURN_SIZE = 10;
+const CURRENT_SIZE = 24;
+const STOP_COLOR = "#ef4444"; // red-500 - unchanged from before this
+const TURN_COLOR = "#facc15"; // yellow-400
+const CURRENT_COLOR = "#2563eb"; // blue-600 - unchanged from before this
+
 /** One already-resolved Stop's own dot on the map - `rowIndex` (a real
  * index into EditRouteScreen's own `rows`) is what lets tapping one of
  * these open that row's own editor (onClickPin below), not just look at
- * it. */
+ * it. `stopNumber` is the same "Stop N" number StepRowEditor's own
+ * header shows for this row, shown inside the dot itself. */
 export interface StopPin {
   lat: number;
   lon: number;
   rowIndex: number;
+  stopNumber: number;
+}
+
+/** Every other already-resolved waypoint - a turn, a Depart/Arrive, any
+ * row that isn't a Stop. Same `rowIndex`-driven tap-to-edit as StopPin,
+ * just no number of its own to show (only a Stop has one). */
+export interface TurnPin {
+  lat: number;
+  lon: number;
+  rowIndex: number;
+}
+
+/** One colored, optionally-numbered dot's own HTML, shared by both
+ * renderers (Leaflet's L.divIcon takes this as a string outright;
+ * MapLibre's Marker takes a real DOM element, built from this same
+ * string via elementFromHtml below) so a stop/turn/current dot's actual
+ * look never has to be written twice. `size` is a full diameter, not a
+ * radius - unlike the old circleMarker-based version this replaced,
+ * which took radii. */
+function dotHtml(size: number, color: string, text?: number): string {
+  return (
+    `<div style="width:${size}px;height:${size}px;border-radius:9999px;` +
+    `background:${color};border:1.5px solid #ffffff;` +
+    "box-shadow:0 1px 2px rgba(0,0,0,0.35);" +
+    "display:flex;align-items:center;justify-content:center;" +
+    "color:#ffffff;font-weight:800;font-family:inherit;line-height:1;" +
+    (text != null ? `font-size:${Math.round(size * 0.5)}px;` : "") +
+    `">${text ?? ""}</div>`
+  );
 }
 
 /** What either renderer hands back once mounted, so this component can
@@ -37,36 +80,42 @@ export interface StopPin {
  * and rebuilding a fresh one - see this file's own top doc comment for
  * why that distinction is the whole point. */
 interface PreviewMapController {
-  flyToCenter(center: { lat: number; lon: number }): void;
+  flyToCenter(center: { lat: number; lon: number }, stopNumber: number | null): void;
   setStopPins(stopPins: StopPin[]): void;
+  setTurnPins(turnPins: TurnPin[]): void;
   destroy(): void;
 }
 
 /**
  * A small, interactive street-level preview inside StepRowEditor - just
  * enough spatial context (this route's own road-following line, every
- * other resolved Stop as a plain dot, this row's own point highlighted
- * in blue) to sanity-check a coordinate against its neighbors without
- * leaving the popup. An admin can drag/scroll/pinch to look around it
- * freely - PlaceCoordinatesModal is still the only place to actually
- * *change* a coordinate, this is just for looking.
+ * other already-resolved waypoint as a plain dot - red for a Stop,
+ * yellow for anything else - this row's own point highlighted bigger
+ * and in blue) to sanity-check a coordinate against its neighbors
+ * without leaving the popup. An admin can drag/scroll/pinch to look
+ * around it freely, and tap any other dot to jump straight to editing
+ * that waypoint instead (onClickPin) - PlaceCoordinatesModal is still
+ * the only place to actually *change* a coordinate.
  *
  * The map instance itself is mounted once and never rebuilt - StepRowEditor's
- * own prev/next arrows change `center` (and `stopPins`) as the admin
- * steps through rows, and this reacts to that with a real camera flight
- * (flyToCenter, called from the effect below) rather than remounting
- * with a fresh camera, which is what an earlier version's `key={rowIndex}`
- * at the call site did - every navigation looked like the view cutting
- * straight to the next stop with no sense of where it was relative to
- * the last one. `routeLine`'s own road-following fetch still only
- * happens once, on mount - unlike `center`, it's the same whole-route
- * line regardless of which row is open, so there's nothing for a
- * row-to-row navigation to update there.
+ * own prev/next arrows (or a tap on another dot) change `center` (and
+ * `stopPins`/`turnPins`) as the admin moves between rows, and this
+ * reacts to that with a real camera flight (flyToCenter, called from
+ * the effect below) rather than remounting with a fresh camera, which
+ * is what an earlier version's `key={rowIndex}` at the call site did -
+ * every navigation looked like the view cutting straight to the next
+ * stop with no sense of where it was relative to the last one.
+ * `routeLine`'s own road-following fetch still only happens once, on
+ * mount - unlike `center`, it's the same whole-route line regardless of
+ * which row is open, so there's nothing for a row-to-row navigation to
+ * update there.
  */
 export function WaypointPreviewMap({
   center,
+  centerStopNumber,
   routeLine,
   stopPins,
+  turnPins,
   onClickPin,
 }: {
   /** This row's own current coordinate (resolved, or manually typed) -
@@ -74,20 +123,28 @@ export function WaypointPreviewMap({
    * hands PlaceCoordinatesModal when this row doesn't have one of its
    * own yet. */
   center: { lat: number; lon: number };
+  /** This row's own "Stop N" number when it is one, shown inside the
+   * current dot the same way every StopPin shows its own - null for a
+   * turn (or any row with no stop number of its own), which just draws
+   * as a plain, larger blue dot with nothing inside it. */
+  centerStopNumber: number | null;
   /** Every already-resolved waypoint on this route, in order, school
    * included - the same list PlaceCoordinatesModal draws its own line
    * from (EditRouteScreen's routeContextPoints). */
   routeLine: { lat: number; lon: number }[];
-  /** Every already-resolved Stop (not a turn, not the school) on this
-   * route (EditRouteScreen's own stopPins) - drawn as plain dots,
-   * distinct from this row's own highlighted point. */
+  /** Every already-resolved Stop (EditRouteScreen's own stopPins) -
+   * drawn as red, numbered dots, distinct from this row's own
+   * highlighted point. */
   stopPins: StopPin[];
-  /** Tapping one of `stopPins`' own dots - omitted (GeocodeConfirmModal's
-   * own read-only instance) leaves every dot non-interactive, same as
-   * before this existed. StepRowEditor's own instance wires this to
-   * "open that row's editor instead," the same jump its own prev/next
-   * arrows already do. */
-  onClickPin?: (pin: StopPin) => void;
+  /** Every other already-resolved waypoint - a turn, a Depart/Arrive -
+   * drawn as plain yellow dots (EditRouteScreen's own turnPins). */
+  turnPins: TurnPin[];
+  /** Tapping one of stopPins'/turnPins' own dots - omitted
+   * (GeocodeConfirmModal's own read-only instance) leaves every dot
+   * non-interactive, same as before this existed. StepRowEditor's own
+   * instance wires this to "open that row's editor instead," the same
+   * jump its own prev/next arrows already do. */
+  onClickPin?: (rowIndex: number) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<PreviewMapController | null>(null);
@@ -111,8 +168,8 @@ export function WaypointPreviewMap({
       if (cancelled) return;
       controllerRef.current =
         engine === "maplibre"
-          ? mountMapLibre(container, center, routeLine, stopPins, onClickPinRef, () => cancelled)
-          : mountLeaflet(container, center, routeLine, stopPins, onClickPinRef, () => cancelled);
+          ? mountMapLibre(container, center, routeLine, stopPins, turnPins, onClickPinRef, () => cancelled)
+          : mountLeaflet(container, center, routeLine, stopPins, turnPins, onClickPinRef, () => cancelled);
     });
 
     return () => {
@@ -120,24 +177,28 @@ export function WaypointPreviewMap({
       controllerRef.current?.destroy();
       controllerRef.current = null;
     };
-    // Mount once - center/routeLine/stopPins's *initial* values seed
-    // the very first paint only; every later change is picked up by
-    // the two effects below instead (this component's own doc comment
-    // on why that split exists).
+    // Mount once - center/routeLine/stopPins/turnPins's *initial*
+    // values seed the very first paint only; every later change is
+    // picked up by the effects below instead (this component's own doc
+    // comment on why that split exists).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    controllerRef.current?.flyToCenter(center);
-    // Compares the two numbers, not the object literal StepRowEditor
-    // hands down fresh every render - this only needs to fly when the
-    // coordinate itself actually changed.
+    controllerRef.current?.flyToCenter(center, centerStopNumber);
+    // Compares the coordinate/number, not the object literal
+    // StepRowEditor hands down fresh every render - this only needs to
+    // fly (and redraw the current dot) when either actually changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [center.lat, center.lon]);
+  }, [center.lat, center.lon, centerStopNumber]);
 
   useEffect(() => {
     controllerRef.current?.setStopPins(stopPins);
   }, [stopPins]);
+
+  useEffect(() => {
+    controllerRef.current?.setTurnPins(turnPins);
+  }, [turnPins]);
 
   return (
     <div className="relative mt-3 h-40 w-full overflow-hidden rounded-2xl border border-zinc-300">
@@ -151,39 +212,42 @@ function mountLeaflet(
   center: { lat: number; lon: number },
   routeLine: { lat: number; lon: number }[],
   stopPins: StopPin[],
-  onClickPinRef: React.RefObject<((pin: StopPin) => void) | undefined>,
+  turnPins: TurnPin[],
+  onClickPinRef: React.RefObject<((rowIndex: number) => void) | undefined>,
   cancelledRef: () => boolean,
 ): PreviewMapController {
   let map: LeafletMap | undefined;
   // Leaflet's own module, kept around after the dynamic import resolves
-  // so flyToCenter/setStopPins (called well after mount, from a later
-  // prop-change effect) can still reach L.circleMarker/L.latLng without
-  // importing it a second time.
+  // so flyToCenter/setStopPins/setTurnPins (called well after mount,
+  // from a later prop-change effect) can still reach L.marker/L.divIcon
+  // without importing it a second time.
   let leaflet: typeof import("leaflet") | undefined;
-  let currentMarker: ReturnType<typeof import("leaflet").circleMarker> | undefined;
-  let stopMarkers: ReturnType<typeof import("leaflet").circleMarker>[] = [];
+  let currentMarker: ReturnType<typeof import("leaflet").marker> | undefined;
+  let stopMarkers: ReturnType<typeof import("leaflet").marker>[] = [];
+  let turnMarkers: ReturnType<typeof import("leaflet").marker>[] = [];
   let destroyed = false;
 
-  // Shared by the initial mount and setStopPins below, so a stop dot's
-  // own styling/click-wiring only ever lives in one place. Interactive
-  // whenever a click handler is actually wanted (Leaflet's own default
-  // `.leaflet-interactive` CSS already gives it a pointer cursor for
-  // free) - a plain, un-clickable dot otherwise, same as before this
-  // existed (GeocodeConfirmModal's own read-only instance, which never
-  // passes onClickPin).
-  function makeStopMarker(
+  // Shared by every dot this renderer ever draws (stop/turn/current
+  // alike, both at initial mount and every later setStopPins/
+  // setTurnPins/flyToCenter) - a colored, optionally-numbered
+  // L.divIcon marker, clickable only when a real handler exists
+  // (Leaflet's own default `.leaflet-interactive` CSS already gives an
+  // interactive marker a pointer cursor for free).
+  function makeDotMarker(
     L: typeof import("leaflet"),
-    pin: StopPin,
-  ): ReturnType<typeof import("leaflet").circleMarker> {
-    const marker = L.circleMarker([pin.lat, pin.lon], {
-      radius: 5,
-      color: "#ffffff",
-      weight: 1.5,
-      fillColor: "#ef4444",
-      fillOpacity: 1,
-      interactive: onClickPinRef.current != null,
+    lat: number,
+    lon: number,
+    size: number,
+    color: string,
+    text: number | undefined,
+    rowIndex: number | undefined,
+  ): ReturnType<typeof import("leaflet").marker> {
+    const clickable = rowIndex != null && onClickPinRef.current != null;
+    const marker = L.marker([lat, lon], {
+      icon: L.divIcon({ html: dotHtml(size, color, text), className: "", iconSize: [size, size], iconAnchor: [size / 2, size / 2] }),
+      interactive: clickable,
     });
-    marker.on("click", () => onClickPinRef.current?.(pin));
+    if (rowIndex != null) marker.on("click", () => onClickPinRef.current?.(rowIndex));
     return marker;
   }
 
@@ -201,17 +265,25 @@ function mountLeaflet(
       detectRetina: true,
     }).addTo(map);
 
-    stopMarkers = stopPins.map((pin) => makeStopMarker(L, pin).addTo(map!));
-    // This row's own point, added last (on top of every plain stop dot
-    // above) and in blue - the one pin among the others an admin is
-    // actually here to check.
-    currentMarker = L.circleMarker([center.lat, center.lon], {
-      radius: 6,
-      color: "#ffffff",
-      weight: 2,
-      fillColor: "#2563eb",
-      fillOpacity: 1,
+    turnMarkers = turnPins.map((pin) =>
+      makeDotMarker(L, pin.lat, pin.lon, TURN_SIZE, TURN_COLOR, undefined, pin.rowIndex).addTo(map!),
+    );
+    stopMarkers = stopPins.map((pin) =>
+      makeDotMarker(L, pin.lat, pin.lon, STOP_SIZE, STOP_COLOR, pin.stopNumber, pin.rowIndex).addTo(map!),
+    );
+    // This row's own point, added last (on top of every plain dot
+    // above, via a high zIndexOffset - L.Marker sorts by latitude by
+    // default, which "added last" alone doesn't override) and in blue -
+    // the one pin among the others an admin is actually here to check.
+    currentMarker = L.marker([center.lat, center.lon], {
+      icon: L.divIcon({
+        html: dotHtml(CURRENT_SIZE, CURRENT_COLOR, undefined),
+        className: "",
+        iconSize: [CURRENT_SIZE, CURRENT_SIZE],
+        iconAnchor: [CURRENT_SIZE / 2, CURRENT_SIZE / 2],
+      }),
       interactive: false,
+      zIndexOffset: 1000,
     }).addTo(map);
 
     if (routeLine.length > 1) {
@@ -239,18 +311,34 @@ function mountLeaflet(
   });
 
   return {
-    flyToCenter(next) {
-      if (!map) return;
+    flyToCenter(next, stopNumber) {
+      if (!map || !leaflet) return;
       map.flyTo([next.lat, next.lon], PREVIEW_ZOOM, {
         duration: FLY_TO_DURATION_MS / 1000,
       });
       currentMarker?.setLatLng([next.lat, next.lon]);
+      currentMarker?.setIcon(
+        leaflet.divIcon({
+          html: dotHtml(CURRENT_SIZE, CURRENT_COLOR, stopNumber ?? undefined),
+          className: "",
+          iconSize: [CURRENT_SIZE, CURRENT_SIZE],
+          iconAnchor: [CURRENT_SIZE / 2, CURRENT_SIZE / 2],
+        }),
+      );
     },
     setStopPins(next) {
       if (!map || !leaflet) return;
       for (const marker of stopMarkers) marker.remove();
-      stopMarkers = next.map((pin) => makeStopMarker(leaflet!, pin).addTo(map!));
-      currentMarker?.bringToFront();
+      stopMarkers = next.map((pin) =>
+        makeDotMarker(leaflet!, pin.lat, pin.lon, STOP_SIZE, STOP_COLOR, pin.stopNumber, pin.rowIndex).addTo(map!),
+      );
+    },
+    setTurnPins(next) {
+      if (!map || !leaflet) return;
+      for (const marker of turnMarkers) marker.remove();
+      turnMarkers = next.map((pin) =>
+        makeDotMarker(leaflet!, pin.lat, pin.lon, TURN_SIZE, TURN_COLOR, undefined, pin.rowIndex).addTo(map!),
+      );
     },
     destroy() {
       destroyed = true;
@@ -259,31 +347,10 @@ function mountLeaflet(
   };
 }
 
-function pointFeature(point: { lat: number; lon: number }) {
-  return {
-    type: "Feature" as const,
-    properties: {},
-    geometry: { type: "Point" as const, coordinates: [point.lon, point.lat] },
-  };
-}
-
-// Same shape as pointFeature above, plus `rowIndex` carried in
-// `properties` - the click handler below reads it back off
-// `e.features[0].properties.rowIndex` (GeoJSON geometry has no room for
-// anything but coordinates) to know which row a tapped dot belongs to.
-function stopPinFeature(pin: StopPin) {
-  return {
-    type: "Feature" as const,
-    properties: { rowIndex: pin.rowIndex },
-    geometry: { type: "Point" as const, coordinates: [pin.lon, pin.lat] },
-  };
-}
-
-function stopPinsCollection(stopPins: StopPin[]) {
-  return {
-    type: "FeatureCollection" as const,
-    features: stopPins.map(stopPinFeature),
-  };
+function elementFromHtml(html: string): HTMLDivElement {
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  return el;
 }
 
 function mountMapLibre(
@@ -291,20 +358,48 @@ function mountMapLibre(
   center: { lat: number; lon: number },
   routeLine: { lat: number; lon: number }[],
   stopPins: StopPin[],
-  onClickPinRef: React.RefObject<((pin: StopPin) => void) | undefined>,
+  turnPins: TurnPin[],
+  onClickPinRef: React.RefObject<((rowIndex: number) => void) | undefined>,
   cancelledRef: () => boolean,
 ): PreviewMapController {
   let map: MapLibreMap | undefined;
-  let loaded = false;
-  // A flyToCenter/setStopPins call can land before the map's own "load"
-  // event fires (StepRowEditor can navigate rows faster than a fresh
-  // map mounts) - held here and applied once loaded instead of dropped.
-  let pendingCenter = center;
-  let pendingStopPins = stopPins;
+  // maplibre-gl's own module, kept around after the dynamic import
+  // resolves so setStopPins/setTurnPins (called well after mount, from
+  // a later prop-change effect) can still build a new Marker without
+  // importing it a second time.
+  let maplibreModule: typeof import("maplibre-gl") | undefined;
+  let currentMarker: MapLibreMarker | undefined;
+  let stopMarkers: MapLibreMarker[] = [];
+  let turnMarkers: MapLibreMarker[] = [];
+
+  // Shared by every dot this renderer ever draws - a real DOM element
+  // (elementFromHtml, same dotHtml string Leaflet's own L.divIcon
+  // takes) wrapped in a maplibregl.Marker, same "small colored,
+  // optionally-numbered circle" this file's Leaflet renderer draws.
+  // Markers aren't part of the map's own style/layers, so unlike the
+  // route line below, none of this needs to wait on the map's "load"
+  // event - safe to add right away.
+  function makeDotMarker(
+    maplibregl: typeof import("maplibre-gl"),
+    lat: number,
+    lon: number,
+    size: number,
+    color: string,
+    text: number | undefined,
+    rowIndex: number | undefined,
+  ): MapLibreMarker {
+    const element = elementFromHtml(dotHtml(size, color, text));
+    if (rowIndex != null && onClickPinRef.current != null) {
+      element.style.cursor = "pointer";
+      element.addEventListener("click", () => onClickPinRef.current?.(rowIndex));
+    }
+    return new maplibregl.Marker({ element, anchor: "center" }).setLngLat([lon, lat]);
+  }
 
   void import("maplibre-gl").then((maplibregl) =>
     import("pmtiles").then(({ Protocol }) => {
       if (cancelledRef()) return;
+      maplibreModule = maplibregl;
 
       // Harmless to repeat across every mount - see RouteMap.tsx's own
       // mountMapLibre for why this skips an "already registered" guard.
@@ -321,63 +416,33 @@ function mountMapLibre(
       const mapInstance = map;
       collapseAttribution(container);
 
-      mapInstance.once("load", () => {
-        if (cancelledRef()) return;
-        loaded = true;
+      turnMarkers = turnPins.map((pin) =>
+        makeDotMarker(maplibregl, pin.lat, pin.lon, TURN_SIZE, TURN_COLOR, undefined, pin.rowIndex).addTo(
+          mapInstance,
+        ),
+      );
+      stopMarkers = stopPins.map((pin) =>
+        makeDotMarker(maplibregl, pin.lat, pin.lon, STOP_SIZE, STOP_COLOR, pin.stopNumber, pin.rowIndex).addTo(
+          mapInstance,
+        ),
+      );
+      // This row's own point - created last (a higher z-index than
+      // every plain dot above, so it always reads on top even where
+      // one lands at the exact same point) and in blue.
+      currentMarker = makeDotMarker(
+        maplibregl,
+        center.lat,
+        center.lon,
+        CURRENT_SIZE,
+        CURRENT_COLOR,
+        undefined,
+        undefined,
+      ).addTo(mapInstance);
+      currentMarker.getElement().style.zIndex = "10";
 
-        mapInstance.addSource("preview-stops", {
-          type: "geojson",
-          data: stopPinsCollection(pendingStopPins),
-        });
-        mapInstance.addLayer({
-          id: "preview-stops",
-          type: "circle",
-          source: "preview-stops",
-          paint: {
-            "circle-radius": 5,
-            "circle-color": "#ef4444",
-            "circle-stroke-width": 1.5,
-            "circle-stroke-color": "#ffffff",
-          },
-        });
-        // Attached once, unconditionally - reads onClickPinRef fresh on
-        // every click (see that ref's own doc comment), so this never
-        // needs to know whether a real handler exists yet, only whether
-        // one does at the moment a tap actually lands. The hover cursor
-        // swap is the same "this is clickable" affordance Leaflet's own
-        // `.leaflet-interactive` CSS gives its circleMarkers for free -
-        // MapLibre has no equivalent default, so it's done by hand here.
-        mapInstance.on("click", "preview-stops", (e) => {
-          const rowIndex = e.features?.[0]?.properties?.rowIndex;
-          if (typeof rowIndex === "number") {
-            onClickPinRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng, rowIndex });
-          }
-        });
-        mapInstance.on("mouseenter", "preview-stops", () => {
-          mapInstance.getCanvas().style.cursor = "pointer";
-        });
-        mapInstance.on("mouseleave", "preview-stops", () => {
-          mapInstance.getCanvas().style.cursor = "";
-        });
-        // This row's own point - added after (and so drawn on top of)
-        // every plain stop dot above.
-        mapInstance.addSource("preview-current", {
-          type: "geojson",
-          data: pointFeature(pendingCenter),
-        });
-        mapInstance.addLayer({
-          id: "preview-current",
-          type: "circle",
-          source: "preview-current",
-          paint: {
-            "circle-radius": 6,
-            "circle-color": "#2563eb",
-            "circle-stroke-width": 2,
-            "circle-stroke-color": "#ffffff",
-          },
-        });
-
-        if (routeLine.length > 1) {
+      if (routeLine.length > 1) {
+        mapInstance.once("load", () => {
+          if (cancelledRef()) return;
           fetch("/api/route-geometry", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -394,53 +459,45 @@ function mountMapLibre(
                   geometry: { type: "LineString", coordinates: result.geometry.coordinates },
                 },
               });
-              // Inserted below the stop dots (beforeId) so the line
-              // never draws over them.
-              mapInstance.addLayer(
-                {
-                  id: "preview-route-line",
-                  type: "line",
-                  source: "preview-route-line",
-                  layout: { "line-cap": "round", "line-join": "round" },
-                  paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
-                },
-                "preview-stops",
-              );
+              mapInstance.addLayer({
+                id: "preview-route-line",
+                type: "line",
+                source: "preview-route-line",
+                layout: { "line-cap": "round", "line-join": "round" },
+                paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
+              });
             })
             .catch((err) => console.warn("Couldn't fetch route geometry:", err));
-        }
-
-        // A flyToCenter/setStopPins already called before "load" fired
-        // only ever updated `pending*` above - applied for real now
-        // that the sources actually exist to update.
-        if (pendingCenter !== center) {
-          (mapInstance.getSource("preview-current") as GeoJSONSource | undefined)?.setData(
-            pointFeature(pendingCenter),
-          );
-        }
-        if (pendingStopPins !== stopPins) {
-          (mapInstance.getSource("preview-stops") as GeoJSONSource | undefined)?.setData(
-            stopPinsCollection(pendingStopPins),
-          );
-        }
-      });
+        });
+      }
     }),
   );
 
   return {
-    flyToCenter(next) {
-      pendingCenter = next;
-      if (!map || !loaded) return;
+    flyToCenter(next, stopNumber) {
+      if (!map) return;
       map.flyTo({ center: [next.lon, next.lat], duration: FLY_TO_DURATION_MS });
-      (map.getSource("preview-current") as GeoJSONSource | undefined)?.setData(
-        pointFeature(next),
-      );
+      currentMarker?.setLngLat([next.lon, next.lat]);
+      if (currentMarker) {
+        currentMarker.getElement().innerHTML = dotHtml(CURRENT_SIZE, CURRENT_COLOR, stopNumber ?? undefined);
+      }
     },
     setStopPins(next) {
-      pendingStopPins = next;
-      if (!map || !loaded) return;
-      (map.getSource("preview-stops") as GeoJSONSource | undefined)?.setData(
-        stopPinsCollection(next),
+      if (!map || !maplibreModule) return;
+      for (const marker of stopMarkers) marker.remove();
+      stopMarkers = next.map((pin) =>
+        makeDotMarker(maplibreModule!, pin.lat, pin.lon, STOP_SIZE, STOP_COLOR, pin.stopNumber, pin.rowIndex).addTo(
+          map!,
+        ),
+      );
+    },
+    setTurnPins(next) {
+      if (!map || !maplibreModule) return;
+      for (const marker of turnMarkers) marker.remove();
+      turnMarkers = next.map((pin) =>
+        makeDotMarker(maplibreModule!, pin.lat, pin.lon, TURN_SIZE, TURN_COLOR, undefined, pin.rowIndex).addTo(
+          map!,
+        ),
       );
     },
     destroy() {

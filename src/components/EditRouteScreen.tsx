@@ -8,6 +8,7 @@ import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { WaypointPreviewMap } from "./WaypointPreviewMap";
+import type { StopPin, TurnPin } from "./WaypointPreviewMap";
 import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
@@ -822,9 +823,10 @@ function StepRowEditor({
   placementGuess,
   routeContext,
   stopPins,
+  turnPins,
   onChange,
   onLocationChange,
-  onClickStopPin,
+  onClickWaypointPin,
   onFetch,
   onManualCoordinates,
   onCancel,
@@ -922,19 +924,25 @@ function StepRowEditor({
    * short array it is - PlaceCoordinatesModal itself is the one that
    * decides that's too few to bother drawing. */
   routeContext: { lat: number; lon: number }[];
-  /** Every already-resolved Stop's own coordinate (EditRouteScreen's
-   * own `stopPins`, a subset of `routeContext` above) - handed to the
-   * WaypointPreviewMap at the bottom of this card so an admin can see
-   * this row's own point next to its neighboring stops, not just the
-   * road-following line alone. `rowIndex` is what lets tapping one of
-   * those dots open that row's own editor (onClickStopPin below). */
-  stopPins: { lat: number; lon: number; rowIndex: number }[];
+  /** Every already-resolved Stop's own coordinate, numbered
+   * (EditRouteScreen's own `stopPins`, a subset of `routeContext`
+   * above) - handed to the WaypointPreviewMap at the bottom of this
+   * card, red and numbered, so an admin can see this row's own point
+   * next to its neighboring stops, not just the road-following line
+   * alone. `rowIndex` is what lets tapping one of those dots open that
+   * row's own editor (onClickWaypointPin below). */
+  stopPins: StopPin[];
+  /** Every other already-resolved waypoint (EditRouteScreen's own
+   * `turnPins`) - the same WaypointPreviewMap draws these too, plain
+   * yellow dots alongside stopPins' own red, numbered ones. */
+  turnPins: TurnPin[];
   onChange: (patch: Partial<RawRouteRow>) => void;
   /** Opens a different row's own editor in place of this one - the
    * same "save this row's draft, then open the target" goToRowIndex
    * does for the header's own prev/next arrows (EditRouteScreen), now
-   * also reachable by tapping one of stopPins' own dots on the map. */
-  onClickStopPin: (rowIndex: number) => void;
+   * also reachable by tapping one of stopPins'/turnPins' own dots on
+   * the map. */
+  onClickWaypointPin: (rowIndex: number) => void;
   /** The Location field's own onChange, in place of the plain
    * `onChange({ location })` every other field here uses directly - see
    * EditRouteScreen's own handleLocationChange for the extra step this
@@ -1682,9 +1690,11 @@ function StepRowEditor({
           dot directly does the same thing, straight to that stop. */}
             <WaypointPreviewMap
               center={previewCenter}
+              centerStopNumber={stopNumber}
               routeLine={routeContext}
               stopPins={stopPins}
-              onClickPin={(pin) => onClickStopPin(pin.rowIndex)}
+              turnPins={turnPins}
+              onClickPin={onClickWaypointPin}
             />
 
             <div className="mt-3 flex items-center gap-2">
@@ -1994,6 +2004,7 @@ function GeocodeConfirmModal({
   fallback,
   routeLine,
   stopPins,
+  turnPins,
   onAccept,
   onReject,
 }: {
@@ -2001,7 +2012,8 @@ function GeocodeConfirmModal({
   entry: Extract<WaypointCacheEntry, { status: "ok" }>;
   fallback: FallbackDetail;
   routeLine: { lat: number; lon: number }[];
-  stopPins: { lat: number; lon: number; rowIndex: number }[];
+  stopPins: StopPin[];
+  turnPins: TurnPin[];
   onAccept: () => void;
   onReject: () => void;
 }) {
@@ -2025,8 +2037,10 @@ function GeocodeConfirmModal({
         <div className="mt-3">
           <WaypointPreviewMap
             center={{ lat: entry.lat, lon: entry.lon }}
+            centerStopNumber={null}
             routeLine={routeLine}
             stopPins={stopPins}
+            turnPins={turnPins}
           />
         </div>
 
@@ -3648,21 +3662,52 @@ export function EditRouteScreen({
       : [...resolved, school];
   }, [resolutionRows, schoolLat, schoolLon, tripType]);
 
+  // Every Stop row's own "Stop N" number, counted straight through
+  // `rows` in order - deliberately *not* the same filtered count the
+  // visible list below builds for its own header text (stopNumbers,
+  // scoped to whatever "Stops only"/"Unverified only" currently leave
+  // in `visibleRowIndices`) - a resolved stop stopPins itself needs a
+  // number for is exactly the kind "Unverified only" hides from that
+  // filtered count entirely, which would otherwise leave WaypointPreviewMap's
+  // own dots unnumbered the moment that toggle's on. The map's own
+  // dots show this route's real, filter-independent numbering instead.
+  const absoluteStopNumbers = useMemo(() => {
+    const numbers = new Map<number, number>();
+    let counter = 0;
+    rows.forEach((row, index) => {
+      if (row.action.toLowerCase() === "stop") numbers.set(index, ++counter);
+    });
+    return numbers;
+  }, [rows]);
+
   // Every already-resolved Stop row's own coordinate (not a turn, not
   // the school) - `resolutionRows` shares `rows`' own index order
   // (deriveWaypointsWithContext builds `waypoints` via a plain
   // `rows.map`, so `stepId` is just that index), so lining the two up
   // by position is enough to tell which resolved point belongs to an
-  // actual Stop. WaypointPreviewMap draws these as plain dots, distinct
-  // from whichever one is this row's own (highlighted separately).
-  // `rowIndex` (a real index into `rows`) is only ever read by
-  // StepRowEditor's own call site (goToRowIndex, below) - tapping one
-  // of these dots on the map opens that row's own editor in place of
-  // whichever one is currently open.
+  // actual Stop. WaypointPreviewMap draws these as red, numbered dots,
+  // distinct from whichever one is this row's own (highlighted
+  // separately). `rowIndex` (a real index into `rows`) is only ever
+  // read by StepRowEditor's own call site (goToRowIndex, below) -
+  // tapping one of these dots on the map opens that row's own editor
+  // in place of whichever one is currently open.
   const stopPins = useMemo(() => {
-    const pins: { lat: number; lon: number; rowIndex: number }[] = [];
+    const pins: StopPin[] = [];
     resolutionRows.forEach((r, i) => {
       if (r.status === "resolved" && rows[i]?.action.toLowerCase() === "stop") {
+        pins.push({ lat: r.lat, lon: r.lon, rowIndex: i, stopNumber: absoluteStopNumbers.get(i) ?? 0 });
+      }
+    });
+    return pins;
+  }, [resolutionRows, rows, absoluteStopNumbers]);
+
+  // Every other already-resolved waypoint - a turn, a Depart/Arrive,
+  // any row that isn't a Stop - WaypointPreviewMap draws these as plain
+  // yellow dots, no number of its own (only a Stop has one).
+  const turnPins = useMemo(() => {
+    const pins: TurnPin[] = [];
+    resolutionRows.forEach((r, i) => {
+      if (r.status === "resolved" && rows[i]?.action.toLowerCase() !== "stop") {
         pins.push({ lat: r.lat, lon: r.lon, rowIndex: i });
       }
     });
@@ -5159,6 +5204,7 @@ export function EditRouteScreen({
             fallback={pendingFallbackConfirm.fallback}
             routeLine={routeContextPoints}
             stopPins={stopPins}
+            turnPins={turnPins}
             onAccept={acceptFallbackMatch}
             onReject={rejectFallbackMatch}
           />
@@ -5204,9 +5250,10 @@ export function EditRouteScreen({
                 placementGuess={nearestResolvedGuess(resolutionRows, index)}
                 routeContext={routeContextPoints}
                 stopPins={stopPins}
+                turnPins={turnPins}
                 onChange={handleDraftChange}
                 onLocationChange={handleLocationChange}
-                onClickStopPin={goToRowIndex}
+                onClickWaypointPin={goToRowIndex}
                 onFetch={() =>
                   draftWaypoint &&
                   draftWaypoint.kind !== "unresolvable" &&
