@@ -5,14 +5,21 @@ import type {
   RoutingResult,
 } from "../types";
 
-// Back on api.openrouteservice.org for now - see geocode.ts's own doc
-// comment on ORS_GEOCODE_URL: the equivalent api.heigit.org path for
-// the sibling geocode/search endpoint came back a live, verified 404
-// despite matching HeiGIT's own documented migration table, so this
-// endpoint reverts too rather than leaving one ORS call on the new
-// host and one on the old with no confirmation either actually works
-// there.
-const ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions";
+// Moved to api.heigit.org, same as geocode.ts's own ORS_GEOCODE_URL -
+// api.openrouteservice.org's quota was cut to 10% as of 2026-08-27 and
+// the host is being fully shut off 2026-09-28, so staying on it is no
+// longer optional. Unlike geocoding (a separate Pelias service, at its
+// own api.heigit.org/pelias/v1/search path - see ORS_GEOCODE_URL's own
+// doc comment for why that one came back a 404 under the general
+// pattern below), directions/isochrones/matrix are the actual
+// openrouteservice engine HeiGIT documents under its general
+// "api.heigit.org/<service>/<version>/..." pattern - this is that
+// pattern applied to directions specifically. Not yet confirmed live
+// against a real ORS_API_KEY (this repo's own dev sandbox can't reach
+// api.heigit.org to test it) - verify this actually resolves before
+// relying on it, same caution ORS_GEOCODE_URL's own history already
+// went through once.
+const ORS_DIRECTIONS_URL = "https://api.heigit.org/openrouteservice/v2/directions";
 
 // ORS has no dedicated school-bus profile - "driving-car" is the
 // closest general-vehicle one, and it's enough for this app's actual
