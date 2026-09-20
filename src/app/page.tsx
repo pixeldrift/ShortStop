@@ -19,6 +19,7 @@ import {
   PLACEHOLDER_DRIVER_NAME,
   SCHOOL_ADDRESS_NOT_YET_PROVIDED,
 } from "@/lib/placeholderMeta";
+import { permissionsFor } from "@/lib/permissions";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
@@ -53,6 +54,15 @@ type Screen =
        * still does, matching "you get those directions automatically,
        * without pulling the route up separately." */
       autoStart?: boolean;
+      /** Set only when returning from a quick-edit detour (StepScreen's
+       * own Edit/Add buttons, gated on canEditWaypoints - see the
+       * "edit-route" variant's own quickEdit field below) - skips
+       * StartScreen the same way autoStart does, and resumes turn-by-
+       * turn at this exact step rather than back at the depot, so
+       * "Saving takes us back to where we were" holds even though the
+       * whole RouteApp instance (and its live useRouteStepper state)
+       * was unmounted for the trip out to EditRouteScreen and back. */
+      resumeAtStepIndex?: number;
     }
   | {
       kind: "add-route";
@@ -87,6 +97,18 @@ type Screen =
        * Created!" confirmation. Never set by any other navigation into
        * this screen kind. */
       justCreated?: boolean;
+      /** Set only for the quick-edit detour StepScreen's own Edit/Add
+       * buttons take (RouteApp's onEditWaypoint below) - opens straight
+       * to this one row's popup (EditRouteScreen's own quickEdit prop
+       * does the rest: auto-opening it, hiding Delete/prev/next, and
+       * routing Update/Cancel through handleQuickEditSaved/onCancelled
+       * below instead of the ordinary hub/list). `rowIndex` doubles as
+       * the NavigationStep id to resume driving at once this popup
+       * closes, since quick-edit never touches any row but this one (or
+       * a row freshly inserted right after it) - see EditRouteScreen's
+       * own quickEdit type doc comment for why that keeps the resume
+       * math correct. Omitted for every other way into this screen. */
+      quickEdit?: { rowIndex: number; insertNewAfter: boolean };
     }
   | { kind: "schools" }
   | { kind: "school-routes"; schoolName: string };
@@ -380,6 +402,27 @@ export default function Home() {
     replaceScreen({ kind: "edit-route", route, justCreated });
   }
 
+  /** The quick-edit detour's own "Update" completion (EditRouteScreen's
+   * quickEdit.onSaved) - the same three admin overlays handleSaveRoute
+   * above updates, but landing back on "trip" (resumeAtStepIndex, the
+   * same row just edited/inserted-after) instead of "edit-route", so
+   * the driver picks the route back up right where the Edit/Add button
+   * was tapped rather than staying in the editor. Never renames the
+   * route the way handleSaveRoute sometimes does (previousId) - quick-
+   * edit only ever touches one waypoint row, never Route Details, so
+   * Route.id can't have changed underneath it. */
+  function handleQuickEditSaved(
+    route: Route,
+    steps: RawRouteRow[],
+    waypointCache: WaypointCache,
+    resumeAtStepIndex: number,
+  ) {
+    setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
+    setAdminStepsById((prev) => ({ ...prev, [route.id]: steps }));
+    setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
+    replaceScreen({ kind: "trip", route, resumeAtStepIndex });
+  }
+
   // Updating adminRoutes alone (as this used to, before
   // /api/routes/[id]/status existed) only ever looked saved: it made
   // effectiveRealRoutes read as published/draft for the rest of this
@@ -506,6 +549,15 @@ export default function Home() {
         schools={schools}
         initialSubScreen={screen.initialSubScreen}
         justCreated={screen.justCreated}
+        quickEdit={
+          screen.quickEdit && {
+            rowIndex: screen.quickEdit.rowIndex,
+            insertNewAfter: screen.quickEdit.insertNewAfter,
+            onSaved: handleQuickEditSaved,
+            onCancelled: (resumeAtStepIndex) =>
+              replaceScreen({ kind: "trip", route: screen.route, resumeAtStepIndex }),
+          }
+        }
         onSplitToNewRoute={(stepsText, seedMeta) =>
           navigate({ kind: "add-route", initialStepsText: stepsText, seedMeta })
         }
@@ -520,6 +572,7 @@ export default function Home() {
       <RouteApp
         route={screen.route}
         autoStart={screen.autoStart}
+        resumeAtStepIndex={screen.resumeAtStepIndex}
         onBack={goBack}
         onEdit={() => {
           setAdminMode(true);
@@ -536,6 +589,14 @@ export default function Home() {
         onStartedChange={setTripStarted}
         onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
         onArrived={handleRouteArrived}
+        canEditWaypoints={permissionsFor(adminMode).canEditWaypoints}
+        onEditWaypoint={(rowIndex, insertNewAfter) =>
+          navigate({
+            kind: "edit-route",
+            route: screen.route,
+            quickEdit: { rowIndex, insertNewAfter },
+          })
+        }
       />
     );
   } else if (screen.kind === "schools") {
@@ -615,12 +676,15 @@ export default function Home() {
 function RouteApp({
   route,
   autoStart,
+  resumeAtStepIndex,
   onBack,
   onEdit,
   onEditStops,
   onStartedChange,
   onViewSchool,
   onArrived,
+  canEditWaypoints,
+  onEditWaypoint,
 }: {
   route: Route;
   /** True only for the automatic hand-off from a finished route into
@@ -629,6 +693,12 @@ function RouteApp({
    * straight into this route's own directions the same way a driver
    * tapping "Start Route" normally would. */
   autoStart?: boolean;
+  /** Set only when returning from a quick-edit detour (see the Screen
+   * type's own "trip" doc comment) - passed straight through to
+   * useRouteStepper, which calls start() and jumps straight to this
+   * step itself, the same "skip StartScreen" effect autoStart has, just
+   * landing mid-route instead of at step 0. */
+  resumeAtStepIndex?: number;
   onBack: () => void;
   onEdit: () => void;
   /** Passed straight through to StartScreen's own View Stops popup -
@@ -648,6 +718,17 @@ function RouteApp({
    * Route.nextRouteId, or an autoStart navigation into whichever route
    * that id names, if page.tsx's own `routes` still has one under it). */
   onArrived: (route: Route) => void;
+  /** permissionsFor(adminMode).canEditWaypoints, already resolved by
+   * page.tsx - passed straight through to StepScreen, which hides its
+   * own Edit/Add buttons entirely when this is false. */
+  canEditWaypoints: boolean;
+  /** Opens the quick-edit detour for `currentStep` (StepScreen's own
+   * Edit/Add buttons) - `rowIndex` is always currentStep.id (see
+   * NavigationStep.id's own doc comment, parseRouteCsv.ts: it's the raw
+   * row's own array index, the same index quickEdit resumes driving at
+   * once the popup closes), `insertNewAfter` true for Add, false for
+   * Edit. */
+  onEditWaypoint: (rowIndex: number, insertNewAfter: boolean) => void;
 }) {
   const {
     currentStep,
@@ -666,7 +747,7 @@ function RouteApp({
     endRoute,
     exitTrip,
     announcementDone,
-  } = useRouteStepper(route);
+  } = useRouteStepper(route, resumeAtStepIndex);
 
   useEffect(() => {
     onStartedChange(started);
@@ -737,6 +818,8 @@ function RouteApp({
       totalOnboard={totalOnboard}
       onRiderTap={(index) => fillTo(currentStep.id, index, expectedCount)}
       onAddRider={() => addUnexpectedRider(currentStep.id, expectedCount)}
+      canEditWaypoints={canEditWaypoints}
+      onEditWaypoint={(insertNewAfter) => onEditWaypoint(currentStep.id, insertNewAfter)}
     />
   );
 

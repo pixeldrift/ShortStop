@@ -835,6 +835,7 @@ function StepRowEditor({
   canGoNext,
   onNavigate,
   onAddWaypointAfter,
+  hideDelete,
 }: {
   row: RawRouteRow;
   stopNumber: number | null;
@@ -975,6 +976,13 @@ function StepRowEditor({
    * add it in context, rather than closing this editor, scrolling to
    * find the right gap in the list, and reopening. */
   onAddWaypointAfter: () => void;
+  /** True only for EditRouteScreen's own quickEdit sessions (StepScreen's
+   * Edit/Add buttons) - hides the Delete button entirely rather than
+   * threading a quickEdit-aware branch into onDelete itself, since
+   * deleting a waypoint was never part of what those buttons offered
+   * ("update or insert," not remove) and this popup has no Waypoints
+   * list behind it for a delete to sensibly land back on anyway. */
+  hideDelete?: boolean;
 }) {
   // Live off the draft's own Type select, not the `stopNumber` prop
   // (only recomputed by the parent from the *committed* rows, see
@@ -1720,15 +1728,17 @@ function StepRowEditor({
             />
 
             <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onDelete}
-                aria-label="Delete step"
-                className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
-              >
-                <TrashIcon className="h-3.5 w-3.5" />
-                Delete
-              </button>
+              {!hideDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  aria-label="Delete step"
+                  className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
+                >
+                  <TrashIcon className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              )}
               <span className="flex-1" />
               <button
                 type="button"
@@ -2947,6 +2957,7 @@ export function EditRouteScreen({
   onSplitToNewRoute,
   onCancel,
   onSave,
+  quickEdit,
 }: {
   mode: "add" | "edit";
   /** The route being edited, or null when adding a brand-new one. */
@@ -3039,6 +3050,32 @@ export function EditRouteScreen({
     cache: WaypointCache,
     previousId: string | null,
   ) => void;
+  /** `mode: "edit"` only - a driver-screen "quick edit," opened via
+   * StepScreen's own Edit/Add buttons on the current step (page.tsx's
+   * own onEditWaypoint) instead of the normal RouteListScreen/
+   * StartScreen entry points. Opens straight into `rowIndex`'s own
+   * StepRowEditor popup (or, if `insertNewAfter`, a brand-new blank row
+   * spliced in right after it) with nothing else - the hub, the
+   * Waypoints list, prev/next, and Delete are all unreachable for the
+   * whole session, not just hidden at first paint, since this exists
+   * specifically to fix *this one waypoint* and hand control straight
+   * back to the live trip, never to become a general editing session.
+   * `onSaved`/`onCancelled` fire in place of the ordinary onSave/
+   * onCancel above - see handleUpdateRow/handleCancelRow's own
+   * quickEdit branches for exactly what "straight back" means (an
+   * immediate real save, not just closing the popup back to a list
+   * this session never shows). */
+  quickEdit?: {
+    rowIndex: number;
+    insertNewAfter: boolean;
+    onSaved: (
+      route: Route,
+      steps: RawRouteRow[],
+      cache: WaypointCache,
+      resumeAtStepIndex: number,
+    ) => void;
+    onCancelled: (resumeAtStepIndex: number) => void;
+  };
 }) {
   const [routeNumber, setRouteNumber] = useState(
     route?.routeNumber ?? seedMeta?.routeNumber ?? "",
@@ -3235,7 +3272,17 @@ export function EditRouteScreen({
   // already-structured rows, straight from Postgres or a prior edit
   // this session), then edited structurally (add/remove/change a row)
   // from here on, never re-derived from initialSteps again.
-  const [rows, setRows] = useState<RawRouteRow[]>(initialSteps);
+  // quickEdit's own `insertNewAfter` splices its blank row in right
+  // here, at the very first render, rather than via a mount effect -
+  // so there's never a frame where the Waypoints list behind the
+  // about-to-open popup is the *wrong* one (missing the row this
+  // session exists to edit) even for an instant.
+  const [rows, setRows] = useState<RawRouteRow[]>(() => {
+    if (!quickEdit?.insertNewAfter) return initialSteps;
+    const next = [...initialSteps];
+    next.splice(quickEdit.rowIndex + 1, 0, BLANK_ROW);
+    return next;
+  });
   // Which row (a real index into `rows`, not the filtered
   // `visibleRowIndices` position) a drag-handle-initiated reorder
   // started from - null whenever nothing's being dragged. See
@@ -3282,9 +3329,27 @@ export function EditRouteScreen({
   // below) so this same Cancel button removes it outright instead of
   // leaving a blank orphaned row behind - any row that's ever been
   // Updated even once is no longer "new" for this purpose.
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-  const [draftRow, setDraftRow] = useState<RawRouteRow | null>(null);
-  const [newlyAddedIndex, setNewlyAddedIndex] = useState<number | null>(null);
+  // quickEdit opens straight into whichever row it names, from the
+  // very first render (same reasoning as `rows` above) - `insertNewAfter`
+  // shifts which index that actually is, since `rows` above already
+  // spliced its own blank row in one position later.
+  const quickEditTargetIndex = quickEdit
+    ? quickEdit.insertNewAfter
+      ? quickEdit.rowIndex + 1
+      : quickEdit.rowIndex
+    : null;
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(
+    quickEditTargetIndex,
+  );
+  const [draftRow, setDraftRow] = useState<RawRouteRow | null>(() => {
+    if (!quickEdit) return null;
+    return quickEdit.insertNewAfter
+      ? BLANK_ROW
+      : { ...initialSteps[quickEdit.rowIndex] };
+  });
+  const [newlyAddedIndex, setNewlyAddedIndex] = useState<number | null>(
+    quickEdit?.insertNewAfter ? quickEditTargetIndex : null,
+  );
   // A brand-new route always starts "draft" - publishing itself now
   // only ever happens from the route list screen, not here.
   const [status, setStatus] = useState<RouteStatus>(route?.status ?? "draft");
@@ -3347,7 +3412,7 @@ export function EditRouteScreen({
   // route that doesn't exist yet has no stops of its own to split off
   // into a second screen.
   const [subScreen, setSubScreen] = useState<"hub" | "stops">(
-    initialSubScreen ?? "hub",
+    quickEdit ? "stops" : (initialSubScreen ?? "hub"),
   );
   // Which way ScreenTransition should animate the *next* hub<->stops
   // switch - "forward" diving into Stops from the hub's own "Edit
@@ -3811,7 +3876,22 @@ export function EditRouteScreen({
   function handleUpdateRow() {
     if (expandedIndex === null || !draftRow) return;
     const index = expandedIndex;
-    setRows((prev) => prev.map((r, i) => (i === index ? draftRow : r)));
+    const updatedRows = rows.map((r, i) => (i === index ? draftRow : r));
+    // quickEdit: this popup is the *entire* reason EditRouteScreen is
+    // even mounted right now - there's no Waypoints list for closing it
+    // to reveal, and "Update" is meant to read as "save and go back to
+    // the drive," not "commit locally, then still need a separate real
+    // Save." Saves immediately (handleSave's own overrideRows - `rows`
+    // itself hasn't re-rendered with `updatedRows` yet at this point in
+    // the same tick) and routes its completion through quickEdit's own
+    // callback instead of the ordinary onSave prop (see handleSave's
+    // own quickEdit branch) - never falls through to the plain local
+    // commit below.
+    if (quickEdit) {
+      void handleSave(status, updatedRows);
+      return;
+    }
+    setRows(() => updatedRows);
     if (newlyAddedIndex === index) setNewlyAddedIndex(null);
     setExpandedIndex(null);
     setDraftRow(null);
@@ -3824,6 +3904,15 @@ export function EditRouteScreen({
   // of adding a step doesn't leave a blank orphaned row in the list.
   function handleCancelRow() {
     if (expandedIndex === null) return;
+    // quickEdit: same reasoning as handleUpdateRow above - nothing was
+    // ever saved (rows/cache are this component's own local state,
+    // about to unmount entirely), so there's no cleanup to do here at
+    // all, just hand control straight back to the drive at the same
+    // step it was on.
+    if (quickEdit) {
+      quickEdit.onCancelled(quickEdit.rowIndex);
+      return;
+    }
     if (newlyAddedIndex === expandedIndex) {
       const index = expandedIndex;
       setRows((prev) => prev.filter((_, i) => i !== index));
@@ -4372,7 +4461,16 @@ export function EditRouteScreen({
 
     setStatus(nextStatus);
     setDirty(false);
-    onSave(built, currentRows, cache, previousId);
+    // quickEdit: routes straight back to the live trip (its own
+    // onSaved, see this screen's own quickEdit prop doc comment) rather
+    // than the ordinary onSave, which would otherwise land on this
+    // screen's own hub - a session that only ever existed to fix one
+    // waypoint has nothing to show there.
+    if (quickEdit) {
+      quickEdit.onSaved(built, currentRows, cache, quickEdit.rowIndex);
+    } else {
+      onSave(built, currentRows, cache, previousId);
+    }
     return true;
   }
 
@@ -5266,16 +5364,19 @@ export function EditRouteScreen({
                   draftWaypoint.kind !== "unresolvable" &&
                   setManualCoordinates(draftWaypoint, lat, lon)
                 }
-                canGoPrev={visibleRowIndices.indexOf(index) > 0}
+                canGoPrev={quickEdit ? false : visibleRowIndices.indexOf(index) > 0}
                 canGoNext={
-                  visibleRowIndices.indexOf(index) <
-                  visibleRowIndices.length - 1
+                  quickEdit
+                    ? false
+                    : visibleRowIndices.indexOf(index) <
+                      visibleRowIndices.length - 1
                 }
                 onNavigate={goToRow}
                 onAddWaypointAfter={() => addRow(index + 1)}
                 onCancel={handleCancelRow}
                 onDelete={() => handleDeleteRow(index)}
                 onUpdate={handleUpdateRow}
+                hideDelete={!!quickEdit}
               />
             );
           })()}
