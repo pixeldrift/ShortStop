@@ -11,9 +11,11 @@ import {
   ActionIcon,
   CheckCircleIcon,
   CheckIcon,
+  EditIcon,
   MapPinIcon,
   PauseIcon,
   PersonSolidIcon,
+  PlusIcon,
   RoundedTriangleIcon,
   TriangleIcon,
   TurnArrow,
@@ -58,6 +60,8 @@ export function StepScreen({
   totalOnboard,
   onRiderTap,
   onAddRider,
+  canEditWaypoints,
+  onEditWaypoint,
 }: {
   route: Route;
   step: NavigationStep;
@@ -78,6 +82,18 @@ export function StepScreen({
   totalOnboard: number;
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
+  /** Whether this driver's session can reach the quick-edit popup at
+   * all (permissionsFor's own canEditWaypoints - see page.tsx's
+   * RouteApp) - false hides both buttons below entirely, rather than
+   * showing them disabled, since there's nothing a non-admin driver
+   * could do with them anyway. */
+  canEditWaypoints: boolean;
+  /** Opens the same edit-waypoint popup EditRouteScreen's own Waypoints
+   * list uses, auto-opened to this current step and pre-navigated away
+   * from the driving screen (see page.tsx's quickEdit wiring) - false
+   * edits this step in place, true inserts a brand new blank step
+   * right after it, mirroring StepRowEditor's own onAddWaypointAfter. */
+  onEditWaypoint: (insertNewAfter: boolean) => void;
 }) {
   // Only a real "step" phase step can be a stop with riders to check in -
   // the depot/arrived virtual states never show the roster card, even if
@@ -272,7 +288,7 @@ export function StepScreen({
             vanishing into a gap first - that reads as sliding underneath
             the bar rather than just disappearing. */}
         <div
-          className="flex flex-1 touch-manipulation flex-col px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
+          className="relative flex flex-1 touch-manipulation flex-col px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
           onClick={() => !paused && onAdvance()}
         >
           <RouteProgressBar
@@ -283,6 +299,34 @@ export function StepScreen({
             onSeek={onSeek}
             disabled={paused}
           />
+
+          {/* Only on a real step (nothing to edit/insert at depot or
+              arrived) and never mid-pause - stopPropagation keeps a tap
+              here from also counting as the "tap anywhere to advance"
+              this whole container listens for. */}
+          {canEditWaypoints && phase === "step" && !paused && (
+            <div
+              className="absolute top-2 right-2 z-10 flex flex-col gap-1.5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => onEditWaypoint(false)}
+                aria-label="Edit this waypoint"
+                className="btn-glossy-light flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-zinc-900"
+              >
+                <EditIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onEditWaypoint(true)}
+                aria-label="Add a waypoint after this one"
+                className="btn-glossy-light flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-zinc-900"
+              >
+                <PlusIcon className="h-4 w-4" />
+              </button>
+            </div>
+          )}
 
           <StepTransition
             transitionKey={
