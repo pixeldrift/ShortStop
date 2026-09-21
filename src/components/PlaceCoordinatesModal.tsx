@@ -1,18 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import "leaflet/dist/leaflet.css";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { Map as LeafletMap } from "leaflet";
 import { MapPinIcon } from "./icons";
-import {
-  collapseAttribution,
-  PMTILES_ATTRIBUTION,
-  PMTILES_URL,
-  resolveMapEngine,
-} from "@/lib/mapEngine";
+import { collapseAttribution, PMTILES_ATTRIBUTION, PMTILES_URL } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
-import { TILE_ATTRIBUTION, TILE_SUBDOMAINS, TILE_URL } from "./RouteMap";
 import type { RoutingResult } from "@/lib/routing/types";
 
 const DEFAULT_ZOOM = 18;
@@ -34,13 +26,10 @@ const DEFAULT_ZOOM = 18;
  * onSetCoordinates - the pin element itself never carries a coordinate
  * of its own.
  *
- * Same two-renderer split as RouteMap.tsx - resolveMapEngine()
- * (mapEngine.ts) decides once, on mount, between MapLibre GL's
- * self-hosted vector tiles (mountMapLibre, preferred) and the original
- * Leaflet + CARTO raster map (mountLeaflet, kept exactly as it always
- * was as the automatic fallback). See mapEngine.ts's own doc comment
- * for what that check looks at and how to generate the PMTiles file
- * the MapLibre path needs.
+ * Built on MapLibre GL + self-hosted PMTiles vector tiles (mountMapLibre
+ * below), same as RouteMap.tsx and WaypointPreviewMap.tsx - see
+ * mapEngine.ts's own doc comment for why this app requires WebGL with
+ * no raster-tile fallback.
  */
 export function PlaceCoordinatesModal({
   initialCenter,
@@ -74,19 +63,11 @@ export function PlaceCoordinatesModal({
     if (!container) return;
 
     let cancelled = false;
-    let cleanup: (() => void) | undefined;
-
-    void resolveMapEngine().then((engine) => {
-      if (cancelled) return;
-      cleanup =
-        engine === "maplibre"
-          ? mountMapLibre(container, initialCenter, routeContext, setCenter, () => cancelled)
-          : mountLeaflet(container, initialCenter, routeContext, setCenter, () => cancelled);
-    });
+    const cleanup = mountMapLibre(container, initialCenter, routeContext, setCenter, () => cancelled);
 
     return () => {
       cancelled = true;
-      cleanup?.();
+      cleanup();
     };
     // initialCenter/routeContext are only ever read on mount (the map's
     // own starting point and its one-time route-line fetch) - re-fetching
@@ -138,78 +119,9 @@ export function PlaceCoordinatesModal({
 
 type CenterSetter = (center: { lat: number; lon: number }) => void;
 
-// The original renderer, unchanged from before mountMapLibre existed -
-// the automatic fallback whenever resolveMapEngine() (mapEngine.ts)
-// can't use MapLibre.
-function mountLeaflet(
-  container: HTMLDivElement,
-  initialCenter: { lat: number; lon: number },
-  routeContext: { lat: number; lon: number }[],
-  setCenter: CenterSetter,
-  cancelledRef: () => boolean,
-): () => void {
-  let map: LeafletMap | undefined;
-
-  // Dynamic import, not top-level - same "leaflet touches `window`
-  // during module evaluation" reasoning RouteMap.tsx's own identical
-  // import documents.
-  void import("leaflet").then((L) => {
-    if (cancelledRef()) return;
-    map = L.map(container, {
-      center: [initialCenter.lat, initialCenter.lon],
-      zoom: DEFAULT_ZOOM,
-    });
-    L.tileLayer(TILE_URL, {
-      maxZoom: 20,
-      subdomains: TILE_SUBDOMAINS,
-      attribution: TILE_ATTRIBUTION,
-      detectRetina: true,
-    }).addTo(map);
-    map.on("move", () => {
-      if (!map) return;
-      const c = map.getCenter();
-      setCenter({ lat: c.lat, lon: c.lng });
-    });
-
-    // The route's own road-following line, for spatial context while
-    // placing this pin - see this function's own `routeContext` param
-    // doc for why fewer than two points draws nothing, and RouteMap.tsx's
-    // identical fetch for why a request/response failure also just
-    // means no line draws, never a fabricated straight one standing in.
-    if (routeContext.length > 1) {
-      fetch("/api/route-geometry", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ waypoints: routeContext }),
-      })
-        .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
-        .then((result) => {
-          if (cancelledRef() || !map || !result) return;
-          const roadLatLngs: [number, number][] = result.geometry.coordinates.map(
-            ([lon, lat]) => [lat, lon],
-          );
-          L.polyline(roadLatLngs, {
-            color: "#2563eb",
-            weight: 4,
-            opacity: 0.7,
-            lineJoin: "round",
-            interactive: false,
-          }).addTo(map);
-        })
-        .catch((err) => console.warn("Couldn't fetch route geometry:", err));
-    }
-  });
-
-  return () => {
-    map?.remove();
-  };
-}
-
-// MapLibre GL + self-hosted PMTiles vector tiles - the preferred
-// renderer wherever resolveMapEngine() (mapEngine.ts) finds it can
-// actually work. Same drag-under-a-fixed-pin behavior as mountLeaflet
-// above, just reading the live center off MapLibre's own map.getCenter()
-// instead of Leaflet's.
+// MapLibre GL + self-hosted PMTiles vector tiles - drag-under-a-fixed-
+// pin behavior, reading the live center off MapLibre's own
+// map.getCenter().
 function mountMapLibre(
   container: HTMLDivElement,
   initialCenter: { lat: number; lon: number },
@@ -263,7 +175,16 @@ function mountMapLibre(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ waypoints: routeContext }),
         })
-          .then((res): Promise<RoutingResult> | null => (res.ok ? res.json() : null))
+          .then((res): Promise<RoutingResult> | null => {
+            // A non-OK response (quota exceeded, provider down)
+            // resolves rather than rejects, so it never reaches the
+            // .catch below - logged here so a missing line stays
+            // diagnosable instead of silently vanishing (see
+            // RouteMap.tsx's own identical fix).
+            if (res.ok) return res.json();
+            console.warn(`Couldn't fetch route geometry: HTTP ${res.status} ${res.statusText}`);
+            return null;
+          })
           .then((result) => {
             if (cancelledRef() || !result) return;
             mapInstance.addSource("route-line", {

@@ -10,12 +10,15 @@ import {
   SchoolIcon,
   SearchIcon,
 } from "./icons";
+import { IconTooltip } from "./IconTooltip";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
 import { cityFromAddress, streetFromAddress } from "@/lib/address";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
+import { schoolLevelLabel } from "@/lib/schoolLevel";
 import type { Route, SchoolLevel } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 
 /** Same three school levels RouteListScreen's own SCHOOL_LEVEL_TOGGLES
  * filters by, here as icon buttons instead of ES/MS/HS text - shown
@@ -54,6 +57,8 @@ export function SchoolListScreen({
   onSelectSchool: (schoolName: string) => void;
   onBack: () => void;
 }) {
+  // Edge-swipe-right to go back - see useSwipeBack's own doc comment.
+  const swipeRef = useSwipeBack<HTMLDivElement>(onBack);
   const [query, setQuery] = useState("");
   const [sortField, setSortField] = useState<SchoolSortField>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -121,7 +126,10 @@ export function SchoolListScreen({
   }, [schools, query, sortField, sortDir, routeCounts, activeLevels]);
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center">
+    <div
+      ref={swipeRef}
+      className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center"
+    >
       {/* Everything that can genuinely grow past the viewport (the
           school table especially) lives in this inner, scrollable
           region - the "Routes" link and copyright below stay outside
@@ -247,23 +255,25 @@ export function SchoolListScreen({
                 onClick={() => onSelectSchool(name)}
                 className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-1 gap-y-0.5 px-2 py-3 text-left active:bg-zinc-100"
               >
-                {/* Spans into the City column's own width (not the
-                    row's full width - Routes keeps its narrow column to
-                    the right) so a normal-length school name reads on
-                    one line instead of wrapping the way it did when
-                    squeezed into just the School column. */}
-                <span className="col-span-2 flex min-w-0 items-center gap-1 text-base font-semibold text-zinc-900">
-                  {/* Solid black, not faded - this names the school's
-                      real level, unlike the filter buttons above where
-                      the same icon reads blue/gray for active/inactive. */}
-                  <SchoolLevelIcon
-                    level={info.schoolLevel}
-                    className="h-4 w-4 shrink-0 text-zinc-900"
-                  />
-                  {name}
-                </span>
-                <span className="row-span-2 self-center pl-2 text-center text-sm font-semibold text-zinc-700">
-                  {routeCounts[name] ?? 0}
+                {/* Full row width (all three columns), not just the
+                    School/City span - a school name never wraps to a
+                    second line now, however long; truncate below
+                    (min-w-0 on this flex row is what lets that inner
+                    span actually shrink past its content width instead
+                    of forcing the row wider). */}
+                <span className="col-span-3 flex min-w-0 items-center gap-1 text-base font-semibold text-zinc-900">
+                  {/* as="span" - this row is already a <button>
+                      (onSelectSchool above), so IconTooltip can't render
+                      its own <button> here without nesting one
+                      interactive element inside another. */}
+                  <IconTooltip
+                    as="span"
+                    label={schoolLevelLabel(info.schoolLevel)}
+                    className="h-4 w-4 shrink-0 text-blue-600"
+                  >
+                    <SchoolLevelIcon level={info.schoolLevel} className="h-full w-full" />
+                  </IconTooltip>
+                  <span className="truncate">{name}</span>
                 </span>
                 <span className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
                   <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
@@ -275,6 +285,13 @@ export function SchoolListScreen({
                     not a placeholder - genuinely sortable now. */}
                 <span className="truncate pl-2 text-center text-xs text-zinc-500">
                   {cityFromAddress(info.address)}
+                </span>
+                {/* Routes - now on the same row as address/city (its own
+                    column, matching the "Routes" header directly above
+                    it) rather than spanning both rows beside the school
+                    name, now that the name has the whole row to itself. */}
+                <span className="pl-2 text-center text-sm font-semibold text-zinc-700">
+                  {routeCounts[name] ?? 0}
                 </span>
               </button>
             ))}

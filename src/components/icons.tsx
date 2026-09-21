@@ -53,6 +53,12 @@ export function TurnArrow({
 
 export { default as ChevronDownIcon } from "./icons/chevron-down.svg";
 export { default as ArrowDownToLineIcon } from "./icons/arrow-down-to-line.svg";
+export { default as ArrowUpToLineIcon } from "./icons/arrow-up-to-line.svg";
+export { default as ScissorsIcon } from "./icons/scissors.svg";
+export { default as CompassIcon } from "./icons/compass.svg";
+export { default as ExpandIcon } from "./icons/expand.svg";
+export { default as CopyIcon } from "./icons/copy.svg";
+export { default as ReverseIcon } from "./icons/reverse.svg";
 export { default as AddressBookIcon } from "./icons/address-book.svg";
 export { default as PauseIcon } from "./icons/pause.svg";
 
@@ -123,6 +129,12 @@ export function SortIcon({
 export { default as PersonIcon } from "./icons/person-outline.svg";
 export { default as PersonSolidIcon } from "./icons/person-solid.svg";
 export { default as MapPinIcon } from "./icons/map-pin.svg";
+/** A planted flag, marking the school specifically wherever it shows up
+ * among a route's ordinary stops (StartScreen's own View Stops popup) -
+ * distinct from MapPinIcon, which already means "an ordinary
+ * stop/location" everywhere else, so the school reads as its own kind
+ * of waypoint rather than one more pin in the list. */
+export { default as FlagIcon } from "./icons/flag.svg";
 
 export { default as ContinueIcon } from "./icons/continue.svg";
 export { default as ProceedIcon } from "./icons/proceed.svg";

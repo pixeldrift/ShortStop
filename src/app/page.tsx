@@ -8,20 +8,25 @@ import { SchoolListScreen } from "@/components/SchoolListScreen";
 import { ScreenTransition } from "@/components/ScreenTransition";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
+import { UserMenu } from "@/components/UserMenu";
+import { DEFAULT_CURRENT_USER } from "@/lib/currentUser";
+import type { CurrentUser } from "@/lib/currentUser";
 import { buildRouteFromRows } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import type { MasterListRoute } from "@/lib/parseRouteMasterList";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
+import type { SavedLocationInfo } from "@/lib/savedLocations";
 import {
   FAVORITE_ROUTE_IDS,
   PLACEHOLDER_DISTANCE,
   PLACEHOLDER_DRIVER_NAME,
   SCHOOL_ADDRESS_NOT_YET_PROVIDED,
 } from "@/lib/placeholderMeta";
+import { permissionsFor } from "@/lib/permissions";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useRiderRoster } from "@/lib/useRiderRoster";
 import { useRouteStepper } from "@/lib/useRouteStepper";
-import type { Route, RouteStatus } from "@/lib/types";
+import type { Route, RouteStatus, TripType } from "@/lib/types";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -52,8 +57,34 @@ type Screen =
        * still does, matching "you get those directions automatically,
        * without pulling the route up separately." */
       autoStart?: boolean;
+      /** Set only when returning from a quick-edit detour (StepScreen's
+       * own Edit/Add buttons, gated on canEditWaypoints - see the
+       * "edit-route" variant's own quickEdit field below) - skips
+       * StartScreen the same way autoStart does, and resumes turn-by-
+       * turn at this exact step rather than back at the depot, so
+       * "Saving takes us back to where we were" holds even though the
+       * whole RouteApp instance (and its live useRouteStepper state)
+       * was unmounted for the trip out to EditRouteScreen and back. */
+      resumeAtStepIndex?: number;
     }
-  | { kind: "add-route" }
+  | {
+      kind: "add-route";
+      /** Set only when reached via EditRouteScreen's own split-to-new-
+       * route flow (the Stops and Turns list's own scissors icon) -
+       * pre-fills the paste box with the split-off half's waypoints,
+       * already in the exact text its own import parser reads
+       * (EditRouteScreen's onSplitToNewRoute prop, serialized via
+       * serializeRouteImport). Omitted for the ordinary "New Route"
+       * link, which still opens to a blank paste box. */
+      initialStepsText?: string;
+      /** This route's own School/Trip, carried over as a starting
+       * point for the new one - splitting off part of a route's
+       * waypoints almost always means the same school and the same
+       * AM/PM/Special run, just a second bus, so only a new Route #/
+       * Name is actually needed before the first Save. Omitted
+       * alongside initialStepsText for the ordinary "New Route" link. */
+      seedMeta?: { schoolName: string; tripType: TripType | ""; routeNumber?: string };
+    }
   | {
       kind: "edit-route";
       route: Route;
@@ -69,6 +100,18 @@ type Screen =
        * Created!" confirmation. Never set by any other navigation into
        * this screen kind. */
       justCreated?: boolean;
+      /** Set only for the quick-edit detour StepScreen's own Edit/Add
+       * buttons take (RouteApp's onEditWaypoint below) - opens straight
+       * to this one row's popup (EditRouteScreen's own quickEdit prop
+       * does the rest: auto-opening it, hiding Delete/prev/next, and
+       * routing Update/Cancel through handleQuickEditSaved/onCancelled
+       * below instead of the ordinary hub/list). `rowIndex` doubles as
+       * the NavigationStep id to resume driving at once this popup
+       * closes, since quick-edit never touches any row but this one (or
+       * a row freshly inserted right after it) - see EditRouteScreen's
+       * own quickEdit type doc comment for why that keeps the resume
+       * math correct. Omitted for every other way into this screen. */
+      quickEdit?: { rowIndex: number; insertNewAfter: boolean };
     }
   | { kind: "schools" }
   | { kind: "school-routes"; schoolName: string };
@@ -224,8 +267,22 @@ export default function Home() {
   // Toggled by RouteListScreen's own "Edit Mode" link, or turned on
   // unconditionally by a route's "Edit Route" link on StartScreen -
   // reveals draft real routes on the list, dimmed, and the per-row
-  // publish/unpublish/delete controls alongside them.
+  // publish/unpublish/delete controls alongside them. Starts off - this
+  // is a deliberate before/after a demo driver still wants to control,
+  // not the same question as "can this person reach admin features at
+  // all" (permissionsFor/canAccessAdmin below), which is a per-driver
+  // permission now, not something this toggle alone ever grants - see
+  // permissions.ts's own doc comment for why the two are kept separate
+  // even though there's no real per-user account system backing either
+  // one yet.
   const [adminMode, setAdminMode] = useState(false);
+  // The signed-in driver, this demo phase's own stand-in for a real
+  // account (currentUser.ts's own doc comment has the full reasoning) -
+  // UserMenu.tsx reads and edits this directly, including its own
+  // `permissions` field, which is what every permissionsFor(currentUser)
+  // call below actually gates on. Plain useState, not persisted -
+  // refreshing the page resets back to DEFAULT_CURRENT_USER.
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(DEFAULT_CURRENT_USER);
 
   useEffect(() => {
     Promise.all([
@@ -237,20 +294,35 @@ export default function Home() {
       // could leave the whole app stuck loading once enough real
       // routes existed to outrun Neon's pooled connection limit).
       fetchJson<Record<string, RawRouteRow[]>>("/api/routes/steps"),
+      // A route's own anchor doesn't have to be a real school (see
+      // Route.schoolLevel's own doc comment, types.ts) - a saved
+      // address-book location is just as valid, so this list is
+      // checked too, by name, the same "Schools first, SavedLocations
+      // second" order EditRouteScreen.tsx's own matchedSchool/
+      // matchedSavedLocation already use.
+      fetchJson<SavedLocationInfo[]>("/api/saved-locations"),
     ])
-      .then(([allRows, schoolsTable, stepsByRouteId]) => {
+      .then(([allRows, schoolsTable, stepsByRouteId, savedLocations]) => {
         setSchools(schoolsTable);
+        const savedLocationsByName = new Map(
+          savedLocations.map((loc) => [loc.name.trim().toLowerCase(), loc]),
+        );
 
         const built = allRows.map((row) => {
           const steps = stepsByRouteId[row.id];
           if (!steps || steps.length === 0) return null;
 
+          const school = schoolsTable[row.schoolName];
+          const savedLocation = savedLocationsByName.get(
+            row.schoolName.trim().toLowerCase(),
+          );
           const meta: RouteMeta = {
             ...row,
             driverName: PLACEHOLDER_DRIVER_NAME,
-            schoolAddress: schoolsTable[row.schoolName]?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
-            schoolLat: schoolsTable[row.schoolName]?.lat ?? null,
-            schoolLon: schoolsTable[row.schoolName]?.lon ?? null,
+            schoolAddress:
+              school?.address ?? savedLocation?.address ?? SCHOOL_ADDRESS_NOT_YET_PROVIDED,
+            schoolLat: school?.lat ?? savedLocation?.lat ?? null,
+            schoolLon: school?.lon ?? savedLocation?.lon ?? null,
             distance: PLACEHOLDER_DISTANCE,
             isFavorite: FAVORITE_ROUTE_IDS.has(row.id),
           };
@@ -308,12 +380,64 @@ export default function Home() {
     route: Route,
     steps: RawRouteRow[],
     waypointCache: WaypointCache,
-    justCreated = false,
+    justCreated: boolean,
+    previousId: string | null,
+  ) {
+    // A rename (EditRouteScreen's own handleSave changed
+    // routeNumber/tripType/schoolLevel enough that Route.id itself
+    // changed - see that screen's own doc comment) is NOT a second
+    // route appearing alongside the first: the server already deleted
+    // the old row (see /api/routes' own previousId cleanup), so the
+    // old id needs to disappear from every local overlay here too,
+    // not just gain a new entry under the new id - otherwise this
+    // session's initial realRoutes snapshot keeps showing the old id
+    // as a leftover "copy," and Delete on whatever's shown under it
+    // 404s against a row that's already gone (see handleDeleteRoute).
+    const renamedFrom =
+      previousId != null && previousId !== route.id ? previousId : null;
+    setAdminRoutes((prev) => {
+      const next = { ...prev };
+      if (renamedFrom) delete next[renamedFrom];
+      next[route.id] = route;
+      return next;
+    });
+    setAdminStepsById((prev) => {
+      const next = { ...prev };
+      if (renamedFrom) delete next[renamedFrom];
+      next[route.id] = steps;
+      return next;
+    });
+    setAdminWaypointCaches((prev) => {
+      const next = { ...prev };
+      if (renamedFrom) delete next[renamedFrom];
+      next[route.id] = waypointCache;
+      return next;
+    });
+    if (renamedFrom) {
+      setDeletedRouteIds((prev) => new Set(prev).add(renamedFrom));
+    }
+    replaceScreen({ kind: "edit-route", route, justCreated });
+  }
+
+  /** The quick-edit detour's own "Update" completion (EditRouteScreen's
+   * quickEdit.onSaved) - the same three admin overlays handleSaveRoute
+   * above updates, but landing back on "trip" (resumeAtStepIndex, the
+   * same row just edited/inserted-after) instead of "edit-route", so
+   * the driver picks the route back up right where the Edit/Add button
+   * was tapped rather than staying in the editor. Never renames the
+   * route the way handleSaveRoute sometimes does (previousId) - quick-
+   * edit only ever touches one waypoint row, never Route Details, so
+   * Route.id can't have changed underneath it. */
+  function handleQuickEditSaved(
+    route: Route,
+    steps: RawRouteRow[],
+    waypointCache: WaypointCache,
+    resumeAtStepIndex: number,
   ) {
     setAdminRoutes((prev) => ({ ...prev, [route.id]: route }));
     setAdminStepsById((prev) => ({ ...prev, [route.id]: steps }));
     setAdminWaypointCaches((prev) => ({ ...prev, [route.id]: waypointCache }));
-    replaceScreen({ kind: "edit-route", route, justCreated });
+    replaceScreen({ kind: "trip", route, resumeAtStepIndex });
   }
 
   // Updating adminRoutes alone (as this used to, before
@@ -399,6 +523,12 @@ export default function Home() {
     );
   }
 
+  // This driver's own permissions, resolved once per render and handed
+  // down to every screen that gates something on one of its fields -
+  // UserMenu.tsx's own checkboxes are what actually change currentUser
+  // (and so this) from one render to the next.
+  const permissions = permissionsFor(currentUser);
+
   // Rather than each branch returning straight away, every screen's
   // own element is built into `content` first and returned once at the
   // bottom wrapped in ScreenTransition - `navigate` above is what
@@ -420,9 +550,14 @@ export default function Home() {
         route={null}
         routes={routes}
         initialSteps={[]}
+        initialStepsText={screen.initialStepsText}
+        seedMeta={screen.seedMeta}
         schools={schools}
+        permissions={permissions}
         onCancel={goBack}
-        onSave={(route, steps, cache) => handleSaveRoute(route, steps, cache, true)}
+        onSave={(route, steps, cache, previousId) =>
+          handleSaveRoute(route, steps, cache, true, previousId)
+        }
       />
     );
   } else if (screen.kind === "edit-route") {
@@ -436,10 +571,25 @@ export default function Home() {
         initialSteps={initialSteps}
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schools={schools}
+        permissions={permissions}
         initialSubScreen={screen.initialSubScreen}
         justCreated={screen.justCreated}
+        quickEdit={
+          screen.quickEdit && {
+            rowIndex: screen.quickEdit.rowIndex,
+            insertNewAfter: screen.quickEdit.insertNewAfter,
+            onSaved: handleQuickEditSaved,
+            onCancelled: (resumeAtStepIndex) =>
+              replaceScreen({ kind: "trip", route: screen.route, resumeAtStepIndex }),
+          }
+        }
+        onSplitToNewRoute={(stepsText, seedMeta) =>
+          navigate({ kind: "add-route", initialStepsText: stepsText, seedMeta })
+        }
         onCancel={goBack}
-        onSave={handleSaveRoute}
+        onSave={(route, steps, cache, previousId) =>
+          handleSaveRoute(route, steps, cache, false, previousId)
+        }
       />
     );
   } else if (screen.kind === "trip") {
@@ -447,6 +597,7 @@ export default function Home() {
       <RouteApp
         route={screen.route}
         autoStart={screen.autoStart}
+        resumeAtStepIndex={screen.resumeAtStepIndex}
         onBack={goBack}
         onEdit={() => {
           setAdminMode(true);
@@ -463,6 +614,14 @@ export default function Home() {
         onStartedChange={setTripStarted}
         onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
         onArrived={handleRouteArrived}
+        canEditWaypoints={permissions.canEditWaypoints}
+        onEditWaypoint={(rowIndex, insertNewAfter) =>
+          navigate({
+            kind: "edit-route",
+            route: screen.route,
+            quickEdit: { rowIndex, insertNewAfter },
+          })
+        }
       />
     );
   } else if (screen.kind === "schools") {
@@ -481,6 +640,7 @@ export default function Home() {
         title={screen.schoolName}
         onBack={goBack}
         adminMode={adminMode}
+        permissions={permissions}
         adminWaypointCaches={adminWaypointCaches}
         onToggleAdminMode={() => setAdminMode((prev) => !prev)}
         onSelect={(route) => navigate({ kind: "trip", route })}
@@ -498,6 +658,7 @@ export default function Home() {
         slideInOnMount={justLoaded}
         onViewSchools={() => navigate({ kind: "schools" })}
         adminMode={adminMode}
+        permissions={permissions}
         adminWaypointCaches={adminWaypointCaches}
         onToggleAdminMode={() => setAdminMode((prev) => !prev)}
         onSelect={(route) => navigate({ kind: "trip", route })}
@@ -512,6 +673,11 @@ export default function Home() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Same "one persistent instance, not re-rendered per screen"
+          reasoning as the pinned Logo just below - floats top-right on
+          every screen (its own fixed positioning, not this flow), so
+          it's rendered once here rather than by each screen. */}
+      <UserMenu user={currentUser} onChange={setCurrentUser} />
       {/* Rendered once here, outside ScreenTransition entirely, rather
           than by each screen component itself (RouteListScreen,
           SchoolListScreen, StartScreen, EditRouteScreen used to each
@@ -542,12 +708,15 @@ export default function Home() {
 function RouteApp({
   route,
   autoStart,
+  resumeAtStepIndex,
   onBack,
   onEdit,
   onEditStops,
   onStartedChange,
   onViewSchool,
   onArrived,
+  canEditWaypoints,
+  onEditWaypoint,
 }: {
   route: Route;
   /** True only for the automatic hand-off from a finished route into
@@ -556,6 +725,12 @@ function RouteApp({
    * straight into this route's own directions the same way a driver
    * tapping "Start Route" normally would. */
   autoStart?: boolean;
+  /** Set only when returning from a quick-edit detour (see the Screen
+   * type's own "trip" doc comment) - passed straight through to
+   * useRouteStepper, which calls start() and jumps straight to this
+   * step itself, the same "skip StartScreen" effect autoStart has, just
+   * landing mid-route instead of at step 0. */
+  resumeAtStepIndex?: number;
   onBack: () => void;
   onEdit: () => void;
   /** Passed straight through to StartScreen's own View Stops popup -
@@ -575,6 +750,18 @@ function RouteApp({
    * Route.nextRouteId, or an autoStart navigation into whichever route
    * that id names, if page.tsx's own `routes` still has one under it). */
   onArrived: (route: Route) => void;
+  /** permissionsFor().canEditWaypoints, already resolved by page.tsx -
+   * passed straight through to StepScreen, which hides its own Edit/Add
+   * buttons entirely when this is false (always true for now - see
+   * permissionsFor's own doc comment, permissions.ts). */
+  canEditWaypoints: boolean;
+  /** Opens the quick-edit detour for `currentStep` (StepScreen's own
+   * Edit/Add buttons) - `rowIndex` is always currentStep.id (see
+   * NavigationStep.id's own doc comment, parseRouteCsv.ts: it's the raw
+   * row's own array index, the same index quickEdit resumes driving at
+   * once the popup closes), `insertNewAfter` true for Add, false for
+   * Edit. */
+  onEditWaypoint: (rowIndex: number, insertNewAfter: boolean) => void;
 }) {
   const {
     currentStep,
@@ -593,7 +780,7 @@ function RouteApp({
     endRoute,
     exitTrip,
     announcementDone,
-  } = useRouteStepper(route);
+  } = useRouteStepper(route, resumeAtStepIndex);
 
   useEffect(() => {
     onStartedChange(started);
@@ -620,8 +807,6 @@ function RouteApp({
   }, [phase, route, onArrived]);
 
   const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
-
-  const expectedCount = phase === "step" ? (currentStep.studentCount ?? 0) : 0;
 
   // Same forward/backward push as page.tsx's own top-level screens
   // (List <-> Add/Edit Route/trip), applied "universally" to this
@@ -660,10 +845,12 @@ function RouteApp({
         onBack();
       }}
       announcementDone={announcementDone}
-      roster={getRoster(currentStep.id, expectedCount)}
+      getRoster={getRoster}
       totalOnboard={totalOnboard}
-      onRiderTap={(index) => fillTo(currentStep.id, index, expectedCount)}
-      onAddRider={() => addUnexpectedRider(currentStep.id, expectedCount)}
+      onRiderTap={fillTo}
+      onAddRider={addUnexpectedRider}
+      canEditWaypoints={canEditWaypoints}
+      onEditWaypoint={(insertNewAfter) => onEditWaypoint(currentStep.id, insertNewAfter)}
     />
   );
 

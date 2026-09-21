@@ -94,7 +94,7 @@ export function detectDelimiter(headerLine: string): string {
 // steps sheet already committed abbreviates it "Cr" instead (see
 // public/data/120-*.csv's own "Rocky Ridge Cr"), so this matches that
 // existing real data over the style guide, same conformity note.
-const STREET_SUFFIX_ABBREVIATIONS: Record<string, string> = {
+export const STREET_SUFFIX_ABBREVIATIONS: Record<string, string> = {
   avenue: "Ave",
   boulevard: "Blvd",
   circle: "Cr",
@@ -355,6 +355,47 @@ export function parseRouteImport(text: string): ImportParseResult {
   });
 
   return { delimiter, mapping: headerMapping, rows, unmatchedSourceHeaders, headerless: false };
+}
+
+/**
+ * The inverse of parseRouteImport - serializes RawRouteRow[] back into
+ * the same tab-separated, canonical-header text this file's own
+ * parser reads, so what comes out round-trips right back into the same
+ * rows. Used by EditRouteScreen's own "Split ... to New Route" action
+ * (the scissors icon between waypoints) to seed the Add New Route
+ * screen's paste box with an existing route's own already-typed rows,
+ * instead of an admin retyping - or re-uploading - stops that already
+ * exist elsewhere in this app. `time` is left out (every canonical
+ * field except it, in the same order CANONICAL_FIELDS already lists
+ * them) - RawRouteRow never carries a time of its own to round-trip.
+ */
+export function serializeRouteImport(rows: RawRouteRow[]): string {
+  const fields = CANONICAL_FIELDS.filter((field) => field !== "time");
+  const header = fields.map((field) => CANONICAL_HEADER_NAMES[field]);
+  const valueFor = (row: RawRouteRow, field: ImportColumnField): string => {
+    switch (field) {
+      case "action":
+        return row.action;
+      case "location":
+        return row.location;
+      case "fromLocation":
+        return row.fromLocation;
+      case "riderCount":
+        return row.riderCount;
+      case "side":
+        return row.side;
+      case "notes":
+        return row.notes;
+      case "skip":
+        return row.skip ? "true" : "false";
+      case "time":
+        return "";
+    }
+  };
+  const lines = rows.map((row) =>
+    fields.map((field) => valueFor(row, field)).join("\t"),
+  );
+  return [header.join("\t"), ...lines].join("\n");
 }
 
 /** Which of the two columns every row genuinely needs (`action`,

@@ -268,7 +268,19 @@ async function main() {
   let routesProcessed = 0;
 
   for (const route of publishedRoutes) {
-    const baseName = stepsCsvBaseName(route);
+    // Every real row on the district's own master list has a real
+    // school_type column (see parseRouteMasterList's own
+    // SCHOOL_TYPE_TO_LEVEL) - this pipeline only ever runs against
+    // that file, never a Special/no-school route (those are admin-
+    // created directly in Postgres, outside this CSV-driven flow), so
+    // a null here would mean a genuinely malformed sheet row, not a
+    // real "no school" route to just geocode anyway.
+    const { schoolLevel } = route;
+    if (!schoolLevel) {
+      console.log(`Skipping ${route.id} - no school level on record.\n`);
+      continue;
+    }
+    const baseName = stepsCsvBaseName({ ...route, schoolLevel });
     const stepsCsvPath = join(DATA_DIR, `${baseName}.csv`);
 
     if (!existsSync(stepsCsvPath)) {

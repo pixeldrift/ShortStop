@@ -2,20 +2,25 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
+import { IconTooltip } from "./IconTooltip";
 import { ScreenTransition } from "./ScreenTransition";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { WaypointPreviewMap } from "./WaypointPreviewMap";
+import type { StopPin } from "./WaypointPreviewMap";
 import { LA_VERGNE_CENTER } from "./RouteMap";
 import {
   ActionIcon,
   AddressBookIcon,
   ArrowDownToLineIcon,
+  ArrowUpToLineIcon,
   BackArrowIcon,
   CheckCircleIcon,
   CloseIcon,
+  CompassIcon,
+  CopyIcon,
   DownloadIcon,
   DragHandleIcon,
   EditIcon,
@@ -23,9 +28,11 @@ import {
   MapPinIcon,
   PersonSolidIcon,
   PlusIcon,
+  ReverseIcon,
   RightArrowIcon,
   RoundedTriangleIcon,
   SaveIcon,
+  ScissorsIcon,
   SearchIcon,
   SpinnerIcon,
   TrashIcon,
@@ -43,22 +50,26 @@ import {
   waypointConnectorWord,
 } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
-import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
+import { deriveWaypoints, deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { GeocodableQuery } from "@/lib/geocode";
 import {
   matchSchoolFromRows,
   parseRouteImport,
+  serializeRouteImport,
   unresolvedRequiredFields,
 } from "@/lib/parseRouteImport";
 import { parseRouteFilename } from "@/lib/parseRouteMasterList";
+import { routeTitleSizeClass } from "@/lib/routeTitle";
+import { reverseRouteRows, reverseTripType } from "@/lib/reverseRoute";
 import {
   PLACEHOLDER_DISTANCE,
   PLACEHOLDER_DURATION_MINUTES,
   SCHOOL_ADDRESS_NOT_YET_PROVIDED,
 } from "@/lib/placeholderMeta";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
+import type { Permissions } from "@/lib/permissions";
 import type { SavedLocationInfo } from "@/lib/savedLocations";
 import {
   resolutionCounts,
@@ -68,12 +79,15 @@ import type {
   RouteResolutionCounts,
   RowResolutionStatus,
 } from "@/lib/routeResolutionStatus";
+import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { parseTimeInput } from "@/lib/time";
 import { tripTypeFullLabel } from "@/lib/tripType";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { GeocodeResponseBody } from "@/app/api/geocode/route";
+import type { FallbackDetail } from "@/lib/resolveWaypoint";
+import type { RoutingResult } from "@/lib/routing/types";
 
 /** A failed "Fetch"/"Fetch Missing"/"Re-fetch All" call's own error -
  * `message` is this app's own explanation, `raw` (when there is one)
@@ -394,6 +408,45 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+/** A location field that's resolved to a real School or SavedLocation
+ * by name (StepRowEditor's own Location field, EditRouteScreen's own
+ * School field) - the outer box still reads as the same text-input
+ * shape every other field here uses (border, rounded, white), with the
+ * matched name as its own distinct chip nested inside rather than
+ * stretched to fill the whole box, so a resolved match and a plain
+ * typed-but-unmatched value both still look like "a text box," just
+ * with something concrete sitting in this one. The chip's own darker
+ * fill plus a 1px border of its own is what actually makes a real
+ * match read clearly, rather than a near-white tint against this same
+ * white box that a glance could mistake for empty. */
+function MatchedLocationChip({
+  name,
+  onClear,
+  clearLabel,
+}: {
+  name: string;
+  onClear: () => void;
+  clearLabel: string;
+}) {
+  return (
+    <div className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-zinc-200 bg-white px-1.5">
+      <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-zinc-400 bg-zinc-200 py-1 pr-1.5 pl-2.5">
+        <span className="min-w-0 truncate text-sm font-semibold text-zinc-900">
+          {name}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label={clearLabel}
+          className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-zinc-500 active:bg-zinc-300 active:text-zinc-700"
+        >
+          <CloseIcon className="h-2.5 w-2.5" />
+        </button>
+      </span>
+    </div>
   );
 }
 
@@ -759,11 +812,11 @@ function StepRowView({
  */
 function StepRowEditor({
   row,
-  rowIndex,
   stopNumber,
   previousRoad,
   schools,
   savedLocations,
+  locationSuggestions,
   onSaveSavedLocation,
   onFetchSavedLocationCoords,
   routeSchoolName,
@@ -775,6 +828,8 @@ function StepRowEditor({
   routeContext,
   stopPins,
   onChange,
+  onLocationChange,
+  onClickWaypointPin,
   onFetch,
   onManualCoordinates,
   onCancel,
@@ -783,17 +838,10 @@ function StepRowEditor({
   canGoPrev,
   canGoNext,
   onNavigate,
+  onAddWaypointAfter,
+  hideDelete,
 }: {
   row: RawRouteRow;
-  /** This row's own position among every row on the route (not just
-   * the currently-visible ones) - only used to `key` WaypointPreviewMap
-   * below, so navigating to a different row via the prev/next arrows
-   * (or Update/Cancel's own row-to-row jump) remounts that map with a
-   * fresh camera centered on the new row, instead of it staying frozen
-   * wherever the previous row's own mount last left it (see
-   * WaypointPreviewMap's own doc comment for why its camera never
-   * moves on its own once mounted). */
-  rowIndex: number;
   stopNumber: number | null;
   /** The road deriveWaypoints.ts already has tracked as "current"
    * heading into this row, from every row before it - null only for
@@ -815,6 +863,16 @@ function StepRowEditor({
    * resolves this row immediately (onManualCoordinates) instead of
    * waiting on a fresh geocode. */
   savedLocations: SavedLocationInfo[];
+  /** Every location this app already has a resolved coordinate for,
+   * anywhere in the district (EditRouteScreen's own locationSuggestions,
+   * fetched once on mount from /api/location-suggestions) - a street, a
+   * business, anything successfully geocoded before, school names and
+   * saved-location addresses included. Combined with every School/
+   * SavedLocation name (locationDatalistOptions below) to power the
+   * Location field's own <datalist> suggestions, a plain browser-native
+   * autocomplete against what's already known rather than a live map/
+   * geocoder search. */
+  locationSuggestions: string[];
   /** Creates (`id: null`) or updates (`id` set) a saved location - the
    * address book's own "+ Add Location" footer button and each saved
    * location's own pencil icon both open EditSavedLocationModal, and
@@ -871,13 +929,26 @@ function StepRowEditor({
    * short array it is - PlaceCoordinatesModal itself is the one that
    * decides that's too few to bother drawing. */
   routeContext: { lat: number; lon: number }[];
-  /** Every already-resolved Stop's own coordinate (EditRouteScreen's
-   * own `stopPins`, a subset of `routeContext` above) - handed to the
-   * small read-only WaypointPreviewMap at the bottom of this card so
-   * an admin can see this row's own point next to its neighboring
-   * stops, not just the road-following line alone. */
-  stopPins: { lat: number; lon: number }[];
+  /** Every already-resolved Stop's own coordinate, numbered
+   * (EditRouteScreen's own `stopPins`, a subset of `routeContext`
+   * above) - handed to the WaypointPreviewMap at the bottom of this
+   * card, red and numbered, so an admin can see this row's own point
+   * next to its neighboring stops, not just the road-following line
+   * alone. `rowIndex` is what lets tapping one of those dots open that
+   * row's own editor (onClickWaypointPin below). */
+  stopPins: StopPin[];
   onChange: (patch: Partial<RawRouteRow>) => void;
+  /** Opens a different row's own editor in place of this one - the
+   * same "save this row's draft, then open the target" goToRowIndex
+   * does for the header's own prev/next arrows (EditRouteScreen), now
+   * also reachable by tapping one of stopPins' own dots on the map. */
+  onClickWaypointPin: (rowIndex: number) => void;
+  /** The Location field's own onChange, in place of the plain
+   * `onChange({ location })` every other field here uses directly - see
+   * EditRouteScreen's own handleLocationChange for the extra step this
+   * adds (an immediate coordinate resolve when the new text exactly
+   * matches a School/SavedLocation that already has one). */
+  onLocationChange: (value: string) => void;
   onFetch: () => void;
   /** A coordinate typed/pasted directly into the Latitude/Longitude
    * box, parsed and handed up on Save (see handleSave below) - writes
@@ -899,6 +970,23 @@ function StepRowEditor({
    * meaning whatever "Stops only" currently leaves on screen, so this
    * never lands on a turn that's hidden right now. */
   onNavigate: (direction: "prev" | "next") => void;
+  /** Saves this row's own draft (same as Update) and inserts a brand
+   * new blank waypoint immediately after it, opening *that* row's own
+   * editor in its place - the same "Insert Here" AddStepButton already
+   * does between two rows in the list behind this popup, reachable
+   * without closing this one first. Lets an admin who's mid-edit and
+   * realizes a stop or turn is missing right after this one (most often
+   * a direction - "oh, there's a turn between this stop and the next")
+   * add it in context, rather than closing this editor, scrolling to
+   * find the right gap in the list, and reopening. */
+  onAddWaypointAfter: () => void;
+  /** True only for EditRouteScreen's own quickEdit sessions (StepScreen's
+   * Edit/Add buttons) - hides the Delete button entirely rather than
+   * threading a quickEdit-aware branch into onDelete itself, since
+   * deleting a waypoint was never part of what those buttons offered
+   * ("update or insert," not remove) and this popup has no Waypoints
+   * list behind it for a delete to sensibly land back on anyway. */
+  hideDelete?: boolean;
 }) {
   // Live off the draft's own Type select, not the `stopNumber` prop
   // (only recomputed by the parent from the *committed* rows, see
@@ -950,6 +1038,21 @@ function StepRowEditor({
       ) ?? null
     );
   }, [row.location, savedLocations]);
+
+  // The Location field's own <datalist> options - every already-
+  // geocoded location (locationSuggestions, fetched once by
+  // EditRouteScreen) plus every School and SavedLocation name outright,
+  // so picking one of those from the datalist fills Location with the
+  // exact text matchedSchool/matchedSavedLocation above already know
+  // how to recognize, turning straight into the linked-entity chip the
+  // same tap through AddressBookIcon's own popup would have produced -
+  // just a faster path to the same result for a name already memorized.
+  const locationDatalistOptions = useMemo(() => {
+    const names = new Set(locationSuggestions);
+    for (const name of Object.keys(schools)) names.add(name);
+    for (const loc of savedLocations) names.add(loc.name);
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [locationSuggestions, schools, savedLocations]);
 
   // A plain address (a house number out front) or a matched school/
   // saved location (see above) each name one specific point on their
@@ -1204,32 +1307,49 @@ function StepRowEditor({
             )}
           </div>
           {!showPlaceModal && (
-            <div className="flex shrink-0 items-center gap-1 pt-1">
+            <div className="flex shrink-0 flex-col items-center gap-1 pt-1">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onNavigate("prev")}
+                  disabled={!canGoPrev}
+                  aria-label="Previous waypoint"
+                  className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+                    canGoPrev
+                      ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
+                      : "text-zinc-400"
+                  }`}
+                >
+                  <BackArrowIcon className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("next")}
+                  disabled={!canGoNext}
+                  aria-label="Next waypoint"
+                  className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+                    canGoNext
+                      ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
+                      : "text-zinc-400"
+                  }`}
+                >
+                  <RightArrowIcon className="h-4 w-4" />
+                </button>
+              </div>
+              {/* Same round plus button AddStepButton draws between two
+                  rows in the list behind this popup - inserts a blank
+                  waypoint right after this one and opens its own editor
+                  in place, without closing this one first. Under the
+                  arrows (not beside them) so it reads as "add a new
+                  waypoint after this one," not a third navigation
+                  direction alongside prev/next. */}
               <button
                 type="button"
-                onClick={() => onNavigate("prev")}
-                disabled={!canGoPrev}
-                aria-label="Previous waypoint"
-                className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
-                  canGoPrev
-                    ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
-                    : "text-zinc-400"
-                }`}
+                onClick={onAddWaypointAfter}
+                aria-label="Insert a new waypoint after this one"
+                className="btn-glossy-light flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
               >
-                <BackArrowIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigate("next")}
-                disabled={!canGoNext}
-                aria-label="Next waypoint"
-                className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
-                  canGoNext
-                    ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
-                    : "text-zinc-400"
-                }`}
-              >
-                <RightArrowIcon className="h-4 w-4" />
+                <PlusIcon className="h-3.5 w-3.5" />
               </button>
             </div>
           )}
@@ -1334,44 +1454,56 @@ function StepRowEditor({
               <Field label="Location" required>
                 <div className="flex items-center gap-2">
                   {/* A matched school/saved location (see both above)
-                  renders as a gray pill instead of the plain text box -
-                  reads as one linked entity, the way a resolved
-                  recipient chip does in an email client's own To field,
-                  not just a text string a geocoder has to guess at. The
-                  X clears it back to a blank, freely-typed box; picking
-                  a *different* preset (the address-book button, right)
-                  just overwrites it directly, no need to clear first. */}
+                  renders as a chip nested in the text box instead of a
+                  plain typed string - reads as one linked entity, the
+                  way a resolved recipient chip does in an email
+                  client's own To field, not just a text string a
+                  geocoder has to guess at. The X clears it back to a
+                  blank, freely-typed box; picking a *different* preset
+                  (the address-book button, right) just overwrites it
+                  directly, no need to clear first. */}
                   {matchedSchool || matchedSavedLocation ? (
-                    <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-zinc-100 py-1.5 pr-2 pl-3">
-                      <span className="min-w-0 flex-1 truncate text-base font-semibold text-zinc-900">
-                        {matchedSchool?.name ?? matchedSavedLocation?.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onChange({ location: "" })}
-                        aria-label="Clear location"
-                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-200 active:text-zinc-600"
-                      >
-                        <CloseIcon className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <input
-                      className={`min-w-0 flex-1 ${inputClass} ${
-                        status?.status === "unresolved"
-                          ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                          : ""
-                      }`}
-                      value={row.location}
-                      onChange={(e) => onChange({ location: e.target.value })}
-                      placeholder={
-                        isSchoolAction
-                          ? "LaVergne High School"
-                          : /^\d/.test(row.location)
-                            ? "123 Maple Dr"
-                            : "Elm St"
-                      }
+                    <MatchedLocationChip
+                      name={matchedSchool?.name ?? matchedSavedLocation?.name ?? ""}
+                      onClear={() => onChange({ location: "" })}
+                      clearLabel="Clear location"
                     />
+                  ) : (
+                    <>
+                      <input
+                        className={`min-w-0 flex-1 ${inputClass} ${
+                          status?.status === "unresolved"
+                            ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                            : ""
+                        }`}
+                        value={row.location}
+                        onChange={(e) => onLocationChange(e.target.value)}
+                        placeholder={
+                          isSchoolAction
+                            ? "LaVergne High School"
+                            : /^\d/.test(row.location)
+                              ? "123 Maple Dr"
+                              : "Elm St"
+                        }
+                        list="location-suggestions"
+                      />
+                      {/* A plain browser-native <datalist>, not a real
+                          autocomplete component - locationDatalistOptions
+                          is every location this app already knows about
+                          (see its own doc comment just above: already-
+                          geocoded addresses/roads plus every School and
+                          SavedLocation name outright), so typing "Oak"
+                          here can suggest "Oak Ave" back exactly as it
+                          resolved before, without a live map/geocoder
+                          search. Still a free-typed field either way -
+                          picking a suggestion or ignoring it entirely
+                          both just set `value` above. */}
+                      <datalist id="location-suggestions">
+                        {locationDatalistOptions.map((name) => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
+                    </>
                   )}
                   <button
                     type="button"
@@ -1583,26 +1715,34 @@ function StepRowEditor({
           route's own road-following line plus every other resolved
           Stop, so an admin can sanity-check a fetched or manually
           typed coordinate against its real neighbors without leaving
-          this card. Read-only (WaypointPreviewMap's own camera never
-          moves once mounted) - PlaceCoordinatesModal above is still
-          the one place to actually change this row's point. */}
+          this card. Scroll/drag/pinch freely to look around -
+          PlaceCoordinatesModal above is still the one place to
+          actually change this row's point. Navigating to a different
+          row via the prev/next arrows flies the camera to the new
+          row's own point instead of jumping straight there (see
+          WaypointPreviewMap's own doc comment) - tapping a stop's own
+          dot directly does the same thing, straight to that stop. */}
             <WaypointPreviewMap
-              key={rowIndex}
               center={previewCenter}
+              centerStopNumber={stopNumber}
+              centerIsTurn={!isStop}
               routeLine={routeContext}
               stopPins={stopPins}
+              onClickPin={onClickWaypointPin}
             />
 
             <div className="mt-3 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onDelete}
-                aria-label="Delete step"
-                className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
-              >
-                <TrashIcon className="h-3.5 w-3.5" />
-                Delete
-              </button>
+              {!hideDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  aria-label="Delete step"
+                  className="btn-glossy-red flex shrink-0 items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white"
+                >
+                  <TrashIcon className="h-3.5 w-3.5" />
+                  Delete
+                </button>
+              )}
               <span className="flex-1" />
               <button
                 type="button"
@@ -1654,11 +1794,35 @@ function AddStepButton({
   disabled,
   dragging,
   dropTarget,
+  onSplit,
+  onAutoroute,
+  autorouting,
 }: {
   onClick: () => void;
   disabled: boolean;
   dragging?: boolean;
   dropTarget?: boolean;
+  /** Opens SplitRouteModal for this exact gap - omitted for the very
+   * first gap (before row 0) and the very last (after the final row),
+   * where "split" would just mean "the whole route" on one side and
+   * nothing on the other. Only ever passed on an internal gap, between
+   * two real rows. */
+  onSplit?: () => void;
+  /** Runs Autoroute for this exact gap (EditRouteScreen's own
+   * handleAutoroute) - same "internal gap only" restriction as
+   * onSplit, for the same reason (there's no "other side" to route
+   * to/from at either end of the route), but its own separate prop
+   * rather than reusing onSplit's own presence to gate this button too
+   * - the two are independent capabilities a caller may or may not
+   * offer, so each gets its own gate rather than one riding along with
+   * the other's just because today's one real caller always happens to
+   * pass both together. */
+  onAutoroute?: () => void;
+  /** True only for the one gap whose own Autoroute request is
+   * in-flight - every other gap keeps its plain compass icon and stays
+   * tappable, same as Fetch/Fetch All never lock a row that isn't the
+   * one actually being fetched. */
+  autorouting?: boolean;
 }) {
   if (dragging) {
     return (
@@ -1691,6 +1855,297 @@ function AddStepButton({
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
+      {/* Two independent links, not one block gated on onSplit alone
+          (the old behavior) - onSplit and onAutoroute (see their own
+          prop doc comments) are separate capabilities, gated
+          separately even though today's one real call site always
+          offers both together. Plain blue links, not button-styled
+          boxes like Add/the rest of this screen - both are secondary,
+          occasional actions on this one dashed line, not something
+          that needs to visually compete with it the way the
+          always-relevant Add button does. */}
+      {onSplit && (
+        <button
+          type="button"
+          onClick={onSplit}
+          disabled={disabled}
+          aria-label="Split route here"
+          className="absolute left-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+        >
+          {/* The source art is a right-pointing (open) pair of blades -
+              unmirrored now that this sits on the left edge, so it
+              still reads as "cutting into" the line from its own
+              side (see CompassIcon just below for the mirror-image
+              case, on the right). */}
+          <ScissorsIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {onAutoroute && (
+        <button
+          type="button"
+          onClick={onAutoroute}
+          disabled={disabled || autorouting}
+          aria-label="Autoroute - fill in real driving directions between these two stops"
+          className="absolute right-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+        >
+          {autorouting ? (
+            <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <CompassIcon className="h-3.5 w-3.5" />
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** ORS's own maneuver-type code (providers/openrouteservice.ts's own
+ * doc comment has the full list) turned into one of this app's own
+ * action words (StepRowEditor's Type dropdown, further down this
+ * file) - Autoroute's one real use for it, so a synthesized row reads
+ * the same as a hand-typed one. Never Depart/Arrive/Stop - those mean
+ * something specific this app already uses them for (a real stop, or
+ * naming the school) that a mid-route ORS maneuver never is;
+ * handleAutoroute below drops ORS's own boundary Depart/Arrive steps
+ * before this ever runs on them, so in practice this only ever sees a
+ * real turn. */
+function actionForManeuverType(type: number): string {
+  switch (type) {
+    case 0:
+    case 2:
+    case 4:
+      return "Left";
+    case 1:
+    case 3:
+    case 5:
+      return "Right";
+    case 9:
+      return "U-Turn";
+    default:
+      // 6 (continue straight), 7/8 (enter/exit a roundabout), 12/13
+      // (keep left/right), and anything ORS ever adds later - all read
+      // fine as a plain "Continue," with the real detail already
+      // carried in this row's own notes (the step's own instruction
+      // text).
+      return "Continue";
+  }
+}
+
+/**
+ * Opened by AddStepButton's own scissors icon (an internal gap only -
+ * see its own doc comment) - offers to carve the waypoints on either
+ * side of that exact gap off into a brand-new route, rather than
+ * retyping a whole second route by hand for what's really the same
+ * stops, just riding two buses instead of one (or, per the driver-
+ * substitution use case this was actually built for, separating a
+ * depot/home leg into its own linkable route - see EditRouteScreen's
+ * own Next Action field). Two steps, not one: which side of the gap
+ * first (`direction`, this component's own local state), then Move or
+ * Copy for that side - a real fork in what happens to *this* route,
+ * not a detail worth burying in the first step's own button label.
+ * `onSplit` hands both choices up to EditRouteScreen's own handleSplit,
+ * which does the actual work; `saving`/`error` reflect Move's own save
+ * of the shortened original back to the caller, so this step 2 can
+ * disable its buttons and show why a Move failed without losing the
+ * admin's place in the flow.
+ */
+function SplitRouteModal({
+  aboveCount,
+  belowCount,
+  saving,
+  error,
+  onSplit,
+  onClose,
+}: {
+  aboveCount: number;
+  belowCount: number;
+  saving: boolean;
+  error: string | null;
+  onSplit: (direction: "above" | "below", action: "move" | "copy") => void;
+  onClose: () => void;
+}) {
+  const [direction, setDirection] = useState<"above" | "below" | null>(null);
+  const count = direction === "above" ? aboveCount : belowCount;
+
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
+      onClick={saving ? undefined : onClose}
+    >
+      <div
+        className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-center shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-heading text-xl font-black tracking-tight">
+          Split Route
+        </h2>
+        {direction === null ? (
+          <>
+            <p className="mt-2 text-sm text-zinc-500">
+              Carve the waypoints on one side of this split off into a
+              brand-new route.
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => setDirection("above")}
+                disabled={aboveCount === 0}
+                className="btn-glossy-blue font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                <ArrowUpToLineIcon className="h-4 w-4" />
+                Split Above to New Route
+                <span className="font-normal opacity-80">({aboveCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDirection("below")}
+                disabled={belowCount === 0}
+                className="btn-glossy-blue font-heading flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                <ArrowDownToLineIcon className="h-4 w-4" />
+                Split Below to New Route
+                <span className="font-normal opacity-80">({belowCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="btn-glossy-light font-heading rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-sm text-zinc-500">
+              Splitting {count} waypoint{count === 1 ? "" : "s"} into a
+              separate route. Do you want to remove them from this route, or
+              keep them and just make a copy?
+            </p>
+            {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => onSplit(direction, "move")}
+                disabled={saving}
+                className="btn-glossy-blue font-heading rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                {saving ? "Moving…" : "Move"}
+              </button>
+              <button
+                type="button"
+                onClick={() => onSplit(direction, "copy")}
+                disabled={saving}
+                className="btn-glossy-blue font-heading rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white disabled:opacity-40"
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+                className="btn-glossy-light font-heading rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Human-readable copy for each FallbackDetail kind (resolveWaypoint.ts)
+ * - GeocodeConfirmModal's own explanation of what actually happened,
+ * distinct enough that an admin can tell a corrected typo apart from a
+ * same-road approximation without reading the raw `kind` value. */
+function fallbackExplanation(fallback: FallbackDetail): string {
+  switch (fallback.kind) {
+    case "street-type":
+      return `No exact match, but a nearby road with a different street type looks like the same one: "${fallback.correctedQuery}".`;
+    case "fuzzy-name":
+      return `No exact match, but a nearby road with a similar spelling looks like the same one: "${fallback.correctedQuery}".`;
+    case "loop-snap":
+      return `These two roads don't meet as a simple intersection here (often a loop or circle) - placed on "${fallback.correctedQuery}" instead, at the point closest to this route. Not a real crossing - only an approximation.`;
+  }
+}
+
+/**
+ * Opened by fetchLocation's own single-row Fetch (globe button) when
+ * the plain exact lookup failed but a fallback strategy
+ * (resolveWaypoint.ts's own lookupCoordinatesWithFallback) found
+ * something - street-type/spelling correction, or a same-road
+ * "loop-snap" placement neither of which is a lookup an admin should
+ * ever have saved silently. Shows what was originally searched, what
+ * was actually found and why, and the same street-level
+ * WaypointPreviewMap every row's own expanded editor already uses (this
+ * route's own road-following line, every other resolved Stop) centered
+ * on the proposed point - Accept persists it exactly like a plain
+ * match always has, Reject leaves the row exactly as unresolved as it
+ * was before this Fetch ran.
+ */
+function GeocodeConfirmModal({
+  originalLabel,
+  entry,
+  fallback,
+  routeLine,
+  stopPins,
+  onAccept,
+  onReject,
+}: {
+  originalLabel: string;
+  entry: Extract<WaypointCacheEntry, { status: "ok" }>;
+  fallback: FallbackDetail;
+  routeLine: { lat: number; lon: number }[];
+  stopPins: StopPin[];
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
+      onClick={onReject}
+    >
+      <div
+        className="animate-popup-pop flex max-h-[85dvh] w-full max-w-sm flex-col overflow-y-auto rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-heading text-xl font-black tracking-tight">
+          Confirm Match
+        </h2>
+        <p className="mt-2 text-sm text-zinc-500">
+          Searched for <span className="font-semibold text-zinc-900">{originalLabel}</span>.{" "}
+          {fallbackExplanation(fallback)}
+        </p>
+
+        <div className="mt-3">
+          <WaypointPreviewMap
+            center={{ lat: entry.lat, lon: entry.lon }}
+            centerStopNumber={null}
+            centerIsTurn={false}
+            routeLine={routeLine}
+            stopPins={stopPins}
+          />
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={onReject}
+            className="btn-glossy-light font-heading flex-1 rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+          >
+            Reject
+          </button>
+          <button
+            type="button"
+            onClick={onAccept}
+            className="btn-glossy-blue font-heading flex-1 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white"
+          >
+            Accept
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2548,12 +3003,17 @@ export function EditRouteScreen({
   route,
   routes,
   initialSteps,
+  initialStepsText,
+  seedMeta,
   initialWaypointCache,
   schools,
+  permissions,
   initialSubScreen,
   justCreated,
+  onSplitToNewRoute,
   onCancel,
   onSave,
+  quickEdit,
 }: {
   mode: "add" | "edit";
   /** The route being edited, or null when adding a brand-new one. */
@@ -2570,6 +3030,20 @@ export function EditRouteScreen({
    * `mode: "add"`, which starts from its own empty paste/upload box
    * instead (see `stepsText`). */
   initialSteps: RawRouteRow[];
+  /** `mode: "add"` only - seeds the paste box itself (`stepsText`)
+   * rather than `rows`/`initialSteps` above, since `mode: "add"` reads
+   * its rows straight from that text (see `currentRows`), never from
+   * `rows` state. Set only by the split-to-new-route flow
+   * (page.tsx's own "add-route" screen kind, `initialStepsText`) -
+   * already in the exact format parseRouteImport reads, so this just
+   * needs to land in the box, not be parsed or validated again here. */
+  initialStepsText?: string;
+  /** `mode: "add"` only - a starting School/Trip for the new route,
+   * from whichever route it was split off of (page.tsx's own
+   * "add-route" screen kind, `seedMeta`). Omitted for the ordinary
+   * "New Route" link, which leaves both genuinely unset the way it
+   * always has. */
+  seedMeta?: { schoolName: string; tripType: TripType | ""; routeNumber?: string };
   /** A previous edit session's own fetched cache for this exact route,
    * if page.tsx has one - takes priority over fetching the real
    * committed sidecar file, so coordinates fetched and saved earlier
@@ -2582,6 +3056,12 @@ export function EditRouteScreen({
    * than free text, so a route's address and level are always looked
    * up here instead of typed or picked separately by an admin. */
   schools: Record<string, SchoolInfo>;
+  /** This driver's own permissions (permissions.ts) - canEditRouteDetails
+   * disables the whole Route Details form (routeDetailsForm's own
+   * fieldset) in mode "edit"; canEditWaypoints disables this screen's
+   * own waypoint-editing affordances (the Waypoints sub-screen's Add/
+   * pencil/drag controls). */
+  permissions: Permissions;
   /** `mode: "edit"` only - opens straight to the Stops and Turns screen
    * instead of the hub, for a caller (StartScreen's own View Stops
    * popup, via its pencil-to-Edit-Waypoints button) that already knows
@@ -2596,6 +3076,18 @@ export function EditRouteScreen({
    * screen instead of landing there with no acknowledgment that the
    * Save actually did anything. */
   justCreated?: boolean;
+  /** `mode: "edit"` only - opens a brand-new "add-route" screen already
+   * pasted with the waypoints on one side of a split (the Stops and
+   * Turns list's own scissors icon, between two waypoints), plus this
+   * route's own School/Trip as a starting point. `stepsText` is already
+   * in the exact paste-box format that screen's own import parser
+   * reads (see serializeRouteImport) - page.tsx only needs to seed it
+   * in, not parse or validate anything itself. Omitted entirely for
+   * `mode: "add"`, which has no existing rows of its own to split. */
+  onSplitToNewRoute?: (
+    stepsText: string,
+    seedMeta: { schoolName: string; tripType: TripType | ""; routeNumber?: string },
+  ) => void;
   onCancel: () => void;
   /** `steps` here is always the *current* row list - `mode: "add"`'s
    * pasted/uploaded rows as parsed, or `mode: "edit"`'s edited row list
@@ -2606,78 +3098,188 @@ export function EditRouteScreen({
    * alongside the route itself so a later re-open of this same route
    * (or the list's own "Publish" readiness check) sees it too, instead
    * of every fetched coordinate vanishing the moment this screen
-   * closes. */
-  onSave: (route: Route, steps: RawRouteRow[], cache: WaypointCache) => void;
+   * closes. `previousId` is this same route's id *before* this save
+   * (see handleSave's own doc comment) - null unless this was an
+   * "edit" of an already-existing route whose own routeNumber/
+   * tripType/schoolLevel changed enough to change Route.id itself
+   * (a Special route's own free-typed name doubles as routeNumber, so
+   * a plain rename hits this constantly, not just an edge case). The
+   * caller needs this to know a rename happened, not a second route
+   * appearing - see page.tsx's own handleSaveRoute. */
+  onSave: (
+    route: Route,
+    steps: RawRouteRow[],
+    cache: WaypointCache,
+    previousId: string | null,
+  ) => void;
+  /** `mode: "edit"` only - a driver-screen "quick edit," opened via
+   * StepScreen's own Edit/Add buttons on the current step (page.tsx's
+   * own onEditWaypoint) instead of the normal RouteListScreen/
+   * StartScreen entry points. Opens straight into `rowIndex`'s own
+   * StepRowEditor popup (or, if `insertNewAfter`, a brand-new blank row
+   * spliced in right after it) with nothing else - the hub, the
+   * Waypoints list, prev/next, and Delete are all unreachable for the
+   * whole session, not just hidden at first paint, since this exists
+   * specifically to fix *this one waypoint* and hand control straight
+   * back to the live trip, never to become a general editing session.
+   * `onSaved`/`onCancelled` fire in place of the ordinary onSave/
+   * onCancel above - see handleUpdateRow/handleCancelRow's own
+   * quickEdit branches for exactly what "straight back" means (an
+   * immediate real save, not just closing the popup back to a list
+   * this session never shows). */
+  quickEdit?: {
+    rowIndex: number;
+    insertNewAfter: boolean;
+    onSaved: (
+      route: Route,
+      steps: RawRouteRow[],
+      cache: WaypointCache,
+      resumeAtStepIndex: number,
+    ) => void;
+    onCancelled: (resumeAtStepIndex: number) => void;
+  };
 }) {
-  const [routeNumber, setRouteNumber] = useState(route?.routeNumber ?? "");
+  const [routeNumber, setRouteNumber] = useState(
+    route?.routeNumber ?? seedMeta?.routeNumber ?? "",
+  );
   const [busNumber, setBusNumber] = useState(route?.busNumber ?? "");
-  // School address and level are never typed or picked separately -
-  // both are looked up from `schools` (Postgres, via /api/schools) by
-  // whichever name is selected here, below. Real address/level data
-  // belongs in that one table, not duplicated into every route that
-  // references it.
-  const [schoolName, setSchoolName] = useState(route?.schoolName ?? "");
-  const schoolInfo: SchoolInfo | undefined = schools[schoolName];
-  // A route already being edited whose school isn't in `schools` yet
-  // (see schoolOptions below) keeps its own already-known address/
-  // level instead of falling back to the generic placeholder/default -
-  // picking a *different* school from the dropdown always overrides
-  // this with that school's own real table entry.
+  // Every saved location (the address book's own "Other Locations"
+  // list - StepRowEditor's own AddressBookIcon button, below, and this
+  // form's own School field further down) - fetched once per edit
+  // session, same "fetch on mount" shape page.tsx already uses for
+  // schools. Declared up here (rather than alongside
+  // handleSaveSavedLocation below) so the School field's own
+  // matchedSavedLocation, right below, can read it.
+  const [savedLocations, setSavedLocations] = useState<SavedLocationInfo[]>(
+    [],
+  );
+  useEffect(() => {
+    fetch("/api/saved-locations")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: SavedLocationInfo[]) => setSavedLocations(data))
+      .catch(() => {});
+  }, []);
+  // Every location (street, business, anything) this app already has a
+  // resolved coordinate for, anywhere in the district - fetched once
+  // per edit session, same "fetch on mount" shape as savedLocations
+  // just above. Feeds StepRowEditor's own Location field suggestions
+  // alongside every School/SavedLocation name (a plain <datalist>, not
+  // a live map search) - see /api/location-suggestions's own doc
+  // comment.
+  const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/location-suggestions")
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data: string[]) => setLocationSuggestions(data))
+      .catch(() => {});
+  }, []);
+  // The route's own anchor - a free-typed name, matched by exact
+  // name (case/whitespace-insensitive) against Schools first and
+  // SavedLocations second, same as StepRowEditor's own matchedSchool/
+  // matchedSavedLocation do for a single waypoint - never required to
+  // resolve to either, since a Special route's own starting point (or
+  // any route anchored on a saved location instead of a school) is a
+  // genuinely valid, permanent state, not just "not looked up yet."
+  const [schoolName, setSchoolName] = useState(
+    route?.schoolName ?? seedMeta?.schoolName ?? "",
+  );
+  const matchedSchool = useMemo(() => {
+    const target = schoolName.trim().toLowerCase();
+    if (!target) return null;
+    const entry = Object.entries(schools).find(
+      ([name]) => name.trim().toLowerCase() === target,
+    );
+    return entry ? { name: entry[0], info: entry[1] } : null;
+  }, [schoolName, schools]);
+  const matchedSavedLocation = useMemo(() => {
+    const target = schoolName.trim().toLowerCase();
+    if (!target) return null;
+    return (
+      savedLocations.find((loc) => loc.name.trim().toLowerCase() === target) ??
+      null
+    );
+  }, [schoolName, savedLocations]);
+  // A route already being edited whose anchor doesn't match either
+  // list (yet, or ever - a Special route's own one-off starting point
+  // never will) keeps its own already-known address/level/point
+  // instead of falling back to the generic placeholder/default -
+  // typing or picking a *different*, matching name always overrides
+  // this with that entity's own real table entry.
   const isOriginalUnmatchedSchool =
-    route != null && route.schoolName === schoolName && !schoolInfo;
+    route != null &&
+    route.schoolName === schoolName &&
+    !matchedSchool &&
+    !matchedSavedLocation;
   const schoolAddress =
-    schoolInfo?.address ??
+    matchedSchool?.info.address ??
+    matchedSavedLocation?.address ??
     (isOriginalUnmatchedSchool
       ? route.schoolAddress
       : SCHOOL_ADDRESS_NOT_YET_PROVIDED);
-  const schoolLevel: SchoolLevel =
-    schoolInfo?.schoolLevel ??
-    (isOriginalUnmatchedSchool ? route.schoolLevel : "elementary");
+  // Null whenever the anchor isn't a real school (no match at all, or
+  // matched to a saved location instead) - a school level genuinely
+  // doesn't exist for either case (see Route.schoolLevel's own doc
+  // comment, types.ts).
+  const schoolLevel: SchoolLevel | null =
+    matchedSchool?.info.schoolLevel ??
+    (isOriginalUnmatchedSchool ? route.schoolLevel : null);
   const schoolLat =
-    schoolInfo?.lat ?? (isOriginalUnmatchedSchool ? route.schoolLat : null);
+    matchedSchool?.info.lat ??
+    matchedSavedLocation?.lat ??
+    (isOriginalUnmatchedSchool ? route.schoolLat : null);
   const schoolLon =
-    schoolInfo?.lon ?? (isOriginalUnmatchedSchool ? route.schoolLon : null);
+    matchedSchool?.info.lon ??
+    matchedSavedLocation?.lon ??
+    (isOriginalUnmatchedSchool ? route.schoolLon : null);
   // Whether `schoolAddress` above is a real, geocodable address rather
   // than the generic "not yet provided" placeholder it falls back to
-  // when nothing's selected - unlike that state-backed field before
-  // this pass, `schoolAddress` is never actually blank anymore, so
-  // gating on this instead of `schoolAddress.trim()` is what still
-  // keeps `waypoints` from treating an unselected school as ready.
-  const hasRealSchoolAddress = Boolean(schoolInfo) || isOriginalUnmatchedSchool;
-  // Every known school, plus - only if it wouldn't otherwise be a real
-  // option - whatever school this route already had, so re-opening an
-  // existing route never silently drops or blanks out a school the
-  // schools table doesn't have a row for yet.
-  const schoolOptions = useMemo(() => {
-    const names = Object.keys(schools).sort((a, b) => a.localeCompare(b));
-    if (schoolName && !schools[schoolName]) names.push(schoolName);
-    return names;
-  }, [schools, schoolName]);
+  // when nothing's typed or matched yet - unlike that state-backed
+  // field before this pass, `schoolAddress` is never actually blank
+  // anymore, so gating on this instead of `schoolAddress.trim()` is
+  // what still keeps `waypoints` from treating an unresolved anchor as
+  // ready.
+  const hasRealSchoolAddress =
+    Boolean(matchedSchool) || Boolean(matchedSavedLocation) || isOriginalUnmatchedSchool;
+  // StepRowEditor's own address-book popup (AddressBookIcon, beside
+  // this field below) - same LocationPickerModal every row's own
+  // Location field already opens, just picking this route's own
+  // anchor instead of one waypoint's.
+  const [showSchoolLocationPicker, setShowSchoolLocationPicker] =
+    useState(false);
   // Blank (never "pickup" by default) for a brand-new route - Trip is
   // one of the three fields this screen actually requires (see
   // requiredFieldErrors below), so it needs a genuine "not chosen yet"
   // state to require *into*, the same way School already has one via
   // its own blank "Select a school" option.
   const [tripType, setTripType] = useState<TripType | "">(
-    route?.tripType ?? "",
+    route?.tripType ?? seedMeta?.tripType ?? "",
   );
   // Every other real route this bus could plausibly hand off to once
-  // this one's done - same bus (a chain is one bus driving more than
-  // one leg back-to-back) and same trip type (an AM route handing off
-  // into a PM one, or vice versa, would mean the bus sits idle for
-  // hours mid-"trip"), excluding this route itself and every demo/
+  // this one's done - same trip type (an AM route handing off into a
+  // PM one, or vice versa, would mean the bus sits idle for hours
+  // mid-"trip"), excluding this route itself and every demo/
   // fabricated filler route (chaining only ever makes sense between
   // real, scheduled routes - see Route.nextRouteId's own doc comment
-  // in types.ts).
+  // in types.ts). Deliberately NOT filtered to the same busNumber -
+  // that used to be a hard requirement ("a chain is one bus driving
+  // more than one leg back-to-back"), but a transition leg split off
+  // to its own route (a depot-to-first-stop hop, say) is exactly the
+  // case that's created before its own bus number is ever filled in,
+  // and a strict match just hid every real route it should be able to
+  // chain into. The sort below still surfaces a same-bus route first
+  // when there is one, without excluding every other real candidate.
   const nextRouteOptions = useMemo(
     () =>
-      routes.filter(
-        (r) =>
-          r.status !== "demo" &&
-          r.id !== route?.id &&
-          r.busNumber === busNumber &&
-          r.tripType === tripType,
-      ),
+      routes
+        .filter(
+          (r) =>
+            r.status !== "demo" && r.id !== route?.id && r.tripType === tripType,
+        )
+        .sort((a, b) => {
+          const aSameBus = a.busNumber === busNumber && busNumber !== "" ? 0 : 1;
+          const bSameBus = b.busNumber === busNumber && busNumber !== "" ? 0 : 1;
+          return aSameBus - bSameBus;
+        }),
     [routes, route?.id, busNumber, tripType],
   );
   // The dropdown's own default the first time this route's editor opens
@@ -2725,14 +3327,24 @@ export function EditRouteScreen({
   // still deals in CSV/TSV text at all (a human pasting or uploading a
   // route sheet - see parseRouteImport.ts). mode "edit" never reads
   // this; it's the structured `rows` state that's authoritative there.
-  const [stepsText, setStepsText] = useState("");
+  const [stepsText, setStepsText] = useState(initialStepsText ?? "");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const stepsTextareaRef = useRef<HTMLTextAreaElement>(null);
   // mode "edit" only - seeded once from initialSteps (the route's own
   // already-structured rows, straight from Postgres or a prior edit
   // this session), then edited structurally (add/remove/change a row)
   // from here on, never re-derived from initialSteps again.
-  const [rows, setRows] = useState<RawRouteRow[]>(initialSteps);
+  // quickEdit's own `insertNewAfter` splices its blank row in right
+  // here, at the very first render, rather than via a mount effect -
+  // so there's never a frame where the Waypoints list behind the
+  // about-to-open popup is the *wrong* one (missing the row this
+  // session exists to edit) even for an instant.
+  const [rows, setRows] = useState<RawRouteRow[]>(() => {
+    if (!quickEdit?.insertNewAfter) return initialSteps;
+    const next = [...initialSteps];
+    next.splice(quickEdit.rowIndex + 1, 0, BLANK_ROW);
+    return next;
+  });
   // Which row (a real index into `rows`, not the filtered
   // `visibleRowIndices` position) a drag-handle-initiated reorder
   // started from - null whenever nothing's being dragged. See
@@ -2779,9 +3391,27 @@ export function EditRouteScreen({
   // below) so this same Cancel button removes it outright instead of
   // leaving a blank orphaned row behind - any row that's ever been
   // Updated even once is no longer "new" for this purpose.
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
-  const [draftRow, setDraftRow] = useState<RawRouteRow | null>(null);
-  const [newlyAddedIndex, setNewlyAddedIndex] = useState<number | null>(null);
+  // quickEdit opens straight into whichever row it names, from the
+  // very first render (same reasoning as `rows` above) - `insertNewAfter`
+  // shifts which index that actually is, since `rows` above already
+  // spliced its own blank row in one position later.
+  const quickEditTargetIndex = quickEdit
+    ? quickEdit.insertNewAfter
+      ? quickEdit.rowIndex + 1
+      : quickEdit.rowIndex
+    : null;
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(
+    quickEditTargetIndex,
+  );
+  const [draftRow, setDraftRow] = useState<RawRouteRow | null>(() => {
+    if (!quickEdit) return null;
+    return quickEdit.insertNewAfter
+      ? BLANK_ROW
+      : { ...initialSteps[quickEdit.rowIndex] };
+  });
+  const [newlyAddedIndex, setNewlyAddedIndex] = useState<number | null>(
+    quickEdit?.insertNewAfter ? quickEditTargetIndex : null,
+  );
   // A brand-new route always starts "draft" - publishing itself now
   // only ever happens from the route list screen, not here.
   const [status, setStatus] = useState<RouteStatus>(route?.status ?? "draft");
@@ -2844,7 +3474,7 @@ export function EditRouteScreen({
   // route that doesn't exist yet has no stops of its own to split off
   // into a second screen.
   const [subScreen, setSubScreen] = useState<"hub" | "stops">(
-    initialSubScreen ?? "hub",
+    quickEdit ? "stops" : (initialSubScreen ?? "hub"),
   );
   // Which way ScreenTransition should animate the *next* hub<->stops
   // switch - "forward" diving into Stops from the hub's own "Edit
@@ -2907,19 +3537,114 @@ export function EditRouteScreen({
   const [fetchError, setFetchError] = useState<FetchErrorInfo | null>(null);
   const [showFetchModal, setShowFetchModal] = useState(false);
 
-  // Every saved location (the address book's own "Other Locations"
-  // list - StepRowEditor's own AddressBookIcon button, below) - fetched
-  // once per edit session, same "fetch on mount" shape page.tsx already
-  // uses for schools.
-  const [savedLocations, setSavedLocations] = useState<SavedLocationInfo[]>(
-    [],
-  );
-  useEffect(() => {
-    fetch("/api/saved-locations")
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data: SavedLocationInfo[]) => setSavedLocations(data))
-      .catch(() => {});
-  }, []);
+  // A single-row Fetch (globe button) that only found a coordinate via
+  // a fallback strategy (street-type/spelling correction, or a
+  // same-road "loop-snap" placement) - GeocodeConfirmModal shows this
+  // and waits for Accept/Reject before anything's persisted. Null the
+  // rest of the time, including for every plain exact match, which
+  // never touches this state at all (see fetchLocation above).
+  const [pendingFallbackConfirm, setPendingFallbackConfirm] = useState<{
+    waypoint: GeocodableQuery;
+    entry: Extract<WaypointCacheEntry, { status: "ok" }>;
+    fallback: FallbackDetail;
+  } | null>(null);
+
+  /** GeocodeConfirmModal's own Accept - persists exactly the same way
+   * a plain exact match already does (setCache + persistWaypoint),
+   * just gated behind this extra look-it-over step. */
+  function acceptFallbackMatch() {
+    if (!pendingFallbackConfirm) return;
+    const { waypoint, entry } = pendingFallbackConfirm;
+    const key = waypointCacheKey(waypoint);
+    setCache((prev) => ({ ...prev, [key]: entry }));
+    persistWaypoint(key, entry);
+    setPendingFallbackConfirm(null);
+  }
+
+  /** GeocodeConfirmModal's own Reject - leaves the row exactly as
+   * unresolved as it was before this Fetch ran, recorded as a real
+   * "error" cache entry (not just silently forgotten) so the row's own
+   * status line explains why nothing saved rather than reading as if
+   * Fetch was never tried at all. */
+  function rejectFallbackMatch() {
+    if (!pendingFallbackConfirm) return;
+    const { waypoint, fallback } = pendingFallbackConfirm;
+    const key = waypointCacheKey(waypoint);
+    const entry: WaypointCacheEntry = {
+      status: "error",
+      message: `Rejected a suggested match ("${fallback.correctedQuery}") - no coordinate saved.`,
+      notFound: true,
+      source: waypointLabel(waypoint),
+      provider: "overpass",
+    };
+    setCache((prev) => ({ ...prev, [key]: entry }));
+    setPendingFallbackConfirm(null);
+  }
+
+  // The gap (a real index into `rows`, not `visibleRowIndices`) whose
+  // scissors icon is currently open in SplitRouteModal - null the rest
+  // of the time. Only ever set for an internal gap (see AddStepButton's
+  // own `onSplit` doc comment), so `rows.slice` on either side of it
+  // always has something in it.
+  const [splitGapIndex, setSplitGapIndex] = useState<number | null>(null);
+  // Move's own save of the shortened original - separate from the hub
+  // screen's own `saving`/`message` (the main Save button) so a Move
+  // failure shows up inside SplitRouteModal itself, next to the retry,
+  // rather than on a screen the admin's already navigating away from.
+  const [splitSaving, setSplitSaving] = useState(false);
+  const [splitError, setSplitError] = useState<string | null>(null);
+  // Guards the hub screen's own "Duplicate Route" link the same way
+  // `saving` guards Save - a duplicate is its own immediate POST, not
+  // routed through handleSave, so it needs its own in-flight flag.
+  const [duplicating, setDuplicating] = useState(false);
+  // Same guard, for the hub screen's own "Reverse Route" link.
+  const [reversing, setReversing] = useState(false);
+
+  /** SplitRouteModal's own Move/Copy step - hands the chosen half's
+   * rows up to page.tsx as ready-to-paste text (the same canonical
+   * format an admin's own upload/paste already produces), along with
+   * this route's own School/Trip as a starting point, so the new route
+   * needs only a Route #/Name before its first Save.
+   *
+   * Copy leaves this route's own `rows` untouched, same as always.
+   * Move actually removes the split-off half from `rows` *and* saves
+   * that shortened list right away (handleSave's own `overrideRows`) -
+   * a "move" that only ever showed up in this screen's own unsaved
+   * draft would silently undo itself the next time this route loads
+   * from Postgres without an admin ever coming back to hit Save on it,
+   * which isn't what "moved" means. A failed save reverts `rows` back
+   * to its full, pre-split state and leaves the modal open on its
+   * Move/Copy step (splitError) rather than quietly discarding the
+   * admin's own removal or forging ahead to the new route screen as if
+   * the original still reflected it.
+   */
+  async function handleSplit(direction: "above" | "below", action: "move" | "copy") {
+    if (splitGapIndex === null || !onSplitToNewRoute) return;
+    const selected =
+      direction === "above" ? rows.slice(0, splitGapIndex) : rows.slice(splitGapIndex);
+
+    if (action === "move") {
+      const remaining =
+        direction === "above" ? rows.slice(splitGapIndex) : rows.slice(0, splitGapIndex);
+      setSplitSaving(true);
+      setSplitError(null);
+      setRows(remaining);
+      const ok = await handleSave(status, remaining);
+      setSplitSaving(false);
+      if (!ok) {
+        setRows(rows);
+        setSplitError("Couldn't save the shortened route - try again.");
+        return;
+      }
+    }
+
+    onSplitToNewRoute(serializeRouteImport(selected), {
+      schoolName,
+      tripType,
+      routeNumber: `Split-${routeNumber}`,
+    });
+    setSplitGapIndex(null);
+  }
 
   // EditSavedLocationModal's own Save button (opened either from the
   // address book's "+ Add Location" footer button, `id: null`, or a
@@ -3068,38 +3793,70 @@ export function EditRouteScreen({
   // spliced into whichever end tripType puts it - RouteMap.tsx's own
   // orderedWaypointsRef does the same splice for the same reason (the
   // school is a real leg of the trip but never one of `waypoints`
-  // itself). PlaceCoordinatesModal's own context line reuses this list
-  // to draw the actual route while an admin is placing a pin, so a
-  // route with under two resolved points (nothing to draw a line
-  // between yet) is left as an empty array rather than a special case
-  // that component needs to know about.
+  // itself) - but, same as that ref, only when a row actually names the
+  // school with a real Depart/Arrive action (isSchoolAction, per-row
+  // above/AllStopsModal's own explicitSchoolStepId, StartScreen.tsx).
+  // A route whose last leg is just a spoken "Proceed to..." instruction
+  // (skip=true, never geocoded as a real waypoint) doesn't actually
+  // drive there, so splicing the school in unconditionally drew a line
+  // straight from the last real stop to the school even when nothing in
+  // the route actually goes there. PlaceCoordinatesModal's own context
+  // line reuses this list to draw the actual route while an admin is
+  // placing a pin, so a route with under two resolved points (nothing
+  // to draw a line between yet) is left as an empty array rather than a
+  // special case that component needs to know about.
+  const hasExplicitSchoolStep = rows.some((row) => {
+    const actionLower = row.action.toLowerCase();
+    return actionLower === "depart" || actionLower === "arrive";
+  });
   const routeContextPoints = useMemo(() => {
     const resolved = resolutionRows
       .filter((r) => r.status === "resolved")
       .map((r) => ({ lat: r.lat, lon: r.lon }));
-    if (schoolLat == null || schoolLon == null) return resolved;
+    if (schoolLat == null || schoolLon == null || !hasExplicitSchoolStep) return resolved;
     const school = { lat: schoolLat, lon: schoolLon };
     return tripType === "dropoff"
       ? [school, ...resolved]
       : [...resolved, school];
-  }, [resolutionRows, schoolLat, schoolLon, tripType]);
+  }, [resolutionRows, schoolLat, schoolLon, tripType, hasExplicitSchoolStep]);
+
+  // Every Stop row's own "Stop N" number, counted straight through
+  // `rows` in order rather than `visibleRowIndices` - a stop's number is
+  // its fixed position in the real route, not a count of whatever
+  // "Stops only"/"Unverified only" currently leave visible. Used
+  // everywhere a "Stop N" number is shown (the visible list's own row
+  // header, StepRowEditor's header, WaypointPreviewMap's dots) so a
+  // stop's number never changes just because a filter toggled - only
+  // reordering/adding/removing a Stop row itself should ever do that.
+  const absoluteStopNumbers = useMemo(() => {
+    const numbers = new Map<number, number>();
+    let counter = 0;
+    rows.forEach((row, index) => {
+      if (row.action.toLowerCase() === "stop") numbers.set(index, ++counter);
+    });
+    return numbers;
+  }, [rows]);
 
   // Every already-resolved Stop row's own coordinate (not a turn, not
   // the school) - `resolutionRows` shares `rows`' own index order
   // (deriveWaypointsWithContext builds `waypoints` via a plain
   // `rows.map`, so `stepId` is just that index), so lining the two up
   // by position is enough to tell which resolved point belongs to an
-  // actual Stop. WaypointPreviewMap draws these as plain dots, distinct
-  // from whichever one is this row's own (highlighted separately).
+  // actual Stop. WaypointPreviewMap draws these as red, numbered dots,
+  // distinct from whichever one is this row's own (highlighted
+  // separately). `rowIndex` (a real index into `rows`) is only ever
+  // read by StepRowEditor's own call site (goToRowIndex, below) -
+  // tapping one of these dots on the map opens that row's own editor
+  // in place of whichever one is currently open.
   const stopPins = useMemo(() => {
-    const pins: { lat: number; lon: number }[] = [];
+    const pins: StopPin[] = [];
     resolutionRows.forEach((r, i) => {
       if (r.status === "resolved" && rows[i]?.action.toLowerCase() === "stop") {
-        pins.push({ lat: r.lat, lon: r.lon });
+        pins.push({ lat: r.lat, lon: r.lon, rowIndex: i, stopNumber: absoluteStopNumbers.get(i) ?? 0 });
       }
     });
     return pins;
-  }, [resolutionRows, rows]);
+  }, [resolutionRows, rows, absoluteStopNumbers]);
 
   // The row currently open in StepRowEditor's own waypoint, re-derived
   // from `draftRow` rather than read off `waypoints[expandedIndex]`
@@ -3111,28 +3868,35 @@ export function EditRouteScreen({
   // the only way to get this row's own `previousRoad` context exactly
   // right too. Same guard as `waypoints` above, so this stays undefined
   // in exactly the situations that array would have been empty in.
-  const draftWaypoint = useMemo(() => {
-    if (expandedIndex === null || !draftRow) return undefined;
-    if (
-      mode !== "edit" ||
-      hasIncompleteRow ||
-      !hasRealSchoolAddress ||
-      rows.length === 0
-    )
-      return undefined;
-    const draftRows = rows.map((r, i) => (i === expandedIndex ? draftRow : r));
-    return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[
-      expandedIndex
-    ];
-  }, [
-    expandedIndex,
-    draftRow,
-    rows,
-    schoolAddress,
-    mode,
-    hasIncompleteRow,
-    hasRealSchoolAddress,
-  ]);
+  //
+  // A function, not just the memo below directly - handleLocationChange
+  // needs this same derivation for a row it hasn't actually committed
+  // to `draftRow` yet (the new Location text, applied on top of a copy
+  // of the draft), so a school/saved-location match can resolve to the
+  // *new* text's own cache key immediately rather than the stale one
+  // `draftWaypoint` itself is still holding at the moment that change
+  // first comes in.
+  const computeDraftWaypointFor = useCallback(
+    (row: RawRouteRow) => {
+      if (expandedIndex === null) return undefined;
+      if (
+        mode !== "edit" ||
+        hasIncompleteRow ||
+        !hasRealSchoolAddress ||
+        rows.length === 0
+      )
+        return undefined;
+      const draftRows = rows.map((r, i) => (i === expandedIndex ? row : r));
+      return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[
+        expandedIndex
+      ];
+    },
+    [expandedIndex, rows, schoolAddress, mode, hasIncompleteRow, hasRealSchoolAddress],
+  );
+  const draftWaypoint = useMemo(
+    () => (draftRow ? computeDraftWaypointFor(draftRow) : undefined),
+    [draftRow, computeDraftWaypointFor],
+  );
   const draftStatus = useMemo(
     () =>
       draftWaypoint
@@ -3154,10 +3918,53 @@ export function EditRouteScreen({
   function handleDraftChange(patch: Partial<RawRouteRow>) {
     setDraftRow((prev) => (prev ? { ...prev, ...patch } : prev));
   }
+  /** The Location field's own onChange (typing, or picking one of its
+   * own <datalist> suggestions - both fire the same input event) - same
+   * patch as handleDraftChange above, plus one extra step: if the new
+   * text exactly matches a School or SavedLocation that already has its
+   * own lat/lon, resolve this row immediately (setManualCoordinates)
+   * instead of leaving it unresolved until Save/Update - the same
+   * "resolves this row immediately" treatment LocationPickerModal's own
+   * onSelect already gives a pick from the address book popup, now also
+   * true of typing (or datalist-picking) that exact same name by hand.
+   * Computes the new row's own waypoint fresh (computeDraftWaypointFor,
+   * with `value` applied) rather than reading `draftWaypoint` itself -
+   * that memo hasn't recomputed yet at the moment this fires
+   * (handleDraftChange's own setDraftRow is still in flight), so it's
+   * still holding the *previous* text's own cache key. */
+  function handleLocationChange(value: string) {
+    handleDraftChange({ location: value });
+
+    const target = value.trim().toLowerCase();
+    if (!target || !draftRow) return;
+    const matched: { lat: number | null; lon: number | null } | undefined =
+      Object.entries(schools).find(([name]) => name.trim().toLowerCase() === target)?.[1] ??
+      savedLocations.find((loc) => loc.name.trim().toLowerCase() === target);
+    if (matched?.lat == null || matched.lon == null) return;
+
+    const waypoint = computeDraftWaypointFor({ ...draftRow, location: value });
+    if (!waypoint || waypoint.kind === "unresolvable") return;
+    setManualCoordinates(waypoint, matched.lat, matched.lon);
+  }
   function handleUpdateRow() {
     if (expandedIndex === null || !draftRow) return;
     const index = expandedIndex;
-    setRows((prev) => prev.map((r, i) => (i === index ? draftRow : r)));
+    const updatedRows = rows.map((r, i) => (i === index ? draftRow : r));
+    // quickEdit: this popup is the *entire* reason EditRouteScreen is
+    // even mounted right now - there's no Waypoints list for closing it
+    // to reveal, and "Update" is meant to read as "save and go back to
+    // the drive," not "commit locally, then still need a separate real
+    // Save." Saves immediately (handleSave's own overrideRows - `rows`
+    // itself hasn't re-rendered with `updatedRows` yet at this point in
+    // the same tick) and routes its completion through quickEdit's own
+    // callback instead of the ordinary onSave prop (see handleSave's
+    // own quickEdit branch) - never falls through to the plain local
+    // commit below.
+    if (quickEdit) {
+      void handleSave(status, updatedRows);
+      return;
+    }
+    setRows(() => updatedRows);
     if (newlyAddedIndex === index) setNewlyAddedIndex(null);
     setExpandedIndex(null);
     setDraftRow(null);
@@ -3170,6 +3977,15 @@ export function EditRouteScreen({
   // of adding a step doesn't leave a blank orphaned row in the list.
   function handleCancelRow() {
     if (expandedIndex === null) return;
+    // quickEdit: same reasoning as handleUpdateRow above - nothing was
+    // ever saved (rows/cache are this component's own local state,
+    // about to unmount entirely), so there's no cleanup to do here at
+    // all, just hand control straight back to the drive at the same
+    // step it was on.
+    if (quickEdit) {
+      quickEdit.onCancelled(quickEdit.rowIndex);
+      return;
+    }
     if (newlyAddedIndex === expandedIndex) {
       const index = expandedIndex;
       setRows((prev) => prev.filter((_, i) => i !== index));
@@ -3207,20 +4023,28 @@ export function EditRouteScreen({
   // old always-at-the-end behavior this replaces) and opens it for
   // editing immediately - a new stop or turn always needs its details
   // filled in right away, so there's no point leaving it collapsed
-  // first. Only ever called while nothing else is expanded (every
-  // "Add Step" control below is disabled otherwise), so inserting
-  // partway through never has to shift an already-open row's own index
-  // out from under it. See handleCancelRow above for what backing out
-  // of this specific row does differently from canceling an edit to
-  // one that already existed.
+  // first. Called two ways: every "Add Step" control in the list below
+  // (disabled whenever a row is already expanded, so `expandedIndex` is
+  // always null there - inserting partway through never has to shift an
+  // already-open row's own index out from under it), and StepRowEditor's
+  // own "insert after this one" button, called *while* this exact row
+  // is still open - the currently-open draft is committed into `rows`
+  // first (same as goToRowIndex does for prev/next), so whatever was
+  // typed there isn't lost under the fresh blank row this opens next.
+  // See handleCancelRow above for what backing out of this specific row
+  // does differently from canceling an edit to one that already existed.
   function addRow(index: number) {
-    // fromLocation starts blank, same as every other new row - the
-    // road already tracked heading into this exact position shows
-    // live as StepRowEditor's own "From" placeholder (its own
-    // `previousRoad` prop), so there's nothing to pre-fill into the
-    // row's real data just to avoid a moment of "no context shown."
     setRows((prev) => {
-      const next = [...prev];
+      const committed =
+        expandedIndex !== null && draftRow
+          ? prev.map((r, i) => (i === expandedIndex ? draftRow : r))
+          : prev;
+      const next = [...committed];
+      // fromLocation starts blank, same as every other new row - the
+      // road already tracked heading into this exact position shows
+      // live as StepRowEditor's own "From" placeholder (its own
+      // `previousRoad` prop), so there's nothing to pre-fill into the
+      // row's real data just to avoid a moment of "no context shown."
       next.splice(index, 0, BLANK_ROW);
       return next;
     });
@@ -3228,6 +4052,125 @@ export function EditRouteScreen({
     setDraftRow(BLANK_ROW);
     setNewlyAddedIndex(index);
     setDirty(true);
+  }
+
+  // Which internal gap's own Autoroute request is currently in flight -
+  // a real `rows` index (splitGapIndex's own convention: the gap
+  // between rows[gapIndex - 1] and rows[gapIndex]), null the rest of
+  // the time. Only that one gap's own compass icon shows a spinner;
+  // every other gap stays a plain, tappable compass, same as Fetch/
+  // Fetch All never lock a row that isn't the one actually in flight.
+  const [autoroutingGap, setAutoroutingGap] = useState<number | null>(null);
+  // The last Autoroute attempt's own failure (or "nothing to add"
+  // outcome) - cleared the moment a new attempt starts, so a stale
+  // message from a different gap never lingers once the admin tries
+  // again elsewhere.
+  const [autorouteError, setAutorouteError] = useState<string | null>(null);
+
+  /** AddStepButton's own compass icon - fetches a real, road-following
+   * turn-by-turn route between rows[gapIndex - 1] and rows[gapIndex]
+   * (the same /api/route-geometry endpoint RouteMap.tsx's own map line
+   * already calls, just for this one two-stop leg instead of the whole
+   * route, and reading its own `steps` this time instead of only
+   * `geometry`) and splices the real turns in between straight into
+   * `rows` as their own new rows - already resolved, with the
+   * coordinate ORS itself reported for each one written directly into
+   * the waypoint cache (setCache + persistWaypoint, the same shortcut
+   * StepRowEditor's own manual-coordinate entry already uses - see
+   * onManualCoordinates), not left for a separate Fetch pass to
+   * re-derive from the text. ORS's own boundary Depart (first) and
+   * Arrive (last) steps are dropped - those describe leaving/reaching
+   * the two stops that already exist as their own rows either side of
+   * this gap, not new turns to insert. Requires both of those stops
+   * already resolved themselves (resolutionRows reflects that) - there
+   * is nothing real to route between otherwise. The result is ordinary
+   * `rows` state from here on, exactly like a hand-typed turn - nothing
+   * about it is saved until the admin hits this screen's own Save,
+   * same as every other edit here. */
+  async function handleAutoroute(gapIndex: number) {
+    const from = resolutionRows[gapIndex - 1];
+    const to = resolutionRows[gapIndex];
+    if (from?.status !== "resolved" || to?.status !== "resolved") {
+      setAutorouteError(
+        "Both stops around this gap need a resolved coordinate before Autoroute can run between them.",
+      );
+      return;
+    }
+    setAutorouteError(null);
+    setAutoroutingGap(gapIndex);
+    try {
+      const res = await fetch("/api/route-geometry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          waypoints: [
+            { lat: from.lat, lon: from.lon },
+            { lat: to.lat, lon: to.lon },
+          ],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string" ? data.error : `HTTP ${res.status}`,
+        );
+      }
+      const result = data as RoutingResult;
+      const steps = (result.steps ?? []).slice(1, -1);
+      if (steps.length === 0) {
+        setAutorouteError("No turns needed between these two stops.");
+        return;
+      }
+
+      const newRows: RawRouteRow[] = steps.map((step) => ({
+        action: actionForManeuverType(step.type),
+        location: step.name || "Unnamed road",
+        fromLocation: "",
+        riderCount: "",
+        side: "",
+        notes: step.instruction,
+        skip: false,
+      }));
+      const updatedRows = [
+        ...rows.slice(0, gapIndex),
+        ...newRows,
+        ...rows.slice(gapIndex),
+      ];
+      setRows(updatedRows);
+      setDirty(true);
+
+      // Every new row's own WaypointQuery, derived against the *full*,
+      // already-spliced list (not each row in isolation) - the same
+      // "current road" context tracking every other row's own
+      // derivation already leans on, so a new row's key comes out
+      // exactly as it would if this had been typed and tabbed through
+      // by hand. queries[gapIndex + i] lines up with newRows[i] and
+      // steps[i] one-to-one since deriveWaypoints is a plain rows.map,
+      // stepId === row index (RawRouteRow's own doc comment).
+      const queries = deriveWaypoints(updatedRows, schoolAddress);
+      newRows.forEach((_, i) => {
+        const query = queries[gapIndex + i];
+        if (!query || query.kind === "unresolvable") return;
+        const [lon, lat] = steps[i].point;
+        const key = waypointCacheKey(query);
+        const entry: WaypointCacheEntry = {
+          status: "ok",
+          lat,
+          lon,
+          displayName: steps[i].name || steps[i].instruction,
+          source: waypointLabel(query),
+          provider: "openrouteservice",
+        };
+        setCache((prev) => ({ ...prev, [key]: entry }));
+        persistWaypoint(key, entry);
+      });
+    } catch (err) {
+      setAutorouteError(
+        err instanceof Error ? err.message : "Autoroute failed - try again.",
+      );
+    } finally {
+      setAutoroutingGap(null);
+    }
   }
 
   function handleFileChosen(e: ChangeEvent<HTMLInputElement>) {
@@ -3273,6 +4216,7 @@ export function EditRouteScreen({
 
   async function callGeocodeApi(
     query: GeocodableQuery,
+    allowFallback = false,
   ): Promise<GeocodeResponseBody> {
     const res = await fetch("/api/geocode", {
       method: "POST",
@@ -3281,6 +4225,7 @@ export function EditRouteScreen({
         query,
         schoolAddress,
         anchor: schoolAnchor ?? undefined,
+        allowFallback,
       }),
     });
     const data = await res.json();
@@ -3357,9 +4302,25 @@ export function EditRouteScreen({
     setSingleFetchCoolingDown(true);
     setFetchingStepIds((prev) => new Set(prev).add(waypoint.stepId));
     try {
-      const data = await callGeocodeApi(waypoint);
+      const data = await callGeocodeApi(waypoint, true);
       if (data.anchor) setSchoolAnchor(data.anchor);
       persistSchoolAnchorIfFresh(data.anchorEntry);
+
+      // A fallback strategy is what actually found this (street-type/
+      // spelling correction, or a same-road "loop-snap" placement) -
+      // hold off on persisting anything until GeocodeConfirmModal's own
+      // Accept, rather than saving a guess an admin hasn't actually
+      // looked at yet. A plain exact match (the overwhelming majority)
+      // skips this entirely and saves exactly as it always has, below.
+      if (data.result.status === "ok" && data.fallback) {
+        setPendingFallbackConfirm({
+          waypoint,
+          entry: data.result,
+          fallback: data.fallback,
+        });
+        return;
+      }
+
       const key = waypointCacheKey(waypoint);
       setCache((prev) => ({ ...prev, [key]: data.result }));
       persistWaypoint(key, data.result);
@@ -3549,8 +4510,15 @@ export function EditRouteScreen({
       // own live preview of a still-incomplete form, never in anything
       // that actually gets saved.
       const effectiveTripType: TripType = tripType || "pickup";
+      // "none" for a route with no real school level - a Special run,
+      // or one anchored on a saved location - rather than requiring
+      // every id segment to be non-null. Collision risk is the same
+      // "unique as long as..." best-effort this id convention already
+      // accepts (see the Route model's own doc comment,
+      // schema.prisma): two schoolless routes for the same bus/trip
+      // type on the same day is rare enough not to design around here.
       return {
-        id: `${routeNumber}-${effectiveTripType}-${schoolLevel}`,
+        id: `${routeNumber}-${effectiveTripType}-${schoolLevel ?? "none"}`,
         status: nextStatus,
         name: `${schoolName} — ${tripTypeFullLabel(effectiveTripType)}`,
         routeNumber,
@@ -3608,20 +4576,41 @@ export function EditRouteScreen({
     departureTime.trim() !== "" &&
     parseTimeInput(departureTime, tripType || undefined) === null;
 
-  async function handleSave(nextStatus: RouteStatus = status) {
+  /** `overrideRows` - Move-a-split's own way of saving a shortened row
+   * list immediately (see handleSplit below) without waiting on a
+   * `setRows` re-render first, which a plain read of the `rows` closure
+   * here wouldn't see yet in the same tick. Omitted (every other
+   * caller), this reads the same `rows`/`parseResult.rows` it always
+   * has. Returns whether the save actually succeeded, so a caller that
+   * has something conditional to do next (handleSplit's own "don't
+   * navigate to the new route on a failed Move save") can tell. */
+  async function handleSave(
+    nextStatus: RouteStatus = status,
+    overrideRows?: RawRouteRow[],
+  ): Promise<boolean> {
     if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
       setShowRequiredErrors(true);
       setMessage("Route #, Trip, and School are required.");
-      return;
+      return false;
     }
     if (startTimeInvalid) {
       setShowRequiredErrors(true);
       setMessage(`Start time "${departureTime}" isn't a time this app can recognize.`);
-      return;
+      return false;
     }
-    if (saving) return;
-    const currentRows = mode === "add" ? parseResult.rows : rows;
+    if (saving) return false;
+    const currentRows = overrideRows ?? (mode === "add" ? parseResult.rows : rows);
     const built = buildRouteFromRows(currentRows, buildMetaFields(nextStatus));
+    // Only set in "edit" mode - a brand-new route (mode "add") has no
+    // previous row to clean up after, even if its own freshly-typed
+    // routeNumber/tripType/schoolLevel happen to collide with
+    // something already saved (a real id collision, not a rename -
+    // the upsert below already handles that case correctly on its
+    // own). Passed to onSave below too, not just the request body here -
+    // page.tsx's own local route overlay needs to know the same thing
+    // the server does: that a rename means this route's own id just
+    // changed, not that a second route now exists alongside the first.
+    const previousId = mode === "edit" ? (route?.id ?? null) : null;
 
     setSaving(true);
     setMessage(null);
@@ -3631,13 +4620,7 @@ export function EditRouteScreen({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: built.id,
-          // Only set in "edit" mode - a brand-new route (mode "add")
-          // has no previous row to clean up after, even if its own
-          // freshly-typed routeNumber/tripType/schoolLevel happen to
-          // collide with something already saved (a real id collision,
-          // not a rename - the upsert below already handles that case
-          // correctly on its own).
-          previousId: mode === "edit" ? (route?.id ?? null) : null,
+          previousId,
           status: nextStatus,
           routeNumber: built.routeNumber,
           busNumber: built.busNumber,
@@ -3657,20 +4640,165 @@ export function EditRouteScreen({
       if (!res.ok) {
         const data: { error?: string } = await res.json().catch(() => ({}));
         setMessage(`Couldn't save: ${data.error ?? res.statusText}`);
-        return;
+        return false;
       }
     } catch (err) {
       setMessage(
         `Couldn't save: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return;
+      return false;
     } finally {
       setSaving(false);
     }
 
     setStatus(nextStatus);
     setDirty(false);
-    onSave(built, currentRows, cache);
+    // quickEdit: routes straight back to the live trip (its own
+    // onSaved, see this screen's own quickEdit prop doc comment) rather
+    // than the ordinary onSave, which would otherwise land on this
+    // screen's own hub - a session that only ever existed to fix one
+    // waypoint has nothing to show there.
+    if (quickEdit) {
+      quickEdit.onSaved(built, currentRows, cache, quickEdit.rowIndex);
+    } else {
+      onSave(built, currentRows, cache, previousId);
+    }
+    return true;
+  }
+
+  /** The hub screen's own "Duplicate Route" link - saves an immediate,
+   * full copy of this route under a new id/routeNumber (a `Copy-`
+   * prefix, same convention handleSplit's own `Split-` prefix above
+   * uses) rather than routing through handleSave, since this needs a
+   * *different* id built from a *different* routeNumber than the one
+   * still sitting in the form - `previousId: null` (a new route
+   * appearing alongside this one, not a rename of it) and `status:
+   * "draft"` (never publish a copy nobody's reviewed yet, whatever this
+   * route's own current status is). Always leaves the original route's
+   * own unsaved form state untouched either way - a failed duplicate is
+   * just a message, nothing here was ever written to `rows`/`status`/etc. */
+  async function handleDuplicate() {
+    if (mode !== "edit" || duplicating) return;
+    if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
+      setShowRequiredErrors(true);
+      setMessage("Route #, Trip, and School are required.");
+      return;
+    }
+    const newRouteNumber = `Copy-${routeNumber}`;
+    const meta = buildMetaFields("draft");
+    meta.routeNumber = newRouteNumber;
+    meta.id = `${newRouteNumber}-${meta.tripType}-${meta.schoolLevel ?? "none"}`;
+    const built = buildRouteFromRows(rows, meta);
+
+    setDuplicating(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: built.id,
+          previousId: null,
+          status: "draft",
+          routeNumber: built.routeNumber,
+          busNumber: built.busNumber,
+          schoolName: built.schoolName,
+          schoolLevel: built.schoolLevel,
+          tripType: built.tripType,
+          startTime: built.departureTime.trim()
+            ? (parseTimeInput(built.departureTime, built.tripType) ?? "")
+            : "",
+          nextRouteId: built.nextRouteId,
+          steps: rows,
+        }),
+      });
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        setMessage(`Couldn't duplicate: ${data.error ?? res.statusText}`);
+        return;
+      }
+    } catch (err) {
+      setMessage(
+        `Couldn't duplicate: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    } finally {
+      setDuplicating(false);
+    }
+
+    onSave(built, rows, cache, null);
+  }
+
+  /** The hub screen's own "Reverse Route" link - same immediate-save
+   * shape as handleDuplicate above (`Reverse-` prefix, `previousId:
+   * null`, forced `status: "draft"`), but the rows themselves are
+   * genuinely transformed, not just carried over: reverseRouteRows
+   * (src/lib/reverseRoute.ts) reverses their order and flips
+   * everything about each row that depends on which way it's being
+   * driven (left/right, side of road, Depart/Arrive), and tripType
+   * flips pickup<->dropoff to match - the whole point being a quick
+   * starting point for "the same stops, the other direction" (morning
+   * pickup -> afternoon dropoff) without retyping every waypoint.
+   * departureTime is deliberately dropped rather than carried over - an
+   * AM route's own start time is never right for the PM run this
+   * becomes. This is explicitly a *naive* reversal (see
+   * reverseRouteRows's own doc comment on exactly where) - real
+   * verification against the actual road network (are these turns
+   * still legal/possible the other way) is a later, separate pass, not
+   * this button. */
+  async function handleReverse() {
+    if (mode !== "edit" || reversing) return;
+    if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
+      setShowRequiredErrors(true);
+      setMessage("Route #, Trip, and School are required.");
+      return;
+    }
+    const newRouteNumber = `Reverse-${routeNumber}`;
+    const newTripType = reverseTripType(tripType || "pickup");
+    const reversedRows = reverseRouteRows(rows);
+    const meta = buildMetaFields("draft");
+    meta.routeNumber = newRouteNumber;
+    meta.tripType = newTripType;
+    meta.name = `${meta.schoolName} — ${tripTypeFullLabel(newTripType)}`;
+    meta.departureTime = "";
+    meta.id = `${newRouteNumber}-${newTripType}-${meta.schoolLevel ?? "none"}`;
+    const built = buildRouteFromRows(reversedRows, meta);
+
+    setReversing(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: built.id,
+          previousId: null,
+          status: "draft",
+          routeNumber: built.routeNumber,
+          busNumber: built.busNumber,
+          schoolName: built.schoolName,
+          schoolLevel: built.schoolLevel,
+          tripType: built.tripType,
+          startTime: "",
+          nextRouteId: built.nextRouteId,
+          steps: reversedRows,
+        }),
+      });
+      if (!res.ok) {
+        const data: { error?: string } = await res.json().catch(() => ({}));
+        setMessage(`Couldn't reverse: ${data.error ?? res.statusText}`);
+        return;
+      }
+    } catch (err) {
+      setMessage(
+        `Couldn't reverse: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    } finally {
+      setReversing(false);
+    }
+
+    onSave(built, reversedRows, cache, null);
   }
 
   // A live snapshot of the route as currently edited (not just as last
@@ -3722,13 +4850,13 @@ export function EditRouteScreen({
   // hiding. No-op past either end of `visibleRowIndices` - the arrows
   // themselves are disabled there too (see canGoPrev/canGoNext below),
   // this is just the same guard on the handler itself.
-  function goToRow(direction: "prev" | "next") {
-    if (expandedIndex === null || !draftRow) return;
-    const currentPos = visibleRowIndices.indexOf(expandedIndex);
-    if (currentPos === -1) return;
-    const nextIndex =
-      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
-    if (nextIndex === undefined) return;
+  // Shared by goToRow (the prev/next arrows) and onClickStopPin (a tap
+  // on one of WaypointPreviewMap's own dots) - both are really just
+  // "save the current draft, then open row `nextIndex` in its place,"
+  // differing only in how `nextIndex` gets picked.
+  function goToRowIndex(nextIndex: number) {
+    if (expandedIndex === null || !draftRow || nextIndex === expandedIndex)
+      return;
     setRows((prev) =>
       prev.map((r, i) => (i === expandedIndex ? draftRow : r)),
     );
@@ -3736,6 +4864,15 @@ export function EditRouteScreen({
     setDirty(true);
     setExpandedIndex(nextIndex);
     setDraftRow({ ...rows[nextIndex] });
+  }
+  function goToRow(direction: "prev" | "next") {
+    if (expandedIndex === null) return;
+    const currentPos = visibleRowIndices.indexOf(expandedIndex);
+    if (currentPos === -1) return;
+    const nextIndex =
+      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
+    if (nextIndex === undefined) return;
+    goToRowIndex(nextIndex);
   }
 
   function jumpToNextUnverified() {
@@ -3758,16 +4895,6 @@ export function EditRouteScreen({
     );
   }
 
-  // Precomputed outside the JSX map below (not incremented inline in the
-  // render callback) so React Compiler's per-item memoization doesn't see a
-  // mutated closure variable - each stop row looks up its own number here.
-  let stopCounter = 0;
-  const stopNumbers = new Map<number, number>();
-  for (const index of visibleRowIndices) {
-    if (rows[index].action.toLowerCase() === "stop")
-      stopNumbers.set(index, ++stopCounter);
-  }
-
   // Shared by mode "add"'s single screen and mode "edit"'s own
   // dedicated Details screen (see subScreen below) - identical either
   // way, so it's built once here rather than duplicated. Route #/Trip/
@@ -3777,7 +4904,16 @@ export function EditRouteScreen({
   // this whole form); Bus number/Driver share a line last - least
   // important, neither means much without the other.
   const routeDetailsForm = (
-    <div
+    // A <fieldset>, not a <div> - `disabled` on it disables every real
+    // form control nested inside (every input/select in this form) in
+    // one place, rather than threading canEditRouteDetails onto each
+    // one individually. Only gated in mode "edit" - a route that
+    // doesn't exist yet (mode "add") isn't "editing route details" in
+    // the sense this permission means, it's creating a route, which
+    // canAddRoutes (RouteListScreen's own New Route button) already
+    // gates access to reaching this screen for at all.
+    <fieldset
+      disabled={mode === "edit" && !permissions.canEditRouteDetails}
       className={`w-full max-w-md rounded-2xl border p-5 text-left ${
         // Blue in edit mode - matches RouteListScreen's own admin-mode
         // box border, same "this box is live and editable" signal. Not
@@ -3788,7 +4924,10 @@ export function EditRouteScreen({
       }`}
     >
       <div className="grid grid-cols-3 gap-2">
-        <Field label="Route #" required={routeNumberMissing}>
+        <Field
+          label={tripType === "fieldtrip" ? "# / Name" : "#"}
+          required={routeNumberMissing}
+        >
           <input
             className={
               showRequiredErrors && routeNumberMissing
@@ -3800,7 +4939,16 @@ export function EditRouteScreen({
               setRouteNumber(e.target.value);
               setDirty(true);
             }}
-            placeholder="123"
+            // A Special (field trip) run isn't one of a district's own
+            // numbered routes - it's a one-off, so this field doubles
+            // as a free-text name for it ("Zoo Trip", "Band Comp")
+            // rather than requiring a real route number that doesn't
+            // exist. Every other trip type keeps the plain numeric
+            // placeholder/hint - this field has always accepted any
+            // text typed into it either way (it's a plain input, never
+            // constrained to digits), so nothing about *validation*
+            // changes here, just what an admin is told to expect.
+            placeholder={tripType === "fieldtrip" ? "123 or Zoo Trip" : "123"}
           />
         </Field>
         <Field label="Trip" required={tripTypeMissing}>
@@ -3840,30 +4988,48 @@ export function EditRouteScreen({
         </Field>
       </div>
 
-      {/* School level and address are never picked or typed separately
-          - both come from whichever school is chosen here, looked up
-          in `schools` (Postgres, via /api/schools). */}
+      {/* Free text, matched by name against Schools then
+          SavedLocations (matchedSchool/matchedSavedLocation above) -
+          level/address/point come from whichever matched, exactly the
+          way StepRowEditor's own Location field already works. Doesn't
+          have to match anything at all: a Special route's own one-off
+          starting point is just as valid typed in plain. */}
       <div className="mt-3">
         <Field label="School" required={schoolNameMissing}>
-          <select
-            className={
-              showRequiredErrors && schoolNameMissing
-                ? errorInputClass
-                : inputClass
-            }
-            value={schoolName}
-            onChange={(e) => {
-              setSchoolName(e.target.value);
-              setDirty(true);
-            }}
-          >
-            <option value="">Select a school</option>
-            {schoolOptions.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            {matchedSchool || matchedSavedLocation ? (
+              <MatchedLocationChip
+                name={matchedSchool?.name ?? matchedSavedLocation?.name ?? ""}
+                onClear={() => {
+                  setSchoolName("");
+                  setDirty(true);
+                }}
+                clearLabel="Clear school"
+              />
+            ) : (
+              <input
+                className={`min-w-0 flex-1 ${
+                  showRequiredErrors && schoolNameMissing
+                    ? errorInputClass
+                    : inputClass
+                }`}
+                value={schoolName}
+                onChange={(e) => {
+                  setSchoolName(e.target.value);
+                  setDirty(true);
+                }}
+                placeholder="LaVergne High School"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => setShowSchoolLocationPicker(true)}
+              aria-label="Choose from address book"
+              className="btn-glossy-light flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+            >
+              <AddressBookIcon className="h-4 w-4" />
+            </button>
+          </div>
         </Field>
       </div>
 
@@ -3872,6 +5038,21 @@ export function EditRouteScreen({
           <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
           {schoolAddress}
         </p>
+      )}
+
+      {showSchoolLocationPicker && (
+        <LocationPickerModal
+          schools={schools}
+          savedLocations={savedLocations}
+          onSaveSavedLocation={handleSaveSavedLocation}
+          onFetchCoordinates={handleFetchSavedLocationCoords}
+          onSelect={(choice) => {
+            setSchoolName(choice.name);
+            setDirty(true);
+            setShowSchoolLocationPicker(false);
+          }}
+          onClose={() => setShowSchoolLocationPicker(false)}
+        />
       )}
 
       <div className="mt-3 grid grid-cols-2 gap-3">
@@ -3894,7 +5075,7 @@ export function EditRouteScreen({
             what actually sets this), or DEPOT_NEXT_ACTION, a fixed
             sentinel this app recognizes but no real Route.id could ever
             collide with (every real one is `${routeNumber}-${tripType}-
-            ${schoolLevel}`, always hyphenated) - "the driver heads back
+            ${schoolLevel ?? "none"}`, always hyphenated) - "the driver heads back
             to base," not "hand off into another route's own directions"
             the way a real chain does (handleRouteArrived in page.tsx),
             which still ends the trip exactly like leaving this blank
@@ -3933,7 +5114,7 @@ export function EditRouteScreen({
           </select>
         </Field>
       </div>
-    </div>
+    </fieldset>
   );
 
   if (mode === "add") {
@@ -4052,6 +5233,13 @@ export function EditRouteScreen({
   // there with its own Save/Cancel, plus an "Edit Waypoints" button below)
   // by default, or the Stops and Turns screen once that's picked.
 
+  // Every row-editing affordance below (Add, pencil, drag handle) is
+  // locked while a row is already open for editing (expandedIndex) - a
+  // driver with no canEditWaypoints permission is locked out of all of
+  // them permanently, the same way, rather than a separate disabled
+  // condition duplicated at each one's own call site.
+  const rowActionsLocked = expandedIndex !== null || !permissions.canEditWaypoints;
+
   if (subScreen === "stops") {
     return (
       <ScreenTransition screenKey="stops" direction={subScreenDirection}>
@@ -4097,24 +5285,33 @@ export function EditRouteScreen({
                   TripType (fieldtrip/other) skips the badge entirely -
                   those routes may not even have a morning/afternoon
                   distinction to badge, and there's no real example of
-                  one yet to design that case against. Full-opacity
-                  black (zinc-900), same as SchoolLevelIcon beside it,
-                  not the faded zinc-400 every other filter/context icon
-                  here uses - this pair names the route, it isn't a
-                  toggle that fades until picked. */}
+                  one yet to design that case against. Blue (text-blue-600,
+                  IconTooltip's own standard color - see its own doc
+                  comment), same as SchoolLevelIcon beside it and every
+                  other route-number badge across the app, tappable for a
+                  quick "what does this mean" label since the icon alone
+                  still carries no text. */}
               {routeNumber &&
                 (tripType === "pickup" || tripType === "dropoff") && (
-                  <TripTypeIcon
-                    tripType={tripType}
-                    className="h-4 w-4 text-zinc-900"
-                  />
+                  <IconTooltip
+                    label={tripTypeFullLabel(tripType)}
+                    className="h-4 w-4 text-blue-600"
+                  >
+                    <TripTypeIcon tripType={tripType} className="h-full w-full" />
+                  </IconTooltip>
                 )}
               <span className="font-heading text-lg font-black tracking-tight">
                 {routeNumber || (
                   <span className="text-zinc-400 italic">No route number</span>
                 )}
               </span>
-              <SchoolLevelIcon level={schoolLevel} className="h-4 w-4 text-zinc-900" />
+              {schoolLevel ? (
+                <IconTooltip label={schoolLevelLabel(schoolLevel)} className="h-4 w-4 text-blue-600">
+                  <SchoolLevelIcon level={schoolLevel} className="h-full w-full" />
+                </IconTooltip>
+              ) : (
+                <SchoolLevelIcon level={schoolLevel} className="h-4 w-4 text-blue-600" />
+              )}
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
                 {schoolName || "No school selected"}
               </span>
@@ -4211,6 +5408,17 @@ export function EditRouteScreen({
                 </button>
               )}
             </div>
+            {/* The last Autoroute attempt's own outcome, when it wasn't
+                a plain success - "nothing to add" (two stops directly
+                connected, no real turns between them) alongside a real
+                failure, so a tap on the compass icon always gets some
+                visible response rather than silently doing nothing
+                when there was nothing to insert. Not tied to any one
+                gap's own position - whichever gap it came from, the
+                message reads the same either way. */}
+            {autorouteError && (
+              <p className="px-4 pt-2 text-xs text-red-600">{autorouteError}</p>
+            )}
             {/* An "Add Step" control before the first row and after
                 every row, not just once at the bottom - a new stop or
                 turn can be dropped in anywhere along the route's real
@@ -4223,9 +5431,14 @@ export function EditRouteScreen({
               ref={stopsListRef}
               className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
             >
+              {/* canEditWaypoints locks every row-editing affordance
+                  here (Add, pencil, drag handle) the same way an
+                  already-open row's own expandedIndex already does -
+                  one combined flag rather than threading the
+                  permission through each call site's own condition. */}
               <AddStepButton
                 onClick={() => addRow(0)}
-                disabled={expandedIndex !== null}
+                disabled={rowActionsLocked}
                 dragging={dragRowIndex !== null}
                 dropTarget={dragOverIndex === 0}
               />
@@ -4233,7 +5446,7 @@ export function EditRouteScreen({
                 const row = rows[index];
                 const isStop = row.action.toLowerCase() === "stop";
                 const stopNumber = isStop
-                  ? (stopNumbers.get(index) ?? null)
+                  ? (absoluteStopNumbers.get(index) ?? null)
                   : null;
                 const waypoint = waypoints[index];
 
@@ -4249,7 +5462,7 @@ export function EditRouteScreen({
                     // its own doc comment), which never changes size.
                     className={
                       highlightedRowIndex === index
-                        ? "rounded-lg ring-2 ring-amber-400 transition-shadow"
+                        ? "-mx-2 rounded-lg border-2 border-red-500 px-2 transition-colors"
                         : dragRowIndex === index
                           ? "opacity-40"
                           : ""
@@ -4261,7 +5474,7 @@ export function EditRouteScreen({
                       previousRoad={previousRoads[index] ?? null}
                       schools={schools}
                       status={waypoint ? resolutionRows[index] : undefined}
-                      locked={expandedIndex !== null}
+                      locked={rowActionsLocked}
                       onEdit={() => openRowEditor(index)}
                       onDragStart={(e) => {
                         e.currentTarget.setPointerCapture(e.pointerId);
@@ -4291,9 +5504,20 @@ export function EditRouteScreen({
                     />
                     <AddStepButton
                       onClick={() => addRow(index + 1)}
-                      disabled={expandedIndex !== null}
+                      disabled={rowActionsLocked}
                       dragging={dragRowIndex !== null}
                       dropTarget={dragOverIndex === index + 1}
+                      onSplit={
+                        onSplitToNewRoute && index + 1 < rows.length
+                          ? () => setSplitGapIndex(index + 1)
+                          : undefined
+                      }
+                      onAutoroute={
+                        index + 1 < rows.length
+                          ? () => handleAutoroute(index + 1)
+                          : undefined
+                      }
+                      autorouting={autoroutingGap === index + 1}
                     />
                   </div>
                 );
@@ -4301,6 +5525,30 @@ export function EditRouteScreen({
             </div>
           </div>
         </div>
+        {splitGapIndex !== null && (
+          <SplitRouteModal
+            aboveCount={splitGapIndex}
+            belowCount={rows.length - splitGapIndex}
+            saving={splitSaving}
+            error={splitError}
+            onSplit={handleSplit}
+            onClose={() => {
+              setSplitGapIndex(null);
+              setSplitError(null);
+            }}
+          />
+        )}
+        {pendingFallbackConfirm && (
+          <GeocodeConfirmModal
+            originalLabel={waypointLabel(pendingFallbackConfirm.waypoint)}
+            entry={pendingFallbackConfirm.entry}
+            fallback={pendingFallbackConfirm.fallback}
+            routeLine={routeContextPoints}
+            stopPins={stopPins}
+            onAccept={acceptFallbackMatch}
+            onReject={rejectFallbackMatch}
+          />
+        )}
 
         {/* One row's own editor, as a modal popup rather than swapped
             in for its StepRowView above - only ever rendered for
@@ -4323,11 +5571,11 @@ export function EditRouteScreen({
             return (
               <StepRowEditor
                 row={draftRow}
-                rowIndex={index}
-                stopNumber={isStop ? (stopNumbers.get(index) ?? null) : null}
+                stopNumber={isStop ? (absoluteStopNumbers.get(index) ?? null) : null}
                 previousRoad={previousRoads[index] ?? null}
                 schools={schools}
                 savedLocations={savedLocations}
+                locationSuggestions={locationSuggestions}
                 onSaveSavedLocation={handleSaveSavedLocation}
                 onFetchSavedLocationCoords={handleFetchSavedLocationCoords}
                 routeSchoolName={schoolName}
@@ -4343,6 +5591,8 @@ export function EditRouteScreen({
                 routeContext={routeContextPoints}
                 stopPins={stopPins}
                 onChange={handleDraftChange}
+                onLocationChange={handleLocationChange}
+                onClickWaypointPin={goToRowIndex}
                 onFetch={() =>
                   draftWaypoint &&
                   draftWaypoint.kind !== "unresolvable" &&
@@ -4353,15 +5603,19 @@ export function EditRouteScreen({
                   draftWaypoint.kind !== "unresolvable" &&
                   setManualCoordinates(draftWaypoint, lat, lon)
                 }
-                canGoPrev={visibleRowIndices.indexOf(index) > 0}
+                canGoPrev={quickEdit ? false : visibleRowIndices.indexOf(index) > 0}
                 canGoNext={
-                  visibleRowIndices.indexOf(index) <
-                  visibleRowIndices.length - 1
+                  quickEdit
+                    ? false
+                    : visibleRowIndices.indexOf(index) <
+                      visibleRowIndices.length - 1
                 }
                 onNavigate={goToRow}
+                onAddWaypointAfter={() => addRow(index + 1)}
                 onCancel={handleCancelRow}
                 onDelete={() => handleDeleteRow(index)}
                 onUpdate={handleUpdateRow}
+                hideDelete={!!quickEdit}
               />
             );
           })()}
@@ -4430,7 +5684,7 @@ export function EditRouteScreen({
           to the bottom of the screen instead of scrolling away, same
           pattern subScreen "stops" already uses for its own footer. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-4 overflow-y-auto">
-        <div className="flex w-full max-w-md items-center justify-between">
+        <div className="flex w-full max-w-md items-start justify-between">
           <button
             type="button"
             onClick={onCancel}
@@ -4439,42 +5693,65 @@ export function EditRouteScreen({
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
-          <div>
+          <div className="min-w-0 flex-1 px-1 text-center">
             {/* Same small district label StartScreen/RouteListScreen/
                 SchoolListScreen each carry above their own heading - see
                 StartScreen's own doc comment for why this isn't folded
-                into the heading itself. Same text-4xl size as that
-                screen's own title now too, not the smaller text-2xl
-                this used to be - this is the same "Route N" callout,
-                just reached from Edit Mode instead of tapping a row, so
-                it reads the same size either way. */}
+                into the heading itself. Same size scale as that
+                screen's own title now too (routeTitleSizeClass) - this
+                is the same "Route N" callout, just reached from Edit
+                Mode instead of tapping a row, so it reads the same way
+                either way. */}
             <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
               Rutherford County
             </span>
-            {/* mt-[1.25px] - the exact same leading-[0.7083]-collapses-
-                the-gap fix as StartScreen's own title (see that h1's
-                own doc comment for the full canvas-metrics
-                explanation) - reused unchanged, not re-measured, since
-                this is now literally the same text-4xl size that value
-                was tuned against. */}
-            <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
+            {/* items-start + a flex row (not the old relative/absolute
+                layout) - see StartScreen's own title for why: a
+                Special/transition route's own free-typed name can wrap
+                to more than one line, and a fixed top-1/2 badge
+                position (or centering this row against the back
+                button) only ever accounted for a single short line. No
+                "Route " prefix either, same reasoning. */}
+            <h1
+              className={`font-heading flex items-start justify-center gap-1.5 font-black tracking-tight ${routeTitleSizeClass(route?.routeNumber ?? "")}`}
+            >
               {/* No separate "AM"/"PM" text beside this icon
                   (TripTypeIcon.tsx's own doc says why) - vertically
                   centered against the title's full height and sized to
-                  nearly match it.
-                  Every other TripType (fieldtrip/other) skips the
-                  badge entirely - those routes may not even have a
-                  morning/afternoon distinction to badge, and there's
-                  no real example of one yet to design that case
-                  against. */}
+                  nearly match it, same icon-number-icon flex row and
+                  h-6 w-6 shrink-0 sizing as StartScreen's own identical
+                  title (this screen's "same Route N callout" - see its
+                  own doc comment just above) - schoolLevel's own icon
+                  was missing here entirely; every other place this
+                  title shows up pairs the two. Every other TripType
+                  (fieldtrip/other) skips the AM/PM badge entirely -
+                  those routes may not even have a morning/afternoon
+                  distinction to badge, and there's no real example of
+                  one yet to design that case against. */}
               {route?.routeNumber &&
                 (tripType === "pickup" || tripType === "dropoff") && (
-                  <TripTypeIcon
-                    tripType={tripType}
-                    className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-400"
-                  />
+                  <IconTooltip
+                    label={tripTypeFullLabel(tripType)}
+                    className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                  >
+                    <TripTypeIcon tripType={tripType} className="h-full w-full" />
+                  </IconTooltip>
                 )}
-              Route {route?.routeNumber ?? ""}
+              <span className="min-w-0">{route?.routeNumber ?? ""}</span>
+              {route?.routeNumber &&
+                (schoolLevel ? (
+                  <IconTooltip
+                    label={schoolLevelLabel(schoolLevel)}
+                    className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                  >
+                    <SchoolLevelIcon level={schoolLevel} className="h-full w-full" />
+                  </IconTooltip>
+                ) : (
+                  <SchoolLevelIcon
+                    level={schoolLevel}
+                    className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                  />
+                ))}
             </h1>
           </div>
           <span className="w-10" />
@@ -4518,6 +5795,37 @@ export function EditRouteScreen({
           })()}
 
         {message && <p className="text-sm text-zinc-500">{message}</p>}
+      </div>
+
+      {/* Plain text links, not buttons - same "Download Waypoints"
+          convention the Stops and Turns screen's own footer uses. Both
+          make an immediate, saved copy of this route (see
+          handleDuplicate's/handleReverse's own doc comments) rather
+          than opening anything to review first - Split's own review
+          step exists because it's carving up this route's live rows;
+          neither of these has anything to reconcile, they're just new
+          drafts. */}
+      <div className="flex w-full max-w-md shrink-0 items-center justify-end gap-4">
+        <button
+          type="button"
+          onClick={handleReverse}
+          disabled={reversing}
+          aria-label="Reverse this route's stops and directions as a new draft"
+          className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800 disabled:opacity-40"
+        >
+          <ReverseIcon className="h-4 w-4" />
+          Reverse Route
+        </button>
+        <button
+          type="button"
+          onClick={handleDuplicate}
+          disabled={duplicating}
+          aria-label="Duplicate this route as a new draft"
+          className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800 disabled:opacity-40"
+        >
+          <CopyIcon className="h-4 w-4" />
+          Duplicate Route
+        </button>
       </div>
 
       <div className="w-full max-w-md shrink-0">

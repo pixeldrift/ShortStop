@@ -37,11 +37,44 @@ export type SeekTarget = { phase: "depot" } | { phase: "arrived" } | { phase: "s
  * surfaces as the Media Session API - not as keyboard events. Fallback
  * input: arrow/space/enter keys, in case a specific device pairs as a
  * keyboard instead.
+ *
+ * `resumeAtStepIndex` - set only when RouteApp is remounting fresh
+ * after an admin's quick waypoint edit (page.tsx's own "trip" screen
+ * `resumeAt` field) - skips straight to that step, already started,
+ * instead of landing back at the depot the way every other fresh mount
+ * of this hook does. See the mount effect right below the return value
+ * for what actually drives that jump - it can't happen through this
+ * hook's own initial useState values alone, since `start()` (which
+ * also sets up the silent audio loop Media Session actions need) has
+ * to actually run, not just have `started` read true from the first
+ * render.
  */
-export function useRouteStepper(route: Route) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [phase, setPhase] = useState<StepPhase>("depot");
-  const [started, setStarted] = useState(false);
+export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
+  // Lazy initializers (not a mount effect) for the resume case - the
+  // react-hooks lint rule (set-state-in-effect) flags a setState call
+  // synchronously inside a useEffect body, which calling start()/
+  // jumpTo() from a mount effect would be (both are useCallbacks
+  // defined right in this same file, so the linter's own data-flow
+  // analysis traces straight through to the setStarted/setPhase/
+  // setCurrentIndex calls inside them - unlike page.tsx's own identical-
+  // looking `if (autoStart) start()` mount effect, which the linter
+  // can't see through since `start` there is just an opaque value
+  // destructured from this hook's return, not a local function). Seeding
+  // the initial state directly here sidesteps that separately from
+  // being the right fix regardless: `started` seeded straight to `true`
+  // for a resume also means start() itself would early-return as a no-op
+  // if this called it (see its own `if (started) return` guard) - it can
+  // only ever run the very first time `started` flips true, which this
+  // resume case now already handles here.
+  const [currentIndex, setCurrentIndex] = useState(() =>
+    resumeAtStepIndex != null
+      ? Math.min(Math.max(resumeAtStepIndex, 0), route.steps.length - 1)
+      : 0,
+  );
+  const [phase, setPhase] = useState<StepPhase>(() =>
+    resumeAtStepIndex != null ? "step" : "depot",
+  );
+  const [started, setStarted] = useState(() => resumeAtStepIndex != null);
   const [paused, setPaused] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const pausedRef = useRef(false);
@@ -329,6 +362,34 @@ export function useRouteStepper(route: Route) {
     return () => {
       audioRef.current?.pause();
     };
+  }, []);
+
+  // resumeAtStepIndex's own remaining piece, now that currentIndex/
+  // phase/started above already seed straight into the resumed step
+  // (see their own doc comment for why that's a lazy initializer, not
+  // this effect) - the silent audio loop Media Session actions need
+  // still has to actually be created and started, the one part of
+  // start() that's a real side effect rather than just setState, so a
+  // ref assignment here (not a setState call) is exactly what this
+  // lint rule allows inside an effect body. Runs once, right as this
+  // mount begins - every ordinary "Start Route" still goes through
+  // start() directly, from a real tap, never through this effect.
+  // audio.play()'s own autoplay-policy gesture requirement (see
+  // start()'s own comment) isn't guaranteed satisfied here - this mount
+  // happens after a screen navigation, not synchronously inside the tap
+  // that triggered it - so the silent loop can silently fail to
+  // actually start playing (already caught, same as start() itself);
+  // worst case, a Bluetooth remote's nexttrack/previoustrack needs one
+  // ordinary on-screen tap first before it starts responding again,
+  // same as if the device paired mid-route for the first time.
+  useEffect(() => {
+    if (resumeAtStepIndex == null) return;
+    const audio = new Audio(SILENT_LOOP_DATA_URI);
+    audio.loop = true;
+    audio.volume = 0.02;
+    void audio.play().catch(() => {});
+    audioRef.current = audio;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Shared by endRoute and exitTrip below: resets everything (index/

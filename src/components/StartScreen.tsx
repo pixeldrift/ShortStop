@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ExpandableMap } from "./ExpandableMap";
+import { IconTooltip } from "./IconTooltip";
 import { RouteMap } from "./RouteMap";
 import type { StopMarker, TurnMarker } from "./RouteMap";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
@@ -12,6 +14,7 @@ import {
   CloseIcon,
   EditIcon,
   EyeIcon,
+  FlagIcon,
   MapPinIcon,
   PersonSolidIcon,
   RoundedTriangleIcon,
@@ -19,8 +22,12 @@ import {
   TurnArrow,
   XCircleIcon,
 } from "./icons";
+import { routeTitleSizeClass } from "@/lib/routeTitle";
+import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { addressWithoutZip } from "@/lib/schoolAddress";
+import { tripTypeFullLabel } from "@/lib/tripType";
 import type { NavigationStep, Route } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 /** "Published"/"Draft"/"Demo route" plus the color its own status
@@ -146,6 +153,8 @@ export function StartScreen({
    * school name/address block below is its tap target. */
   onViewSchool: (schoolName: string) => void;
 }) {
+  // Edge-swipe-right to go back - see useSwipeBack's own doc comment.
+  const swipeRef = useSwipeBack<HTMLDivElement>(onBack);
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
   const totalRiders = route.steps.reduce(
     (sum, s) => sum + (s.studentCount ?? 0),
@@ -209,6 +218,15 @@ export function StartScreen({
         : null,
     [route.schoolLat, route.schoolLon],
   );
+  // Whether this route actually visits the school as one of its own
+  // real waypoints - same explicit Depart/Arrive check AllStopsModal's
+  // own explicitSchoolStepId uses below, and RouteMap's own
+  // `schoolIsWaypoint` prop doc comment has the full reasoning for why
+  // this gates the overview map's road-geometry line too.
+  const schoolIsWaypoint = useMemo(
+    () => route.steps.some((s) => s.heading === "DEPART" || s.heading === "ARRIVE"),
+    [route],
+  );
 
   return (
     <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
@@ -218,7 +236,12 @@ export function StartScreen({
           bottom of the screen instead of scrolling away with a long
           route. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto pb-1">
-        <div className="flex w-full max-w-md shrink-0 items-center justify-between">
+        {/* ref here, not the whole screen - the overview map further
+            down (RouteMap, "overview" mode) has its own pan/zoom touch
+            handling, which a screen-wide edge-swipe listener would end
+            up fighting for the same gesture; this row has no competing
+            drag of its own. */}
+        <div ref={swipeRef} className="flex w-full max-w-md shrink-0 items-start justify-between">
           <button
             type="button"
             onClick={onBack}
@@ -227,7 +250,7 @@ export function StartScreen({
           >
             <BackArrowIcon className="h-5 w-5" />
           </button>
-          <div>
+          <div className="min-w-0 flex-1 px-1 text-center">
             {/* Same small district label SchoolListScreen carries above
                 its own heading - hardcoded for now, every real route
                 here is a Rutherford County one (see that screen's own
@@ -236,47 +259,52 @@ export function StartScreen({
             <span className="block text-xs font-semibold tracking-wide text-zinc-400 uppercase">
               Rutherford County
             </span>
-            {/* mt-[1.25px] - once leading-[0.7083] below trimmed this
-                h1's own line box down to the digits' true ink height (see
-                that class's own doc comment), the -mt-1 tuned against the
-                old leading-none box collapsed the gap against the county
-                label above to nothing (leading-none's line box carried
-                enough of its own top padding to read as a gap on its
-                own). Re-measured via canvas actualBoundingBoxAscent
-                against the live rendered box so the visual gap here
-                matches RouteListScreen's own "Routes" title - which still
-                uses leading-none/-mt-1 and never needed retuning - to
-                1.5px, rather than guessing a value against this tighter
-                line-height. relative/absolute rather than a flex row -
-                the AM/PM icon floats off the text's own left edge
-                (right-full) so it never shifts the title text itself
-                off-center from the county label above, the way sharing
-                a centered flex row with it used to. No separate
-                "AM"/"PM" text beside this icon (TripTypeIcon.tsx's own
-                doc says why) - vertically centered against the title's
-                full height and sized to nearly match it. Every other
-                TripType (fieldtrip/other) skips the badge entirely -
-                those routes may not even have a morning/afternoon
-                distinction to badge, and there's no real example of
-                one yet to design that case against. */}
-            <h1 className="font-heading relative mt-[1.25px] text-4xl leading-[0.7083] font-black tracking-tight">
+            {/* A plain routeNumber ("171") is almost always short - a
+                Special/transition route's own free-typed name ("Depot to
+                Elementary") isn't, and can run considerably longer, so
+                this scales down by length (routeTitleSizeClass) rather
+                than assuming a fixed size that only the numeric case
+                ever fits. No more literal "Route" prefix either - it
+                read fine in front of a bare number, but doubled up
+                awkwardly in front of a route's own free-typed name
+                ("Route Depot to Elementary"). items-start (both this
+                row and the icon+text row below) rather than centering
+                the back button against a title block that can now wrap
+                to two lines - centering would either push the button
+                down past the title's own top or, for a short title,
+                pull it up past the title's own middle, and a fixed
+                top-1/2/-translate-y-1/2 badge position (the old
+                approach) only ever accounted for a single-line block. */}
+            <h1
+              className={`font-heading flex items-start justify-center gap-1.5 font-black tracking-tight ${routeTitleSizeClass(route.routeNumber)}`}
+            >
               {(route.tripType === "pickup" ||
                 route.tripType === "dropoff") && (
-                <TripTypeIcon
-                  tripType={route.tripType}
-                  className="absolute top-1/2 right-full mr-2 h-6 w-6 -translate-y-1/2 text-zinc-900"
+                <IconTooltip
+                  label={tripTypeFullLabel(route.tripType)}
+                  className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                >
+                  <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
+                </IconTooltip>
+              )}
+              <span className="min-w-0">{route.routeNumber}</span>
+              {/* Tappable (IconTooltip) only when there's a real level to
+                  name - a route with none (Route.schoolLevel's own null
+                  case, types.ts) falls back to SchoolLevelIcon's own
+                  plain map pin, which has no level to announce. */}
+              {route.schoolLevel ? (
+                <IconTooltip
+                  label={schoolLevelLabel(route.schoolLevel)}
+                  className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                >
+                  <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
+                </IconTooltip>
+              ) : (
+                <SchoolLevelIcon
+                  level={route.schoolLevel}
+                  className="mt-1 h-6 w-6 shrink-0 text-blue-600"
                 />
               )}
-              Route {route.routeNumber}
-              {/* Solid black (zinc-900), same as TripTypeIcon beside it -
-                  this names the route's real level, it isn't a toggle
-                  that fades until picked (the other two figures still
-                  read as a lighter gray, baked into the SVG itself - see
-                  icons.tsx). */}
-              <SchoolLevelIcon
-                level={route.schoolLevel}
-                className="absolute top-1/2 left-full ml-2 h-6 w-6 -translate-y-1/2 text-zinc-900"
-              />
             </h1>
           </div>
           {/* Balances the back button's own width so the title block
@@ -389,23 +417,30 @@ export function StartScreen({
             stops/turns/school markers and road-following line
             StepScreen's own map draws while actually driving, just
             smaller and not yet tracking a live position against any of
-            it. relative z-0 gives Leaflet's own internal panes/controls
-            (tile pane, zoom control, attribution - several carry their
-            own explicit, fairly high z-index) a stacking context of
-            their own to escalate within, same reasoning as StepScreen's
-            own map - without it they escape to the page's root stacking
-            context and can paint above a z-20 overlay like
-            AllStopsModal below despite being earlier in the DOM and
-            visually "behind" it. */}
-        <RouteMap
-          className="relative z-0 min-h-32 w-full max-w-md flex-1 overflow-hidden rounded-2xl border border-zinc-300"
-          stops={stopMarkers}
-          turns={turnMarkers}
-          path={routePath}
-          school={schoolPoint}
-          tripType={route.tripType}
-          waypointsUrl="/api/waypoints"
-          mode="overview"
+            it. relative z-0 gives MapLibre's own internal canvas/
+            controls (several carry their own explicit, fairly high
+            z-index) a stacking context of their own to escalate
+            within, same reasoning as StepScreen's own map - without it
+            they escape to the page's root stacking context and can
+            paint above a z-20 overlay like AllStopsModal below despite
+            being earlier in the DOM and visually "behind" it. */}
+        <ExpandableMap
+          className="min-h-32 w-full max-w-md flex-1"
+          renderMap={(mapClassName, isExpanded) => (
+            <RouteMap
+              className={`relative z-0 ${mapClassName} ${
+                isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
+              }`}
+              stops={stopMarkers}
+              turns={turnMarkers}
+              path={routePath}
+              school={schoolPoint}
+              schoolIsWaypoint={schoolIsWaypoint}
+              tripType={route.tripType}
+              waypointsUrl="/api/waypoints"
+              mode="overview"
+            />
+          )}
         />
       </div>
 
@@ -449,16 +484,20 @@ function StopSubheading({ subheading }: { subheading: string }) {
   );
 }
 
-/** The school row in AllStopsModal - no stop number, since it isn't one
- * of the route's actual numbered stops. Styled like every other
- * school-address callout in the app (MapPinIcon + address, under the
- * school's name) rather than like a Stop row. */
+/** The school's own row in AllStopsModal, shown only when a route.steps
+ * row explicitly names it (a Depart/Arrive action - see
+ * explicitSchoolStepId below) rather than always, since a route with no
+ * such row never actually visits the school as one of its own real
+ * waypoints. FlagIcon (rather than MapPinIcon, which already reads as
+ * "an ordinary stop" everywhere else in this list) marks it as its own
+ * kind of waypoint - the route's fixed start/end point, not one more
+ * numbered stop. */
 function SchoolEntry({ route }: { route: Route }) {
   return (
     <div className="py-3 text-left">
       <span className="font-heading font-black">{route.schoolName}</span>
       <p className="mt-0.5 flex items-center gap-1 text-sm text-zinc-500">
-        <MapPinIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+        <FlagIcon className="h-3.5 w-3.5 shrink-0 text-blue-500" />
         {route.schoolAddress}
       </p>
     </div>
@@ -495,13 +534,15 @@ function TurnRow({ step }: { step: NavigationStep }) {
  * rather than appending them separately, so the order shown always
  * matches the real drive.
  *
- * The school itself isn't one of route.steps' own stops (see
- * parseRouteCsv.ts - it only ever turns route-125.csv's rows into
- * steps, and the school is where those rows start or end, not a row of
- * its own), so it's rendered here as its own entry rather than folded
- * into the stops list - first for a dropoff route (the bus starts
- * there), last for a pickup route (the bus ends there), matching which
- * end of the real trip it actually is. */
+ * The school is *not* auto-added as its own entry the way it used to be
+ * - route.steps only ever gets a real row for it when a Depart/Arrive
+ * action was explicitly typed for it (StepRowEditor's own Type select),
+ * and a route with no such row genuinely never visits the school as one
+ * of its own waypoints (a route already anchored elsewhere, say). When
+ * one *does* exist (explicitSchoolStepId below), it's swapped out for
+ * SchoolEntry's own styling in place of a plain TurnRow, and shown
+ * regardless of "Show directions" - the school is real route context,
+ * not an optional turn-by-turn detail. */
 function AllStopsModal({
   route,
   onClose,
@@ -512,7 +553,16 @@ function AllStopsModal({
   onEditStops: () => void;
 }) {
   const [showTurns, setShowTurns] = useState(false);
-  const schoolEntry = <SchoolEntry route={route} />;
+
+  // The one route.steps row (if any) that explicitly names the school -
+  // Depart/Arrive are the two actions reserved for it (see
+  // deriveWaypoints.ts's own PLACE_ACTIONS doc comment: "depart"/
+  // "arrive" resolve the same way "stop" always has, almost always the
+  // school by name or address). Any other route just doesn't visit it
+  // as a waypoint of its own.
+  const explicitSchoolStepId = route.steps.find(
+    (step) => step.heading === "DEPART" || step.heading === "ARRIVE",
+  )?.id;
 
   // Precomputed outside the JSX map below (not incremented inline in the
   // render callback) so React Compiler's per-item memoization doesn't see a
@@ -532,20 +582,36 @@ function AllStopsModal({
         className="animate-popup-pop flex max-h-[80vh] w-full max-w-sm flex-col rounded-xl bg-[var(--background)] shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
-          <h2 className="font-heading flex flex-wrap items-center gap-1.5 text-xl font-black tracking-tight">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-5 py-4">
+          <h2 className="font-heading flex min-w-0 flex-1 items-center gap-1.5 text-xl font-black tracking-tight">
             {(route.tripType === "pickup" || route.tripType === "dropoff") && (
-              <TripTypeIcon
-                tripType={route.tripType}
-                className="h-[15px] w-[15px] text-zinc-900"
+              <IconTooltip
+                label={tripTypeFullLabel(route.tripType)}
+                className="h-[15px] w-[15px] shrink-0 text-blue-600"
+              >
+                <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
+              </IconTooltip>
+            )}
+            <span className="shrink-0">{route.routeNumber}</span>
+            {route.schoolLevel ? (
+              <IconTooltip
+                label={schoolLevelLabel(route.schoolLevel)}
+                className="h-[15px] w-[15px] shrink-0 text-blue-600"
+              >
+                <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
+              </IconTooltip>
+            ) : (
+              <SchoolLevelIcon
+                level={route.schoolLevel}
+                className="h-[15px] w-[15px] shrink-0 text-blue-600"
               />
             )}
-            Route {route.routeNumber}
-            {/* Both solid black - see StartScreen's own title for why. */}
-            <SchoolLevelIcon
-              level={route.schoolLevel}
-              className="h-[15px] w-[15px] text-zinc-900"
-            />
+            {/* Truncated, never wrapped - a long school name would
+                otherwise push this title onto a second line, or (with
+                flex-wrap instead) wrap mid-name just as awkwardly. */}
+            <span className="min-w-0 truncate text-base font-semibold text-zinc-400">
+              {route.schoolName}
+            </span>
           </h2>
           <button
             type="button"
@@ -579,9 +645,10 @@ function AllStopsModal({
         </div>
 
         <div className="divide-y divide-zinc-200 overflow-y-auto px-5">
-          {route.tripType === "dropoff" && schoolEntry}
-
           {route.steps.map((step) => {
+            if (step.id === explicitSchoolStepId) {
+              return <SchoolEntry key={step.id} route={route} />;
+            }
             if (step.kind === "stop") {
               const number = stopNumbers.get(step.id);
               return (
@@ -626,13 +693,6 @@ function AllStopsModal({
             }
             return null;
           })}
-
-          {/* Dropoff starts at the school (see the "before" branch
-              above); pickup and a one-off field trip both default to
-              ending there instead - not "pickup only" (a fieldtrip
-              route would otherwise show no school entry at all, having
-              matched neither branch). */}
-          {route.tripType !== "dropoff" && schoolEntry}
         </div>
       </div>
     </div>

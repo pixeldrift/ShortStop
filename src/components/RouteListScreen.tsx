@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
+import { IconTooltip } from "./IconTooltip";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
@@ -18,6 +19,7 @@ import {
   MapPinIcon,
   PlusIcon,
   RouteIcon,
+  RoundedTriangleIcon,
   SchoolIcon,
   SchoolLevelsIcon,
   SearchIcon,
@@ -26,13 +28,16 @@ import {
 } from "./icons";
 import { cityFromAddress } from "@/lib/address";
 import { downloadCsv, routeListToCsv } from "@/lib/exportCsv";
+import type { Permissions } from "@/lib/permissions";
 import {
   fetchCommittedWaypointCache,
   isRouteFullyResolved,
 } from "@/lib/routeReadiness";
+import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { parseTimeToMinutes } from "@/lib/time";
 import { TRIP_TYPE_ORDER, tripTypeFullLabel, tripTypeLabel } from "@/lib/tripType";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { WaypointCache } from "@/lib/waypointCache";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
@@ -42,27 +47,36 @@ import type { SortDir } from "./SortableHeader";
  * inline per row, so at most one is ever open at a time. Every action
  * here is single-route now that the eyeball icon replaced the
  * checkbox/bulk-select toolbar: "deactivate" is the one-button
- * published->draft confirm, "draft-options" is the Delete/Activate
- * pair offered for a route that's already draft. */
+ * published->draft confirm (shown to the admin as "Unpublish"),
+ * "draft-options" is the Delete/Publish pair offered for a route
+ * that's already draft. */
 type ConfirmRequest =
   | { type: "deactivate"; route: Route }
   | { type: "draft-options"; route: Route };
 
 type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
 
-// One comparator per sortable header - routeNumber compares numerically
-// (route numbers sort as text otherwise: "120" would land after "20"),
-// tripType ranks "pickup" (AM) before "dropoff" (PM) rather than
-// relying on string comparison to happen to agree, departureTime goes
-// through parseTimeToMinutes rather than comparing the displayed
-// "3:30 PM" strings directly, since those don't sort into chronological
-// order as text either. routeNumber breaks a tie with tripType (a bus
-// runs both an AM and a PM route under the same number) rather than
-// leaving same-number rows in whatever order they happened to arrive
-// in - the only pair here that ties often enough for that to matter.
+// One comparator per sortable header - routeNumber compares with
+// localeCompare's own `numeric` option (a "natural sort": embedded
+// digit runs compare by value, not character-by-character, so "120"
+// still lands after "20") rather than a plain Number() subtraction -
+// a Special/field-trip route's own routeNumber can be a free-text name
+// instead of a real number (EditRouteScreen's own Route #/Name field),
+// and Number() on anything non-numeric is NaN, which made the whole
+// comparator return NaN for any list containing even one such route -
+// numeric: true still sorts every ordinary numbered route exactly the
+// same way, just without that failure mode. tripType ranks "pickup"
+// (AM) before "dropoff" (PM) rather than relying on string comparison
+// to happen to agree, departureTime goes through parseTimeToMinutes
+// rather than comparing the displayed "3:30 PM" strings directly,
+// since those don't sort into chronological order as text either.
+// routeNumber breaks a tie with tripType (a bus runs both an AM and a
+// PM route under the same number) rather than leaving same-number rows
+// in whatever order they happened to arrive in - the only pair here
+// that ties often enough for that to matter.
 const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
   routeNumber: (a, b) =>
-    Number(a.routeNumber) - Number(b.routeNumber) ||
+    a.routeNumber.localeCompare(b.routeNumber, undefined, { numeric: true }) ||
     SORT_COMPARATORS.tripType(a, b),
   tripType: (a, b) =>
     TRIP_TYPE_ORDER.indexOf(a.tripType) - TRIP_TYPE_ORDER.indexOf(b.tripType),
@@ -100,6 +114,14 @@ const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
 const SCHOOL_LEVEL_ORDER: SchoolLevel[] = SCHOOL_LEVEL_TOGGLES.map(
   (t) => t.value,
 );
+// Same order as SCHOOL_LEVEL_ORDER, but tolerates a route with no real
+// school level at all (a Special route, or one anchored on a saved
+// location - see Route.schoolLevel's own doc comment, types.ts) -
+// ranked after every real level rather than needing its own branch
+// wherever schoolLevel drives a sort.
+function schoolLevelRank(level: SchoolLevel | null): number {
+  return level === null ? SCHOOL_LEVEL_ORDER.length : SCHOOL_LEVEL_ORDER.indexOf(level);
+}
 // The school-level filter is a single icon that cycles through these
 // four states on each tap (view all -> elementary -> middle -> high ->
 // back to view all) rather than three separate toggle buttons - see
@@ -129,6 +151,7 @@ export function RouteListScreen({
   slideInOnMount,
   onViewSchools,
   adminMode,
+  permissions,
   adminWaypointCaches,
   onToggleAdminMode,
   onSelect,
@@ -170,6 +193,11 @@ export function RouteListScreen({
    * unconditionally by a route's own "Edit Route" link on StartScreen
    * (see page.tsx). */
   adminMode: boolean;
+  /** This driver's own permissions (permissions.ts) - gates whether
+   * Edit Mode can even be turned on at all (canAccessAdmin), and, once
+   * it is, which of its own controls (New Route, the eyeball icon,
+   * Delete) actually do anything versus just showing disabled. */
+  permissions: Permissions;
   /** This session's own fetched-coordinates overlay per route id (see
    * page.tsx) - merged on top of each route's real committed sidecar
    * cache before deciding whether activating is actually allowed
@@ -185,7 +213,7 @@ export function RouteListScreen({
   onSelect: (route: Route) => void;
   /** Opens EditRouteScreen directly for this route - fired by tapping
    * a row's own body in admin mode, or by an eyeball-icon tap on a
-   * draft route that turns out not to be ready to activate yet (see
+   * draft route that turns out not to be ready to publish yet (see
    * handleEyeClick). */
   onEditRoute: (route: Route) => void;
   onAddRoute: () => void;
@@ -198,11 +226,24 @@ export function RouteListScreen({
    * mode). */
   onToggleFavorite: (route: Route) => void;
 }) {
+  // Edge-swipe-right to go back - a no-op (useSwipeBack's own doc
+  // comment) on the top-level route list, which has no onBack at all.
+  const swipeRef = useSwipeBack<HTMLDivElement>(onBack);
   // Only ever read when onBack is set (the school-scoped reuse) - every
   // route here already carries its own school's address (Route.schoolAddress),
   // so the school itself is the same for all of them; no separate prop
   // needed just to look one up.
   const scopedSchoolAddress = routes[0]?.schoolAddress;
+  // If Edit Mode is already on the moment this driver's own
+  // canAccessAdmin permission gets revoked (UserMenu.tsx's own
+  // checkbox, mid-session), exit it immediately rather than leaving
+  // the whole admin view showing despite the one permission that's
+  // supposed to gate reaching it at all - same "call a parent callback
+  // from an effect" pattern page.tsx's own onStartedChange mirror
+  // already uses.
+  useEffect(() => {
+    if (adminMode && !permissions.canAccessAdmin) onToggleAdminMode();
+  }, [adminMode, permissions.canAccessAdmin, onToggleAdminMode]);
   const [query, setQuery] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(
     null,
@@ -214,7 +255,7 @@ export function RouteListScreen({
   // still be in flight when the popup closes/reopens for a different
   // row; null (not just "unknown") while nothing's resolved yet, same
   // as any other "haven't gotten an answer" case in this app. Doesn't
-  // block Activate either way anymore (see handleActivateFromModal) -
+  // block Publish either way anymore (see handlePublishFromModal) -
   // just decides whether that popup shows a plain message or a warning.
   const [draftResolution, setDraftResolution] = useState<{
     routeId: string;
@@ -362,8 +403,11 @@ export function RouteListScreen({
       if (list) list.push(route);
       else byRouteNumber.set(route.routeNumber, [route]);
     }
-    const routeNumbers = [...byRouteNumber.keys()].sort(
-      (a, b) => Number(a) - Number(b),
+    // Same natural-sort reasoning as SORT_COMPARATORS.routeNumber above -
+    // a Special/field-trip route's own routeNumber can be a free-text
+    // name, and Number() on that is NaN.
+    const routeNumbers = [...byRouteNumber.keys()].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
     );
     return routeNumbers.map((routeNumber) => {
       const routesForNumber = byRouteNumber.get(routeNumber)!;
@@ -379,8 +423,7 @@ export function RouteListScreen({
         tripType,
         routes: [...byTripType.get(tripType)!].sort(
           (a, b) =>
-            SCHOOL_LEVEL_ORDER.indexOf(a.schoolLevel) -
-            SCHOOL_LEVEL_ORDER.indexOf(b.schoolLevel),
+            schoolLevelRank(a.schoolLevel) - schoolLevelRank(b.schoolLevel),
         ),
       }));
       return {
@@ -391,16 +434,58 @@ export function RouteListScreen({
     });
   }, [filtered]);
 
+  // Which branches of groupedTree are collapsed (hidden, not removed -
+  // a collapsed branch's own routes stay in `filtered` and still count
+  // toward every filter/search result, they just aren't drawn). Two
+  // separate sets, not one shared one, since a routeNumber and a
+  // tripType key never collide in practice but keeping them apart makes
+  // each toggle only ever touch its own level. Keyed by plain strings
+  // rather than nested in `groupedTree` itself - collapse state is a
+  // pure UI preference, no reason for it to survive a re-derivation of
+  // the tree (a new search narrowing `filtered`, say) as anything other
+  // than "still collapsed if that branch still exists," which a Set
+  // already gives for free. Nothing starts collapsed - the list reads
+  // the same as before this existed until a driver actually taps a
+  // triangle.
+  const [collapsedRouteNumbers, setCollapsedRouteNumbers] = useState<Set<string>>(new Set());
+  const [collapsedTripTypeGroups, setCollapsedTripTypeGroups] = useState<Set<string>>(new Set());
+  const toggleRouteNumberGroup = (routeNumber: string) => {
+    setCollapsedRouteNumbers((prev) => {
+      const next = new Set(prev);
+      if (next.has(routeNumber)) next.delete(routeNumber);
+      else next.add(routeNumber);
+      return next;
+    });
+  };
+  // `${routeNumber}:${tripType}` - tripType alone (e.g. "pickup") would
+  // collapse every route number's AM group at once, since the same
+  // TripType values repeat across every routeNumber branch.
+  const tripTypeGroupKey = (routeNumber: string, tripType: TripType) =>
+    `${routeNumber}:${tripType}`;
+  const toggleTripTypeGroup = (key: string) => {
+    setCollapsedTripTypeGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // The eyeball icon's own click handler - always opens the matching
   // popup immediately, published or draft, so a tap never silently
   // does something other than what tapping the eye reads as. A
-  // published route gets the one-button "Deactivate" confirm (hiding
+  // published route gets the one-button "Unpublish" confirm (hiding
   // never needs a readiness check, see canToggleStatus's own reasoning
-  // in EditRouteScreen.tsx); a draft one gets the Delete/Activate
+  // in EditRouteScreen.tsx); a draft one gets the Delete/Publish
   // popup, plus a background check (below) of whether every geocodable
   // stop has actually resolved yet - purely informational now (see
-  // handleActivateFromModal), so it never holds up the popup opening.
+  // handlePublishFromModal), so it never holds up the popup opening.
   function handleEyeClick(route: Route) {
+    // canPublishRoutes gates both branches below (publish and
+    // unpublish are the same permission, just opposite directions) -
+    // both eye-icon buttons that call this are also disabled/dimmed
+    // when it's off, this is the defensive no-op behind that.
+    if (!permissions.canPublishRoutes) return;
     if (isRoutePublished(route)) {
       setConfirmRequest({ type: "deactivate", route });
       return;
@@ -416,15 +501,33 @@ export function RouteListScreen({
     });
   }
 
-  // The draft-options popup's own "Activate" button - a route with
-  // unresolved coordinates can activate too now (a warning in the
+  // The draft-options popup's own "Publish" button - a route with
+  // unresolved coordinates can publish too now (a warning in the
   // popup above this button already said so, via draftResolution) -
   // this just always publishes rather than redirecting to the edit
   // screen the way it used to when something wasn't fully resolved
   // yet.
-  function handleActivateFromModal(route: Route) {
+  function handlePublishFromModal(route: Route) {
     onSetRouteStatus(route, "published");
     setConfirmRequest(null);
+  }
+
+  // The group-level eye icon (route-number and trip-type group headers
+  // below) - publishes or unpublishes every route inside that whole
+  // group in one tap, bypassing the single-route confirm popup above
+  // (its readiness-check messaging is per-route, not useful repeated
+  // once per route in a bulk action). A group that's already fully
+  // published flips every route in it to draft; anything else
+  // (draft, mixed, demo) flips every route to published - a plain
+  // two-state toggle, same feel as the single eye icon.
+  function handleGroupEyeClick(routes: Route[]) {
+    if (!permissions.canPublishRoutes) return;
+    const nextStatus: RouteStatus = routes.every(isRoutePublished)
+      ? "draft"
+      : "published";
+    for (const route of routes) {
+      onSetRouteStatus(route, nextStatus);
+    }
   }
 
   function handleDownloadCsv() {
@@ -433,6 +536,7 @@ export function RouteListScreen({
 
   return (
     <div
+      ref={swipeRef}
       className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center"
       onClick={adminMode ? handleBackgroundClick : undefined}
     >
@@ -527,7 +631,15 @@ export function RouteListScreen({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search routes"
               aria-label="Search routes"
-              className="w-full rounded-xl border border-zinc-300 bg-white py-1.5 pr-9 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              // pr-9 (room for the clear button) only while that button
+              // is actually rendered below - reserving it unconditionally
+              // cost the same ~36px even with nothing there to clear,
+              // which is exactly what was clipping "Search routes" down
+              // to "Search route" once the row's other icons left this
+              // box narrower.
+              className={`w-full rounded-xl border border-zinc-300 bg-white py-1.5 pl-9 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none ${
+                query ? "pr-9" : "pr-3"
+              }`}
             />
             {query && (
               <button
@@ -666,29 +778,138 @@ export function RouteListScreen({
         >
           {grouped ? (
             <div className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto">
-              {groupedTree.map((routeNumberGroup) => (
+              {groupedTree.map((routeNumberGroup) => {
+                const routeNumberExpanded = !collapsedRouteNumbers.has(
+                  routeNumberGroup.routeNumber,
+                );
+                const routeNumberRoutes = routeNumberGroup.tripTypeGroups.flatMap(
+                  (g) => g.routes,
+                );
+                return (
                 <div key={routeNumberGroup.routeNumber}>
-                  <div className="px-3 py-1.5">
-                    <span className="font-heading text-2xl font-black tracking-tight">
-                      Route {routeNumberGroup.routeNumber}
-                    </span>
-                    {routeNumberGroup.city && (
-                      <span className="text-sm text-zinc-500">
-                        {" "}
-                        - {routeNumberGroup.city}
+                  {/* A flex row, not one single button - admin mode adds
+                      a second, independent tap target (the group-eye
+                      button below) beside the twirl, and a button can't
+                      nest inside another button. The twirl button below
+                      still covers the whole name+triangle area (not just
+                      the triangle itself, still too small to reliably
+                      hit alone) - just no longer the row's own full
+                      width once the eye button is showing beside it. */}
+                  <div className="flex w-full items-center gap-1 px-3 py-1">
+                    {/* py-1 (not the old py-1.5) tightens the gap
+                        before/after each route number's own block a
+                        little, now that there's a whole extra collapsed
+                        state to visually separate one route from the
+                        next besides just the divide-y border. */}
+                    <button
+                      type="button"
+                      onClick={() => toggleRouteNumberGroup(routeNumberGroup.routeNumber)}
+                      aria-expanded={routeNumberExpanded}
+                      className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
+                    >
+                      <span>
+                        {/* No "Route " prefix - read fine in front of a bare
+                            number, but doubles up awkwardly in front of a
+                            Special/transition route's own free-typed name
+                            ("Route Depot to Elementary"). */}
+                        <span className="font-heading text-2xl font-black tracking-tight">
+                          {routeNumberGroup.routeNumber}
+                        </span>
+                        {routeNumberGroup.city && (
+                          <span className="text-sm text-zinc-500">
+                            {" "}
+                            - {routeNumberGroup.city}
+                          </span>
+                        )}
                       </span>
+                      {/* The disclosure triangle itself - right by default
+                          (pointing at the collapsed content) and rotated
+                          90deg down once expanded, the standard twirl
+                          every collapsible section on this row uses (the
+                          tripType one right below has its own, smaller,
+                          identical pair). transition-transform is what
+                          makes that a twirl rather than an instant flip. */}
+                      <RoundedTriangleIcon
+                        className={`h-4 w-4 shrink-0 text-blue-600 transition-transform duration-200 ${
+                          routeNumberExpanded ? "rotate-90" : ""
+                        }`}
+                      />
+                    </button>
+                    {adminMode && (
+                      <button
+                        type="button"
+                        onClick={() => handleGroupEyeClick(routeNumberRoutes)}
+                        disabled={!permissions.canPublishRoutes}
+                        aria-label={
+                          routeNumberRoutes.every(isRoutePublished)
+                            ? `Unpublish all routes in ${routeNumberGroup.routeNumber}`
+                            : `Publish all routes in ${routeNumberGroup.routeNumber}`
+                        }
+                        className="shrink-0 p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
+                      >
+                        {routeNumberRoutes.every(isRoutePublished) ? (
+                          <EyeIcon className="h-4 w-4" />
+                        ) : (
+                          <EyeOffIcon className="h-4 w-4 text-zinc-400" />
+                        )}
+                      </button>
                     )}
                   </div>
-                  {routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => (
+                  {routeNumberExpanded &&
+                    routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => {
+                      const tripTypeKey = tripTypeGroupKey(
+                        routeNumberGroup.routeNumber,
+                        tripTypeGroup.tripType,
+                      );
+                      const tripTypeExpanded = !collapsedTripTypeGroups.has(tripTypeKey);
+                      return (
                     <div key={tripTypeGroup.tripType}>
-                      <div className="flex items-center gap-1 py-1 pr-3 pl-5 text-sm font-semibold text-zinc-900">
-                        <TripTypeIcon
-                          tripType={tripTypeGroup.tripType}
-                          className="h-[18px] w-[18px] shrink-0"
-                        />
-                        {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
-                        {tripTypeFullLabel(tripTypeGroup.tripType)}
+                      <div className="flex w-full items-center gap-1 py-1 pr-3 pl-5">
+                        <button
+                          type="button"
+                          onClick={() => toggleTripTypeGroup(tripTypeKey)}
+                          aria-expanded={tripTypeExpanded}
+                          className="flex min-w-0 flex-1 items-center justify-between gap-1 text-left text-sm font-semibold text-zinc-900"
+                        >
+                          <span className="flex items-center gap-1">
+                            {/* Plain, not IconTooltip - the full label sits
+                                spelled out right beside it already, so a tap
+                                reveal would just repeat text that's already
+                                on screen. */}
+                            <TripTypeIcon
+                              tripType={tripTypeGroup.tripType}
+                              className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                            />
+                            {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
+                            {tripTypeFullLabel(tripTypeGroup.tripType)}
+                          </span>
+                          <RoundedTriangleIcon
+                            className={`h-3.5 w-3.5 shrink-0 text-blue-600 transition-transform duration-200 ${
+                              tripTypeExpanded ? "rotate-90" : ""
+                            }`}
+                          />
+                        </button>
+                        {adminMode && (
+                          <button
+                            type="button"
+                            onClick={() => handleGroupEyeClick(tripTypeGroup.routes)}
+                            disabled={!permissions.canPublishRoutes}
+                            aria-label={
+                              tripTypeGroup.routes.every(isRoutePublished)
+                                ? `Unpublish all ${tripTypeLabel(tripTypeGroup.tripType)} routes`
+                                : `Publish all ${tripTypeLabel(tripTypeGroup.tripType)} routes`
+                            }
+                            className="shrink-0 p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
+                          >
+                            {tripTypeGroup.routes.every(isRoutePublished) ? (
+                              <EyeIcon className="h-3.5 w-3.5" />
+                            ) : (
+                              <EyeOffIcon className="h-3.5 w-3.5 text-zinc-400" />
+                            )}
+                          </button>
+                        )}
                       </div>
+                      {tripTypeExpanded && (
                       <div className="divide-y divide-zinc-100">
                         {tripTypeGroup.routes.map((route) => {
                           const isPublished = isRoutePublished(route);
@@ -696,7 +917,22 @@ export function RouteListScreen({
                           return (
                             <div
                               key={route.id}
-                              className={`flex w-full items-center gap-2 py-2 pr-2 pl-8 ${
+                              // row-tap-gold/active:bg-amber-400 live on
+                              // this outer row, not the inner select
+                              // button - the heart/eye button beside it
+                              // is its own separate click target
+                              // (favorite vs. select shouldn't be the
+                              // same tap), but a press on either one
+                              // should still read as "this whole row
+                              // responded." :active bubbles to ancestors
+                              // in CSS, so pressing either inner button
+                              // still lights up this div's own
+                              // background - the highlight just needs to
+                              // actually live on the element that spans
+                              // both of them, rounded-lg included, rather
+                              // than stopping at whichever inner button
+                              // happened to be pressed.
+                              className={`row-tap-gold flex w-full items-center gap-2 rounded-lg py-2.5 pr-2 pl-8 active:bg-amber-400 ${
                                 isAdminOnly ? "opacity-50" : ""
                               }`}
                             >
@@ -707,17 +943,39 @@ export function RouteListScreen({
                                     ? onEditRoute(route)
                                     : onSelect(route)
                                 }
-                                className="flex min-w-0 flex-1 items-center gap-1.5 text-left active:bg-zinc-100"
+                                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                               >
                                 <span className="flex shrink-0 items-center gap-1">
-                                  {/* Solid black, not faded - names this
-                                      route's real level, unlike the
-                                      filter cycle button above where the
-                                      same icon reads blue/gray. */}
-                                  <SchoolLevelIcon
-                                    level={route.schoolLevel}
-                                    className="h-4 w-4 shrink-0 text-zinc-900"
-                                  />
+                                  {/* as="span" - this whole row is
+                                      already a <button> (onSelect/
+                                      onEditRoute above), so a real
+                                      nested <button> here would be
+                                      invalid HTML; IconTooltip's own
+                                      stopPropagation still keeps this
+                                      tap from also selecting/editing the
+                                      route. Tappable even though the two-
+                                      letter "ES"/"MS"/"HS" label already
+                                      sits right beside it (unlike the
+                                      group header above) - that
+                                      abbreviation still isn't the real
+                                      word. */}
+                                  {route.schoolLevel ? (
+                                    <IconTooltip
+                                      as="span"
+                                      label={schoolLevelLabel(route.schoolLevel)}
+                                      className="h-4 w-4 shrink-0 text-blue-600"
+                                    >
+                                      <SchoolLevelIcon
+                                        level={route.schoolLevel}
+                                        className="h-full w-full"
+                                      />
+                                    </IconTooltip>
+                                  ) : (
+                                    <SchoolLevelIcon
+                                      level={route.schoolLevel}
+                                      className="h-4 w-4 shrink-0 text-blue-600"
+                                    />
+                                  )}
                                   <span className="w-6 shrink-0 text-xs font-bold text-zinc-400">
                                     {SCHOOL_LEVEL_TOGGLES.find(
                                       (t) => t.value === route.schoolLevel,
@@ -733,12 +991,13 @@ export function RouteListScreen({
                                 <button
                                   type="button"
                                   onClick={() => handleEyeClick(route)}
+                                  disabled={!permissions.canPublishRoutes}
                                   aria-label={
                                     isPublished
-                                      ? `Deactivate route ${route.routeNumber}`
-                                      : `Activate route ${route.routeNumber}`
+                                      ? `Unpublish route ${route.routeNumber}`
+                                      : `Publish route ${route.routeNumber}`
                                   }
-                                  className="shrink-0 p-1 text-blue-600 active:opacity-70"
+                                  className="shrink-0 p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
                                 >
                                   {isPublished ? (
                                     <EyeIcon className="h-4 w-4" />
@@ -767,10 +1026,13 @@ export function RouteListScreen({
                           );
                         })}
                       </div>
+                      )}
                     </div>
-                  ))}
+                      );
+                    })}
                 </div>
-              ))}
+                );
+              })}
 
               {groupedTree.length === 0 && (
                 <p className="px-2 py-6 text-center text-sm text-zinc-500">
@@ -913,7 +1175,7 @@ export function RouteListScreen({
                     onClick={() =>
                       adminMode ? onEditRoute(route) : onSelect(route)
                     }
-                    className="col-span-3 grid grid-cols-[4.5rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-zinc-100"
+                    className="row-tap-gold col-span-3 grid grid-cols-[4.5rem_1fr_3.75rem] items-center gap-x-1 text-left active:bg-amber-400"
                   >
                     {/* leading-none (line-height: 1) still isn't tight -
                         Ubuntu at this weight reports a font-box taller
@@ -940,24 +1202,40 @@ export function RouteListScreen({
                         the first place, and there's no real example of
                         one yet to design that case against. */}
                     <div className="flex items-center gap-1">
+                      {/* as="span" - this row is already a <button>
+                          (onSelect/onEditRoute above), same nested-
+                          interactive-element reasoning as the grouped
+                          view's own row (see its own IconTooltip
+                          comment). */}
                       {(route.tripType === "pickup" ||
                         route.tripType === "dropoff") && (
-                        <TripTypeIcon
-                          tripType={route.tripType}
-                          className="h-[18px] w-[18px] shrink-0 text-zinc-400"
-                        />
+                        <IconTooltip
+                          as="span"
+                          label={tripTypeFullLabel(route.tripType)}
+                          className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                        >
+                          <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
+                        </IconTooltip>
                       )}
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
                     </div>
                     <span className="flex min-w-0 items-center gap-1">
-                      {/* Solid black, not faded - see the grouped view's
-                          own row above for why. */}
-                      <SchoolLevelIcon
-                        level={route.schoolLevel}
-                        className="h-4 w-4 shrink-0 text-zinc-900"
-                      />
+                      {route.schoolLevel ? (
+                        <IconTooltip
+                          as="span"
+                          label={schoolLevelLabel(route.schoolLevel)}
+                          className="h-4 w-4 shrink-0 text-blue-600"
+                        >
+                          <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
+                        </IconTooltip>
+                      ) : (
+                        <SchoolLevelIcon
+                          level={route.schoolLevel}
+                          className="h-4 w-4 shrink-0 text-blue-600"
+                        />
+                      )}
                       <SchoolNameLabel name={route.schoolName} />
                     </span>
                     <span className="text-right text-sm font-semibold text-zinc-500">
@@ -968,12 +1246,13 @@ export function RouteListScreen({
                     <button
                       type="button"
                       onClick={() => handleEyeClick(route)}
+                      disabled={!permissions.canPublishRoutes}
                       aria-label={
                         isPublished
-                          ? `Deactivate route ${route.routeNumber}`
-                          : `Activate route ${route.routeNumber}`
+                          ? `Unpublish route ${route.routeNumber}`
+                          : `Publish route ${route.routeNumber}`
                       }
-                      className="justify-self-center p-1 text-blue-600 active:opacity-70"
+                      className="justify-self-center p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
                     >
                       {isPublished ? (
                         <EyeIcon className="h-4 w-4" />
@@ -1040,8 +1319,11 @@ export function RouteListScreen({
           {/* The Home Screen's own entry point (adminMode off) stays the
               small `btn-glossy` chip this used to be everywhere - a
               district-admin tool, not something that needs to compete
-              with Search/View for attention. */}
-          {!adminMode && (
+              with Search/View for attention. Gated on canAccessAdmin
+              (not just hidden vs. shown disabled) - a driver who can't
+              reach admin at all has no reason to see an entry point
+              for it sitting there. */}
+          {!adminMode && permissions.canAccessAdmin && (
             <button
               type="button"
               onClick={onToggleAdminMode}
@@ -1087,7 +1369,13 @@ export function RouteListScreen({
           <button
             type="button"
             onClick={onAddRoute}
-            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
+            disabled={!permissions.canAddRoutes}
+            aria-label={
+              permissions.canAddRoutes
+                ? "Add a new route"
+                : "Add a new route (your account can't create routes)"
+            }
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
           >
             <PlusIcon className="h-5 w-5" />
             New Route
@@ -1105,9 +1393,9 @@ export function RouteListScreen({
 
       {confirmRequest?.type === "deactivate" && (
         <ConfirmModal
-          title={`Deactivate Route ${confirmRequest.route.routeNumber}?`}
-          message="This puts it in draft mode - drivers won't see it until it's activated again."
-          confirmLabel="Deactivate"
+          title={`Unpublish Route ${confirmRequest.route.routeNumber}?`}
+          message="Are you sure you want to deactivate this route so it will not be seen by drivers? It will remain in draft mode so it can still be edited without being live."
+          confirmLabel="Unpublish"
           confirmIcon={<EyeOffIcon className="h-4 w-4" />}
           onCancel={() => setConfirmRequest(null)}
           onConfirm={() => {
@@ -1129,22 +1417,31 @@ export function RouteListScreen({
                   <span className="flex items-center justify-center gap-1.5 text-amber-600">
                     <WarningIcon className="h-4 w-4 shrink-0" />
                     Some locations aren&rsquo;t verified yet - the map may not
-                    accurately display this route once activated.
+                    accurately display this route once published.
                   </span>
                 ) : (
-                  "It won't be visible to drivers until it's activated."
+                  "Are you sure you want to publish this draft so it will be active for drivers?"
                 )
               }
-              confirmLabel="Activate"
+              confirmLabel="Publish"
               confirmIcon={<EyeIcon className="h-4 w-4" />}
-              secondaryLabel="Delete"
+              // Omitted entirely (not just disabled) when this driver
+              // can't delete routes - ConfirmModal has no notion of a
+              // disabled secondary button, and a driver with no delete
+              // permission has no reason to see the option offered at
+              // all.
+              secondaryLabel={permissions.canDeleteRoutes ? "Delete" : undefined}
               secondaryIcon={<TrashIcon className="h-4 w-4" />}
-              onSecondary={() => {
-                onDeleteRoute(confirmRequest.route);
-                setConfirmRequest(null);
-              }}
+              onSecondary={
+                permissions.canDeleteRoutes
+                  ? () => {
+                      onDeleteRoute(confirmRequest.route);
+                      setConfirmRequest(null);
+                    }
+                  : undefined
+              }
               onCancel={() => setConfirmRequest(null)}
-              onConfirm={() => handleActivateFromModal(confirmRequest.route)}
+              onConfirm={() => handlePublishFromModal(confirmRequest.route)}
             />
           );
         })()}
@@ -1152,19 +1449,31 @@ export function RouteListScreen({
   );
 }
 
-/** A school name, clipped to one line's height rather than truncated
- * with an ellipsis - `leading-5`/`h-5` give this span exactly one
- * line's own box, `overflow-hidden` with no `nowrap` lets the text
- * wrap normally (so it breaks on a real word boundary, never mid-word)
- * and simply hides whatever word(s) would have landed on a second
- * line. Plain CSS, no JS measurement - an earlier version measured
- * scrollWidth against clientWidth to conditionally drop a trailing
- * " School" and re-measured on every resize, which could flicker
- * between its two states as the browser's own layout rounding shifted
- * by a fractional pixel during scroll. */
+/** A school name, truncated to one line with a trailing ellipsis
+ * (`truncate` - white-space: nowrap; overflow: hidden; text-overflow:
+ * ellipsis) rather than an earlier version's wrap-then-hide-the-second-
+ * line clip, which could silently drop an entire trailing word (all of
+ * "Elementary," say) with no visual sign anything was cut off at all -
+ * letting the name run right up against the truncation with a "…"
+ * reads as far more legible than losing a whole word with nothing to
+ * show for it. This isn't the same as the flicker bug this component's
+ * very first version had, either - that came from a JS scrollWidth/
+ * clientWidth measurement re-run on every resize/scroll to decide
+ * whether to drop a trailing " School," which could flip back and
+ * forth as the browser's own layout rounding shifted by a fractional
+ * pixel mid-scroll. `truncate` is pure CSS with no measurement and no
+ * state to flicker between - the browser decides where to cut at
+ * layout time, same as any other truncated text in this app.
+ * `min-w-0 flex-1` are load-bearing, not decorative - every caller
+ * renders this alongside `shrink-0` siblings (an icon, a departure
+ * time) inside a flex row with no other flexible child, so this is
+ * what actually claims the row's own leftover width and lets it shrink
+ * below its full text width in the first place; drop either one and
+ * `truncate` has no bounded box to truncate against, so it just
+ * overflows the row instead. */
 function SchoolNameLabel({ name }: { name: string }) {
   return (
-    <span className="block h-5 overflow-hidden text-sm leading-5 text-zinc-700">
+    <span className="min-w-0 flex-1 truncate text-sm text-zinc-700">
       {name}
     </span>
   );

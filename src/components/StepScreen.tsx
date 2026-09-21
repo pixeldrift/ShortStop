@@ -1,26 +1,42 @@
 import Image from "next/image";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ExpandableMap } from "./ExpandableMap";
 import { RouteMap } from "./RouteMap";
 import type { StopMarker, TurnMarker } from "./RouteMap";
 import { RouteProgressBar } from "./RouteProgressBar";
+import { useCurrentTime } from "./StartScreen";
 import { StepTransition } from "./StepTransition";
 import { TopBar } from "./TopBar";
 import {
   ActionIcon,
+  BackArrowIcon,
   CheckCircleIcon,
   CheckIcon,
+  CloseIcon,
+  EditIcon,
   MapPinIcon,
   PauseIcon,
   PersonSolidIcon,
+  PlusIcon,
+  RightArrowIcon,
   RoundedTriangleIcon,
   TriangleIcon,
   TurnArrow,
 } from "./icons";
 import { addressWithoutZip } from "@/lib/schoolAddress";
+import { parseTimeToMinutes } from "@/lib/time";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { NavigationStep, Route, TripType } from "@/lib/types";
+
+// How close to the scheduled departure time (in minutes, either side)
+// counts as "close enough to just say Ready to Depart" - the same
+// number doubles as how late past that time before this reverts to
+// naming the time again (now in red), since only one threshold was
+// ever specified to design both boundaries against.
+const DEPART_WINDOW_MINUTES = 5;
 
 // How long the depot bus's own slide-off animation runs (matches
 // animate-bus-depart in globals.css) - handleStart below holds off the
@@ -44,10 +60,12 @@ export function StepScreen({
   onEndRoute,
   onLogoClick,
   announcementDone,
-  roster,
+  getRoster,
   totalOnboard,
   onRiderTap,
   onAddRider,
+  canEditWaypoints,
+  onEditWaypoint,
 }: {
   route: Route;
   step: NavigationStep;
@@ -64,36 +82,171 @@ export function StepScreen({
   onEndRoute: () => void;
   onLogoClick: () => void;
   announcementDone: boolean;
-  roster: boolean[];
+  /** useRiderRoster's own getRoster, passed straight through rather
+   * than pre-bound to `step` the way this (and onRiderTap/onAddRider
+   * below) used to be - the check-in box's own prev/next arrows let a
+   * driver navigate to review or amend a *different* stop's count
+   * without leaving the live current step, so every roster lookup here
+   * needs to name which stop it's for, not just assume the current
+   * one. */
+  getRoster: (stepId: number, expectedCount: number) => boolean[];
   totalOnboard: number;
-  onRiderTap: (index: number) => void;
-  onAddRider: () => void;
+  /** useRiderRoster's own fillTo, same "not pre-bound to `step`"
+   * reasoning as getRoster above. */
+  onRiderTap: (stepId: number, index: number, expectedCount: number) => void;
+  /** useRiderRoster's own addUnexpectedRider, same reasoning. */
+  onAddRider: (stepId: number, expectedCount: number) => void;
+  /** Whether this driver's session can reach the quick-edit popup at
+   * all (permissionsFor's own canEditWaypoints - see page.tsx's
+   * RouteApp) - false hides both buttons below entirely, rather than
+   * showing them disabled, since there's nothing a non-admin driver
+   * could do with them anyway. */
+  canEditWaypoints: boolean;
+  /** Opens the same edit-waypoint popup EditRouteScreen's own Waypoints
+   * list uses, auto-opened to this current step and pre-navigated away
+   * from the driving screen (see page.tsx's quickEdit wiring) - false
+   * edits this step in place, true inserts a brand new blank step
+   * right after it, mirroring StepRowEditor's own onAddWaypointAfter. */
+  onEditWaypoint: (insertNewAfter: boolean) => void;
 }) {
+  // Edge-swipe-right to go back - same target as the footer's own Back/
+  // Routes button below (phase === "depot" goes to the route list,
+  // otherwise one step back), and disabled the same way while paused.
+  const swipeRef = useSwipeBack<HTMLDivElement>(
+    paused ? undefined : phase === "depot" ? onLogoClick : onBack,
+  );
+  // route.steps' own index of `step` - RouteProgressBar already took
+  // this as `stepNumber - 1` inline; named here too since the roster-
+  // view state machine below needs to compare against it in more than
+  // one place.
+  const currentIndex = stepNumber - 1;
   // Only a real "step" phase step can be a stop with riders to check in -
   // the depot/arrived virtual states never show the roster card, even if
   // route.steps[0] or the last step happens to be a stop.
   const isStop = phase === "step" && step.kind === "stop";
-  // Set by the roster card's own "OK" (closes the card without also
-  // advancing to the next stop - see RiderCheckInBox's onClose below).
-  // Keyed by step id rather than a plain boolean so it resets itself the
-  // moment the driver actually moves to a different step, without a
-  // separate effect to clear it - this step's own id simply stops
-  // matching once `step` changes.
-  const [dismissedStepId, setDismissedStepId] = useState<number | null>(null);
-  // Held off until the stop's own announcement has finished speaking, so
-  // the check-in card doesn't pop up over top of still-playing audio.
-  const showRoster =
-    !paused && isStop && roster.length > 0 && announcementDone && dismissedStepId !== step.id;
-  // Memoized against `route` (unchanged for the whole trip) rather
-  // than recomputed every render - RouteMap only reads this once per
-  // mount (see its own stopsRef note), but a fresh array reference
-  // every render would still be visible to it as a changed prop.
-  const stopMarkers = useMemo<StopMarker[]>(() => {
+  // Every "stop" step, in route order, with its own 1-based stop number
+  // and its original route.steps index - the one list the whole roster
+  // box (below) navigates through, since only stops ever have riders to
+  // check in. Memoized against `route` (unchanged for the whole trip)
+  // rather than recomputed every render.
+  const stopSteps = useMemo(() => {
     let stopCount = 0;
     return route.steps
-      .filter((s) => s.kind === "stop")
-      .map((s) => ({ waypointKey: s.waypointKey, number: ++stopCount }));
+      .map((s, index) => ({ step: s, index }))
+      .filter((entry) => entry.step.kind === "stop")
+      .map((entry) => ({ ...entry, number: ++stopCount }));
   }, [route]);
+  // RouteMap only reads this once per mount (see its own stopsRef note),
+  // but a fresh array reference every render would still be visible to
+  // it as a changed prop - derived from stopSteps above rather than its
+  // own separate walk over route.steps.
+  const stopMarkers = useMemo<StopMarker[]>(
+    () => stopSteps.map((s) => ({ waypointKey: s.step.waypointKey, number: s.number })),
+    [stopSteps],
+  );
+  // The stop slot "right now" actually cares about - the current step
+  // itself while standing on a stop, otherwise whichever stop is still
+  // ahead (same number RouteApp's own stopProgressNumber prop already
+  // names, just resolved back to a route.steps index here) - what the
+  // roster box's own "Jump to Current Stop" button (see below) returns
+  // to, and where a *manual* open (the map's own toggle control) starts
+  // out, so tapping it while mid-turn between two stops still lands
+  // somewhere useful instead of nowhere.
+  const liveStopIndex = stopSteps.find((s) => s.number === stopProgressNumber)?.index ?? null;
+  // Whether this route has any rider-tracked stop at all - routes with
+  // nobody expected at any stop get no roster box, automatic or manual,
+  // and RouteMap gets no toggle control for one (see its own
+  // onToggleRoster prop).
+  const hasRosterStops = stopSteps.some((s) => (s.step.studentCount ?? 0) > 0);
+
+  // Which stop's roster the check-in box is currently showing - null
+  // while it's closed. `rosterOrigin` tracks how *this* open session
+  // started: "auto" (arriving at a stop with expected riders) means
+  // tapping a rider bubble commits that value and immediately closes
+  // the box again, so a driver can just tap-and-go; "manual" (the map's
+  // own toggle control, or navigating within an auto-opened box at all -
+  // see goToStopSlot/jumpToCurrentStop below) means it stays open until
+  // explicitly closed, since the driver's already taking deliberate,
+  // review-style control of it rather than just clearing a same-stop
+  // popup on the way past.
+  const [viewedStepIndex, setViewedStepIndex] = useState<number | null>(null);
+  const [rosterOrigin, setRosterOrigin] = useState<"auto" | "manual">("manual");
+  // The step id the box was last auto-offered (opened OR explicitly
+  // closed) for - reusing `dismissedStepId`'s old job (never auto-
+  // reopen for a step once the driver's already dealt with it) but set
+  // the moment it opens, not only once it closes, so a second condition
+  // flipping true while it's already open (announcementDone toggling,
+  // say) can't retrigger the auto-open logic below mid-session.
+  const [autoOfferedStepId, setAutoOfferedStepId] = useState<number | null>(null);
+
+  // Auto-opens the box the moment a stop with expected riders becomes
+  // current (held off until its own announcement has finished speaking,
+  // so this doesn't pop up over top of still-playing audio) - adjusting
+  // state directly during render (React's own sanctioned alternative to
+  // an effect that just reacts to a prop/derived-value change, https://
+  // react.dev/learn/you-might-not-need-an-effect#adjusting-state-based-
+  // on-a-prop) rather than in a useEffect, matching RiderCheckInBox's
+  // own splitForLength below - this repo's react-hooks lint config
+  // flags a raw setState call written directly in an effect body.
+  const currentExpectedCount = isStop ? (step.studentCount ?? 0) : 0;
+  const shouldAutoOpenRoster =
+    !paused &&
+    isStop &&
+    currentExpectedCount > 0 &&
+    announcementDone &&
+    viewedStepIndex === null &&
+    autoOfferedStepId !== step.id;
+  if (shouldAutoOpenRoster) {
+    setAutoOfferedStepId(step.id);
+    setViewedStepIndex(currentIndex);
+    setRosterOrigin("auto");
+  }
+
+  function closeRoster() {
+    setViewedStepIndex(null);
+    setAutoOfferedStepId(step.id);
+  }
+
+  // The map's own toggle control (RouteMap's onToggleRoster) - a real
+  // show/hide: closes an already-open box, otherwise opens straight to
+  // whichever stop is "current" right now (liveStopIndex), always as a
+  // manual session regardless of how it started, since the driver just
+  // deliberately asked for it.
+  function toggleRosterManually() {
+    if (viewedStepIndex !== null) {
+      closeRoster();
+      return;
+    }
+    if (liveStopIndex == null) return;
+    setViewedStepIndex(liveStopIndex);
+    setRosterOrigin("manual");
+  }
+
+  const viewedSlot =
+    viewedStepIndex != null ? stopSteps.findIndex((s) => s.index === viewedStepIndex) : -1;
+  const viewedEntry = viewedSlot >= 0 ? stopSteps[viewedSlot] : undefined;
+
+  // Prev/Next - only ever moves among stopSteps (turns have no roster to
+  // show), and always demotes this session to "manual": once the driver
+  // has deliberately navigated within the box at all, a later tap on a
+  // rider bubble - even back on the live current stop - should no longer
+  // instant-close it out from under them (see the box's own onRiderTap
+  // wiring below).
+  function goToStopSlot(slot: number) {
+    const target = stopSteps[Math.min(Math.max(slot, 0), stopSteps.length - 1)];
+    if (!target) return;
+    setViewedStepIndex(target.index);
+    setRosterOrigin("manual");
+  }
+
+  function jumpToCurrentStop() {
+    if (liveStopIndex == null) return;
+    setViewedStepIndex(liveStopIndex);
+    setRosterOrigin("manual");
+  }
+
+  const viewedExpectedCount = viewedEntry?.step.studentCount ?? 0;
+  const viewedRoster = viewedEntry ? getRoster(viewedEntry.step.id, viewedExpectedCount) : [];
   // Every turn step's own direction/heading, straight off the step
   // itself - the same pair TurnContent below renders, so RouteMap's own
   // turn markers show the exact same icon. Empty for a stops-only
@@ -120,6 +273,18 @@ export function StepScreen({
   const schoolPoint = useMemo(
     () => (route.schoolLat != null && route.schoolLon != null ? { lat: route.schoolLat, lon: route.schoolLon } : null),
     [route.schoolLat, route.schoolLon],
+  );
+  // Whether this route actually visits the school as one of its own
+  // real waypoints - true only when a route.steps row explicitly names
+  // it (a Depart/Arrive action), same rule AllStopsModal's own
+  // explicitSchoolStepId already uses (StartScreen.tsx) - passed to
+  // RouteMap so its own road-geometry line doesn't connect out to the
+  // school for a route whose last leg is just a spoken "Proceed to..."
+  // instruction that never really drives there (RouteMap's own
+  // `schoolIsWaypoint` prop doc comment has the full reasoning).
+  const schoolIsWaypoint = useMemo(
+    () => route.steps.some((s) => s.heading === "DEPART" || s.heading === "ARRIVE"),
+    [route],
   );
   // The geocode cache, shared across every route now that it lives in
   // Postgres (see src/app/api/waypoints) rather than split into a
@@ -173,10 +338,9 @@ export function StepScreen({
           guarantee and shrink-if-crazy-long fallback - see StopContent/
           TurnContent below - rather than by the map yielding space. */}
       <div className="relative h-[30vh] w-full shrink-0 overflow-hidden landscape:h-full landscape:w-[42%]">
-        {/* h-full/w-full, not absolute+inset-0 - both Leaflet and
-            MapLibre's own stylesheets force `position: relative` on
-            whatever container element they're handed
-            (.leaflet-container/.maplibregl-map), overriding any
+        {/* h-full/w-full, not absolute+inset-0 - MapLibre's own
+            stylesheet forces `position: relative` on whatever container
+            element it's handed (.maplibregl-map), overriding any
             `position: absolute` Tailwind class placed on that same
             element. Under the resulting position:relative, `inset-0`
             (top/right/bottom/left) does nothing - it only sizes an
@@ -186,27 +350,38 @@ export function StepScreen({
             explicit height works under any positioning scheme, which
             is why it's used here instead.
 
-            z-0 gives Leaflet's own internal panes/controls (tile pane,
-            zoom control, attribution - several of which carry their own
-            explicit, fairly high z-index, e.g. the zoom control's 1000) a
-            stacking context of their own to escalate within. Without it,
-            since neither this div nor its parent set a z-index, those
-            panes escape to the nearest ancestor stacking context and can
-            paint above the roster popup below despite being earlier in
-            the DOM. */}
-        <RouteMap
-          className="h-full w-full z-0"
-          stops={stopMarkers}
-          turns={turnMarkers}
-          path={routePath}
-          school={schoolPoint}
-          tripType={route.tripType}
-          waypointsUrl={waypointsUrl}
-          mode={phase === "depot" ? "overview" : "driving"}
-          activeWaypointKey={step.waypointKey}
+            z-0 gives MapLibre's own internal canvas/controls (zoom
+            control, attribution - several of which carry their own
+            explicit, fairly high z-index) a stacking context of their
+            own to escalate within. Without it, since neither this div
+            nor its parent set a z-index, those controls escape to the
+            nearest ancestor stacking context and can paint above the
+            roster popup below despite being earlier in the DOM. */}
+        <ExpandableMap
+          className="h-full w-full"
+          renderMap={(mapClassName) => (
+            <RouteMap
+              className={`${mapClassName} z-0`}
+              stops={stopMarkers}
+              turns={turnMarkers}
+              path={routePath}
+              school={schoolPoint}
+              schoolIsWaypoint={schoolIsWaypoint}
+              tripType={route.tripType}
+              waypointsUrl={waypointsUrl}
+              mode={phase === "depot" ? "overview" : "driving"}
+              activeWaypointKey={step.waypointKey}
+              onToggleRoster={hasRosterStops ? toggleRosterManually : undefined}
+            />
+          )}
         />
 
-        {showRoster && (
+        {/* !paused hides the box (without closing it - viewedStepIndex
+            stays set, so it's right back once resumed) same as pausing
+            already hides everything else mid-step; PausedContent's own
+            full-screen "Route Paused" text is a poor backdrop for a
+            still-tappable roster underneath it. */}
+        {!paused && viewedEntry && (
           <>
             {/* Dim the map rather than hiding it - the check-in card
                 floats above it as its own smaller, opaque, shadowed
@@ -216,11 +391,27 @@ export function StepScreen({
             <div className="absolute inset-0 z-10 bg-black/35" />
             <div className="absolute inset-0 z-10 flex items-center justify-center p-3">
               <RiderCheckInBox
-                roster={roster}
+                step={viewedEntry.step}
+                stopNumber={viewedEntry.number}
+                roster={viewedRoster}
                 tripType={route.tripType}
-                onRiderTap={onRiderTap}
-                onAddRider={onAddRider}
-                onClose={() => setDismissedStepId(step.id)}
+                onRiderTap={(index) => {
+                  onRiderTap(viewedEntry.step.id, index, viewedExpectedCount);
+                  // Tap-and-go only while this is still an untouched auto
+                  // session showing the live current stop - see this
+                  // component's own rosterOrigin doc comment above.
+                  if (rosterOrigin === "auto" && viewedStepIndex === currentIndex) {
+                    closeRoster();
+                  }
+                }}
+                onAddRider={() => onAddRider(viewedEntry.step.id, viewedExpectedCount)}
+                onClose={closeRoster}
+                canGoPrev={viewedSlot > 0}
+                canGoNext={viewedSlot >= 0 && viewedSlot < stopSteps.length - 1}
+                onPrev={() => goToStopSlot(viewedSlot - 1)}
+                onNext={() => goToStopSlot(viewedSlot + 1)}
+                showJumpToCurrent={liveStopIndex != null && viewedStepIndex !== liveStopIndex}
+                onJumpToCurrent={jumpToCurrentStop}
               />
             </div>
           </>
@@ -240,6 +431,7 @@ export function StepScreen({
             routeNumber={route.routeNumber}
             busNumber={route.busNumber}
             tripType={route.tripType}
+            schoolLevel={route.schoolLevel}
             onLogoClick={handleLogoClick}
             stopProgressNumber={stopProgressNumber}
             totalStops={totalStops}
@@ -259,12 +451,12 @@ export function StepScreen({
             vanishing into a gap first - that reads as sliding underneath
             the bar rather than just disappearing. */}
         <div
-          className="flex flex-1 touch-manipulation flex-col px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
+          className="relative flex flex-1 touch-manipulation flex-col px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
           onClick={() => !paused && onAdvance()}
         >
           <RouteProgressBar
             steps={route.steps}
-            currentIndex={stepNumber - 1}
+            currentIndex={currentIndex}
             phase={phase}
             entering={busDeparting}
             onSeek={onSeek}
@@ -289,10 +481,34 @@ export function StepScreen({
               <TurnContent step={step} />
             )}
           </StepTransition>
+
+          {/* Far right edge, vertically centered on the whole content
+              pane (roughly level with the pin/arrow icon above, since
+              that's centered the same way) - not tied to the icon's own
+              bounding box the way an earlier version of this was,
+              deliberately: plain blue icons with no button chrome, read
+              as a secondary, out-of-the-way affordance rather than
+              competing with the step content itself for attention.
+              stopPropagation keeps a tap here from also counting as the
+              "tap anywhere to advance" this whole container listens
+              for. */}
+          {canEditWaypoints && phase === "step" && !paused && (
+            <WaypointEditButtons
+              onEdit={() => onEditWaypoint(false)}
+              onAddAfter={() => onEditWaypoint(true)}
+            />
+          )}
         </div>
 
-        {/* Footer - pinned */}
+        {/* Footer - pinned. ref here (not the whole screen) - the map
+            above has its own pan/zoom touch handling, and the step
+            content above that has its own tap-to-advance/progress-bar-
+            scrub gestures, either of which a screen-wide edge-swipe
+            listener would end up fighting for the same touch; this
+            footer has no competing drag of its own, and already holds
+            the exact button (below) whose own handler this mirrors. */}
         <div
+          ref={swipeRef}
           className="flex w-full max-w-md shrink-0 items-center gap-3 self-center px-4 pt-0 pb-3"
           onClick={(e) => e.stopPropagation()}
         >
@@ -423,7 +639,50 @@ function RoadNames({ subheading }: { subheading: string }) {
   );
 }
 
-function TurnContent({ step }: { step: NavigationStep }) {
+/** The Edit/Add-waypoint pair, pinned to the far right edge of the step-
+ * content pane and vertically centered on it - plain blue icons with no
+ * button chrome (background/border), deliberately reading as a
+ * secondary, out-of-the-way affordance rather than a control competing
+ * with the step content itself for attention. stopPropagation keeps a
+ * tap here from also counting as the "tap anywhere to advance" the
+ * step-content area itself listens for. */
+function WaypointEditButtons({
+  onEdit,
+  onAddAfter,
+}: {
+  onEdit: () => void;
+  onAddAfter: () => void;
+}) {
+  return (
+    <div
+      className="absolute top-1/2 right-0 z-10 flex -translate-y-1/2 flex-col gap-4"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label="Edit this waypoint"
+        className="text-blue-600 active:text-blue-800"
+      >
+        <EditIcon className="h-5 w-5" />
+      </button>
+      <button
+        type="button"
+        onClick={onAddAfter}
+        aria-label="Add a waypoint after this one"
+        className="text-blue-600 active:text-blue-800"
+      >
+        <PlusIcon className="h-5 w-5" />
+      </button>
+    </div>
+  );
+}
+
+function TurnContent({
+  step,
+}: {
+  step: NavigationStep;
+}) {
   const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
 
   return (
@@ -523,23 +782,48 @@ function StopContent({
 }
 
 function RiderCheckInBox({
+  step,
+  stopNumber,
   roster,
   tripType,
   onRiderTap,
   onAddRider,
   onClose,
+  canGoPrev,
+  canGoNext,
+  onPrev,
+  onNext,
+  showJumpToCurrent,
+  onJumpToCurrent,
 }: {
+  /** The stop currently being viewed - not necessarily the live current
+   * step (see onPrev/onNext below) - its own subheading is this box's
+   * own crossroads line, same RoadNames formatting StopContent/
+   * TurnContent already use for the exact same field. */
+  step: NavigationStep;
+  stopNumber: number | null;
   roster: boolean[];
-  /** Only ever used to pick "check in"/"check off" wording below - a
+  /** Only ever used to pick "picked up"/"dropped off" wording below - a
    * dropoff route's own riders all boarded back at the school, so
    * tapping through this same roster at each stop is really marking
    * who's gotten *off* it, not who's freshly on. */
   tripType: TripType;
   onRiderTap: (index: number) => void;
   onAddRider: () => void;
-  /** Dismisses the card - the driver still has to tap the step content
+  /** Closes the card - the driver still has to tap the step content
    * itself (or Next) to actually advance, same as any other step. */
   onClose: () => void;
+  canGoPrev: boolean;
+  canGoNext: boolean;
+  /** Steps this box to the previous/next *stop* (not step) - turns have
+   * no roster of their own, so these skip straight past them. */
+  onPrev: () => void;
+  onNext: () => void;
+  /** True only while viewing a stop other than the live current one -
+   * StepScreen's own liveStopIndex doc comment has the "which stop
+   * counts as current" details. */
+  showJumpToCurrent: boolean;
+  onJumpToCurrent: () => void;
 }) {
   const isDropoff = tripType === "dropoff";
   // Sized to its own content (a handful of riders shouldn't force a
@@ -619,12 +903,79 @@ function RiderCheckInBox({
   return (
     <div
       ref={fitRef}
-      className="animate-popup-pop flex max-h-[78%] max-w-[86%] flex-col items-center justify-center gap-[calc(0.75rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-3 shadow-lg"
+      className="animate-popup-pop flex max-h-[78%] max-w-[95%] flex-col gap-[calc(0.5rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-2.5 shadow-lg"
       onClick={(e) => e.stopPropagation()}
     >
-      <h2 className="font-heading text-sm font-black tracking-tight text-zinc-700">
-        {isDropoff ? "Riders Dropped Off" : "Riders Picked Up"}
-      </h2>
+      {/* Title row: which stop this is (number + crossroads), plus the
+          Pick Up/Drop Off label folded right into the title instead of
+          its own separate line above the bubbles - and prev/[jump to
+          current]/next/close, same small-arrows-then-close layout
+          EditRouteScreen's own StepRowEditor header already uses for
+          the identical "navigate within a popup, or leave it" shape,
+          with the jump-to-current pin now living between the two
+          arrows (rather than its own separate full-width button below)
+          since it's really a third way to navigate this same row, not
+          a distinct action. */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <h2 className="font-heading text-sm font-black tracking-tight text-zinc-900">
+            Stop {stopNumber} - {isDropoff ? "Drop Off" : "Pick Up"}
+          </h2>
+          {step.subheading && (
+            <p className="truncate text-xs font-semibold text-zinc-500">
+              <RoadNames subheading={step.subheading} />
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onPrev}
+            disabled={!canGoPrev}
+            aria-label="Previous stop"
+            className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+              canGoPrev ? "text-blue-600 active:bg-blue-50 active:text-blue-800" : "text-zinc-400"
+            }`}
+          >
+            <BackArrowIcon className="h-4 w-4" />
+          </button>
+          {/* Disabled (not hidden) while already viewing the live
+              current stop - there's nowhere more useful to jump to, but
+              the button stays put so the nav group's own shape doesn't
+              shift depending on which stop this is. */}
+          <button
+            type="button"
+            onClick={onJumpToCurrent}
+            disabled={!showJumpToCurrent}
+            aria-label="Jump to current stop"
+            className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+              showJumpToCurrent ? "text-blue-600 active:bg-blue-50 active:text-blue-800" : "text-zinc-400"
+            }`}
+          >
+            <MapPinIcon className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={!canGoNext}
+            aria-label="Next stop"
+            className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+              canGoNext ? "text-blue-600 active:bg-blue-50 active:text-blue-800" : "text-zinc-400"
+            }`}
+          >
+            <RightArrowIcon className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
+          >
+            <CloseIcon className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
       <div
         ref={gridRef}
         className="flex flex-wrap items-start justify-center gap-[calc(0.5rem*var(--fit-scale,1))]"
@@ -679,7 +1030,7 @@ function RiderCheckInBox({
           className="btn-glossy-blue font-heading flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
         >
           <CheckIcon className="h-4 w-4" />
-          {isDropoff ? "Check Off Riders" : "Check in Riders"}
+          Ok
         </button>
       </div>
     </div>
@@ -691,11 +1042,29 @@ function RiderCheckInBox({
  * shows in place of any actual turn/stop, so step 0's own directions
  * only appear once "Start" is tapped. */
 function DepotContent({ route, departing }: { route: Route; departing: boolean }) {
+  // Re-enables useCurrentTime (StartScreen.tsx - "kept ready to
+  // re-enable later") for exactly this: deciding whether the scheduled
+  // departure time is close enough to just say "Ready to Depart," or
+  // still far enough off (or far enough *past*) that naming the actual
+  // time is more useful than that generic prompt.
+  const now = useCurrentTime();
+  const scheduledMinutes = parseTimeToMinutes(route.departureTime);
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const minutesPastScheduled = nowMinutes - scheduledMinutes;
+  const isClose = Math.abs(minutesPastScheduled) <= DEPART_WINDOW_MINUTES;
+  const isLate = minutesPastScheduled > DEPART_WINDOW_MINUTES;
+
   return (
     <>
-      <p className="font-heading text-[clamp(1.5rem,5vh,2.5rem)] font-black tracking-tight text-blue-600">
-        {route.departureTime}
-      </p>
+      {/* The big standalone time readout only makes sense once "Ready
+          to Depart" (below) no longer names the time itself - showing
+          both at once would just repeat the same time twice on one
+          screen. */}
+      {isClose && (
+        <p className="font-heading text-[clamp(1.5rem,5vh,2.5rem)] font-black tracking-tight text-blue-600">
+          {route.departureTime}
+        </p>
+      )}
       {/* animate-bus-depart plays once, on the way out - see
           StepScreen's own handleStart, which holds off the real
           onAdvance (and the StepTransition swap that comes with it)
@@ -711,29 +1080,25 @@ function DepotContent({ route, departing }: { route: Route; departing: boolean }
         }`}
       />
       <h1 className="font-heading text-[clamp(1.5rem,5vh,2.75rem)] font-black tracking-tight">
-        Ready to Depart
+        {isClose ? (
+          "Ready to Depart"
+        ) : (
+          <>
+            Depart at{" "}
+            <span className={isLate ? "text-red-600" : "text-blue-600"}>
+              {route.departureTime}
+            </span>
+          </>
+        )}
       </h1>
-      {/* Its own tighter gap (half of the gap-2 every other sibling here
-          shares, via StepTransition's own flex column) - just between
-          the school name and its address, not the bus/title above. */}
-      <div className="flex flex-col items-center gap-1">
+      {/* Its own tighter gap (a quarter of the gap-2 every other sibling
+          here shares, via StepTransition's own flex column) - just
+          between the school name and its address, not the bus/title
+          above. */}
+      <div className="flex flex-col items-center gap-0.5">
         <p className="flex items-center justify-center gap-1.5 text-[clamp(0.875rem,2.5vh,1.25rem)] font-semibold text-zinc-700">
-          {/* Dropoff: the bus is leaving *from* the school - the arrow
-              trails off after the name, pointing away. Pickup and a
-              one-off field trip both default to heading *to* the
-              school instead (not "pickup only" - a fieldtrip route
-              would otherwise get no arrow at all, having matched
-              neither branch) - the arrow leads into the name. Same
-              rightward TriangleIcon either way, just placed on
-              whichever side reads as the right direction of travel. */}
-          {route.tripType !== "dropoff" && (
-            <TriangleIcon direction="right" className="h-[0.7em] w-[0.7em] shrink-0 text-blue-500" />
-          )}
           {route.tripType === "dropoff" ? "From " : "To "}
           {route.schoolName}
-          {route.tripType === "dropoff" && (
-            <TriangleIcon direction="right" className="h-[0.7em] w-[0.7em] shrink-0 text-blue-500" />
-          )}
         </p>
         <p className="flex items-center gap-1 text-[clamp(0.875rem,2.5vh,1.25rem)] text-zinc-500">
           <MapPinIcon className="h-[0.9em] w-[0.9em] shrink-0 text-blue-500" />

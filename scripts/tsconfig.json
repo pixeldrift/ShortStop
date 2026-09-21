@@ -17,6 +17,7 @@
     "./fixMisplacedRiderNotes.ts",
     "./fillStopDetails.ts",
     "./fillStartTimes.ts",
+    "./fixDrTransportationAddress.ts",
     "./prototypeOverpassGeocode.ts",
     "../src/lib/parseRouteCsv.ts",
     "../src/lib/deriveWaypoints.ts",
@@ -28,6 +29,7 @@
     "../src/lib/overpassGeocode.ts",
     "../src/lib/resolveWaypoint.ts",
     "../src/lib/schoolAddress.ts",
-    "../src/lib/waypointCache.ts"
+    "../src/lib/waypointCache.ts",
+    "../src/lib/savedLocations.ts"
   ]
 }

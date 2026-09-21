@@ -1,7 +1,16 @@
 import { geocodeQuery } from "./geocode";
 import type { GeocodableQuery } from "./geocode";
-import { boundingBoxAround, OverpassHttpError, pickNearest, resolveIntersection } from "./overpassGeocode";
+import {
+  boundingBoxAround,
+  fetchAreaStreetNames,
+  fetchStreetNodes,
+  OverpassHttpError,
+  pickNearest,
+  resolveIntersection,
+} from "./overpassGeocode";
 import type { BoundingBox } from "./overpassGeocode";
+import { bestStreetMatch, splitStreetType, streetTypeVariants } from "./geocodeFallback";
+import type { FallbackKind } from "./geocodeFallback";
 import type { WaypointCacheEntry } from "./waypointCache";
 
 /** `geocodeQuery` only ever throws for a genuinely unexpected failure
@@ -27,6 +36,59 @@ async function safeGeocodeQuery(
       provider: "openrouteservice",
     };
   }
+}
+
+/** What actually changed to land a fallback result - GeocodeConfirmModal
+ * (EditRouteScreen.tsx) reads this to explain the match and let an
+ * admin accept or reject it before anything's persisted. Null (not
+ * this type at all) for a plain, first-try exact match - the ordinary,
+ * overwhelmingly common case, which still just saves immediately
+ * exactly as it always has (see EditRouteScreen.tsx's own
+ * onFetch/fetchLocation for where that split actually happens). */
+export interface FallbackDetail {
+  kind: FallbackKind;
+  /** The corrected road name(s) that actually resolved, as one
+   * human-readable string - a single road for "street-type"/"fuzzy-
+   * name" (whichever side of an intersection needed correcting, or an
+   * address's own street), or the one road a "loop-snap" result was
+   * placed on. */
+  correctedQuery: string;
+}
+
+/**
+ * The plain address path's own "try common street-type synonyms"
+ * fallback (point 1 of the geocoding-accuracy request this exists
+ * for) - a human-written route sheet gets a road's own type word wrong
+ * often enough ("Road" typed for what's actually "Drive") that it's
+ * worth retrying every common synonym before giving up, the same
+ * mistake StepRowEditor's own admin keeps finding and fixing by hand.
+ * Only ever retries a genuine *not-found* (ORS queried fine and came
+ * back empty) - a real HTTP error (403, rate-limited, a missing API
+ * key) means every one of these retries would fail identically, so
+ * there's nothing to gain by spending them.
+ */
+async function geocodeAddressWithFallback(
+  text: string,
+  locationContext: string,
+  apiKey: string,
+): Promise<{ entry: WaypointCacheEntry; fallback: FallbackDetail | null }> {
+  const plain = await safeGeocodeQuery({ stepId: -1, kind: "address", text }, locationContext, apiKey);
+  if (plain.status === "ok" || !plain.notFound) return { entry: plain, fallback: null };
+
+  const { base, type } = splitStreetType(text);
+  if (!type) return { entry: plain, fallback: null };
+
+  for (const variant of streetTypeVariants(base, type)) {
+    const attempt = await safeGeocodeQuery(
+      { stepId: -1, kind: "address", text: variant },
+      locationContext,
+      apiKey,
+    );
+    if (attempt.status === "ok") {
+      return { entry: attempt, fallback: { kind: "street-type", correctedQuery: variant } };
+    }
+  }
+  return { entry: plain, fallback: null };
 }
 
 /**
@@ -94,6 +156,91 @@ async function resolveIntersectionToEntry(
       provider: "overpass",
     };
   }
+}
+
+/**
+ * The intersection path's own three-stage fallback (points 2 and 3 of
+ * the geocoding-accuracy request this exists for), tried in order only
+ * once the plain exact lookup above has already failed:
+ *
+ * 1. Correct one or both road names against every real road actually
+ *    in the search box (overpassGeocode.ts's own fetchAreaStreetNames)
+ *    - a street-type-word swap or a close spelling match
+ *    (geocodeFallback.ts's own bestStreetMatch) - then retry the exact
+ *    same intersection query with whichever name(s) got corrected.
+ * 2. If that still finds no shared node (a loop/circle Overpass's own
+ *    node(w.a)(w.b) query can't resolve to one point, or the two roads
+ *    genuinely don't meet in this box's own graph), fall back to
+ *    placing the point directly on whichever road is actually
+ *    confirmed real (corrected or not), snapped to whichever of that
+ *    road's own points is closest to `near` (pickNearest, the same
+ *    tie-break an ordinary double-crossing already uses) - an
+ *    approximation along the route, not a genuine crossing, which is
+ *    exactly why this always comes back with a FallbackDetail an
+ *    admin has to confirm rather than silently saving.
+ * 3. Genuinely nothing found anywhere - hands back the original plain
+ *    failure unchanged.
+ */
+async function resolveIntersectionToEntryWithFallback(
+  query: { roadA: string; roadB: string },
+  box: BoundingBox,
+  near: { lat: number; lon: number },
+  locationContext: string,
+): Promise<{ entry: WaypointCacheEntry; fallback: FallbackDetail | null }> {
+  const plain = await resolveIntersectionToEntry(query, box, near, locationContext);
+  if (plain.status === "ok") return { entry: plain, fallback: null };
+
+  const candidates = await fetchAreaStreetNames(box);
+  if (candidates.length === 0) return { entry: plain, fallback: null };
+
+  const matchA = bestStreetMatch(query.roadA, candidates);
+  const matchB = bestStreetMatch(query.roadB, candidates);
+  const correctedA = matchA?.correctedName ?? query.roadA;
+  const correctedB = matchB?.correctedName ?? query.roadB;
+
+  if (matchA || matchB) {
+    const retried = await resolveIntersectionToEntry(
+      { roadA: correctedA, roadB: correctedB },
+      box,
+      near,
+      locationContext,
+    );
+    if (retried.status === "ok") {
+      const kind: FallbackKind =
+        matchA?.kind === "street-type" || matchB?.kind === "street-type" ? "street-type" : "fuzzy-name";
+      return { entry: retried, fallback: { kind, correctedQuery: `${correctedA} & ${correctedB}` } };
+    }
+  }
+
+  // Neither an exact nor a corrected intersection query found a shared
+  // node - place the point on whichever side is actually confirmed to
+  // exist in this box (corrected name preferred over the original,
+  // since that's the one just proven real), preferring roadB (the
+  // waypoint's own destination/cross street in every caller today,
+  // not the road already being traveled) when both sides check out.
+  const candidateLower = new Set(candidates.map((c) => c.toLowerCase()));
+  const confirmedB = matchB?.correctedName ?? (candidateLower.has(query.roadB.trim().toLowerCase()) ? query.roadB : null);
+  const confirmedA = matchA?.correctedName ?? (candidateLower.has(query.roadA.trim().toLowerCase()) ? query.roadA : null);
+  const targetName = confirmedB ?? confirmedA;
+  if (targetName) {
+    const nodes = await fetchStreetNodes(targetName, box);
+    if (nodes.length > 0) {
+      const snapped = pickNearest(nodes, near);
+      return {
+        entry: {
+          status: "ok",
+          lat: snapped.lat,
+          lon: snapped.lon,
+          displayName: `${targetName} & ${query.roadA === targetName ? query.roadB : query.roadA} (approximate)`,
+          source: plain.source,
+          provider: "overpass",
+        },
+        fallback: { kind: "loop-snap", correctedQuery: targetName },
+      };
+    }
+  }
+
+  return { entry: plain, fallback: null };
 }
 
 /** The one address-or-intersection query a caller actually has in hand
@@ -187,6 +334,74 @@ export async function lookupCoordinates(
   return resolveIntersectionToEntry(query, box, ctx.near ?? anchor, locationContext);
 }
 
+/**
+ * Same query, same context - but when the plain lookup above fails,
+ * this keeps going: common street-type-word substitution and
+ * approximate-spelling matching for both addresses and intersections,
+ * then (intersections only) a same-road "loop-snap" placement when no
+ * real intersection can be found at all. Never called for a batch
+ * fetch (scripts/geocodeRoute.ts's own pipeline, EditRouteScreen.tsx's
+ * "Fetch Missing"/"Re-fetch All") - only EditRouteScreen.tsx's own
+ * single-row Fetch button opts into this, and only ever through
+ * fetchOneLocation's own `allowFallback` flag, because every fallback
+ * result here needs a human to actually look at it (GeocodeConfirmModal)
+ * before it's trusted, which a batch has no way to pause and ask for.
+ * A caller gets `fallback: null` back for a plain exact match - the
+ * overwhelming majority of calls - so it can keep treating those
+ * exactly as it always has.
+ */
+export async function lookupCoordinatesWithFallback(
+  query: CoordinateQuery,
+  locationContext: string,
+  ctx: LookupContext = {},
+): Promise<{ entry: WaypointCacheEntry; fallback: FallbackDetail | null }> {
+  const apiKey = ctx.apiKey ?? process.env.ORS_API_KEY;
+  const source =
+    query.kind === "address" ? query.text : `${query.roadA} and ${query.roadB}, ${locationContext}`;
+  if (!apiKey) {
+    return {
+      entry: {
+        status: "error",
+        message: "ORS_API_KEY isn't configured on the server - see .env.local.example.",
+        source,
+        provider: "none",
+      },
+      fallback: null,
+    };
+  }
+
+  if (query.kind === "address") {
+    return geocodeAddressWithFallback(query.text, locationContext, apiKey);
+  }
+
+  let anchor = ctx.anchor ?? null;
+  if (!anchor) {
+    const roughAnchor = await safeGeocodeQuery(
+      { stepId: -1, kind: "address", text: locationContext },
+      locationContext,
+      apiKey,
+    );
+    if (roughAnchor.status !== "ok") {
+      return {
+        entry: {
+          status: "error",
+          message: roughAnchor.raw
+            ? `Couldn't resolve a search anchor for "${locationContext}"`
+            : `Couldn't resolve a search anchor for "${locationContext}": ${roughAnchor.message}`,
+          raw: roughAnchor.raw,
+          source,
+          provider: "overpass",
+        },
+        fallback: null,
+      };
+    }
+    anchor = { lat: roughAnchor.lat, lon: roughAnchor.lon };
+  }
+
+  const box = boundingBoxAround(anchor.lat, anchor.lon, ctx.searchRadiusDeg ?? DEFAULT_SEARCH_RADIUS_DEG);
+  return resolveIntersectionToEntryWithFallback(query, box, ctx.near ?? anchor, locationContext);
+}
+
 /** Geocodes the school's own address, for anchoring Overpass's search
  * box - reuses `cachedEntry` (an "ok" WaypointCacheEntry keyed to this
  * exact address, if the caller already has one) instead of spending a
@@ -216,6 +431,13 @@ interface AdminFetchContext {
   locationContext: string;
   apiKey: string;
   anchor: { lat: number; lon: number } | null;
+  /** Opts fetchOneLocation below into lookupCoordinatesWithFallback
+   * instead of the plain lookupCoordinates - only ever true for
+   * EditRouteScreen.tsx's own single-row Fetch button (its own
+   * fetchLocation), never for a batch call (runFetchAll, whose loop
+   * omits this) - see lookupCoordinatesWithFallback's own doc for why
+   * that split exists. */
+  allowFallback?: boolean;
 }
 
 /** Lazily resolves the school's own address as an intersection query's
@@ -276,6 +498,13 @@ export async function fetchOneLocation(
        * this under the school address's own cache key, same as
        * `entry` under the query's. */
       anchorEntry: WaypointCacheEntry | null;
+      /** Set only when `ctx.allowFallback` was true and a fallback
+       * strategy is what actually produced `entry` - null for a plain
+       * exact match, or whenever `allowFallback` wasn't set at all.
+       * The caller (EditRouteScreen.tsx's fetchLocation) holds off on
+       * persisting `entry` until an admin confirms it via
+       * GeocodeConfirmModal whenever this isn't null. */
+      fallback: FallbackDetail | null;
     }
   | { error: string; raw?: string }
 > {
@@ -283,12 +512,21 @@ export async function fetchOneLocation(
   if ("error" in anchorResult) return anchorResult;
   const { point: anchor, entry: anchorEntry } = anchorResult;
 
-  const entry = await lookupCoordinates(query, ctx.locationContext, {
-    apiKey: ctx.apiKey,
-    anchor: anchor ?? undefined,
-    near: anchor ?? undefined,
-  });
-  return { entry, anchor, anchorEntry };
+  const { entry, fallback } = ctx.allowFallback
+    ? await lookupCoordinatesWithFallback(query, ctx.locationContext, {
+        apiKey: ctx.apiKey,
+        anchor: anchor ?? undefined,
+        near: anchor ?? undefined,
+      })
+    : {
+        entry: await lookupCoordinates(query, ctx.locationContext, {
+          apiKey: ctx.apiKey,
+          anchor: anchor ?? undefined,
+          near: anchor ?? undefined,
+        }),
+        fallback: null,
+      };
+  return { entry, anchor, anchorEntry, fallback };
 }
 
 /** Resolves any one geocodable (address or intersection) query,
