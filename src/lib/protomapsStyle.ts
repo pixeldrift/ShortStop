@@ -5,10 +5,10 @@ import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
  * schema (https://docs.protomaps.com/basemaps/layers - the same schema
  * the extract mapEngine.ts's own doc comment walks through generating).
  * Roads, water, parks, building footprints, and road-name labels
- * (`roads-major-label`/`roads-minor-label` below) - the label layers'
- * own `visibility` layout property is what RouteMap.tsx's street-names
- * toggle flips at runtime (map.setLayoutProperty), not a separate
- * style swap.
+ * (`roads-major-label`/`roads-minor-label` below), always visible - an
+ * earlier version of RouteMap.tsx had a runtime toggle for these two
+ * layers' own `visibility`, removed since a driver toggling road-name
+ * labels on/off never actually proved useful.
  *
  * Kept intentionally plain/legible over decorative - this is a
  * from-scratch style, not a port of CARTO Voyager's own look (the
@@ -109,13 +109,12 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 18, 10],
         },
       },
-      // Street-name labels - RouteMap.tsx's own toggle control flips
-      // `visibility` on these two at runtime (map.setLayoutProperty),
-      // rather than there being a second style to swap to. Split
-      // major/minor (like the line layers above) so major-road names
-      // show up first while zooming in, minor ones only once the map's
-      // actually zoomed enough that MapLibre's own built-in collision
-      // detection can space them out without a cluttered jumble.
+      // Street-name labels, always visible (see this file's own top
+      // doc comment). Split major/minor (like the line layers above)
+      // so major-road names show up first while zooming in, minor ones
+      // only once the map's actually zoomed enough that MapLibre's own
+      // built-in collision detection can space them out without a
+      // cluttered jumble.
       {
         id: "roads-major-label",
         type: "symbol" as const,

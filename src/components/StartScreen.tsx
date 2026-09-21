@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ExpandableMap } from "./ExpandableMap";
+import { IconTooltip } from "./IconTooltip";
 import { RouteMap } from "./RouteMap";
 import type { StopMarker, TurnMarker } from "./RouteMap";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
@@ -22,8 +23,11 @@ import {
   XCircleIcon,
 } from "./icons";
 import { routeTitleSizeClass } from "@/lib/routeTitle";
+import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { addressWithoutZip } from "@/lib/schoolAddress";
+import { tripTypeFullLabel } from "@/lib/tripType";
 import type { NavigationStep, Route } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 /** "Published"/"Draft"/"Demo route" plus the color its own status
@@ -149,6 +153,8 @@ export function StartScreen({
    * school name/address block below is its tap target. */
   onViewSchool: (schoolName: string) => void;
 }) {
+  // Edge-swipe-right to go back - see useSwipeBack's own doc comment.
+  const swipeRef = useSwipeBack<HTMLDivElement>(onBack);
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
   const totalRiders = route.steps.reduce(
     (sum, s) => sum + (s.studentCount ?? 0),
@@ -221,7 +227,12 @@ export function StartScreen({
           bottom of the screen instead of scrolling away with a long
           route. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto pb-1">
-        <div className="flex w-full max-w-md shrink-0 items-start justify-between">
+        {/* ref here, not the whole screen - the overview map further
+            down (RouteMap, "overview" mode) has its own pan/zoom touch
+            handling, which a screen-wide edge-swipe listener would end
+            up fighting for the same gesture; this row has no competing
+            drag of its own. */}
+        <div ref={swipeRef} className="flex w-full max-w-md shrink-0 items-start justify-between">
           <button
             type="button"
             onClick={onBack}
@@ -260,21 +271,31 @@ export function StartScreen({
             >
               {(route.tripType === "pickup" ||
                 route.tripType === "dropoff") && (
-                <TripTypeIcon
-                  tripType={route.tripType}
-                  className="mt-1 h-6 w-6 shrink-0 text-zinc-900"
-                />
+                <IconTooltip
+                  label={tripTypeFullLabel(route.tripType)}
+                  className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                >
+                  <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
+                </IconTooltip>
               )}
               <span className="min-w-0">{route.routeNumber}</span>
-              {/* Solid black (zinc-900), same as TripTypeIcon beside it -
-                  this names the route's real level, it isn't a toggle
-                  that fades until picked (the other two figures still
-                  read as a lighter gray, baked into the SVG itself - see
-                  icons.tsx). */}
-              <SchoolLevelIcon
-                level={route.schoolLevel}
-                className="mt-1 h-6 w-6 shrink-0 text-zinc-900"
-              />
+              {/* Tappable (IconTooltip) only when there's a real level to
+                  name - a route with none (Route.schoolLevel's own null
+                  case, types.ts) falls back to SchoolLevelIcon's own
+                  plain map pin, which has no level to announce. */}
+              {route.schoolLevel ? (
+                <IconTooltip
+                  label={schoolLevelLabel(route.schoolLevel)}
+                  className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                >
+                  <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
+                </IconTooltip>
+              ) : (
+                <SchoolLevelIcon
+                  level={route.schoolLevel}
+                  className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                />
+              )}
             </h1>
           </div>
           {/* Balances the back button's own width so the title block
@@ -554,17 +575,27 @@ function AllStopsModal({
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-5 py-4">
           <h2 className="font-heading flex min-w-0 flex-1 items-center gap-1.5 text-xl font-black tracking-tight">
             {(route.tripType === "pickup" || route.tripType === "dropoff") && (
-              <TripTypeIcon
-                tripType={route.tripType}
-                className="h-[15px] w-[15px] shrink-0 text-zinc-900"
-              />
+              <IconTooltip
+                label={tripTypeFullLabel(route.tripType)}
+                className="h-[15px] w-[15px] shrink-0 text-blue-600"
+              >
+                <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
+              </IconTooltip>
             )}
             <span className="shrink-0">{route.routeNumber}</span>
-            {/* Both solid black - see StartScreen's own title for why. */}
-            <SchoolLevelIcon
-              level={route.schoolLevel}
-              className="h-[15px] w-[15px] shrink-0 text-zinc-900"
-            />
+            {route.schoolLevel ? (
+              <IconTooltip
+                label={schoolLevelLabel(route.schoolLevel)}
+                className="h-[15px] w-[15px] shrink-0 text-blue-600"
+              >
+                <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
+              </IconTooltip>
+            ) : (
+              <SchoolLevelIcon
+                level={route.schoolLevel}
+                className="h-[15px] w-[15px] shrink-0 text-blue-600"
+              />
+            )}
             {/* Truncated, never wrapped - a long school name would
                 otherwise push this title onto a second line, or (with
                 flex-wrap instead) wrap mid-name just as awkwardly. */}

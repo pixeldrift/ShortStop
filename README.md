@@ -161,3 +161,17 @@ Vercel value).
   of lookup `overpassGeocode.ts` already does for intersections) to
   find where these apply, then auto-inserts a real "Stop" step at that
   point the same way any other route step works.
+- Live, position-based helper info between waypoints — "Next stop in
+  300ft," "Next turn in 2 blocks," "Railroad crossing ahead in 500ft" -
+  computed on the fly from the bus's actual live GPS position against
+  the route's own road geometry, not authored into the waypoints
+  themselves the way the bus-specific auto-instructions item above is
+  (those become real, permanent route steps; this would be a runtime-
+  only overlay on StepScreen that says nothing at all until a driver's
+  live position puts it within range). Distinct enough from every other
+  roadmap item here - a genuinely different mechanism (continuous GPS
+  tracking against the road-geometry line RouteMap.tsx already fetches,
+  proximity thresholds, its own announcement/display timing so it
+  doesn't collide with a stop's own check-in announcement) - that it
+  needs its own planning pass before starting, not just picking it up
+  alongside everything else above.

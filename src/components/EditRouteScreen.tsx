@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
+import { IconTooltip } from "./IconTooltip";
 import { ScreenTransition } from "./ScreenTransition";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
@@ -77,6 +78,7 @@ import type {
   RouteResolutionCounts,
   RowResolutionStatus,
 } from "@/lib/routeResolutionStatus";
+import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { parseTimeInput } from "@/lib/time";
 import { tripTypeFullLabel } from "@/lib/tripType";
 import { waypointCacheKey } from "@/lib/waypointCache";
@@ -5077,24 +5079,33 @@ export function EditRouteScreen({
                   TripType (fieldtrip/other) skips the badge entirely -
                   those routes may not even have a morning/afternoon
                   distinction to badge, and there's no real example of
-                  one yet to design that case against. Full-opacity
-                  black (zinc-900), same as SchoolLevelIcon beside it,
-                  not the faded zinc-400 every other filter/context icon
-                  here uses - this pair names the route, it isn't a
-                  toggle that fades until picked. */}
+                  one yet to design that case against. Blue (text-blue-600,
+                  IconTooltip's own standard color - see its own doc
+                  comment), same as SchoolLevelIcon beside it and every
+                  other route-number badge across the app, tappable for a
+                  quick "what does this mean" label since the icon alone
+                  still carries no text. */}
               {routeNumber &&
                 (tripType === "pickup" || tripType === "dropoff") && (
-                  <TripTypeIcon
-                    tripType={tripType}
-                    className="h-4 w-4 text-zinc-900"
-                  />
+                  <IconTooltip
+                    label={tripTypeFullLabel(tripType)}
+                    className="h-4 w-4 text-blue-600"
+                  >
+                    <TripTypeIcon tripType={tripType} className="h-full w-full" />
+                  </IconTooltip>
                 )}
               <span className="font-heading text-lg font-black tracking-tight">
                 {routeNumber || (
                   <span className="text-zinc-400 italic">No route number</span>
                 )}
               </span>
-              <SchoolLevelIcon level={schoolLevel} className="h-4 w-4 text-zinc-900" />
+              {schoolLevel ? (
+                <IconTooltip label={schoolLevelLabel(schoolLevel)} className="h-4 w-4 text-blue-600">
+                  <SchoolLevelIcon level={schoolLevel} className="h-full w-full" />
+                </IconTooltip>
+              ) : (
+                <SchoolLevelIcon level={schoolLevel} className="h-4 w-4 text-blue-600" />
+              )}
               <span className="min-w-0 truncate text-sm font-semibold text-zinc-600">
                 {schoolName || "No school selected"}
               </span>
@@ -5487,10 +5498,12 @@ export function EditRouteScreen({
                   against. */}
               {route?.routeNumber &&
                 (tripType === "pickup" || tripType === "dropoff") && (
-                  <TripTypeIcon
-                    tripType={tripType}
-                    className="mt-1 h-6 w-6 shrink-0 text-zinc-400"
-                  />
+                  <IconTooltip
+                    label={tripTypeFullLabel(tripType)}
+                    className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                  >
+                    <TripTypeIcon tripType={tripType} className="h-full w-full" />
+                  </IconTooltip>
                 )}
               <span className="min-w-0">{route?.routeNumber ?? ""}</span>
             </h1>
