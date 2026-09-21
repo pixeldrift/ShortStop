@@ -437,7 +437,7 @@ export function StepScreen({
             vanishing into a gap first - that reads as sliding underneath
             the bar rather than just disappearing. */}
         <div
-          className="relative flex flex-1 touch-manipulation flex-col px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
+          className="flex flex-1 touch-manipulation flex-col px-3 pt-2 pb-1 landscape:min-h-0 landscape:overflow-hidden"
           onClick={() => !paused && onAdvance()}
         >
           <RouteProgressBar
@@ -448,34 +448,6 @@ export function StepScreen({
             onSeek={onSeek}
             disabled={paused}
           />
-
-          {/* Only on a real step (nothing to edit/insert at depot or
-              arrived) and never mid-pause - stopPropagation keeps a tap
-              here from also counting as the "tap anywhere to advance"
-              this whole container listens for. */}
-          {canEditWaypoints && phase === "step" && !paused && (
-            <div
-              className="absolute top-2 right-2 z-10 flex flex-col gap-1.5"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                type="button"
-                onClick={() => onEditWaypoint(false)}
-                aria-label="Edit this waypoint"
-                className="btn-glossy-light flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-zinc-900"
-              >
-                <EditIcon className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => onEditWaypoint(true)}
-                aria-label="Add a waypoint after this one"
-                className="btn-glossy-light flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-zinc-900"
-              >
-                <PlusIcon className="h-4 w-4" />
-              </button>
-            </div>
-          )}
 
           <StepTransition
             transitionKey={
@@ -490,9 +462,31 @@ export function StepScreen({
             ) : phase === "arrived" ? (
               <ArrivedContent />
             ) : isStop ? (
-              <StopContent step={step} stopNumber={stopNumber} />
+              <StopContent
+                step={step}
+                stopNumber={stopNumber}
+                editButtons={
+                  canEditWaypoints && (
+                    <WaypointEditButtons
+                      onEdit={() => onEditWaypoint(false)}
+                      onAddAfter={() => onEditWaypoint(true)}
+                      pushRight={step.sideOfRoad?.toLowerCase() === "right"}
+                    />
+                  )
+                }
+              />
             ) : (
-              <TurnContent step={step} />
+              <TurnContent
+                step={step}
+                editButtons={
+                  canEditWaypoints && (
+                    <WaypointEditButtons
+                      onEdit={() => onEditWaypoint(false)}
+                      onAddAfter={() => onEditWaypoint(true)}
+                    />
+                  )
+                }
+              />
             )}
           </StepTransition>
         </div>
@@ -636,18 +630,79 @@ function RoadNames({ subheading }: { subheading: string }) {
   );
 }
 
-function TurnContent({ step }: { step: NavigationStep }) {
+/** Floats the Edit/Add-waypoint pair off the right edge of whichever
+ * large icon StopContent/TurnContent is currently showing - previously
+ * pinned to the top-right corner of the whole step-content area (a
+ * fixed screen position, disconnected from anything the driver was
+ * actually looking at), now anchored to a `relative` wrapper around
+ * that icon instead, so it floats along with it regardless of how the
+ * surrounding content's own height (and therefore the icon's vertical
+ * centering) changes. stopPropagation keeps a tap here from also
+ * counting as the "tap anywhere to advance" the step-content area
+ * itself listens for. */
+function WaypointEditButtons({
+  onEdit,
+  onAddAfter,
+  pushRight,
+}: {
+  onEdit: () => void;
+  onAddAfter: () => void;
+  /** True only for a stop whose own "side of road" triangle
+   * (StopContent) is already floating off the icon's right edge -
+   * pushes these buttons out past it instead of landing on top of it. */
+  pushRight?: boolean;
+}) {
+  return (
+    <div
+      className={`absolute top-1/2 left-full z-10 flex -translate-y-1/2 flex-col gap-1.5 ${
+        pushRight ? "ml-9" : "ml-2"
+      }`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label="Edit this waypoint"
+        className="btn-glossy-light flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-zinc-900"
+      >
+        <EditIcon className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        onClick={onAddAfter}
+        aria-label="Add a waypoint after this one"
+        className="btn-glossy-light flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-zinc-900"
+      >
+        <PlusIcon className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+function TurnContent({
+  step,
+  editButtons,
+}: {
+  step: NavigationStep;
+  /** WaypointEditButtons, or false/undefined - floated beside whichever
+   * of the two icon shapes below is actually showing (see this
+   * component's own StopContent sibling for the identical pattern). */
+  editButtons?: React.ReactNode;
+}) {
   const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
 
   return (
     <>
       {step.direction ? (
-        <TurnArrow
-          direction={step.direction}
-          className="h-[clamp(3.25rem,12vh,8rem)] w-[clamp(3.25rem,12vh,8rem)]"
-        />
+        <div className="relative shrink-0">
+          <TurnArrow
+            direction={step.direction}
+            className="h-[clamp(3.25rem,12vh,8rem)] w-[clamp(3.25rem,12vh,8rem)]"
+          />
+          {editButtons}
+        </div>
       ) : (
-        <div className="flex flex-col items-center gap-1">
+        <div className="relative flex flex-col items-center gap-1">
           {/* Every non-Left/Right action (Continue, Proceed, Pull Over,
               Depart, Arrive, ...) used to fall back to bare text with
               no icon at all, unlike a real left/right turn's own big
@@ -659,6 +714,7 @@ function TurnContent({ step }: { step: NavigationStep }) {
           <h1 className="font-heading text-[clamp(1.25rem,4vh,2.25rem)] font-black tracking-tight">
             {step.heading}
           </h1>
+          {editButtons}
         </div>
       )}
 
@@ -686,9 +742,14 @@ function TurnContent({ step }: { step: NavigationStep }) {
 function StopContent({
   step,
   stopNumber,
+  editButtons,
 }: {
   step: NavigationStep;
   stopNumber: number | null;
+  /** WaypointEditButtons, or false/undefined - floated off the pin's own
+   * right edge, past where a "side of road" triangle (below) might
+   * already be sitting on that same side. */
+  editButtons?: React.ReactNode;
 }) {
   const subheadingRef = useFitLines<HTMLParagraphElement>(step.subheading, 2);
 
@@ -716,6 +777,7 @@ function StopContent({
             }
           />
         )}
+        {editButtons}
       </div>
 
       {step.subheading && (
