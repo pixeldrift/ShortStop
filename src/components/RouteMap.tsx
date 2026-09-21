@@ -57,11 +57,13 @@ const STREET_ZOOM = 17;
 // renderers animate them together as one motion, not a fast position
 // flight with an instant, separately-timed spin.
 const DRIVING_FLY_DURATION_MS = 1000;
-// Overview mode only shows every stop/turn once the admin has zoomed in
-// this far past the route's own auto-fit framing - below it, only the
-// first and last waypoint pins show (drawOverviewEndpoints), same as
-// driving mode's own full pin set (drawDrivingPins) reused as-is once
-// crossed.
+// Overview mode only shows numbered turn-by-turn detail (every stop's
+// own full pin, every turn's own marker) once the admin has zoomed in
+// this far past the route's own auto-fit framing - below it, the start
+// and end each still get their own full pin, but every stop between
+// them is just a plain red dot (drawOverviewPins) - same "full detail
+// once you're this close" threshold driving mode's own full pin set
+// (drawDrivingPins) reuses as-is once crossed.
 const OVERVIEW_DETAIL_ZOOM = 15;
 
 // The road-following route line's own color - deliberately lighter
@@ -108,6 +110,17 @@ function stopMarkerHtml(stopNumber: number): string {
     "</span>" +
     "</div>"
   );
+}
+
+// A stop's own zoomed-out marker (drawOverviewPins below, everything
+// between the route's start/end, which still get a real stopMarkerHtml
+// pin each) - a plain, unlabeled dot rather than the full teardrop pin,
+// so a route with a lot of stops doesn't turn into a wall of numbers at
+// a zoom level with no real room to lay them out legibly. Same red as
+// the pin's own number, so it still reads as "a stop" at a glance
+// without needing the shape itself to match too.
+function stopDotHtml(): string {
+  return '<div class="h-2.5 w-2.5 rounded-full border border-white bg-red-600 shadow-sm"></div>';
 }
 
 // A turn's own on-map marker - the same mirrored turn-arrow sign
@@ -873,15 +886,21 @@ function mountMapLibre(args: MountArgs): () => void {
               );
           }
 
-          // Just the route's two ends - every individual stop/turn pin
-          // in between is deliberately left off this zoomed-out view
-          // (drawDrivingPins below draws the full set once the admin
-          // zooms in past OVERVIEW_DETAIL_ZOOM). Reads off
-          // orderedWaypointsRef rather than stopsRef/schoolRef directly
-          // since that's already in trip order with the school spliced
-          // into whichever end tripType puts it - the same list the
-          // road-geometry request and bearing math both use.
-          function drawOverviewEndpoints() {
+          // The route's two ends get a real, numbered pin - every turn,
+          // and every stop between them, is deliberately left off this
+          // zoomed-out view (drawDrivingPins below draws the full,
+          // numbered set once the admin zooms in past
+          // OVERVIEW_DETAIL_ZOOM); an in-between stop still gets a plain
+          // dot (stopDotHtml's own doc comment has why) so the route's
+          // overall shape - roughly how many stops, and where - is still
+          // visible without the clutter, and a turn gets nothing at all,
+          // since "how many turns and where" was never the question this
+          // zoomed-out view answers. Reads off orderedWaypointsRef rather
+          // than stopsRef/schoolRef directly since that's already in
+          // trip order with the school spliced into whichever end
+          // tripType puts it - the same list the road-geometry request
+          // and bearing math both use.
+          function drawOverviewPins() {
             clearPins();
             const ordered = orderedWaypointsRef.current;
             if (ordered.length === 0) return;
@@ -893,6 +912,15 @@ function mountMapLibre(args: MountArgs): () => void {
               if (!html) continue;
               pins.push(
                 new maplibregl.Marker({ element: elementFromHtml(html), anchor: "bottom" })
+                  .setLngLat(toLngLat(point))
+                  .addTo(mapInstance),
+              );
+            }
+            for (const point of ordered.slice(1, -1)) {
+              const stop = stopsRef.current.find((s) => s.waypointKey === point.key);
+              if (!stop) continue;
+              pins.push(
+                new maplibregl.Marker({ element: elementFromHtml(stopDotHtml()), anchor: "center" })
                   .setLngLat(toLngLat(point))
                   .addTo(mapInstance),
               );
@@ -943,7 +971,7 @@ function mountMapLibre(args: MountArgs): () => void {
             if (modeRef.current === "overview") {
               overviewDetailed = mapInstance.getZoom() >= OVERVIEW_DETAIL_ZOOM;
               if (overviewDetailed) drawDrivingPins();
-              else drawOverviewEndpoints();
+              else drawOverviewPins();
               if (orderedWaypointsRef.current.length > 0) {
                 const lons = orderedWaypointsRef.current.map((w) => w.lon);
                 const lats = orderedWaypointsRef.current.map((w) => w.lat);
@@ -1011,7 +1039,7 @@ function mountMapLibre(args: MountArgs): () => void {
             if (detailed === overviewDetailed) return;
             overviewDetailed = detailed;
             if (detailed) drawDrivingPins();
-            else drawOverviewEndpoints();
+            else drawOverviewPins();
           });
         });
       });
