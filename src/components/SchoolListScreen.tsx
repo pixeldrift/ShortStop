@@ -255,12 +255,13 @@ export function SchoolListScreen({
                 onClick={() => onSelectSchool(name)}
                 className="grid w-full grid-cols-[1fr_7rem_3.5rem] items-center gap-x-1 gap-y-0.5 px-2 py-3 text-left active:bg-zinc-100"
               >
-                {/* Spans into the City column's own width (not the
-                    row's full width - Routes keeps its narrow column to
-                    the right) so a normal-length school name reads on
-                    one line instead of wrapping the way it did when
-                    squeezed into just the School column. */}
-                <span className="col-span-2 flex min-w-0 items-center gap-1 text-base font-semibold text-zinc-900">
+                {/* Full row width (all three columns), not just the
+                    School/City span - a school name never wraps to a
+                    second line now, however long; truncate below
+                    (min-w-0 on this flex row is what lets that inner
+                    span actually shrink past its content width instead
+                    of forcing the row wider). */}
+                <span className="col-span-3 flex min-w-0 items-center gap-1 text-base font-semibold text-zinc-900">
                   {/* as="span" - this row is already a <button>
                       (onSelectSchool above), so IconTooltip can't render
                       its own <button> here without nesting one
@@ -272,10 +273,7 @@ export function SchoolListScreen({
                   >
                     <SchoolLevelIcon level={info.schoolLevel} className="h-full w-full" />
                   </IconTooltip>
-                  {name}
-                </span>
-                <span className="row-span-2 self-center pl-2 text-center text-sm font-semibold text-zinc-700">
-                  {routeCounts[name] ?? 0}
+                  <span className="truncate">{name}</span>
                 </span>
                 <span className="flex min-w-0 items-center gap-1 text-xs text-zinc-500">
                   <MapPinIcon className="h-3 w-3 shrink-0 text-blue-500" />
@@ -287,6 +285,13 @@ export function SchoolListScreen({
                     not a placeholder - genuinely sortable now. */}
                 <span className="truncate pl-2 text-center text-xs text-zinc-500">
                   {cityFromAddress(info.address)}
+                </span>
+                {/* Routes - now on the same row as address/city (its own
+                    column, matching the "Routes" header directly above
+                    it) rather than spanning both rows beside the school
+                    name, now that the name has the whole row to itself. */}
+                <span className="pl-2 text-center text-sm font-semibold text-zinc-700">
+                  {routeCounts[name] ?? 0}
                 </span>
               </button>
             ))}
