@@ -287,6 +287,7 @@ export function RouteMap({
   turns = [],
   path = [],
   school,
+  schoolIsWaypoint = false,
   tripType,
   waypointsUrl,
   mode = "driving",
@@ -325,15 +326,30 @@ export function RouteMap({
    * yellow dot, since the school is where the route starts or ends,
    * never a stop a driver checks riders in/out at. Omitted (no pin) if
    * this school hasn't been geocoded yet. Also spliced into the
-   * road-geometry request below at whichever end of `path` `tripType`
-   * says it actually belongs. */
+   * road-geometry request below (drawing an actual connecting line out
+   * to it) whenever `schoolIsWaypoint` (below) says this route really
+   * goes there. */
   school?: { lat: number; lon: number } | null;
+  /** Whether this route actually visits `school` as one of its own real
+   * waypoints - true only when a route.steps row explicitly names it
+   * (a Depart/Arrive action), the same rule AllStopsModal's own
+   * explicitSchoolStepId already uses to decide whether to show a
+   * school row at all (StartScreen.tsx) - a route whose last leg is
+   * merely a spoken "Proceed to..." instruction (skip=true, never
+   * geocoded as a real step) doesn't actually drive there, so drawing
+   * a road-geometry line out to the school for it would show a drive
+   * that never happens. False (the default) draws no such line and
+   * leaves the school out of the overview map's own start/end pin
+   * pair - `school` above still gets its own pin regardless, just not
+   * connected to the rest of the route. */
+  schoolIsWaypoint?: boolean;
   /** Which end of `path` the school (above) actually belongs at when
    * building the road-geometry request - a dropoff route starts at the
    * school (school first), a pickup route ends there (school last),
    * matching AllStopsModal's own identical dropoff-first/pickup-last
    * convention for the same reason (StartScreen.tsx). Only meaningful
-   * alongside `school`; ignored if that's omitted. */
+   * alongside `school` and `schoolIsWaypoint`; ignored if either is
+   * omitted/false. */
   tripType?: TripType;
   /** The geocode cache endpoint (src/app/api/waypoints) - shared across
    * every route now that it's backed by Postgres rather than split into
@@ -403,6 +419,10 @@ export function RouteMap({
   useEffect(() => {
     schoolRef.current = school;
   }, [school]);
+  const schoolIsWaypointRef = useRef(schoolIsWaypoint);
+  useEffect(() => {
+    schoolIsWaypointRef.current = schoolIsWaypoint;
+  }, [schoolIsWaypoint]);
   const tripTypeRef = useRef(tripType);
   useEffect(() => {
     tripTypeRef.current = tripType;
@@ -463,6 +483,7 @@ export function RouteMap({
       turnsRef,
       pathRef,
       schoolRef,
+      schoolIsWaypointRef,
       tripTypeRef,
       waypointsUrlRef,
       modeRef,
@@ -498,6 +519,7 @@ interface MountArgs {
   turnsRef: React.RefObject<TurnMarker[]>;
   pathRef: React.RefObject<string[]>;
   schoolRef: React.RefObject<{ lat: number; lon: number } | null | undefined>;
+  schoolIsWaypointRef: React.RefObject<boolean>;
   tripTypeRef: React.RefObject<TripType | undefined>;
   waypointsUrlRef: React.RefObject<string>;
   modeRef: React.RefObject<"overview" | "driving">;
@@ -510,6 +532,7 @@ async function fetchCacheAndBuildOrderedWaypoints(
     MountArgs,
     | "waypointsUrlRef"
     | "schoolRef"
+    | "schoolIsWaypointRef"
     | "tripTypeRef"
     | "pathRef"
     | "cacheRef"
@@ -525,12 +548,21 @@ async function fetchCacheAndBuildOrderedWaypoints(
   if (args.cancelledRef()) return null;
   args.cacheRef.current = cache;
 
+  // The school only actually belongs in this list - and so only gets a
+  // real road-geometry line drawn out to it - when schoolIsWaypointRef
+  // says a route.steps row explicitly visits it (a Depart/Arrive
+  // action). A route whose last leg is just a spoken "Proceed to..."
+  // instruction never really drives there, so splicing it in
+  // unconditionally (the old behavior) drew a route straight from the
+  // last real stop to the school even when nothing in the route's own
+  // steps ever said to go there.
+  const includeSchool = Boolean(args.schoolRef.current) && args.schoolIsWaypointRef.current;
   const orderedWaypoints: OrderedWaypoint[] = [];
-  if (args.schoolRef.current && args.tripTypeRef.current === "dropoff") {
+  if (includeSchool && args.tripTypeRef.current === "dropoff") {
     orderedWaypoints.push({
       key: null,
-      lat: args.schoolRef.current.lat,
-      lon: args.schoolRef.current.lon,
+      lat: args.schoolRef.current!.lat,
+      lon: args.schoolRef.current!.lon,
     });
   }
   for (const key of args.pathRef.current) {
@@ -538,11 +570,11 @@ async function fetchCacheAndBuildOrderedWaypoints(
     if (!entry || entry.status !== "ok") continue;
     orderedWaypoints.push({ key, lat: entry.lat, lon: entry.lon });
   }
-  if (args.schoolRef.current && args.tripTypeRef.current !== "dropoff") {
+  if (includeSchool && args.tripTypeRef.current !== "dropoff") {
     orderedWaypoints.push({
       key: null,
-      lat: args.schoolRef.current.lat,
-      lon: args.schoolRef.current.lon,
+      lat: args.schoolRef.current!.lat,
+      lon: args.schoolRef.current!.lon,
     });
   }
   args.orderedWaypointsRef.current = orderedWaypoints;
@@ -613,6 +645,7 @@ function mountMapLibre(args: MountArgs): () => void {
     turnsRef,
     pathRef,
     schoolRef,
+    schoolIsWaypointRef,
     tripTypeRef,
     waypointsUrlRef,
     modeRef,
@@ -721,6 +754,7 @@ function mountMapLibre(args: MountArgs): () => void {
         void fetchCacheAndBuildOrderedWaypoints({
           waypointsUrlRef,
           schoolRef,
+          schoolIsWaypointRef,
           tripTypeRef,
           pathRef,
           cacheRef,

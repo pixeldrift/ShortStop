@@ -218,6 +218,15 @@ export function StartScreen({
         : null,
     [route.schoolLat, route.schoolLon],
   );
+  // Whether this route actually visits the school as one of its own
+  // real waypoints - same explicit Depart/Arrive check AllStopsModal's
+  // own explicitSchoolStepId uses below, and RouteMap's own
+  // `schoolIsWaypoint` prop doc comment has the full reasoning for why
+  // this gates the overview map's road-geometry line too.
+  const schoolIsWaypoint = useMemo(
+    () => route.steps.some((s) => s.heading === "DEPART" || s.heading === "ARRIVE"),
+    [route],
+  );
 
   return (
     <div className="flex flex-1 flex-col items-center gap-3 overflow-hidden px-6 pb-2 text-center">
@@ -426,6 +435,7 @@ export function StartScreen({
               turns={turnMarkers}
               path={routePath}
               school={schoolPoint}
+              schoolIsWaypoint={schoolIsWaypoint}
               tripType={route.tripType}
               waypointsUrl="/api/waypoints"
               mode="overview"

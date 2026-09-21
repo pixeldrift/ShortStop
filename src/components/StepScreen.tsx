@@ -274,6 +274,18 @@ export function StepScreen({
     () => (route.schoolLat != null && route.schoolLon != null ? { lat: route.schoolLat, lon: route.schoolLon } : null),
     [route.schoolLat, route.schoolLon],
   );
+  // Whether this route actually visits the school as one of its own
+  // real waypoints - true only when a route.steps row explicitly names
+  // it (a Depart/Arrive action), same rule AllStopsModal's own
+  // explicitSchoolStepId already uses (StartScreen.tsx) - passed to
+  // RouteMap so its own road-geometry line doesn't connect out to the
+  // school for a route whose last leg is just a spoken "Proceed to..."
+  // instruction that never really drives there (RouteMap's own
+  // `schoolIsWaypoint` prop doc comment has the full reasoning).
+  const schoolIsWaypoint = useMemo(
+    () => route.steps.some((s) => s.heading === "DEPART" || s.heading === "ARRIVE"),
+    [route],
+  );
   // The geocode cache, shared across every route now that it lives in
   // Postgres (see src/app/api/waypoints) rather than split into a
   // sidecar file per route - RouteMap looks its own stops up from this
@@ -354,6 +366,7 @@ export function StepScreen({
               turns={turnMarkers}
               path={routePath}
               school={schoolPoint}
+              schoolIsWaypoint={schoolIsWaypoint}
               tripType={route.tripType}
               waypointsUrl={waypointsUrl}
               mode={phase === "depot" ? "overview" : "driving"}
@@ -418,6 +431,7 @@ export function StepScreen({
             routeNumber={route.routeNumber}
             busNumber={route.busNumber}
             tripType={route.tripType}
+            schoolLevel={route.schoolLevel}
             onLogoClick={handleLogoClick}
             stopProgressNumber={stopProgressNumber}
             totalStops={totalStops}
