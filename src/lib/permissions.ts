@@ -48,25 +48,26 @@ const ADMIN_PERMISSIONS: Permissions = {
   canPublishRoutes: true,
 };
 
-const NO_PERMISSIONS: Permissions = {
-  canAccessAdmin: false,
-  canAddRoutes: false,
-  canEditRouteDetails: false,
-  canEditWaypoints: false,
-  canDeleteRoutes: false,
-  canPublishRoutes: false,
-};
-
-/** This session's own permissions - `adminMode` (page.tsx's client-side
- * Edit Mode toggle) is still the only real signal there is today, so
- * this just maps it onto the full or empty set above. A real
+/** This session's own permissions - always the full set, for this demo
+ * phase, since there's no real signed-in user to look one up for yet.
+ * Deliberately NOT keyed off `adminMode` (page.tsx's client-side Edit
+ * Mode toggle): that toggle switches RouteListScreen's own admin view
+ * (draft routes revealed, per-row publish/unpublish/delete controls,
+ * bulk selection) on and off, which is a real, deliberate before/after
+ * a demo driver still wants to control - it's a different question
+ * from "can this person reach admin features at all," which is what
+ * Permissions answers, and today always answers "yes" to. A real
  * implementation replaces this one function's body with a fetch/lookup
- * keyed off the signed-in user - every caller already reads named
- * fields off its return value, not `adminMode` directly, so nothing
- * else in the app needs to change when that happens. Returns one of
- * the two fixed constants above rather than building a fresh object
- * each call, so callers that memoize against it never see a spurious
+ * keyed off the signed-in user (taking that user as a param, in place
+ * of no params at all) - every caller already reads named fields off
+ * whatever Permissions object it hands back, never `adminMode`
+ * directly, so nothing else in the app needs to change when that
+ * happens; a role with less than everything (someone who can edit
+ * waypoints but not delete routes, say) starts working the moment this
+ * function can tell them apart, no other caller touched. Returns the
+ * one fixed constant above rather than building a fresh object each
+ * call, so callers that memoize against it never see a spurious
  * "changed" reference. */
-export function permissionsFor(adminMode: boolean): Permissions {
-  return adminMode ? ADMIN_PERMISSIONS : NO_PERMISSIONS;
+export function permissionsFor(): Permissions {
+  return ADMIN_PERMISSIONS;
 }
