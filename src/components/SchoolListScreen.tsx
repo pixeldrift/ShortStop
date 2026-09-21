@@ -10,11 +10,13 @@ import {
   SchoolIcon,
   SearchIcon,
 } from "./icons";
+import { IconTooltip } from "./IconTooltip";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
 import { cityFromAddress, streetFromAddress } from "@/lib/address";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
+import { schoolLevelLabel } from "@/lib/schoolLevel";
 import type { Route, SchoolLevel } from "@/lib/types";
 
 /** Same three school levels RouteListScreen's own SCHOOL_LEVEL_TOGGLES
@@ -253,13 +255,17 @@ export function SchoolListScreen({
                     one line instead of wrapping the way it did when
                     squeezed into just the School column. */}
                 <span className="col-span-2 flex min-w-0 items-center gap-1 text-base font-semibold text-zinc-900">
-                  {/* Solid black, not faded - this names the school's
-                      real level, unlike the filter buttons above where
-                      the same icon reads blue/gray for active/inactive. */}
-                  <SchoolLevelIcon
-                    level={info.schoolLevel}
-                    className="h-4 w-4 shrink-0 text-zinc-900"
-                  />
+                  {/* as="span" - this row is already a <button>
+                      (onSelectSchool above), so IconTooltip can't render
+                      its own <button> here without nesting one
+                      interactive element inside another. */}
+                  <IconTooltip
+                    as="span"
+                    label={schoolLevelLabel(info.schoolLevel)}
+                    className="h-4 w-4 shrink-0 text-blue-600"
+                  >
+                    <SchoolLevelIcon level={info.schoolLevel} className="h-full w-full" />
+                  </IconTooltip>
                   {name}
                 </span>
                 <span className="row-span-2 self-center pl-2 text-center text-sm font-semibold text-zinc-700">

@@ -1,6 +1,8 @@
+import { IconTooltip } from "./IconTooltip";
 import { Logo } from "./Logo";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { BackArrowIcon, PersonSolidIcon, WarningIcon } from "./icons";
+import { tripTypeFullLabel } from "@/lib/tripType";
 import type { TripType } from "@/lib/types";
 
 export function TopBar({
@@ -67,10 +69,12 @@ export function TopBar({
               that case against. */}
           <p className="font-heading relative mt-0.5 text-3xl leading-[0.7083] font-black tracking-tight">
             {(tripType === "pickup" || tripType === "dropoff") && (
-              <TripTypeIcon
-                tripType={tripType}
-                className="absolute top-1/2 right-full mr-1.5 h-[21px] w-[21px] -translate-y-1/2 text-zinc-400"
-              />
+              <IconTooltip
+                label={tripTypeFullLabel(tripType)}
+                className="absolute top-1/2 right-full mr-1.5 h-[21px] w-[21px] -translate-y-1/2 text-blue-600"
+              >
+                <TripTypeIcon tripType={tripType} className="h-full w-full" />
+              </IconTooltip>
             )}
             {routeNumber}
           </p>

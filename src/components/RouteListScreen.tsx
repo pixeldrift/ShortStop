@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
+import { IconTooltip } from "./IconTooltip";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
@@ -30,6 +31,7 @@ import {
   fetchCommittedWaypointCache,
   isRouteFullyResolved,
 } from "@/lib/routeReadiness";
+import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { parseTimeToMinutes } from "@/lib/time";
 import { TRIP_TYPE_ORDER, tripTypeFullLabel, tripTypeLabel } from "@/lib/tripType";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -713,9 +715,13 @@ export function RouteListScreen({
                   {routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => (
                     <div key={tripTypeGroup.tripType}>
                       <div className="flex items-center gap-1 py-1 pr-3 pl-5 text-sm font-semibold text-zinc-900">
+                        {/* Plain, not IconTooltip - the full label sits
+                            spelled out right beside it already, so a tap
+                            reveal would just repeat text that's already
+                            on screen. */}
                         <TripTypeIcon
                           tripType={tripTypeGroup.tripType}
-                          className="h-[18px] w-[18px] shrink-0"
+                          className="h-[18px] w-[18px] shrink-0 text-blue-600"
                         />
                         {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
                         {tripTypeFullLabel(tripTypeGroup.tripType)}
@@ -756,14 +762,36 @@ export function RouteListScreen({
                                 className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
                               >
                                 <span className="flex shrink-0 items-center gap-1">
-                                  {/* Solid black, not faded - names this
-                                      route's real level, unlike the
-                                      filter cycle button above where the
-                                      same icon reads blue/gray. */}
-                                  <SchoolLevelIcon
-                                    level={route.schoolLevel}
-                                    className="h-4 w-4 shrink-0 text-zinc-900"
-                                  />
+                                  {/* as="span" - this whole row is
+                                      already a <button> (onSelect/
+                                      onEditRoute above), so a real
+                                      nested <button> here would be
+                                      invalid HTML; IconTooltip's own
+                                      stopPropagation still keeps this
+                                      tap from also selecting/editing the
+                                      route. Tappable even though the two-
+                                      letter "ES"/"MS"/"HS" label already
+                                      sits right beside it (unlike the
+                                      group header above) - that
+                                      abbreviation still isn't the real
+                                      word. */}
+                                  {route.schoolLevel ? (
+                                    <IconTooltip
+                                      as="span"
+                                      label={schoolLevelLabel(route.schoolLevel)}
+                                      className="h-4 w-4 shrink-0 text-blue-600"
+                                    >
+                                      <SchoolLevelIcon
+                                        level={route.schoolLevel}
+                                        className="h-full w-full"
+                                      />
+                                    </IconTooltip>
+                                  ) : (
+                                    <SchoolLevelIcon
+                                      level={route.schoolLevel}
+                                      className="h-4 w-4 shrink-0 text-blue-600"
+                                    />
+                                  )}
                                   <span className="w-6 shrink-0 text-xs font-bold text-zinc-400">
                                     {SCHOOL_LEVEL_TOGGLES.find(
                                       (t) => t.value === route.schoolLevel,
@@ -986,24 +1014,40 @@ export function RouteListScreen({
                         the first place, and there's no real example of
                         one yet to design that case against. */}
                     <div className="flex items-center gap-1">
+                      {/* as="span" - this row is already a <button>
+                          (onSelect/onEditRoute above), same nested-
+                          interactive-element reasoning as the grouped
+                          view's own row (see its own IconTooltip
+                          comment). */}
                       {(route.tripType === "pickup" ||
                         route.tripType === "dropoff") && (
-                        <TripTypeIcon
-                          tripType={route.tripType}
-                          className="h-[18px] w-[18px] shrink-0 text-zinc-400"
-                        />
+                        <IconTooltip
+                          as="span"
+                          label={tripTypeFullLabel(route.tripType)}
+                          className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                        >
+                          <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
+                        </IconTooltip>
                       )}
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
                     </div>
                     <span className="flex min-w-0 items-center gap-1">
-                      {/* Solid black, not faded - see the grouped view's
-                          own row above for why. */}
-                      <SchoolLevelIcon
-                        level={route.schoolLevel}
-                        className="h-4 w-4 shrink-0 text-zinc-900"
-                      />
+                      {route.schoolLevel ? (
+                        <IconTooltip
+                          as="span"
+                          label={schoolLevelLabel(route.schoolLevel)}
+                          className="h-4 w-4 shrink-0 text-blue-600"
+                        >
+                          <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
+                        </IconTooltip>
+                      ) : (
+                        <SchoolLevelIcon
+                          level={route.schoolLevel}
+                          className="h-4 w-4 shrink-0 text-blue-600"
+                        />
+                      )}
                       <SchoolNameLabel name={route.schoolName} />
                     </span>
                     <span className="text-right text-sm font-semibold text-zinc-500">

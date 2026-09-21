@@ -306,6 +306,32 @@ body {
   animation: popup-pop 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* IconTooltip.tsx's own tap-to-reveal label (AM/PM, school level) - a
+   single fire-and-forget animation covering the whole in/hold/out cycle
+   rather than a separate mount/exiting state, since nothing here needs
+   to react to the fade actually finishing (the component just unmounts
+   the element on its own timer, set to this same duration). */
+@keyframes tooltip-fade {
+  0% {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  10% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-tooltip-fade {
+  animation: tooltip-fade 1.8s ease both;
+}
+
 /* The route list's own heading/search/table, sliding up into place the
    first time the app finishes loading (see page.tsx's own `justLoaded`)
    - the logo appears first, alone, while "Loading routes…" shows; once
