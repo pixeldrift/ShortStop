@@ -23,6 +23,7 @@ import {
   SchoolLevelsIcon,
   SearchIcon,
   TrashIcon,
+  TriangleIcon,
   WarningIcon,
 } from "./icons";
 import { cityFromAddress } from "@/lib/address";
@@ -416,6 +417,43 @@ export function RouteListScreen({
     });
   }, [filtered]);
 
+  // Which branches of groupedTree are collapsed (hidden, not removed -
+  // a collapsed branch's own routes stay in `filtered` and still count
+  // toward every filter/search result, they just aren't drawn). Two
+  // separate sets, not one shared one, since a routeNumber and a
+  // tripType key never collide in practice but keeping them apart makes
+  // each toggle only ever touch its own level. Keyed by plain strings
+  // rather than nested in `groupedTree` itself - collapse state is a
+  // pure UI preference, no reason for it to survive a re-derivation of
+  // the tree (a new search narrowing `filtered`, say) as anything other
+  // than "still collapsed if that branch still exists," which a Set
+  // already gives for free. Nothing starts collapsed - the list reads
+  // the same as before this existed until a driver actually taps a
+  // triangle.
+  const [collapsedRouteNumbers, setCollapsedRouteNumbers] = useState<Set<string>>(new Set());
+  const [collapsedTripTypeGroups, setCollapsedTripTypeGroups] = useState<Set<string>>(new Set());
+  const toggleRouteNumberGroup = (routeNumber: string) => {
+    setCollapsedRouteNumbers((prev) => {
+      const next = new Set(prev);
+      if (next.has(routeNumber)) next.delete(routeNumber);
+      else next.add(routeNumber);
+      return next;
+    });
+  };
+  // `${routeNumber}:${tripType}` - tripType alone (e.g. "pickup") would
+  // collapse every route number's AM group at once, since the same
+  // TripType values repeat across every routeNumber branch.
+  const tripTypeGroupKey = (routeNumber: string, tripType: TripType) =>
+    `${routeNumber}:${tripType}`;
+  const toggleTripTypeGroup = (key: string) => {
+    setCollapsedTripTypeGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   // The eyeball icon's own click handler - always opens the matching
   // popup immediately, published or draft, so a tap never silently
   // does something other than what tapping the eye reads as. A
@@ -700,37 +738,91 @@ export function RouteListScreen({
         >
           {grouped ? (
             <div className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto">
-              {groupedTree.map((routeNumberGroup) => (
+              {groupedTree.map((routeNumberGroup) => {
+                const routeNumberExpanded = !collapsedRouteNumbers.has(
+                  routeNumberGroup.routeNumber,
+                );
+                return (
                 <div key={routeNumberGroup.routeNumber}>
-                  <div className="px-3 py-1.5">
-                    {/* No "Route " prefix - read fine in front of a bare
-                        number, but doubles up awkwardly in front of a
-                        Special/transition route's own free-typed name
-                        ("Route Depot to Elementary"). */}
-                    <span className="font-heading text-2xl font-black tracking-tight">
-                      {routeNumberGroup.routeNumber}
-                    </span>
-                    {routeNumberGroup.city && (
-                      <span className="text-sm text-zinc-500">
-                        {" "}
-                        - {routeNumberGroup.city}
+                  {/* A button, not the old plain div - the whole row
+                      twirls its tripTypeGroups open/shut on tap, not
+                      just the triangle at its end (a triangle-only tap
+                      target would be too small to reliably hit). w-full
+                      text-left keeps this reading exactly like the
+                      static heading it replaces, and py-1 (not the old
+                      py-1.5) tightens the gap before/after each route
+                      number's own block a little, now that there's a
+                      whole extra collapsed state to visually separate
+                      one route from the next besides just the divide-y
+                      border. */}
+                  <button
+                    type="button"
+                    onClick={() => toggleRouteNumberGroup(routeNumberGroup.routeNumber)}
+                    aria-expanded={routeNumberExpanded}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-1 text-left"
+                  >
+                    <span>
+                      {/* No "Route " prefix - read fine in front of a bare
+                          number, but doubles up awkwardly in front of a
+                          Special/transition route's own free-typed name
+                          ("Route Depot to Elementary"). */}
+                      <span className="font-heading text-2xl font-black tracking-tight">
+                        {routeNumberGroup.routeNumber}
                       </span>
-                    )}
-                  </div>
-                  {routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => (
+                      {routeNumberGroup.city && (
+                        <span className="text-sm text-zinc-500">
+                          {" "}
+                          - {routeNumberGroup.city}
+                        </span>
+                      )}
+                    </span>
+                    {/* The disclosure triangle itself - right by default
+                        (pointing at the collapsed content) and rotated
+                        90deg down once expanded, the standard twirl
+                        every collapsible section on this row uses (the
+                        tripType one right below has its own, smaller,
+                        identical pair). transition-transform is what
+                        makes that a twirl rather than an instant flip. */}
+                    <TriangleIcon
+                      className={`h-4 w-4 shrink-0 text-blue-600 transition-transform duration-200 ${
+                        routeNumberExpanded ? "rotate-90" : ""
+                      }`}
+                    />
+                  </button>
+                  {routeNumberExpanded &&
+                    routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => {
+                      const tripTypeKey = tripTypeGroupKey(
+                        routeNumberGroup.routeNumber,
+                        tripTypeGroup.tripType,
+                      );
+                      const tripTypeExpanded = !collapsedTripTypeGroups.has(tripTypeKey);
+                      return (
                     <div key={tripTypeGroup.tripType}>
-                      <div className="flex items-center gap-1 py-1 pr-3 pl-5 text-sm font-semibold text-zinc-900">
-                        {/* Plain, not IconTooltip - the full label sits
-                            spelled out right beside it already, so a tap
-                            reveal would just repeat text that's already
-                            on screen. */}
-                        <TripTypeIcon
-                          tripType={tripTypeGroup.tripType}
-                          className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                      <button
+                        type="button"
+                        onClick={() => toggleTripTypeGroup(tripTypeKey)}
+                        aria-expanded={tripTypeExpanded}
+                        className="flex w-full items-center justify-between gap-1 py-1 pr-3 pl-5 text-left text-sm font-semibold text-zinc-900"
+                      >
+                        <span className="flex items-center gap-1">
+                          {/* Plain, not IconTooltip - the full label sits
+                              spelled out right beside it already, so a tap
+                              reveal would just repeat text that's already
+                              on screen. */}
+                          <TripTypeIcon
+                            tripType={tripTypeGroup.tripType}
+                            className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                          />
+                          {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
+                          {tripTypeFullLabel(tripTypeGroup.tripType)}
+                        </span>
+                        <TriangleIcon
+                          className={`h-3.5 w-3.5 shrink-0 text-blue-600 transition-transform duration-200 ${
+                            tripTypeExpanded ? "rotate-90" : ""
+                          }`}
                         />
-                        {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
-                        {tripTypeFullLabel(tripTypeGroup.tripType)}
-                      </div>
+                      </button>
+                      {tripTypeExpanded && (
                       <div className="divide-y divide-zinc-100">
                         {tripTypeGroup.routes.map((route) => {
                           const isPublished = isRoutePublished(route);
@@ -846,10 +938,13 @@ export function RouteListScreen({
                           );
                         })}
                       </div>
+                      )}
                     </div>
-                  ))}
+                      );
+                    })}
                 </div>
-              ))}
+                );
+              })}
 
               {groupedTree.length === 0 && (
                 <p className="px-2 py-6 text-center text-sm text-zinc-500">
