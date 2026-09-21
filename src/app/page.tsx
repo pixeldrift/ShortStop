@@ -264,13 +264,14 @@ export default function Home() {
   // Toggled by RouteListScreen's own "Edit Mode" link, or turned on
   // unconditionally by a route's "Edit Route" link on StartScreen -
   // reveals draft real routes on the list, dimmed, and the per-row
-  // publish/unpublish/delete controls alongside them. Defaults to true
-  // for this demo phase - there's no real authentication yet
-  // (permissions.ts's own doc comment), so every session is a "faux
-  // admin" one until that exists, rather than starting read-only and
-  // requiring a manual toggle to see any of the edit-mode features at
-  // all.
-  const [adminMode, setAdminMode] = useState(true);
+  // publish/unpublish/delete controls alongside them. Starts off - this
+  // is a deliberate before/after a demo driver still wants to control,
+  // not the same question as "can this person reach admin features at
+  // all" (permissionsFor, permissions.ts), which is always granted for
+  // this demo phase independent of this toggle - see that function's
+  // own doc comment for why the two are kept separate even though
+  // there's no real per-user distinction backing either one yet.
+  const [adminMode, setAdminMode] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -594,7 +595,7 @@ export default function Home() {
         onStartedChange={setTripStarted}
         onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
         onArrived={handleRouteArrived}
-        canEditWaypoints={permissionsFor(adminMode).canEditWaypoints}
+        canEditWaypoints={permissionsFor().canEditWaypoints}
         onEditWaypoint={(rowIndex, insertNewAfter) =>
           navigate({
             kind: "edit-route",
@@ -723,9 +724,10 @@ function RouteApp({
    * Route.nextRouteId, or an autoStart navigation into whichever route
    * that id names, if page.tsx's own `routes` still has one under it). */
   onArrived: (route: Route) => void;
-  /** permissionsFor(adminMode).canEditWaypoints, already resolved by
-   * page.tsx - passed straight through to StepScreen, which hides its
-   * own Edit/Add buttons entirely when this is false. */
+  /** permissionsFor().canEditWaypoints, already resolved by page.tsx -
+   * passed straight through to StepScreen, which hides its own Edit/Add
+   * buttons entirely when this is false (always true for now - see
+   * permissionsFor's own doc comment, permissions.ts). */
   canEditWaypoints: boolean;
   /** Opens the quick-edit detour for `currentStep` (StepScreen's own
    * Edit/Add buttons) - `rowIndex` is always currentStep.id (see
