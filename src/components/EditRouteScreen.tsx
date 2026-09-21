@@ -3733,21 +3733,32 @@ export function EditRouteScreen({
   // spliced into whichever end tripType puts it - RouteMap.tsx's own
   // orderedWaypointsRef does the same splice for the same reason (the
   // school is a real leg of the trip but never one of `waypoints`
-  // itself). PlaceCoordinatesModal's own context line reuses this list
-  // to draw the actual route while an admin is placing a pin, so a
-  // route with under two resolved points (nothing to draw a line
-  // between yet) is left as an empty array rather than a special case
-  // that component needs to know about.
+  // itself) - but, same as that ref, only when a row actually names the
+  // school with a real Depart/Arrive action (isSchoolAction, per-row
+  // above/AllStopsModal's own explicitSchoolStepId, StartScreen.tsx).
+  // A route whose last leg is just a spoken "Proceed to..." instruction
+  // (skip=true, never geocoded as a real waypoint) doesn't actually
+  // drive there, so splicing the school in unconditionally drew a line
+  // straight from the last real stop to the school even when nothing in
+  // the route actually goes there. PlaceCoordinatesModal's own context
+  // line reuses this list to draw the actual route while an admin is
+  // placing a pin, so a route with under two resolved points (nothing
+  // to draw a line between yet) is left as an empty array rather than a
+  // special case that component needs to know about.
+  const hasExplicitSchoolStep = rows.some((row) => {
+    const actionLower = row.action.toLowerCase();
+    return actionLower === "depart" || actionLower === "arrive";
+  });
   const routeContextPoints = useMemo(() => {
     const resolved = resolutionRows
       .filter((r) => r.status === "resolved")
       .map((r) => ({ lat: r.lat, lon: r.lon }));
-    if (schoolLat == null || schoolLon == null) return resolved;
+    if (schoolLat == null || schoolLon == null || !hasExplicitSchoolStep) return resolved;
     const school = { lat: schoolLat, lon: schoolLon };
     return tripType === "dropoff"
       ? [school, ...resolved]
       : [...resolved, school];
-  }, [resolutionRows, schoolLat, schoolLon, tripType]);
+  }, [resolutionRows, schoolLat, schoolLon, tripType, hasExplicitSchoolStep]);
 
   // Every Stop row's own "Stop N" number, counted straight through
   // `rows` in order rather than `visibleRowIndices` - a stop's number is
