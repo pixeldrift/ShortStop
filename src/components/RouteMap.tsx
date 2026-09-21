@@ -9,7 +9,7 @@ import type {
   Map as MapLibreMap,
   Marker as MapLibreMarker,
 } from "maplibre-gl";
-import { ActionIcon } from "./icons";
+import { ActionIcon, PersonSolidIcon } from "./icons";
 import { collapseAttribution, PMTILES_ATTRIBUTION, PMTILES_URL } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
@@ -278,6 +278,7 @@ export function RouteMap({
   waypointsUrl,
   mode = "driving",
   activeWaypointKey,
+  onToggleRoster,
 }: {
   className?: string;
   /** A pin per stop, at whatever position the geocode cache
@@ -349,6 +350,15 @@ export function RouteMap({
    * driver rather than popping in back at the overview's zoomed-out
    * framing. Ignored in overview mode. */
   activeWaypointKey?: string | null;
+  /** Adds a small button to the map's own top-left control stack (same
+   * corner as the zoom buttons, directly beneath them) that calls this
+   * when tapped - StepScreen's own manual show/hide for the rider
+   * check-in box, replacing the old street-labels toggle that used to
+   * sit in this same spot (removed outright - a driver toggling road-
+   * name labels on/off was never actually useful, per whoever asked for
+   * this swap). Omitted (no button at all) by every other caller -
+   * StartScreen's overview map has no rider box to toggle. */
+  onToggleRoster?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cacheRef = useRef<WaypointCache | null>(null);
@@ -400,6 +410,15 @@ export function RouteMap({
   useEffect(() => {
     activeWaypointKeyRef.current = activeWaypointKey;
   }, [activeWaypointKey]);
+  // Read by ShowRidersControl's own click handler (below) rather than
+  // closed over directly, so a fresh function identity every StepScreen
+  // render (its own toggleRosterManually isn't memoized) doesn't need
+  // the whole control re-added - only whether one was ever passed at all
+  // (checked once, at mount, further down) decides that.
+  const onToggleRosterRef = useRef(onToggleRoster);
+  useEffect(() => {
+    onToggleRosterRef.current = onToggleRoster;
+  }, [onToggleRoster]);
 
   // Assigned once the mount effect below has a map/cache to work with -
   // brings the current mode/active step's camera (and, in driving mode,
@@ -435,6 +454,7 @@ export function RouteMap({
       waypointsUrlRef,
       modeRef,
       activeWaypointKeyRef,
+      onToggleRosterRef,
     });
 
     return () => {
@@ -469,6 +489,7 @@ interface MountArgs {
   waypointsUrlRef: React.RefObject<string>;
   modeRef: React.RefObject<"overview" | "driving">;
   activeWaypointKeyRef: React.RefObject<string | null | undefined>;
+  onToggleRosterRef: React.RefObject<(() => void) | undefined>;
 }
 
 async function fetchCacheAndBuildOrderedWaypoints(
@@ -530,50 +551,40 @@ function toLngLat({
   return [lon, lat];
 }
 
-// The street-names toggle - a real MapLibre IControl (map.addControl)
-// rather than a plain absolutely-positioned button, so it stacks
-// automatically directly under the NavigationControl's own zoom
-// buttons the way every other control sharing "top-left" does,
-// instead of needing hand-tuned offset math to sit under them. "Aa" is
-// the same plain-text convention other map apps' own label toggles
-// use rather than a bespoke icon - active (labels showing) is full
-// dark text, inactive is the same light gray the zoom buttons' own
-// icons already use, so the toggle's own on/off state reads at a
-// glance against them.
-class StreetLabelsControl implements IControl {
-  private visible = true;
+// StepScreen's own manual rider-box toggle - a real MapLibre IControl
+// (map.addControl), same reasoning the street-labels toggle this
+// replaced already established: it stacks automatically directly under
+// the NavigationControl's own zoom buttons the way every other control
+// sharing "top-left" does, instead of needing hand-tuned offset math to
+// sit under them. Plain, un-toggled styling (no on/off color the way
+// the old control had) - this doesn't track its own visible/hidden
+// state, it just calls back out to StepScreen's own toggleRosterManually
+// on every tap, which already knows whether the box is currently open.
+class ShowRidersControl implements IControl {
   private button?: HTMLButtonElement;
 
-  constructor(private readonly onToggle: (visible: boolean) => void) {}
+  constructor(private readonly onClick: () => void) {}
 
   onAdd(): HTMLElement {
     const container = document.createElement("div");
     container.className = "maplibregl-ctrl maplibregl-ctrl-group";
     const button = document.createElement("button");
     button.type = "button";
-    button.setAttribute("aria-label", "Toggle street names");
+    button.setAttribute("aria-label", "Show riders");
     button.style.cssText =
       "width:29px;height:29px;display:flex;align-items:center;" +
-      "justify-content:center;font-family:inherit;font-weight:700;" +
-      "font-size:13px;background:none;border:none;cursor:pointer;";
-    button.textContent = "Aa";
-    button.addEventListener("click", () => {
-      this.visible = !this.visible;
-      this.render();
-      this.onToggle(this.visible);
-    });
+      "justify-content:center;background:none;border:none;cursor:pointer;color:#333;";
+    button.innerHTML = renderToStaticMarkup(
+      <PersonSolidIcon className="h-4 w-4" />,
+    );
+    button.addEventListener("click", () => this.onClick());
     this.button = button;
-    this.render();
     container.appendChild(button);
     return container;
   }
 
   onRemove(): void {
     this.button?.parentElement?.remove();
-  }
-
-  private render() {
-    if (this.button) this.button.style.color = this.visible ? "#333" : "#aaa";
   }
 }
 
@@ -593,6 +604,7 @@ function mountMapLibre(args: MountArgs): () => void {
     waypointsUrlRef,
     modeRef,
     activeWaypointKeyRef,
+    onToggleRosterRef,
   } = args;
 
   let map: MapLibreMap | undefined;
@@ -675,22 +687,15 @@ function mountMapLibre(args: MountArgs): () => void {
       // Added right after NavigationControl, same corner - MapLibre
       // stacks same-corner controls in call order, so this lands
       // directly under the zoom buttons with no manual offset math.
-      mapInstance.addControl(
-        new StreetLabelsControl((visible) => {
-          const visibility = visible ? "visible" : "none";
-          mapInstance.setLayoutProperty(
-            "roads-major-label",
-            "visibility",
-            visibility,
-          );
-          mapInstance.setLayoutProperty(
-            "roads-minor-label",
-            "visibility",
-            visibility,
-          );
-        }),
-        "top-left",
-      );
+      // Only for callers that actually passed onToggleRoster (StepScreen,
+      // when this route has any rider-tracked stop) - StartScreen's
+      // overview map gets no button at all rather than a dead one.
+      if (onToggleRosterRef.current) {
+        mapInstance.addControl(
+          new ShowRidersControl(() => onToggleRosterRef.current?.()),
+          "top-left",
+        );
+      }
 
       // addSource/addLayer (the road-geometry line, below) need the
       // style to have actually finished loading first - markers don't

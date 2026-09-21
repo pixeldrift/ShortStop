@@ -775,8 +775,6 @@ function RouteApp({
 
   const { getRoster, fillTo, addUnexpectedRider, totalOnboard } = useRiderRoster();
 
-  const expectedCount = phase === "step" ? (currentStep.studentCount ?? 0) : 0;
-
   // Same forward/backward push as page.tsx's own top-level screens
   // (List <-> Add/Edit Route/trip), applied "universally" to this
   // local start/step switch too - tapping "Start Route" always flips
@@ -814,10 +812,10 @@ function RouteApp({
         onBack();
       }}
       announcementDone={announcementDone}
-      roster={getRoster(currentStep.id, expectedCount)}
+      getRoster={getRoster}
       totalOnboard={totalOnboard}
-      onRiderTap={(index) => fillTo(currentStep.id, index, expectedCount)}
-      onAddRider={() => addUnexpectedRider(currentStep.id, expectedCount)}
+      onRiderTap={fillTo}
+      onAddRider={addUnexpectedRider}
       canEditWaypoints={canEditWaypoints}
       onEditWaypoint={(insertNewAfter) => onEditWaypoint(currentStep.id, insertNewAfter)}
     />
