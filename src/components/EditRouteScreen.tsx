@@ -5501,12 +5501,16 @@ export function EditRouteScreen({
               {/* No separate "AM"/"PM" text beside this icon
                   (TripTypeIcon.tsx's own doc says why) - vertically
                   centered against the title's full height and sized to
-                  nearly match it.
-                  Every other TripType (fieldtrip/other) skips the
-                  badge entirely - those routes may not even have a
-                  morning/afternoon distinction to badge, and there's
-                  no real example of one yet to design that case
-                  against. */}
+                  nearly match it, same icon-number-icon flex row and
+                  h-6 w-6 shrink-0 sizing as StartScreen's own identical
+                  title (this screen's "same Route N callout" - see its
+                  own doc comment just above) - schoolLevel's own icon
+                  was missing here entirely; every other place this
+                  title shows up pairs the two. Every other TripType
+                  (fieldtrip/other) skips the AM/PM badge entirely -
+                  those routes may not even have a morning/afternoon
+                  distinction to badge, and there's no real example of
+                  one yet to design that case against. */}
               {route?.routeNumber &&
                 (tripType === "pickup" || tripType === "dropoff") && (
                   <IconTooltip
@@ -5517,6 +5521,20 @@ export function EditRouteScreen({
                   </IconTooltip>
                 )}
               <span className="min-w-0">{route?.routeNumber ?? ""}</span>
+              {route?.routeNumber &&
+                (schoolLevel ? (
+                  <IconTooltip
+                    label={schoolLevelLabel(schoolLevel)}
+                    className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                  >
+                    <SchoolLevelIcon level={schoolLevel} className="h-full w-full" />
+                  </IconTooltip>
+                ) : (
+                  <SchoolLevelIcon
+                    level={schoolLevel}
+                    className="mt-1 h-6 w-6 shrink-0 text-blue-600"
+                  />
+                ))}
             </h1>
           </div>
           <span className="w-10" />

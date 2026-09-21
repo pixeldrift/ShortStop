@@ -2,7 +2,7 @@ import { IconTooltip } from "./IconTooltip";
 import { Logo } from "./Logo";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { TripTypeIcon } from "./TripTypeIcon";
-import { BackArrowIcon, PersonSolidIcon, WarningIcon } from "./icons";
+import { PersonSolidIcon, RouteIcon, WarningIcon } from "./icons";
 import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { tripTypeFullLabel } from "@/lib/tripType";
 import type { SchoolLevel, TripType } from "@/lib/types";
@@ -126,10 +126,9 @@ export function TopBar({
           each column above: items-baseline here shares one real text
           baseline across all three cells (whichever of the three sits
           lowest), which the row-1 divs' own independent stacking can't
-          give for free - "Back to Routes" carries an icon the other
-          two don't, so only true baseline alignment (not just "same
-          top" or "same bottom box edge") keeps its text sitting level
-          with them. */}
+          give for free - "Routes" carries an icon the other two don't,
+          so only true baseline alignment (not just "same top" or "same
+          bottom box edge") keeps its text sitting level with them. */}
       <div className="mt-0.5 grid w-full grid-cols-3 items-baseline">
         <p className="justify-self-start font-heading text-sm font-black tracking-wide text-zinc-600">
           Stop {stopProgressNumber} of {totalStops}
@@ -139,8 +138,8 @@ export function TopBar({
           onClick={onLogoClick}
           className="col-start-2 flex items-center justify-self-center gap-1 text-sm font-bold text-blue-600"
         >
-          <BackArrowIcon className="h-3 w-3" />
-          Back to Routes
+          <RouteIcon className="h-3.5 w-3.5" />
+          Routes
         </button>
         <div className="col-start-3 flex items-center justify-self-end gap-1 text-sm font-bold text-zinc-700">
           <PersonSolidIcon className="h-4 w-4" />
