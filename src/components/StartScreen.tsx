@@ -27,6 +27,7 @@ import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { addressWithoutZip } from "@/lib/schoolAddress";
 import { tripTypeFullLabel } from "@/lib/tripType";
 import type { NavigationStep, Route } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 /** "Published"/"Draft"/"Demo route" plus the color its own status
@@ -152,6 +153,8 @@ export function StartScreen({
    * school name/address block below is its tap target. */
   onViewSchool: (schoolName: string) => void;
 }) {
+  // Edge-swipe-right to go back - see useSwipeBack's own doc comment.
+  const swipeRef = useSwipeBack<HTMLDivElement>(onBack);
   const totalStops = route.steps.filter((s) => s.kind === "stop").length;
   const totalRiders = route.steps.reduce(
     (sum, s) => sum + (s.studentCount ?? 0),
@@ -224,7 +227,12 @@ export function StartScreen({
           bottom of the screen instead of scrolling away with a long
           route. */}
       <div className="flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto pb-1">
-        <div className="flex w-full max-w-md shrink-0 items-start justify-between">
+        {/* ref here, not the whole screen - the overview map further
+            down (RouteMap, "overview" mode) has its own pan/zoom touch
+            handling, which a screen-wide edge-swipe listener would end
+            up fighting for the same gesture; this row has no competing
+            drag of its own. */}
+        <div ref={swipeRef} className="flex w-full max-w-md shrink-0 items-start justify-between">
           <button
             type="button"
             onClick={onBack}

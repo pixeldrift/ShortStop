@@ -28,6 +28,7 @@ import { parseTimeToMinutes } from "@/lib/time";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { NavigationStep, Route, TripType } from "@/lib/types";
 
 // How close to the scheduled departure time (in minutes, either side)
@@ -108,6 +109,12 @@ export function StepScreen({
    * right after it, mirroring StepRowEditor's own onAddWaypointAfter. */
   onEditWaypoint: (insertNewAfter: boolean) => void;
 }) {
+  // Edge-swipe-right to go back - same target as the footer's own Back/
+  // Routes button below (phase === "depot" goes to the route list,
+  // otherwise one step back), and disabled the same way while paused.
+  const swipeRef = useSwipeBack<HTMLDivElement>(
+    paused ? undefined : phase === "depot" ? onLogoClick : onBack,
+  );
   // route.steps' own index of `step` - RouteProgressBar already took
   // this as `stepNumber - 1` inline; named here too since the roster-
   // view state machine below needs to compare against it in more than
@@ -490,8 +497,15 @@ export function StepScreen({
           </StepTransition>
         </div>
 
-        {/* Footer - pinned */}
+        {/* Footer - pinned. ref here (not the whole screen) - the map
+            above has its own pan/zoom touch handling, and the step
+            content above that has its own tap-to-advance/progress-bar-
+            scrub gestures, either of which a screen-wide edge-swipe
+            listener would end up fighting for the same touch; this
+            footer has no competing drag of its own, and already holds
+            the exact button (below) whose own handler this mirrors. */}
         <div
+          ref={swipeRef}
           className="flex w-full max-w-md shrink-0 items-center gap-3 self-center px-4 pt-0 pb-3"
           onClick={(e) => e.stopPropagation()}
         >

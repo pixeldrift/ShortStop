@@ -18,6 +18,7 @@ import { cityFromAddress, streetFromAddress } from "@/lib/address";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
 import { schoolLevelLabel } from "@/lib/schoolLevel";
 import type { Route, SchoolLevel } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 
 /** Same three school levels RouteListScreen's own SCHOOL_LEVEL_TOGGLES
  * filters by, here as icon buttons instead of ES/MS/HS text - shown
@@ -56,6 +57,8 @@ export function SchoolListScreen({
   onSelectSchool: (schoolName: string) => void;
   onBack: () => void;
 }) {
+  // Edge-swipe-right to go back - see useSwipeBack's own doc comment.
+  const swipeRef = useSwipeBack<HTMLDivElement>(onBack);
   const [query, setQuery] = useState("");
   const [sortField, setSortField] = useState<SchoolSortField>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -123,7 +126,10 @@ export function SchoolListScreen({
   }, [schools, query, sortField, sortDir, routeCounts, activeLevels]);
 
   return (
-    <div className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center">
+    <div
+      ref={swipeRef}
+      className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center"
+    >
       {/* Everything that can genuinely grow past the viewport (the
           school table especially) lives in this inner, scrollable
           region - the "Routes" link and copyright below stay outside

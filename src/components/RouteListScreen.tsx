@@ -35,6 +35,7 @@ import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { parseTimeToMinutes } from "@/lib/time";
 import { TRIP_TYPE_ORDER, tripTypeFullLabel, tripTypeLabel } from "@/lib/tripType";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
+import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { WaypointCache } from "@/lib/waypointCache";
 import { SortableHeader } from "./SortableHeader";
 import type { SortDir } from "./SortableHeader";
@@ -217,6 +218,9 @@ export function RouteListScreen({
    * mode). */
   onToggleFavorite: (route: Route) => void;
 }) {
+  // Edge-swipe-right to go back - a no-op (useSwipeBack's own doc
+  // comment) on the top-level route list, which has no onBack at all.
+  const swipeRef = useSwipeBack<HTMLDivElement>(onBack);
   // Only ever read when onBack is set (the school-scoped reuse) - every
   // route here already carries its own school's address (Route.schoolAddress),
   // so the school itself is the same for all of them; no separate prop
@@ -454,6 +458,7 @@ export function RouteListScreen({
 
   return (
     <div
+      ref={swipeRef}
       className="flex flex-1 flex-col items-center gap-4 overflow-hidden px-6 pb-2 text-center"
       onClick={adminMode ? handleBackgroundClick : undefined}
     >
