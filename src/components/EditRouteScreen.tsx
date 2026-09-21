@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
+import { ExpandableMap } from "./ExpandableMap";
 import { IconTooltip } from "./IconTooltip";
 import { ScreenTransition } from "./ScreenTransition";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
+import { PrintRouteSheet } from "./PrintRouteSheet";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { WaypointPreviewMap } from "./WaypointPreviewMap";
 import type { StopPin } from "./WaypointPreviewMap";
@@ -28,6 +30,7 @@ import {
   MapPinIcon,
   PersonSolidIcon,
   PlusIcon,
+  PrintIcon,
   ReverseIcon,
   RightArrowIcon,
   RoundedTriangleIcon,
@@ -1721,14 +1724,27 @@ function StepRowEditor({
           row via the prev/next arrows flies the camera to the new
           row's own point instead of jumping straight there (see
           WaypointPreviewMap's own doc comment) - tapping a stop's own
-          dot directly does the same thing, straight to that stop. */}
-            <WaypointPreviewMap
-              center={previewCenter}
-              centerStopNumber={stopNumber}
-              centerIsTurn={!isStop}
-              routeLine={routeContext}
-              stopPins={stopPins}
-              onClickPin={onClickWaypointPin}
+          dot directly does the same thing, straight to that stop.
+          ExpandableMap's own expand button in the corner (its own
+          second, independent full-screen instance) is the one part of
+          this that isn't already visible in the small inline box -
+          useful once there are enough resolved stops nearby that the
+          140px-tall preview gets crowded. */}
+            <ExpandableMap
+              className="mt-3 h-40 w-full"
+              renderMap={(mapClassName, isExpanded) => (
+                <WaypointPreviewMap
+                  className={`relative z-0 ${mapClassName} ${
+                    isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
+                  }`}
+                  center={previewCenter}
+                  centerStopNumber={stopNumber}
+                  centerIsTurn={!isStop}
+                  routeLine={routeContext}
+                  stopPins={stopPins}
+                  onClickPin={onClickWaypointPin}
+                />
+              )}
             />
 
             <div className="mt-3 flex items-center gap-2">
@@ -2120,12 +2136,20 @@ function GeocodeConfirmModal({
         </p>
 
         <div className="mt-3">
-          <WaypointPreviewMap
-            center={{ lat: entry.lat, lon: entry.lon }}
-            centerStopNumber={null}
-            centerIsTurn={false}
-            routeLine={routeLine}
-            stopPins={stopPins}
+          <ExpandableMap
+            className="h-40 w-full"
+            renderMap={(mapClassName, isExpanded) => (
+              <WaypointPreviewMap
+                className={`relative z-0 ${mapClassName} ${
+                  isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
+                }`}
+                center={{ lat: entry.lat, lon: entry.lon }}
+                centerStopNumber={null}
+                centerIsTurn={false}
+                routeLine={routeLine}
+                stopPins={stopPins}
+              />
+            )}
           />
         </div>
 
@@ -5621,11 +5645,23 @@ export function EditRouteScreen({
           })()}
 
         <div className="flex w-full max-w-md shrink-0 flex-col gap-1.5">
-          {/* A plain text link, not a button - matches RouteListScreen's
-              own "Download routes" link. Still just a flat CSV of this
-              one route's stops for now. */}
+          {/* Plain text links, not buttons - matches RouteListScreen's
+              own "Download routes" link. Download is still just a flat
+              CSV of this one route's stops for now; Print opens the
+              browser's own print dialog on PrintRouteSheet below - the
+              paper backup for a substitute driver who can't use this
+              app, not a routine way to run a route. */}
           {exportableRoute && (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-4">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                aria-label="Print this route as a paper sheet"
+                className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800"
+              >
+                <PrintIcon className="h-4 w-4" />
+                Print
+              </button>
               <button
                 type="button"
                 onClick={handleDownloadCsv}
@@ -5637,6 +5673,7 @@ export function EditRouteScreen({
               </button>
             </div>
           )}
+          {exportableRoute && <PrintRouteSheet route={exportableRoute} />}
           {message && <p className="text-sm text-zinc-500">{message}</p>}
           <div className="flex items-center gap-3">
             <button

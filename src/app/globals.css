@@ -396,3 +396,29 @@ body {
 .animate-bus-arrive {
   animation: bus-arrive 0.45s cubic-bezier(0, 0.55, 0.45, 1) both;
 }
+
+/* Printing a route (EditRouteScreen's own Print button, PrintRouteSheet.tsx)
+   - the classic "print just this one element" trick, so the printed
+   page shows only the route sheet rather than this whole single-page
+   app's own UI chrome (TopBar, buttons, the floating driver icon...).
+   Hiding everything via `visibility` (not `display: none`) keeps every
+   element's layout box in place, so .print-sheet's own `position:
+   absolute` below can reposition it to the top of the page regardless
+   of where in the app's normal flow it actually sits, without a
+   layout-driven gap of blank space above it. No other component needs
+   to know printing exists - PrintRouteSheet is the one opt-in. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible;
+  }
+  .print-sheet {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

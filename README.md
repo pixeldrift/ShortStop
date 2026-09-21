@@ -100,9 +100,12 @@ Vercel value).
 
 - Real authentication for Edit Mode — it's a client-side toggle today,
   with no login and nothing preventing a driver from reaching it.
-- Real PWA icons (`public/manifest.json` currently has none) and an
-  install prompt, so the app can live on a dashboard tablet's home
-  screen.
+- A custom "Add to Home Screen" install prompt (`beforeinstallprompt`)
+  for a dashboard tablet - `public/manifest.json` now has real icons
+  (generated from `src/app/favicon.ico`'s own mark - see
+  `public/icons/`) and an `apple-touch-icon` for iOS, so installing
+  already works via the browser's own menu; this would just make that
+  discoverable without a driver needing to know it's there.
 - Rider check-in state resets on page reload (it's in-memory only, not
   persisted).
 - GPS-based auto-advance as stops are reached, rather than only manual
@@ -140,16 +143,6 @@ Vercel value).
   Still needed: a whole-route version that runs across every gap that
   doesn't have driving instructions yet in one pass, rather than one
   compass tap per gap.
-- Reverse Route — reverses the order of a route's stops and attempts to
-  flip its turn-by-turn driving instructions to match (left/right turns
-  swapped, since the same roads driven the other way need the opposite
-  turns), so an admin can turn a morning pickup route into an afternoon
-  dropoff run (or vice versa) without re-entering every waypoint by
-  hand. The flipped instructions are only ever a starting point - the
-  UI needs to make clear the result hasn't been confirmed against the
-  real roads yet and still needs manual review before it's trusted for
-  driving, the same "draft until reviewed" caution Duplicate Route's
-  own copies already get via `status: "draft"`.
 - Desktop admin: live-edit-while-previewing navigation — a view where
   an admin can be in edit mode for a route's turn-by-turn instructions
   while simultaneously seeing them rendered the way a driver would see
