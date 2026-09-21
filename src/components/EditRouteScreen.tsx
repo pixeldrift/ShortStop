@@ -69,6 +69,7 @@ import {
   SCHOOL_ADDRESS_NOT_YET_PROVIDED,
 } from "@/lib/placeholderMeta";
 import type { SchoolInfo } from "@/lib/parseSchoolsCsv";
+import type { Permissions } from "@/lib/permissions";
 import type { SavedLocationInfo } from "@/lib/savedLocations";
 import {
   resolutionCounts,
@@ -3006,6 +3007,7 @@ export function EditRouteScreen({
   seedMeta,
   initialWaypointCache,
   schools,
+  permissions,
   initialSubScreen,
   justCreated,
   onSplitToNewRoute,
@@ -3054,6 +3056,12 @@ export function EditRouteScreen({
    * than free text, so a route's address and level are always looked
    * up here instead of typed or picked separately by an admin. */
   schools: Record<string, SchoolInfo>;
+  /** This driver's own permissions (permissions.ts) - canEditRouteDetails
+   * disables the whole Route Details form (routeDetailsForm's own
+   * fieldset) in mode "edit"; canEditWaypoints disables this screen's
+   * own waypoint-editing affordances (the Waypoints sub-screen's Add/
+   * pencil/drag controls). */
+  permissions: Permissions;
   /** `mode: "edit"` only - opens straight to the Stops and Turns screen
    * instead of the hub, for a caller (StartScreen's own View Stops
    * popup, via its pencil-to-Edit-Waypoints button) that already knows
@@ -4896,7 +4904,16 @@ export function EditRouteScreen({
   // this whole form); Bus number/Driver share a line last - least
   // important, neither means much without the other.
   const routeDetailsForm = (
-    <div
+    // A <fieldset>, not a <div> - `disabled` on it disables every real
+    // form control nested inside (every input/select in this form) in
+    // one place, rather than threading canEditRouteDetails onto each
+    // one individually. Only gated in mode "edit" - a route that
+    // doesn't exist yet (mode "add") isn't "editing route details" in
+    // the sense this permission means, it's creating a route, which
+    // canAddRoutes (RouteListScreen's own New Route button) already
+    // gates access to reaching this screen for at all.
+    <fieldset
+      disabled={mode === "edit" && !permissions.canEditRouteDetails}
       className={`w-full max-w-md rounded-2xl border p-5 text-left ${
         // Blue in edit mode - matches RouteListScreen's own admin-mode
         // box border, same "this box is live and editable" signal. Not
@@ -5097,7 +5114,7 @@ export function EditRouteScreen({
           </select>
         </Field>
       </div>
-    </div>
+    </fieldset>
   );
 
   if (mode === "add") {
@@ -5215,6 +5232,13 @@ export function EditRouteScreen({
   // mode "edit" - a small hub (the Route Details form, editable right
   // there with its own Save/Cancel, plus an "Edit Waypoints" button below)
   // by default, or the Stops and Turns screen once that's picked.
+
+  // Every row-editing affordance below (Add, pencil, drag handle) is
+  // locked while a row is already open for editing (expandedIndex) - a
+  // driver with no canEditWaypoints permission is locked out of all of
+  // them permanently, the same way, rather than a separate disabled
+  // condition duplicated at each one's own call site.
+  const rowActionsLocked = expandedIndex !== null || !permissions.canEditWaypoints;
 
   if (subScreen === "stops") {
     return (
@@ -5407,9 +5431,14 @@ export function EditRouteScreen({
               ref={stopsListRef}
               className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
             >
+              {/* canEditWaypoints locks every row-editing affordance
+                  here (Add, pencil, drag handle) the same way an
+                  already-open row's own expandedIndex already does -
+                  one combined flag rather than threading the
+                  permission through each call site's own condition. */}
               <AddStepButton
                 onClick={() => addRow(0)}
-                disabled={expandedIndex !== null}
+                disabled={rowActionsLocked}
                 dragging={dragRowIndex !== null}
                 dropTarget={dragOverIndex === 0}
               />
@@ -5445,7 +5474,7 @@ export function EditRouteScreen({
                       previousRoad={previousRoads[index] ?? null}
                       schools={schools}
                       status={waypoint ? resolutionRows[index] : undefined}
-                      locked={expandedIndex !== null}
+                      locked={rowActionsLocked}
                       onEdit={() => openRowEditor(index)}
                       onDragStart={(e) => {
                         e.currentTarget.setPointerCapture(e.pointerId);
@@ -5475,7 +5504,7 @@ export function EditRouteScreen({
                     />
                     <AddStepButton
                       onClick={() => addRow(index + 1)}
-                      disabled={expandedIndex !== null}
+                      disabled={rowActionsLocked}
                       dragging={dragRowIndex !== null}
                       dropTarget={dragOverIndex === index + 1}
                       onSplit={

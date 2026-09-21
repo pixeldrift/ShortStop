@@ -8,6 +8,9 @@ import { SchoolListScreen } from "@/components/SchoolListScreen";
 import { ScreenTransition } from "@/components/ScreenTransition";
 import { StartScreen } from "@/components/StartScreen";
 import { StepScreen } from "@/components/StepScreen";
+import { UserMenu } from "@/components/UserMenu";
+import { DEFAULT_CURRENT_USER } from "@/lib/currentUser";
+import type { CurrentUser } from "@/lib/currentUser";
 import { buildRouteFromRows } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
 import type { MasterListRoute } from "@/lib/parseRouteMasterList";
@@ -267,11 +270,19 @@ export default function Home() {
   // publish/unpublish/delete controls alongside them. Starts off - this
   // is a deliberate before/after a demo driver still wants to control,
   // not the same question as "can this person reach admin features at
-  // all" (permissionsFor, permissions.ts), which is always granted for
-  // this demo phase independent of this toggle - see that function's
-  // own doc comment for why the two are kept separate even though
-  // there's no real per-user distinction backing either one yet.
+  // all" (permissionsFor/canAccessAdmin below), which is a per-driver
+  // permission now, not something this toggle alone ever grants - see
+  // permissions.ts's own doc comment for why the two are kept separate
+  // even though there's no real per-user account system backing either
+  // one yet.
   const [adminMode, setAdminMode] = useState(false);
+  // The signed-in driver, this demo phase's own stand-in for a real
+  // account (currentUser.ts's own doc comment has the full reasoning) -
+  // UserMenu.tsx reads and edits this directly, including its own
+  // `permissions` field, which is what every permissionsFor(currentUser)
+  // call below actually gates on. Plain useState, not persisted -
+  // refreshing the page resets back to DEFAULT_CURRENT_USER.
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(DEFAULT_CURRENT_USER);
 
   useEffect(() => {
     Promise.all([
@@ -512,6 +523,12 @@ export default function Home() {
     );
   }
 
+  // This driver's own permissions, resolved once per render and handed
+  // down to every screen that gates something on one of its fields -
+  // UserMenu.tsx's own checkboxes are what actually change currentUser
+  // (and so this) from one render to the next.
+  const permissions = permissionsFor(currentUser);
+
   // Rather than each branch returning straight away, every screen's
   // own element is built into `content` first and returned once at the
   // bottom wrapped in ScreenTransition - `navigate` above is what
@@ -536,6 +553,7 @@ export default function Home() {
         initialStepsText={screen.initialStepsText}
         seedMeta={screen.seedMeta}
         schools={schools}
+        permissions={permissions}
         onCancel={goBack}
         onSave={(route, steps, cache, previousId) =>
           handleSaveRoute(route, steps, cache, true, previousId)
@@ -553,6 +571,7 @@ export default function Home() {
         initialSteps={initialSteps}
         initialWaypointCache={adminWaypointCaches[screen.route.id]}
         schools={schools}
+        permissions={permissions}
         initialSubScreen={screen.initialSubScreen}
         justCreated={screen.justCreated}
         quickEdit={
@@ -595,7 +614,7 @@ export default function Home() {
         onStartedChange={setTripStarted}
         onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
         onArrived={handleRouteArrived}
-        canEditWaypoints={permissionsFor().canEditWaypoints}
+        canEditWaypoints={permissions.canEditWaypoints}
         onEditWaypoint={(rowIndex, insertNewAfter) =>
           navigate({
             kind: "edit-route",
@@ -621,6 +640,7 @@ export default function Home() {
         title={screen.schoolName}
         onBack={goBack}
         adminMode={adminMode}
+        permissions={permissions}
         adminWaypointCaches={adminWaypointCaches}
         onToggleAdminMode={() => setAdminMode((prev) => !prev)}
         onSelect={(route) => navigate({ kind: "trip", route })}
@@ -638,6 +658,7 @@ export default function Home() {
         slideInOnMount={justLoaded}
         onViewSchools={() => navigate({ kind: "schools" })}
         adminMode={adminMode}
+        permissions={permissions}
         adminWaypointCaches={adminWaypointCaches}
         onToggleAdminMode={() => setAdminMode((prev) => !prev)}
         onSelect={(route) => navigate({ kind: "trip", route })}
@@ -652,6 +673,11 @@ export default function Home() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Same "one persistent instance, not re-rendered per screen"
+          reasoning as the pinned Logo just below - floats top-right on
+          every screen (its own fixed positioning, not this flow), so
+          it's rendered once here rather than by each screen. */}
+      <UserMenu user={currentUser} onChange={setCurrentUser} />
       {/* Rendered once here, outside ScreenTransition entirely, rather
           than by each screen component itself (RouteListScreen,
           SchoolListScreen, StartScreen, EditRouteScreen used to each

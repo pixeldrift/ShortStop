@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { IconTooltip } from "./IconTooltip";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
@@ -19,15 +19,16 @@ import {
   MapPinIcon,
   PlusIcon,
   RouteIcon,
+  RoundedTriangleIcon,
   SchoolIcon,
   SchoolLevelsIcon,
   SearchIcon,
   TrashIcon,
-  TriangleIcon,
   WarningIcon,
 } from "./icons";
 import { cityFromAddress } from "@/lib/address";
 import { downloadCsv, routeListToCsv } from "@/lib/exportCsv";
+import type { Permissions } from "@/lib/permissions";
 import {
   fetchCommittedWaypointCache,
   isRouteFullyResolved,
@@ -150,6 +151,7 @@ export function RouteListScreen({
   slideInOnMount,
   onViewSchools,
   adminMode,
+  permissions,
   adminWaypointCaches,
   onToggleAdminMode,
   onSelect,
@@ -191,6 +193,11 @@ export function RouteListScreen({
    * unconditionally by a route's own "Edit Route" link on StartScreen
    * (see page.tsx). */
   adminMode: boolean;
+  /** This driver's own permissions (permissions.ts) - gates whether
+   * Edit Mode can even be turned on at all (canAccessAdmin), and, once
+   * it is, which of its own controls (New Route, the eyeball icon,
+   * Delete) actually do anything versus just showing disabled. */
+  permissions: Permissions;
   /** This session's own fetched-coordinates overlay per route id (see
    * page.tsx) - merged on top of each route's real committed sidecar
    * cache before deciding whether activating is actually allowed
@@ -227,6 +234,16 @@ export function RouteListScreen({
   // so the school itself is the same for all of them; no separate prop
   // needed just to look one up.
   const scopedSchoolAddress = routes[0]?.schoolAddress;
+  // If Edit Mode is already on the moment this driver's own
+  // canAccessAdmin permission gets revoked (UserMenu.tsx's own
+  // checkbox, mid-session), exit it immediately rather than leaving
+  // the whole admin view showing despite the one permission that's
+  // supposed to gate reaching it at all - same "call a parent callback
+  // from an effect" pattern page.tsx's own onStartedChange mirror
+  // already uses.
+  useEffect(() => {
+    if (adminMode && !permissions.canAccessAdmin) onToggleAdminMode();
+  }, [adminMode, permissions.canAccessAdmin, onToggleAdminMode]);
   const [query, setQuery] = useState("");
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(
     null,
@@ -464,6 +481,11 @@ export function RouteListScreen({
   // stop has actually resolved yet - purely informational now (see
   // handlePublishFromModal), so it never holds up the popup opening.
   function handleEyeClick(route: Route) {
+    // canPublishRoutes gates both branches below (publish and
+    // unpublish are the same permission, just opposite directions) -
+    // both eye-icon buttons that call this are also disabled/dimmed
+    // when it's off, this is the defensive no-op behind that.
+    if (!permissions.canPublishRoutes) return;
     if (isRoutePublished(route)) {
       setConfirmRequest({ type: "deactivate", route });
       return;
@@ -488,6 +510,24 @@ export function RouteListScreen({
   function handlePublishFromModal(route: Route) {
     onSetRouteStatus(route, "published");
     setConfirmRequest(null);
+  }
+
+  // The group-level eye icon (route-number and trip-type group headers
+  // below) - publishes or unpublishes every route inside that whole
+  // group in one tap, bypassing the single-route confirm popup above
+  // (its readiness-check messaging is per-route, not useful repeated
+  // once per route in a bulk action). A group that's already fully
+  // published flips every route in it to draft; anything else
+  // (draft, mixed, demo) flips every route to published - a plain
+  // two-state toggle, same feel as the single eye icon.
+  function handleGroupEyeClick(routes: Route[]) {
+    if (!permissions.canPublishRoutes) return;
+    const nextStatus: RouteStatus = routes.every(isRoutePublished)
+      ? "draft"
+      : "published";
+    for (const route of routes) {
+      onSetRouteStatus(route, nextStatus);
+    }
   }
 
   function handleDownloadCsv() {
@@ -742,53 +782,79 @@ export function RouteListScreen({
                 const routeNumberExpanded = !collapsedRouteNumbers.has(
                   routeNumberGroup.routeNumber,
                 );
+                const routeNumberRoutes = routeNumberGroup.tripTypeGroups.flatMap(
+                  (g) => g.routes,
+                );
                 return (
                 <div key={routeNumberGroup.routeNumber}>
-                  {/* A button, not the old plain div - the whole row
-                      twirls its tripTypeGroups open/shut on tap, not
-                      just the triangle at its end (a triangle-only tap
-                      target would be too small to reliably hit). w-full
-                      text-left keeps this reading exactly like the
-                      static heading it replaces, and py-1 (not the old
-                      py-1.5) tightens the gap before/after each route
-                      number's own block a little, now that there's a
-                      whole extra collapsed state to visually separate
-                      one route from the next besides just the divide-y
-                      border. */}
-                  <button
-                    type="button"
-                    onClick={() => toggleRouteNumberGroup(routeNumberGroup.routeNumber)}
-                    aria-expanded={routeNumberExpanded}
-                    className="flex w-full items-center justify-between gap-2 px-3 py-1 text-left"
-                  >
-                    <span>
-                      {/* No "Route " prefix - read fine in front of a bare
-                          number, but doubles up awkwardly in front of a
-                          Special/transition route's own free-typed name
-                          ("Route Depot to Elementary"). */}
-                      <span className="font-heading text-2xl font-black tracking-tight">
-                        {routeNumberGroup.routeNumber}
-                      </span>
-                      {routeNumberGroup.city && (
-                        <span className="text-sm text-zinc-500">
-                          {" "}
-                          - {routeNumberGroup.city}
+                  {/* A flex row, not one single button - admin mode adds
+                      a second, independent tap target (the group-eye
+                      button below) beside the twirl, and a button can't
+                      nest inside another button. The twirl button below
+                      still covers the whole name+triangle area (not just
+                      the triangle itself, still too small to reliably
+                      hit alone) - just no longer the row's own full
+                      width once the eye button is showing beside it. */}
+                  <div className="flex w-full items-center gap-1 px-3 py-1">
+                    {/* py-1 (not the old py-1.5) tightens the gap
+                        before/after each route number's own block a
+                        little, now that there's a whole extra collapsed
+                        state to visually separate one route from the
+                        next besides just the divide-y border. */}
+                    <button
+                      type="button"
+                      onClick={() => toggleRouteNumberGroup(routeNumberGroup.routeNumber)}
+                      aria-expanded={routeNumberExpanded}
+                      className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
+                    >
+                      <span>
+                        {/* No "Route " prefix - read fine in front of a bare
+                            number, but doubles up awkwardly in front of a
+                            Special/transition route's own free-typed name
+                            ("Route Depot to Elementary"). */}
+                        <span className="font-heading text-2xl font-black tracking-tight">
+                          {routeNumberGroup.routeNumber}
                         </span>
-                      )}
-                    </span>
-                    {/* The disclosure triangle itself - right by default
-                        (pointing at the collapsed content) and rotated
-                        90deg down once expanded, the standard twirl
-                        every collapsible section on this row uses (the
-                        tripType one right below has its own, smaller,
-                        identical pair). transition-transform is what
-                        makes that a twirl rather than an instant flip. */}
-                    <TriangleIcon
-                      className={`h-4 w-4 shrink-0 text-blue-600 transition-transform duration-200 ${
-                        routeNumberExpanded ? "rotate-90" : ""
-                      }`}
-                    />
-                  </button>
+                        {routeNumberGroup.city && (
+                          <span className="text-sm text-zinc-500">
+                            {" "}
+                            - {routeNumberGroup.city}
+                          </span>
+                        )}
+                      </span>
+                      {/* The disclosure triangle itself - right by default
+                          (pointing at the collapsed content) and rotated
+                          90deg down once expanded, the standard twirl
+                          every collapsible section on this row uses (the
+                          tripType one right below has its own, smaller,
+                          identical pair). transition-transform is what
+                          makes that a twirl rather than an instant flip. */}
+                      <RoundedTriangleIcon
+                        className={`h-4 w-4 shrink-0 text-blue-600 transition-transform duration-200 ${
+                          routeNumberExpanded ? "rotate-90" : ""
+                        }`}
+                      />
+                    </button>
+                    {adminMode && (
+                      <button
+                        type="button"
+                        onClick={() => handleGroupEyeClick(routeNumberRoutes)}
+                        disabled={!permissions.canPublishRoutes}
+                        aria-label={
+                          routeNumberRoutes.every(isRoutePublished)
+                            ? `Unpublish all routes in ${routeNumberGroup.routeNumber}`
+                            : `Publish all routes in ${routeNumberGroup.routeNumber}`
+                        }
+                        className="shrink-0 p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
+                      >
+                        {routeNumberRoutes.every(isRoutePublished) ? (
+                          <EyeIcon className="h-4 w-4" />
+                        ) : (
+                          <EyeOffIcon className="h-4 w-4 text-zinc-400" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                   {routeNumberExpanded &&
                     routeNumberGroup.tripTypeGroups.map((tripTypeGroup) => {
                       const tripTypeKey = tripTypeGroupKey(
@@ -798,30 +864,51 @@ export function RouteListScreen({
                       const tripTypeExpanded = !collapsedTripTypeGroups.has(tripTypeKey);
                       return (
                     <div key={tripTypeGroup.tripType}>
-                      <button
-                        type="button"
-                        onClick={() => toggleTripTypeGroup(tripTypeKey)}
-                        aria-expanded={tripTypeExpanded}
-                        className="flex w-full items-center justify-between gap-1 py-1 pr-3 pl-5 text-left text-sm font-semibold text-zinc-900"
-                      >
-                        <span className="flex items-center gap-1">
-                          {/* Plain, not IconTooltip - the full label sits
-                              spelled out right beside it already, so a tap
-                              reveal would just repeat text that's already
-                              on screen. */}
-                          <TripTypeIcon
-                            tripType={tripTypeGroup.tripType}
-                            className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                      <div className="flex w-full items-center gap-1 py-1 pr-3 pl-5">
+                        <button
+                          type="button"
+                          onClick={() => toggleTripTypeGroup(tripTypeKey)}
+                          aria-expanded={tripTypeExpanded}
+                          className="flex min-w-0 flex-1 items-center justify-between gap-1 text-left text-sm font-semibold text-zinc-900"
+                        >
+                          <span className="flex items-center gap-1">
+                            {/* Plain, not IconTooltip - the full label sits
+                                spelled out right beside it already, so a tap
+                                reveal would just repeat text that's already
+                                on screen. */}
+                            <TripTypeIcon
+                              tripType={tripTypeGroup.tripType}
+                              className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                            />
+                            {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
+                            {tripTypeFullLabel(tripTypeGroup.tripType)}
+                          </span>
+                          <RoundedTriangleIcon
+                            className={`h-3.5 w-3.5 shrink-0 text-blue-600 transition-transform duration-200 ${
+                              tripTypeExpanded ? "rotate-90" : ""
+                            }`}
                           />
-                          {tripTypeLabel(tripTypeGroup.tripType)} -{" "}
-                          {tripTypeFullLabel(tripTypeGroup.tripType)}
-                        </span>
-                        <TriangleIcon
-                          className={`h-3.5 w-3.5 shrink-0 text-blue-600 transition-transform duration-200 ${
-                            tripTypeExpanded ? "rotate-90" : ""
-                          }`}
-                        />
-                      </button>
+                        </button>
+                        {adminMode && (
+                          <button
+                            type="button"
+                            onClick={() => handleGroupEyeClick(tripTypeGroup.routes)}
+                            disabled={!permissions.canPublishRoutes}
+                            aria-label={
+                              tripTypeGroup.routes.every(isRoutePublished)
+                                ? `Unpublish all ${tripTypeLabel(tripTypeGroup.tripType)} routes`
+                                : `Publish all ${tripTypeLabel(tripTypeGroup.tripType)} routes`
+                            }
+                            className="shrink-0 p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
+                          >
+                            {tripTypeGroup.routes.every(isRoutePublished) ? (
+                              <EyeIcon className="h-3.5 w-3.5" />
+                            ) : (
+                              <EyeOffIcon className="h-3.5 w-3.5 text-zinc-400" />
+                            )}
+                          </button>
+                        )}
+                      </div>
                       {tripTypeExpanded && (
                       <div className="divide-y divide-zinc-100">
                         {tripTypeGroup.routes.map((route) => {
@@ -904,12 +991,13 @@ export function RouteListScreen({
                                 <button
                                   type="button"
                                   onClick={() => handleEyeClick(route)}
+                                  disabled={!permissions.canPublishRoutes}
                                   aria-label={
                                     isPublished
                                       ? `Unpublish route ${route.routeNumber}`
                                       : `Publish route ${route.routeNumber}`
                                   }
-                                  className="shrink-0 p-1 text-blue-600 active:opacity-70"
+                                  className="shrink-0 p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
                                 >
                                   {isPublished ? (
                                     <EyeIcon className="h-4 w-4" />
@@ -1158,12 +1246,13 @@ export function RouteListScreen({
                     <button
                       type="button"
                       onClick={() => handleEyeClick(route)}
+                      disabled={!permissions.canPublishRoutes}
                       aria-label={
                         isPublished
                           ? `Unpublish route ${route.routeNumber}`
                           : `Publish route ${route.routeNumber}`
                       }
-                      className="justify-self-center p-1 text-blue-600 active:opacity-70"
+                      className="justify-self-center p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
                     >
                       {isPublished ? (
                         <EyeIcon className="h-4 w-4" />
@@ -1230,8 +1319,11 @@ export function RouteListScreen({
           {/* The Home Screen's own entry point (adminMode off) stays the
               small `btn-glossy` chip this used to be everywhere - a
               district-admin tool, not something that needs to compete
-              with Search/View for attention. */}
-          {!adminMode && (
+              with Search/View for attention. Gated on canAccessAdmin
+              (not just hidden vs. shown disabled) - a driver who can't
+              reach admin at all has no reason to see an entry point
+              for it sitting there. */}
+          {!adminMode && permissions.canAccessAdmin && (
             <button
               type="button"
               onClick={onToggleAdminMode}
@@ -1277,7 +1369,13 @@ export function RouteListScreen({
           <button
             type="button"
             onClick={onAddRoute}
-            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white"
+            disabled={!permissions.canAddRoutes}
+            aria-label={
+              permissions.canAddRoutes
+                ? "Add a new route"
+                : "Add a new route (your account can't create routes)"
+            }
+            className="btn-glossy-blue font-heading flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-3 text-lg font-semibold text-white disabled:opacity-40"
           >
             <PlusIcon className="h-5 w-5" />
             New Route
@@ -1327,12 +1425,21 @@ export function RouteListScreen({
               }
               confirmLabel="Publish"
               confirmIcon={<EyeIcon className="h-4 w-4" />}
-              secondaryLabel="Delete"
+              // Omitted entirely (not just disabled) when this driver
+              // can't delete routes - ConfirmModal has no notion of a
+              // disabled secondary button, and a driver with no delete
+              // permission has no reason to see the option offered at
+              // all.
+              secondaryLabel={permissions.canDeleteRoutes ? "Delete" : undefined}
               secondaryIcon={<TrashIcon className="h-4 w-4" />}
-              onSecondary={() => {
-                onDeleteRoute(confirmRequest.route);
-                setConfirmRequest(null);
-              }}
+              onSecondary={
+                permissions.canDeleteRoutes
+                  ? () => {
+                      onDeleteRoute(confirmRequest.route);
+                      setConfirmRequest(null);
+                    }
+                  : undefined
+              }
               onCancel={() => setConfirmRequest(null)}
               onConfirm={() => handlePublishFromModal(confirmRequest.route)}
             />

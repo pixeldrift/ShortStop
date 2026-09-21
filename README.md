@@ -178,3 +178,16 @@ Vercel value).
   doesn't collide with a stop's own check-in announcement) - that it
   needs its own planning pass before starting, not just picking it up
   alongside everything else above.
+- Bulk waypoint upload/update for existing routes — extend the CSV
+  upload mechanism the initial route import already uses (see Route
+  data above) so it also works against a route that already has
+  waypoints, rather than only for creating a brand-new one: bulk-add
+  new steps to an existing route via the same upload, and bulk-update
+  an existing route's waypoints via the same mechanism. The download
+  side of this would need an id column added to the exported waypoint
+  CSV (`Download Waypoints` today has no id column) so an admin can
+  edit that file and re-upload it; on upload, rows whose id matches an
+  existing waypoint would update that waypoint's data, and rows with
+  new (or blank) ids would be inserted as new waypoints. Open design
+  question from this idea, not yet answered: "Should blank cells be
+  cleared, or left alone?"

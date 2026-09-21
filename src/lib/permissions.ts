@@ -32,14 +32,14 @@ export interface Permissions {
   canPublishRoutes: boolean;
 }
 
-/** Every permission granted - this phase's own stand-in for a real
- * per-user permissions row, until real authentication exists.
- * permissionsFor (below) is the only thing that reads this constant
- * directly; every other caller in the app reads named fields off
- * whatever Permissions object that function hands back, so swapping
- * this phase's "everyone in Edit Mode gets everything" for a real
- * fetch/lookup is a change to permissionsFor alone. */
-const ADMIN_PERMISSIONS: Permissions = {
+/** Every permission granted - the initial value the driver-menu
+ * checkboxes (UserMenu.tsx) start from, and CurrentUser's own default
+ * (currentUser.ts) for a session that's never touched localStorage.
+ * Not otherwise privileged over any other Permissions object - once a
+ * driver unchecks a box, `permissionsFor` (below) hands back whatever
+ * they actually left checked, this constant included nowhere in that
+ * path. */
+export const ADMIN_PERMISSIONS: Permissions = {
   canAccessAdmin: true,
   canAddRoutes: true,
   canEditRouteDetails: true,
@@ -48,26 +48,24 @@ const ADMIN_PERMISSIONS: Permissions = {
   canPublishRoutes: true,
 };
 
-/** This session's own permissions - always the full set, for this demo
- * phase, since there's no real signed-in user to look one up for yet.
- * Deliberately NOT keyed off `adminMode` (page.tsx's client-side Edit
- * Mode toggle): that toggle switches RouteListScreen's own admin view
- * (draft routes revealed, per-row publish/unpublish/delete controls,
- * bulk selection) on and off, which is a real, deliberate before/after
- * a demo driver still wants to control - it's a different question
- * from "can this person reach admin features at all," which is what
- * Permissions answers, and today always answers "yes" to. A real
- * implementation replaces this one function's body with a fetch/lookup
- * keyed off the signed-in user (taking that user as a param, in place
- * of no params at all) - every caller already reads named fields off
- * whatever Permissions object it hands back, never `adminMode`
- * directly, so nothing else in the app needs to change when that
- * happens; a role with less than everything (someone who can edit
- * waypoints but not delete routes, say) starts working the moment this
- * function can tell them apart, no other caller touched. Returns the
- * one fixed constant above rather than building a fresh object each
- * call, so callers that memoize against it never see a spurious
- * "changed" reference. */
-export function permissionsFor(): Permissions {
-  return ADMIN_PERMISSIONS;
+/** The signed-in driver's own permissions - `user` is CurrentUser's own
+ * live, checkbox-editable state (currentUser.ts's useCurrentUser hook),
+ * this demo phase's stand-in for a real per-user row a future
+ * authentication system would look up instead. Deliberately NOT keyed
+ * off `adminMode` (page.tsx's client-side Edit Mode toggle): that
+ * toggle switches RouteListScreen's own admin view (draft routes
+ * revealed, per-row publish/unpublish/delete controls, bulk selection)
+ * on and off, which is a real, deliberate before/after a demo driver
+ * still wants to control - it's a different question from "can this
+ * person reach admin features at all" (canAccessAdmin, below), which
+ * `adminMode` used to answer unconditionally "yes" to and now genuinely
+ * depends on this same driver's own checkboxes. A real implementation
+ * replaces this one function's body with a fetch/lookup keyed off the
+ * signed-in user's real id, in place of reading `user.permissions`
+ * straight off local/localStorage state - every other caller already
+ * reads named fields off whatever Permissions object this function
+ * hands back, never `user` or `adminMode` directly, so nothing else in
+ * the app needs to change when that happens. */
+export function permissionsFor(user: { permissions: Permissions }): Permissions {
+  return user.permissions;
 }
