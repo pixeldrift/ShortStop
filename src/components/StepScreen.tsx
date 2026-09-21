@@ -418,6 +418,7 @@ export function StepScreen({
             routeNumber={route.routeNumber}
             busNumber={route.busNumber}
             tripType={route.tripType}
+            schoolLevel={route.schoolLevel}
             onLogoClick={handleLogoClick}
             stopProgressNumber={stopProgressNumber}
             totalStops={totalStops}
