@@ -50,7 +50,7 @@ import {
   waypointConnectorWord,
 } from "@/lib/parseRouteCsv";
 import type { RawRouteRow, RouteMeta } from "@/lib/parseRouteCsv";
-import { deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
+import { deriveWaypoints, deriveWaypointsWithContext } from "@/lib/deriveWaypoints";
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { GeocodableQuery } from "@/lib/geocode";
@@ -86,6 +86,7 @@ import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { GeocodeResponseBody } from "@/app/api/geocode/route";
 import type { FallbackDetail } from "@/lib/resolveWaypoint";
+import type { RoutingResult } from "@/lib/routing/types";
 
 /** A failed "Fetch"/"Fetch Missing"/"Re-fetch All" call's own error -
  * `message` is this app's own explanation, `raw` (when there is one)
@@ -1793,6 +1794,8 @@ function AddStepButton({
   dragging,
   dropTarget,
   onSplit,
+  onAutoroute,
+  autorouting,
 }: {
   onClick: () => void;
   disabled: boolean;
@@ -1804,6 +1807,21 @@ function AddStepButton({
    * nothing on the other. Only ever passed on an internal gap, between
    * two real rows. */
   onSplit?: () => void;
+  /** Runs Autoroute for this exact gap (EditRouteScreen's own
+   * handleAutoroute) - same "internal gap only" restriction as
+   * onSplit, for the same reason (there's no "other side" to route
+   * to/from at either end of the route), but its own separate prop
+   * rather than reusing onSplit's own presence to gate this button too
+   * - the two are independent capabilities a caller may or may not
+   * offer, so each gets its own gate rather than one riding along with
+   * the other's just because today's one real caller always happens to
+   * pass both together. */
+  onAutoroute?: () => void;
+  /** True only for the one gap whose own Autoroute request is
+   * in-flight - every other gap keeps its plain compass icon and stays
+   * tappable, same as Fetch/Fetch All never lock a row that isn't the
+   * one actually being fetched. */
+  autorouting?: boolean;
 }) {
   if (dragging) {
     return (
@@ -1836,46 +1854,80 @@ function AddStepButton({
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
+      {/* Two independent links, not one block gated on onSplit alone
+          (the old behavior) - onSplit and onAutoroute (see their own
+          prop doc comments) are separate capabilities, gated
+          separately even though today's one real call site always
+          offers both together. Plain blue links, not button-styled
+          boxes like Add/the rest of this screen - both are secondary,
+          occasional actions on this one dashed line, not something
+          that needs to visually compete with it the way the
+          always-relevant Add button does. */}
       {onSplit && (
-        <>
-          {/* Plain blue links, not button-styled boxes like Add/the
-              rest of this screen - split and (eventually) Autoroute are
-              both secondary, occasional actions on this one dashed
-              line, not something that needs to visually compete with
-              it the way the always-relevant Add button does. Left/right
-              of Add respectively, so a future Autoroute (compass, right)
-              reads as the equal-and-opposite counterpart to Split
-              (scissors, left) rather than crowding the same side. */}
-          <button
-            type="button"
-            onClick={onSplit}
-            disabled={disabled}
-            aria-label="Split route here"
-            className="absolute left-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
-          >
-            {/* The source art is a right-pointing (open) pair of blades -
-                unmirrored now that this sits on the left edge, so it
-                still reads as "cutting into" the line from its own
-                side (see CompassIcon just below for the mirror-image
-                case, on the right). */}
-            <ScissorsIcon className="h-3.5 w-3.5" />
-          </button>
-          {/* Autoroute itself isn't wired up yet (see the README's own
-              roadmap) - this is only here as a preview of where it'll
-              live, not a real control yet, so it deliberately has no
-              onClick of its own. */}
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label="Autoroute (coming soon)"
-            className="absolute right-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
-          >
+        <button
+          type="button"
+          onClick={onSplit}
+          disabled={disabled}
+          aria-label="Split route here"
+          className="absolute left-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+        >
+          {/* The source art is a right-pointing (open) pair of blades -
+              unmirrored now that this sits on the left edge, so it
+              still reads as "cutting into" the line from its own
+              side (see CompassIcon just below for the mirror-image
+              case, on the right). */}
+          <ScissorsIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {onAutoroute && (
+        <button
+          type="button"
+          onClick={onAutoroute}
+          disabled={disabled || autorouting}
+          aria-label="Autoroute - fill in real driving directions between these two stops"
+          className="absolute right-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+        >
+          {autorouting ? (
+            <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+          ) : (
             <CompassIcon className="h-3.5 w-3.5" />
-          </button>
-        </>
+          )}
+        </button>
       )}
     </div>
   );
+}
+
+/** ORS's own maneuver-type code (providers/openrouteservice.ts's own
+ * doc comment has the full list) turned into one of this app's own
+ * action words (StepRowEditor's Type dropdown, further down this
+ * file) - Autoroute's one real use for it, so a synthesized row reads
+ * the same as a hand-typed one. Never Depart/Arrive/Stop - those mean
+ * something specific this app already uses them for (a real stop, or
+ * naming the school) that a mid-route ORS maneuver never is;
+ * handleAutoroute below drops ORS's own boundary Depart/Arrive steps
+ * before this ever runs on them, so in practice this only ever sees a
+ * real turn. */
+function actionForManeuverType(type: number): string {
+  switch (type) {
+    case 0:
+    case 2:
+    case 4:
+      return "Left";
+    case 1:
+    case 3:
+    case 5:
+      return "Right";
+    case 9:
+      return "U-Turn";
+    default:
+      // 6 (continue straight), 7/8 (enter/exit a roundabout), 12/13
+      // (keep left/right), and anything ORS ever adds later - all read
+      // fine as a plain "Continue," with the real detail already
+      // carried in this row's own notes (the step's own instruction
+      // text).
+      return "Continue";
+  }
 }
 
 /**
@@ -3994,6 +4046,125 @@ export function EditRouteScreen({
     setDirty(true);
   }
 
+  // Which internal gap's own Autoroute request is currently in flight -
+  // a real `rows` index (splitGapIndex's own convention: the gap
+  // between rows[gapIndex - 1] and rows[gapIndex]), null the rest of
+  // the time. Only that one gap's own compass icon shows a spinner;
+  // every other gap stays a plain, tappable compass, same as Fetch/
+  // Fetch All never lock a row that isn't the one actually in flight.
+  const [autoroutingGap, setAutoroutingGap] = useState<number | null>(null);
+  // The last Autoroute attempt's own failure (or "nothing to add"
+  // outcome) - cleared the moment a new attempt starts, so a stale
+  // message from a different gap never lingers once the admin tries
+  // again elsewhere.
+  const [autorouteError, setAutorouteError] = useState<string | null>(null);
+
+  /** AddStepButton's own compass icon - fetches a real, road-following
+   * turn-by-turn route between rows[gapIndex - 1] and rows[gapIndex]
+   * (the same /api/route-geometry endpoint RouteMap.tsx's own map line
+   * already calls, just for this one two-stop leg instead of the whole
+   * route, and reading its own `steps` this time instead of only
+   * `geometry`) and splices the real turns in between straight into
+   * `rows` as their own new rows - already resolved, with the
+   * coordinate ORS itself reported for each one written directly into
+   * the waypoint cache (setCache + persistWaypoint, the same shortcut
+   * StepRowEditor's own manual-coordinate entry already uses - see
+   * onManualCoordinates), not left for a separate Fetch pass to
+   * re-derive from the text. ORS's own boundary Depart (first) and
+   * Arrive (last) steps are dropped - those describe leaving/reaching
+   * the two stops that already exist as their own rows either side of
+   * this gap, not new turns to insert. Requires both of those stops
+   * already resolved themselves (resolutionRows reflects that) - there
+   * is nothing real to route between otherwise. The result is ordinary
+   * `rows` state from here on, exactly like a hand-typed turn - nothing
+   * about it is saved until the admin hits this screen's own Save,
+   * same as every other edit here. */
+  async function handleAutoroute(gapIndex: number) {
+    const from = resolutionRows[gapIndex - 1];
+    const to = resolutionRows[gapIndex];
+    if (from?.status !== "resolved" || to?.status !== "resolved") {
+      setAutorouteError(
+        "Both stops around this gap need a resolved coordinate before Autoroute can run between them.",
+      );
+      return;
+    }
+    setAutorouteError(null);
+    setAutoroutingGap(gapIndex);
+    try {
+      const res = await fetch("/api/route-geometry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          waypoints: [
+            { lat: from.lat, lon: from.lon },
+            { lat: to.lat, lon: to.lon },
+          ],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          typeof data.error === "string" ? data.error : `HTTP ${res.status}`,
+        );
+      }
+      const result = data as RoutingResult;
+      const steps = (result.steps ?? []).slice(1, -1);
+      if (steps.length === 0) {
+        setAutorouteError("No turns needed between these two stops.");
+        return;
+      }
+
+      const newRows: RawRouteRow[] = steps.map((step) => ({
+        action: actionForManeuverType(step.type),
+        location: step.name || "Unnamed road",
+        fromLocation: "",
+        riderCount: "",
+        side: "",
+        notes: step.instruction,
+        skip: false,
+      }));
+      const updatedRows = [
+        ...rows.slice(0, gapIndex),
+        ...newRows,
+        ...rows.slice(gapIndex),
+      ];
+      setRows(updatedRows);
+      setDirty(true);
+
+      // Every new row's own WaypointQuery, derived against the *full*,
+      // already-spliced list (not each row in isolation) - the same
+      // "current road" context tracking every other row's own
+      // derivation already leans on, so a new row's key comes out
+      // exactly as it would if this had been typed and tabbed through
+      // by hand. queries[gapIndex + i] lines up with newRows[i] and
+      // steps[i] one-to-one since deriveWaypoints is a plain rows.map,
+      // stepId === row index (RawRouteRow's own doc comment).
+      const queries = deriveWaypoints(updatedRows, schoolAddress);
+      newRows.forEach((_, i) => {
+        const query = queries[gapIndex + i];
+        if (!query || query.kind === "unresolvable") return;
+        const [lon, lat] = steps[i].point;
+        const key = waypointCacheKey(query);
+        const entry: WaypointCacheEntry = {
+          status: "ok",
+          lat,
+          lon,
+          displayName: steps[i].name || steps[i].instruction,
+          source: waypointLabel(query),
+          provider: "openrouteservice",
+        };
+        setCache((prev) => ({ ...prev, [key]: entry }));
+        persistWaypoint(key, entry);
+      });
+    } catch (err) {
+      setAutorouteError(
+        err instanceof Error ? err.message : "Autoroute failed - try again.",
+      );
+    } finally {
+      setAutoroutingGap(null);
+    }
+  }
+
   function handleFileChosen(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = ""; // lets the same file be re-selected later
@@ -5213,6 +5384,17 @@ export function EditRouteScreen({
                 </button>
               )}
             </div>
+            {/* The last Autoroute attempt's own outcome, when it wasn't
+                a plain success - "nothing to add" (two stops directly
+                connected, no real turns between them) alongside a real
+                failure, so a tap on the compass icon always gets some
+                visible response rather than silently doing nothing
+                when there was nothing to insert. Not tied to any one
+                gap's own position - whichever gap it came from, the
+                message reads the same either way. */}
+            {autorouteError && (
+              <p className="px-4 pt-2 text-xs text-red-600">{autorouteError}</p>
+            )}
             {/* An "Add Step" control before the first row and after
                 every row, not just once at the bottom - a new stop or
                 turn can be dropped in anywhere along the route's real
@@ -5301,6 +5483,12 @@ export function EditRouteScreen({
                           ? () => setSplitGapIndex(index + 1)
                           : undefined
                       }
+                      onAutoroute={
+                        index + 1 < rows.length
+                          ? () => handleAutoroute(index + 1)
+                          : undefined
+                      }
+                      autorouting={autoroutingGap === index + 1}
                     />
                   </div>
                 );
