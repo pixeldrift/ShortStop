@@ -100,9 +100,12 @@ Vercel value).
 
 - Real authentication for Edit Mode — it's a client-side toggle today,
   with no login and nothing preventing a driver from reaching it.
-- Real PWA icons (`public/manifest.json` currently has none) and an
-  install prompt, so the app can live on a dashboard tablet's home
-  screen.
+- A custom "Add to Home Screen" install prompt (`beforeinstallprompt`)
+  for a dashboard tablet - `public/manifest.json` now has real icons
+  (generated from `src/app/favicon.ico`'s own mark - see
+  `public/icons/`) and an `apple-touch-icon` for iOS, so installing
+  already works via the browser's own menu; this would just make that
+  discoverable without a driver needing to know it's there.
 - Rider check-in state resets on page reload (it's in-memory only, not
   persisted).
 - GPS-based auto-advance as stops are reached, rather than only manual
