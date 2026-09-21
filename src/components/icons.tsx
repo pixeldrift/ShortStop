@@ -61,6 +61,7 @@ export { default as CopyIcon } from "./icons/copy.svg";
 export { default as ReverseIcon } from "./icons/reverse.svg";
 export { default as AddressBookIcon } from "./icons/address-book.svg";
 export { default as PauseIcon } from "./icons/pause.svg";
+export { default as PrintIcon } from "./icons/print.svg";
 
 /** A filled triangle, pointing right by default and mirrored for
  * "left" - the mirroring is a plain CSS transform forwarded onto the

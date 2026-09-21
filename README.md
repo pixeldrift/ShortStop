@@ -140,16 +140,6 @@ Vercel value).
   Still needed: a whole-route version that runs across every gap that
   doesn't have driving instructions yet in one pass, rather than one
   compass tap per gap.
-- Reverse Route — reverses the order of a route's stops and attempts to
-  flip its turn-by-turn driving instructions to match (left/right turns
-  swapped, since the same roads driven the other way need the opposite
-  turns), so an admin can turn a morning pickup route into an afternoon
-  dropoff run (or vice versa) without re-entering every waypoint by
-  hand. The flipped instructions are only ever a starting point - the
-  UI needs to make clear the result hasn't been confirmed against the
-  real roads yet and still needs manual review before it's trusted for
-  driving, the same "draft until reviewed" caution Duplicate Route's
-  own copies already get via `status: "draft"`.
 - Desktop admin: live-edit-while-previewing navigation — a view where
   an admin can be in edit mode for a route's turn-by-turn instructions
   while simultaneously seeing them rendered the way a driver would see

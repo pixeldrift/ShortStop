@@ -171,6 +171,7 @@ export function WaypointPreviewMap({
   routeLine,
   stopPins,
   onClickPin,
+  className,
 }: {
   /** This row's own current coordinate (resolved, or manually typed) -
    * StepRowEditor falls back to the same neighbor guess/default it
@@ -205,6 +206,15 @@ export function WaypointPreviewMap({
    * "open that row's editor instead," the same jump its own prev/next
    * arrows already do. */
   onClickPin?: (rowIndex: number) => void;
+  /** Full outer-wrapper className, same "caller composes it" contract
+   * as RouteMap.tsx's own className prop - defaults to this component's
+   * original fixed inline size/border when omitted, so every call site
+   * from before ExpandableMap wrapped this in still renders unchanged.
+   * ExpandableMap's own callers pass a bare `h-full w-full` (small box)
+   * or a full-bleed one (expanded), composing the border/rounded-corner
+   * treatment themselves the same way RouteMap's own ExpandableMap call
+   * sites already do. */
+  className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<PreviewMapController | null>(null);
@@ -260,7 +270,12 @@ export function WaypointPreviewMap({
   }, [stopPins]);
 
   return (
-    <div className="relative mt-3 h-40 w-full overflow-hidden rounded-2xl border border-zinc-300">
+    <div
+      className={
+        className ??
+        "relative mt-3 h-40 w-full overflow-hidden rounded-2xl border border-zinc-300"
+      }
+    >
       <div ref={containerRef} className="h-full w-full" />
     </div>
   );
