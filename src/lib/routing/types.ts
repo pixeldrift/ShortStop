@@ -25,16 +25,50 @@ export interface RouteGeometry {
   coordinates: RouteCoordinate[];
 }
 
+/** One real driving maneuver along a computed route - Autoroute's own
+ * raw material (EditRouteScreen.tsx's compass button), turned into a
+ * real RouteStep row once accepted rather than kept as a separate
+ * overlay (see README's own Autoroute roadmap entry for why that
+ * matters - it has to survive offline/no-ORS-key same as any
+ * hand-typed direction). `type` is ORS's own maneuver code - see
+ * providers/openrouteservice.ts's own doc comment for the exact
+ * mapping this app reads it by; kept as the provider's raw number
+ * here (not already translated to this app's own action vocabulary)
+ * since that translation is specific to how *this app* wants to word
+ * a maneuver, not something every RoutingResult consumer necessarily
+ * wants done for it. `point` is this maneuver's own real-world
+ * location (RouteCoordinate order, [lon, lat]) - the exact coordinate
+ * Autoroute writes into the waypoint cache for the row it becomes, no
+ * separate geocoding step needed since ORS already resolved it.
+ * `name` is the street this maneuver leads onto, ORS's own "-"
+ * placeholder normalized to "" for "no name available" (an unmarked
+ * lot, an unnamed connector) rather than a literal hyphen ever
+ * reaching a route step's own location text. */
+export interface RoutingStep {
+  type: number;
+  instruction: string;
+  name: string;
+  point: RouteCoordinate;
+}
+
 /** What a successful routing call hands back - `distanceMeters`/
  * `durationSeconds` are optional since a caller may not need them (or
  * a provider may not report them), `provider` names which one actually
  * served this result, the same "show your work" reasoning
  * WaypointCacheEntry's own `provider` field already documents for
- * geocoding. */
+ * geocoding. `steps`, when a provider reports them (every real ORS
+ * response does), is every maneuver along the way in trip order,
+ * always including the boundary Depart (first) and Arrive (last)
+ * steps ORS itself always reports for any two-point leg - a caller
+ * that only wants the real turns in between (Autoroute) drops those
+ * two itself rather than this shape guessing at that for every caller;
+ * RouteMap.tsx's own map line, the only other consumer today, ignores
+ * this field entirely. */
 export interface RoutingResult {
   geometry: RouteGeometry;
   distanceMeters?: number;
   durationSeconds?: number;
+  steps?: RoutingStep[];
   provider: string;
 }
 

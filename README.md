@@ -126,17 +126,20 @@ Vercel value).
   in the map's own top-right corner that opens a second, full-screen
   instance of the same map with an X to close it). Still needs the same
   treatment on PlaceCoordinatesModal's map and the All Stops modal's.
-- Autoroute — the UI is teed up (a compass icon sits between stops the
-  same way the scissors icon (split) already does, mirrored to the
-  left instead of the right; both are plain blue links now, not the
-  button-styled controls they used to be) but the compass isn't wired
-  to anything yet. Still needed: the actual auto-generation - a real
-  ORS routing call, not just geocoding - between any two stops, either
-  inserted between one specific pair or run across a whole route to
-  fill in every gap that doesn't have driving instructions yet. The
-  result should be editable afterward like any other waypoint, and
-  saved as real route steps (RouteStep rows), not just an on-the-fly
-  overlay - so it's still there offline, same as hand-typed directions.
+- Autoroute — the compass icon between two stops (mirroring the
+  scissors/split icon on the same dashed line) now works for that one
+  specific gap: it calls /api/route-geometry for just those two stops
+  with ORS's own `steps` (turn-by-turn maneuvers, not just the line
+  geometry RouteMap.tsx's map draws from), drops ORS's own boundary
+  Depart/Arrive steps, and splices the real turns in between into
+  `rows` as their own new rows - each one's coordinate written directly
+  into the waypoint cache from ORS's own answer (no separate geocode
+  round-trip), editable afterward like any hand-typed waypoint, and
+  only actually saved as real route steps (RouteStep rows) once the
+  admin hits this screen's own Save, same as everything else here.
+  Still needed: a whole-route version that runs across every gap that
+  doesn't have driving instructions yet in one pass, rather than one
+  compass tap per gap.
 - Reverse Route — reverses the order of a route's stops and attempts to
   flip its turn-by-turn driving instructions to match (left/right turns
   swapped, since the same roads driven the other way need the opposite
