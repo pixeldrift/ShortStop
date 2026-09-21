@@ -264,8 +264,13 @@ export default function Home() {
   // Toggled by RouteListScreen's own "Edit Mode" link, or turned on
   // unconditionally by a route's "Edit Route" link on StartScreen -
   // reveals draft real routes on the list, dimmed, and the per-row
-  // publish/unpublish/delete controls alongside them.
-  const [adminMode, setAdminMode] = useState(false);
+  // publish/unpublish/delete controls alongside them. Defaults to true
+  // for this demo phase - there's no real authentication yet
+  // (permissions.ts's own doc comment), so every session is a "faux
+  // admin" one until that exists, rather than starting read-only and
+  // requiring a manual toggle to see any of the edit-mode features at
+  // all.
+  const [adminMode, setAdminMode] = useState(true);
 
   useEffect(() => {
     Promise.all([
