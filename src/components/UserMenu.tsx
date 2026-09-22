@@ -80,20 +80,23 @@ export function UserMenu({
       {/* Fixed, not part of any one screen's own layout - floats at the
           same top-right spot on every screen that renders this at all
           (page.tsx's own showsPinnedLogo gate skips StepScreen
-          entirely - see this component's own doc comment above). z-30
-          keeps it above ordinary screen content but below any open
-          modal (most of which sit at z-20-z-40), so a modal already
-          open never has this button floating on top of it. Plain, not
-          glossy/filled - unlike the app's real action buttons, this is
-          a persistent, always-on-screen affordance, not something
-          reaching for attention - sized a notch smaller than it used
-          to be for the same reason, a quieter presence than something
-          meant to be tapped often. */}
+          entirely - see this component's own doc comment above). No
+          explicit stacking above content - z-0 keeps it behind every
+          popup in the app (the lowest of them is z-20 - see the grep of
+          "fixed inset-0 z-" across src/components), the same "sits in
+          the background, never floats over an open modal" spot the
+          pinned Logo next to it already has just by being in normal
+          document flow rather than fixed. Blue, not the neutral zinc it
+          used to be - this is a real tappable button (opens the account
+          popup), not passive chrome like the Logo it sits beside, so it
+          reads as one now the same way every other icon-button in the
+          app already does. Sized a notch smaller than it used to be, a
+          quieter presence than something meant to be tapped often. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Driver account and permissions"
-        className="fixed top-3 right-4 z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-100 active:text-zinc-600"
+        className="fixed top-3 right-4 z-0 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-blue-600 active:bg-blue-50 active:text-blue-800"
       >
         <PersonSolidIcon className="h-5 w-5" />
       </button>

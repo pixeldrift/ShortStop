@@ -57,6 +57,7 @@ import { deriveWaypoints, deriveWaypointsWithContext } from "@/lib/deriveWaypoin
 import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { GeocodableQuery } from "@/lib/geocode";
+import { useDragReorder } from "@/lib/useDragReorder";
 import {
   matchSchoolFromRows,
   parseRouteImport,
@@ -543,8 +544,6 @@ function StepRowView({
   locked,
   onEdit,
   onDragStart,
-  onDragMove,
-  onDragEnd,
 }: {
   row: RawRouteRow;
   stopNumber: number | null;
@@ -571,17 +570,12 @@ function StepRowView({
    * `draggable` attribute this used at first never fires a single drag
    * event on a touch screen (no polyfill, and this app's own real
    * device is a tablet/phone, not a mouse), so reordering silently did
-   * nothing there. Pointer Events fire identically for mouse and touch
-   * input, so the same three handlers below drive the whole gesture on
-   * either: onDragStart captures the pointer (so the handle keeps
-   * getting events even once the finger/cursor moves off its own tiny
-   * hit target), onDragMove reports the live pointer position up to
-   * EditRouteScreen so it can tell which row is currently underneath
-   * it, onDragEnd releases capture and commits whatever row that was.
-   */
+   * nothing there. This is the drag handle's own `onPointerDown` -
+   * everything past that (tracking the pointer, picking a drop gap,
+   * auto-scrolling, committing the drop) lives in useDragReorder,
+   * driven by window-level listeners rather than pointer capture on
+   * this handle - see that hook's own doc comment for why. */
   onDragStart: (e: ReactPointerEvent) => void;
-  onDragMove: (e: ReactPointerEvent) => void;
-  onDragEnd: (e: ReactPointerEvent) => void;
 }) {
   // The "View Error" popup for this row's own unresolved status
   // (status.raw below) - lets an admin see the literal geocoder
@@ -692,36 +686,12 @@ function StepRowView({
               </>
             )}
           </span>
-          {(isStop && row.riderCount) ||
-          (!issue && status?.status === "resolved") ? (
-            <span className="flex shrink-0 items-center gap-2">
-              {isStop && row.riderCount && (
-                <span className="flex items-center gap-1 text-sm text-zinc-500">
-                  <PersonSolidIcon className="h-4 w-4" />
-                  {row.riderCount} rider{row.riderCount === "1" ? "" : "s"}
-                </span>
-              )}
-              {/* Confirmed coordinates, right in line with the stop name
-                  rather than a whole line of their own below - nobody
-                  reads the actual numbers, they're just a quick "yes,
-                  this resolved" glance (ResolutionIcon's green check
-                  already carries the same meaning), so folding them into
-                  this row instead of giving them their own real estate
-                  lets more of the list show at once. Unresolved/skipped/
-                  errored rows still get their own line below (the
-                  reason/View Error text is actually worth reading, not
-                  just confirmation). */}
-              {!issue && status?.status === "resolved" && (
-                <span className="flex items-center gap-1 text-xs text-zinc-400">
-                  <ResolutionIcon
-                    status={status.status}
-                    className="h-3.5 w-3.5 shrink-0"
-                  />
-                  {status.lat.toFixed(5)}, {status.lon.toFixed(5)}
-                </span>
-              )}
+          {isStop && row.riderCount && (
+            <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
+              <PersonSolidIcon className="h-4 w-4" />
+              {row.riderCount} rider{row.riderCount === "1" ? "" : "s"}
             </span>
-          ) : null}
+          )}
         </div>
         <p className="truncate text-zinc-700">
           {subheading || (
@@ -739,15 +709,16 @@ function StepRowView({
             {issue}
           </p>
         ) : (
-          /* The row's own real geocoding outcome, for every status
-             except "resolved" - that one now shows inline with the stop
-             name above (title row's own coordinates span) instead of a
-             whole line here, since a green check + coordinates is just
-             a glance-confirmation nobody actually reads the numbers of.
-             The specific miss/error reason still gets its own line
-             (genuinely worth reading), same for "- Instructions Only -"
-             for a row deriveWaypoints.ts flagged as never needing a
-             location at all (a driver instruction, not a real road). */
+          /* A resolved row shows nothing here at all - no coordinates,
+             no green check - a plain list of stops isn't the place to
+             confirm every success, only to flag what still needs
+             attention. "skipped" still gets its own line ("Instructions
+             Only" - a row deriveWaypoints.ts flagged as never needing a
+             location, a driver instruction rather than a real road,
+             worth knowing it's intentional rather than unresolved), and
+             "unresolved" gets the actual miss/error reason - the one
+             case a driver or admin genuinely needs to notice and act
+             on. */
           status &&
           status.status !== "resolved" && (
             <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
@@ -808,9 +779,6 @@ function StepRowView({
         </button>
         <span
           onPointerDown={locked ? undefined : onDragStart}
-          onPointerMove={locked ? undefined : onDragMove}
-          onPointerUp={locked ? undefined : onDragEnd}
-          onPointerCancel={locked ? undefined : onDragEnd}
           aria-label={isStop ? `Reorder stop ${stopNumber}` : "Reorder turn"}
           role="button"
           style={{ touchAction: "none" }}
@@ -3574,17 +3542,6 @@ export function EditRouteScreen({
     next.splice(quickEdit.rowIndex + 1, 0, BLANK_ROW);
     return next;
   });
-  // Which row (a real index into `rows`, not the filtered
-  // `visibleRowIndices` position) a drag-handle-initiated reorder
-  // started from - null whenever nothing's being dragged. See
-  // handleReorderRow below for what a drop actually does with it.
-  // dragOverIndex tracks whichever row the pointer is currently over
-  // mid-drag (updated from document.elementFromPoint on every
-  // pointermove, since Pointer Capture keeps routing move/up events to
-  // the handle itself regardless of where the finger/cursor actually
-  // is) - that's what a release actually reorders to.
-  const [dragRowIndex, setDragRowIndex] = useState<number | null>(null);
-  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   // Defaults to off (showing every turn) here - unlike StartScreen's
   // own "View All Stops," which defaults to stops-only - reviewing a
   // route for editing is exactly when seeing every turn in its real
@@ -5238,6 +5195,22 @@ export function EditRouteScreen({
         !showUnverifiedOnly || resolutionRows[index]?.status === "unresolved",
     );
 
+  // Custom drag-to-reorder (see useDragReorder's own doc comment for
+  // why this replaced the old elementFromPoint/setPointerCapture
+  // approach) - called unconditionally here, before mode "add"'s own
+  // early return below, same as every other hook in this component.
+  // `disabled` mirrors rowActionsLocked's own condition (defined later,
+  // only reachable from the "stops" subScreen this drag only ever
+  // renders in) rather than that variable itself, so this call doesn't
+  // have to move past that early return to use it.
+  const dragReorder = useDragReorder({
+    visibleIndices: visibleRowIndices,
+    count: rows.length,
+    onReorder: handleReorderRow,
+    scrollContainerRef: stopsListRef,
+    disabled: expandedIndex !== null || !permissions.canEditWaypoints,
+  });
+
   // "Jump to next unverified"'s own target list - every *currently
   // visible* unresolved row (so it never lands on one hidden by "Stops
   // only" being on), independent of "Unverified only" itself (that
@@ -5834,7 +5807,15 @@ export function EditRouteScreen({
                 either end or not. */}
             <div
               ref={stopsListRef}
-              className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+              // select-none only while a row's actually being dragged -
+              // a mouse drag's own path crosses right over other rows'
+              // text on its way to wherever it's headed, and without
+              // this the browser reads that as an ordinary text
+              // selection drag, highlighting everything the pointer
+              // passes over the whole time.
+              className={`min-h-0 flex-1 overflow-y-auto px-4 py-3 ${
+                dragReorder.draggingIndex !== null ? "select-none" : ""
+              }`}
             >
               {/* canEditWaypoints locks every row-editing affordance
                   here (Add, pencil, drag handle) the same way an
@@ -5844,8 +5825,8 @@ export function EditRouteScreen({
               <AddStepButton
                 onClick={() => addRow(0)}
                 disabled={rowActionsLocked}
-                dragging={dragRowIndex !== null}
-                dropTarget={dragOverIndex === 0}
+                dragging={dragReorder.draggingIndex !== null}
+                dropTarget={dragReorder.dropGap === 0}
               />
               {visibleRowIndices.map((index) => {
                 const row = rows[index];
@@ -5858,6 +5839,7 @@ export function EditRouteScreen({
                 return (
                   <div
                     key={index}
+                    ref={dragReorder.rowRef(index)}
                     data-row-index={index}
                     // No more border-t-2-on-drop-target styling here - that
                     // added real box height right on the row itself,
@@ -5868,7 +5850,7 @@ export function EditRouteScreen({
                     className={
                       highlightedRowIndex === index
                         ? "-mx-2 rounded-lg border-2 border-red-500 px-2 transition-colors"
-                        : dragRowIndex === index
+                        : dragReorder.draggingIndex === index
                           ? "opacity-40"
                           : ""
                     }
@@ -5881,37 +5863,13 @@ export function EditRouteScreen({
                       status={waypoint ? resolutionRows[index] : undefined}
                       locked={rowActionsLocked}
                       onEdit={() => openRowEditor(index)}
-                      onDragStart={(e) => {
-                        e.currentTarget.setPointerCapture(e.pointerId);
-                        setDragRowIndex(index);
-                        setDragOverIndex(index);
-                      }}
-                      onDragMove={(e) => {
-                        const target = document
-                          .elementFromPoint(e.clientX, e.clientY)
-                          ?.closest("[data-row-index]");
-                        const overIndex = target
-                          ? Number(target.getAttribute("data-row-index"))
-                          : null;
-                        if (overIndex !== null && !Number.isNaN(overIndex))
-                          setDragOverIndex(overIndex);
-                      }}
-                      onDragEnd={(e) => {
-                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                          e.currentTarget.releasePointerCapture(e.pointerId);
-                        }
-                        if (dragRowIndex !== null && dragOverIndex !== null) {
-                          handleReorderRow(dragRowIndex, dragOverIndex);
-                        }
-                        setDragRowIndex(null);
-                        setDragOverIndex(null);
-                      }}
+                      onDragStart={dragReorder.startDrag(index)}
                     />
                     <AddStepButton
                       onClick={() => addRow(index + 1)}
                       disabled={rowActionsLocked}
-                      dragging={dragRowIndex !== null}
-                      dropTarget={dragOverIndex === index + 1}
+                      dragging={dragReorder.draggingIndex !== null}
+                      dropTarget={dragReorder.dropGap === index + 1}
                       onSplit={
                         onSplitToNewRoute && index + 1 < rows.length
                           ? () => setSplitGapIndex(index + 1)
