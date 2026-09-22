@@ -2,23 +2,22 @@
 
 ShortStop is a Progressive Web App for school bus routing. Drivers get
 spoken, turn-by-turn navigation through a route's stops and turns,
-hands-free; district admins manage routes, stops, and schools from the
+hands-free. District admins manage routes, stops, and schools from the
 same app.
 
 ## What it does
 
-**For drivers:** pick a route from the list and tap Start. Each step
+**For drivers:** Pick a route from the list and tap Start. Each step
 speaks its own instruction aloud (turn direction and street names, or a
 stop's cross streets and expected rider count), with a live map showing
-the bus's position and the road-following route ahead. Advance with an
-on-screen button, a tap, or a Bluetooth media remote. At a stop with
-expected riders, a check-in roster overlays the map so the driver can
-mark who's boarded without losing their place.
+the bus's position and the route ahead. Advance with anon-screen button,
+a Bluetooth media remote, or automatically based on your GPS location. For
+stops with expected riders, a check-in roster overlays the map so the driver
+can mark who's boarded without losing their place.
 
-**For admins:** toggle **Edit Mode** on the route list to add or edit
+**For admins:** Toggle **Edit Mode** on the route list to add or edit
 routes, reorder and edit individual stops/turns, resolve stop locations
-to real coordinates, and publish, unpublish, or delete routes. A route
-can only be published once every stop has resolved.
+to real coordinates, and publish, unpublish, or delete routes.
 
 ## Stack
 
@@ -85,8 +84,7 @@ looked up twice.
 
 ## Deploying
 
-Push to GitHub, then in Vercel: **Add New Project** → import this repo.
-No build settings to change — Vercel auto-detects Next.js.
+The project is pushed to GitHub, then deoloyed through Vercel.
 
 Set `DATABASE_URL` and `ORS_API_KEY` in Vercel (Project Settings →
 Environment Variables, Production and Preview both). `next build` runs `prisma migrate deploy` first, so
