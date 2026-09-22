@@ -27,15 +27,23 @@ const NO_PERMISSIONS: Permissions = {
  * server-side this becomes real data instead of a fixed list. */
 const ROLE_OPTIONS = ["Admin", "Driver", "Tech"];
 
-/** The driver icon that floats top-right on every screen (page.tsx
- * renders exactly one instance, same "one persistent instance outside
- * ScreenTransition" pattern the pinned Logo already uses - see its own
- * doc comment there) - tapping it opens this account/permissions
- * popup. `user`/`onChange` are page.tsx's own currentUser state
- * (currentUser.ts), edited directly here rather than through a
- * separate save step - every field change (a text box, a permission
- * checkbox) commits immediately, the same "no explicit Save" a plain
- * settings toggle anywhere else in the app already works like.
+/** The driver icon that floats top-right on every screen except
+ * StepScreen's own turn-by-turn (page.tsx renders exactly one instance,
+ * gated on its own showsPinnedLogo - same "one persistent instance
+ * outside ScreenTransition" pattern the pinned Logo already uses, see
+ * its own doc comment there) - tapping it opens this account/
+ * permissions popup. Skipped during an active drive on purpose: a
+ * driver already had to sign in to see their own assigned routes
+ * before ever reaching StepScreen, so there's nothing left to do here
+ * mid-route, and its old fixed top-right spot sits close enough to
+ * ExpandableMap's own expand button (also top-right, StepScreen's map
+ * box has no header above it to push either one down) that the two
+ * competed for the same corner. `user`/`onChange` are page.tsx's own
+ * currentUser state (currentUser.ts), edited directly here rather than
+ * through a separate save step - every field change (a text box, a
+ * permission checkbox) commits immediately, the same "no explicit
+ * Save" a plain settings toggle anywhere else in the app already works
+ * like.
  *
  * The "Can edit" box is this feature's actual point: a real per-user
  * permissions row doesn't exist yet (see permissions.ts's own doc
@@ -70,21 +78,24 @@ export function UserMenu({
   return (
     <>
       {/* Fixed, not part of any one screen's own layout - floats at the
-          same top-right spot regardless of which screen is showing,
-          including StepScreen's own compact TopBar (which has no room
-          for it in its own 3-column grid). z-30 keeps it above ordinary
-          screen content but below any open modal (most of which sit at
-          z-20-z-40), so a modal already open never has this button
-          floating on top of it. Plain, not glossy/filled - unlike the
-          app's real action buttons, this is a persistent, always-on-
-          screen affordance, not something reaching for attention. */}
+          same top-right spot on every screen that renders this at all
+          (page.tsx's own showsPinnedLogo gate skips StepScreen
+          entirely - see this component's own doc comment above). z-30
+          keeps it above ordinary screen content but below any open
+          modal (most of which sit at z-20-z-40), so a modal already
+          open never has this button floating on top of it. Plain, not
+          glossy/filled - unlike the app's real action buttons, this is
+          a persistent, always-on-screen affordance, not something
+          reaching for attention - sized a notch smaller than it used
+          to be for the same reason, a quieter presence than something
+          meant to be tapped often. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Driver account and permissions"
-        className="fixed top-3 right-4 z-30 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-100 active:text-zinc-600"
+        className="fixed top-3 right-4 z-30 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-100 active:text-zinc-600"
       >
-        <PersonSolidIcon className="h-6 w-6" />
+        <PersonSolidIcon className="h-5 w-5" />
       </button>
 
       {open && (

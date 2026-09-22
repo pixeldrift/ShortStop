@@ -676,8 +676,17 @@ export default function Home() {
       {/* Same "one persistent instance, not re-rendered per screen"
           reasoning as the pinned Logo just below - floats top-right on
           every screen (its own fixed positioning, not this flow), so
-          it's rendered once here rather than by each screen. */}
-      <UserMenu user={currentUser} onChange={setCurrentUser} />
+          it's rendered once here rather than by each screen. Gated on
+          the same showsPinnedLogo flag as that Logo, and for the same
+          underlying reason: StepScreen is the one arrangement that
+          doesn't want this floating on top of it - a driver already
+          signed in to see their own assigned routes before ever
+          reaching it, and its usual top-right spot otherwise crowds
+          ExpandableMap's own expand button there (see UserMenu's own
+          doc comment). */}
+      {showsPinnedLogo && (
+        <UserMenu user={currentUser} onChange={setCurrentUser} />
+      )}
       {/* Rendered once here, outside ScreenTransition entirely, rather
           than by each screen component itself (RouteListScreen,
           SchoolListScreen, StartScreen, EditRouteScreen used to each
