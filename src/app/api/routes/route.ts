@@ -182,6 +182,8 @@ export async function POST(request: Request): Promise<NextResponse> {
         side: row.side,
         notes: row.notes,
         skip: row.skip,
+        overrideLat: row.overrideLat,
+        overrideLon: row.overrideLon,
       })),
     });
   }

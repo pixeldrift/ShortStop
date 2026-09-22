@@ -33,6 +33,8 @@ export async function GET(): Promise<NextResponse> {
       side: step.side,
       notes: step.notes,
       skip: step.skip,
+      overrideLat: step.overrideLat,
+      overrideLon: step.overrideLon,
     });
   }
 

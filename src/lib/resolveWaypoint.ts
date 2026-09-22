@@ -9,9 +9,17 @@ import {
   resolveIntersection,
 } from "./overpassGeocode";
 import type { BoundingBox } from "./overpassGeocode";
-import { bestStreetMatch, splitStreetType, streetTypeVariants } from "./geocodeFallback";
+import {
+  bestStreetMatch,
+  directionalCoreMatches,
+  splitStreetType,
+  streetTypeVariants,
+} from "./geocodeFallback";
 import type { FallbackKind } from "./geocodeFallback";
-import type { WaypointCacheEntry } from "./waypointCache";
+import { cardinalCompassWord, cardinalLabels, squaredDistance } from "./cardinalLabel";
+import type { CardinalLabel } from "./cardinalLabel";
+import { CARDINAL_LABELS, intersectionVariantKey, waypointCacheKey } from "./waypointCache";
+import type { WaypointCache, WaypointCacheEntry } from "./waypointCache";
 
 /** `geocodeQuery` only ever throws for a genuinely unexpected failure
  * now (a network exception, a malformed JSON body) - a real HTTP-level
@@ -158,6 +166,168 @@ async function resolveIntersectionToEntry(
   }
 }
 
+/** One known candidate point for an intersection's base key - either
+ * the plain base entry itself (`label: null`) or one of its cardinal-
+ * labeled siblings (waypointCache.ts's own intersectionVariantKey). */
+interface KnownCandidate {
+  key: string;
+  label: CardinalLabel | null;
+  entry: Extract<WaypointCacheEntry, { status: "ok" }>;
+}
+
+export interface KeyedIntersectionResult {
+  key: string;
+  entry: WaypointCacheEntry;
+  /** Set only when this call just discovered a second real candidate
+   * for this base key that wasn't already in `cache` - a genuinely
+   * ambiguous Overpass result (two shared nodes for the one name
+   * pair). The caller should persist this too, alongside `entry`,
+   * so every future lookup (this route or any other) already has
+   * both candidates on file instead of rediscovering the same
+   * ambiguity from scratch. */
+  discoveredAlternate: { key: string; entry: WaypointCacheEntry } | null;
+}
+
+/**
+ * Resolves an intersection query the same way resolveIntersectionToEntry
+ * does, but aware that one road-pair base key can legitimately answer
+ * to two different real points - a loop road crossing the same other
+ * road twice - and that blindly trusting whichever one got cached
+ * first is exactly how two real crossings ended up sharing one pin.
+ * See waypointCache.ts's own intersectionVariantKey and
+ * cardinalLabel.ts for the key/labeling scheme this relies on.
+ *
+ * `cache` is whatever the caller already has on hand for this key and
+ * its (at most four) possible cardinal-labeled siblings - the same
+ * flat Record<key, entry> every existing consumer already keeps, not a
+ * fresh read of its own. Three shapes this can return:
+ *  - No sibling known yet, base key cached: returned exactly as
+ *    before, no network call - the ordinary, overwhelmingly common
+ *    case, entirely unaffected by any of this.
+ *  - Two or more siblings already known: still no network call -
+ *    picks whichever known candidate is actually closest to `near`.
+ *    This is the fix itself: a cache hit now re-checks which
+ *    candidate a given call actually means, instead of always
+ *    reusing whichever one happened to be cached first regardless of
+ *    where in the route (or which route) this particular lookup is
+ *    coming from.
+ *  - Nothing known yet: resolves fresh, same as
+ *    resolveIntersectionToEntry - except an "ambiguous" Overpass
+ *    result (a real second shared node) now labels both candidates by
+ *    cardinal and hands the losing one back as `discoveredAlternate`
+ *    instead of silently discarding it.
+ */
+export async function resolveIntersectionKeyed(
+  query: { roadA: string; roadB: string },
+  baseKey: string,
+  cache: WaypointCache,
+  box: BoundingBox,
+  near: { lat: number; lon: number },
+  locationContext: string,
+): Promise<KeyedIntersectionResult> {
+  const known: KnownCandidate[] = [];
+  const baseEntry = cache[baseKey];
+  if (baseEntry?.status === "ok") known.push({ key: baseKey, label: null, entry: baseEntry });
+  for (const cardinalLabel of CARDINAL_LABELS) {
+    const variantKey = intersectionVariantKey(baseKey, cardinalLabel);
+    const variantEntry = cache[variantKey];
+    if (variantEntry?.status === "ok") known.push({ key: variantKey, label: cardinalLabel, entry: variantEntry });
+  }
+
+  if (known.length >= 2) {
+    const nearest = known.reduce((closest, candidate) =>
+      squaredDistance(candidate.entry, near) < squaredDistance(closest.entry, near) ? candidate : closest,
+    );
+    return { key: nearest.key, entry: nearest.entry, discoveredAlternate: null };
+  }
+  if (known.length === 1) {
+    return { key: known[0].key, entry: known[0].entry, discoveredAlternate: null };
+  }
+
+  const label = `${query.roadA} & ${query.roadB}`;
+  const source = `${query.roadA} and ${query.roadB}, ${locationContext}`;
+  try {
+    const resolution = await resolveIntersection(query.roadA, query.roadB, box);
+    if (resolution.status === "ok") {
+      return {
+        key: baseKey,
+        entry: { status: "ok", lat: resolution.lat, lon: resolution.lon, displayName: label, source, provider: "overpass" },
+        discoveredAlternate: null,
+      };
+    }
+    if (resolution.status === "ambiguous") {
+      const primaryPoint = pickNearest(resolution.candidates, near);
+      const secondaryPoint =
+        resolution.candidates.find((c) => c !== primaryPoint) ??
+        resolution.candidates[resolution.candidates.length - 1];
+      const labels = cardinalLabels(primaryPoint, secondaryPoint);
+      return {
+        key: baseKey,
+        entry: {
+          status: "ok",
+          lat: primaryPoint.lat,
+          lon: primaryPoint.lon,
+          displayName: `${label} (${cardinalCompassWord(labels.a)})`,
+          source,
+          provider: "overpass",
+        },
+        discoveredAlternate: {
+          key: intersectionVariantKey(baseKey, labels.b),
+          entry: {
+            status: "ok",
+            lat: secondaryPoint.lat,
+            lon: secondaryPoint.lon,
+            displayName: `${label} (${cardinalCompassWord(labels.b)})`,
+            source,
+            provider: "overpass",
+          },
+        },
+      };
+    }
+    return {
+      key: baseKey,
+      entry: { status: "error", message: "No shared node found in the search box", notFound: true, source, provider: "overpass" },
+      discoveredAlternate: null,
+    };
+  } catch (err) {
+    return {
+      key: baseKey,
+      entry: {
+        status: "error",
+        message: err instanceof Error ? err.message : String(err),
+        raw: err instanceof OverpassHttpError ? err.raw : undefined,
+        source,
+        provider: "overpass",
+      },
+      discoveredAlternate: null,
+    };
+  }
+}
+
+/** Every plausible corrected form of one road name worth retrying, in
+ * priority order - bestStreetMatch's own single best guess (a
+ * street-type swap or a close spelling, the more confident kind of
+ * correction) tried first, then every directionalCoreMatches candidate
+ * (a bigger mismatch - a wrong/missing cardinal, a missing word - and
+ * possibly more than one real road when the search box happens to
+ * contain both ends of a road that renames itself partway, see that
+ * function's own doc), falling back to the name exactly as typed when
+ * nothing corrected it at all - so a road that never needed fixing
+ * still ends up here as its own only option, and the retry loop below
+ * always has at least one combination to try. */
+function correctionOptions(
+  roadName: string,
+  candidates: string[],
+): { kind: FallbackKind | null; name: string }[] {
+  const street = bestStreetMatch(roadName, candidates);
+  if (street) return [{ kind: street.kind, name: street.correctedName }];
+  const directional = directionalCoreMatches(roadName, candidates);
+  if (directional.length > 0) {
+    return directional.map((name) => ({ kind: "directional" as const, name }));
+  }
+  return [{ kind: null, name: roadName }];
+}
+
 /**
  * The intersection path's own three-stage fallback (points 2 and 3 of
  * the geocoding-accuracy request this exists for), tried in order only
@@ -165,10 +335,13 @@ async function resolveIntersectionToEntry(
  *
  * 1. Correct one or both road names against every real road actually
  *    in the search box (overpassGeocode.ts's own fetchAreaStreetNames)
- *    - a street-type-word swap or a close spelling match
- *    (geocodeFallback.ts's own bestStreetMatch) - then retry the exact
- *    same intersection query with whichever name(s) got corrected.
- * 2. If that still finds no shared node (a loop/circle Overpass's own
+ *    - a street-type-word swap, a close spelling match, or a
+ *    directional-name mismatch (correctionOptions above) - then retry
+ *    the intersection query with every combination of corrected names
+ *    worth trying, keeping whichever succeeds closest to `near` (there
+ *    can be more than one real combination when directionalCoreMatches
+ *    found more than one plausible road on either side).
+ * 2. If nothing found a shared node (a loop/circle Overpass's own
  *    node(w.a)(w.b) query can't resolve to one point, or the two roads
  *    genuinely don't meet in this box's own graph), fall back to
  *    placing the point directly on whichever road is actually
@@ -193,24 +366,30 @@ async function resolveIntersectionToEntryWithFallback(
   const candidates = await fetchAreaStreetNames(box);
   if (candidates.length === 0) return { entry: plain, fallback: null };
 
-  const matchA = bestStreetMatch(query.roadA, candidates);
-  const matchB = bestStreetMatch(query.roadB, candidates);
-  const correctedA = matchA?.correctedName ?? query.roadA;
-  const correctedB = matchB?.correctedName ?? query.roadB;
+  const optionsA = correctionOptions(query.roadA, candidates);
+  const optionsB = correctionOptions(query.roadB, candidates);
 
-  if (matchA || matchB) {
-    const retried = await resolveIntersectionToEntry(
-      { roadA: correctedA, roadB: correctedB },
-      box,
-      near,
-      locationContext,
-    );
-    if (retried.status === "ok") {
-      const kind: FallbackKind =
-        matchA?.kind === "street-type" || matchB?.kind === "street-type" ? "street-type" : "fuzzy-name";
-      return { entry: retried, fallback: { kind, correctedQuery: `${correctedA} & ${correctedB}` } };
+  let best: { entry: Extract<WaypointCacheEntry, { status: "ok" }>; kind: FallbackKind; correctedQuery: string } | null = null;
+  for (const a of optionsA) {
+    for (const b of optionsB) {
+      // Neither side actually corrected anything - the exact same
+      // query resolveIntersectionToEntry already tried above, no point
+      // spending a second identical call on it.
+      if (a.kind === null && b.kind === null) continue;
+      const retried = await resolveIntersectionToEntry({ roadA: a.name, roadB: b.name }, box, near, locationContext);
+      if (retried.status !== "ok") continue;
+      if (!best || squaredDistance(retried, near) < squaredDistance(best.entry, near)) {
+        const kind: FallbackKind =
+          a.kind === "street-type" || b.kind === "street-type"
+            ? "street-type"
+            : a.kind === "directional" || b.kind === "directional"
+              ? "directional"
+              : "fuzzy-name";
+        best = { entry: retried, kind, correctedQuery: `${a.name} & ${b.name}` };
+      }
     }
   }
+  if (best) return { entry: best.entry, fallback: { kind: best.kind, correctedQuery: best.correctedQuery } };
 
   // Neither an exact nor a corrected intersection query found a shared
   // node - place the point on whichever side is actually confirmed to
@@ -219,8 +398,18 @@ async function resolveIntersectionToEntryWithFallback(
   // waypoint's own destination/cross street in every caller today,
   // not the road already being traveled) when both sides check out.
   const candidateLower = new Set(candidates.map((c) => c.toLowerCase()));
-  const confirmedB = matchB?.correctedName ?? (candidateLower.has(query.roadB.trim().toLowerCase()) ? query.roadB : null);
-  const confirmedA = matchA?.correctedName ?? (candidateLower.has(query.roadA.trim().toLowerCase()) ? query.roadA : null);
+  const confirmedA =
+    optionsA[0].kind !== null
+      ? optionsA[0].name
+      : candidateLower.has(query.roadA.trim().toLowerCase())
+        ? query.roadA
+        : null;
+  const confirmedB =
+    optionsB[0].kind !== null
+      ? optionsB[0].name
+      : candidateLower.has(query.roadB.trim().toLowerCase())
+        ? query.roadB
+        : null;
   const targetName = confirmedB ?? confirmedA;
   if (targetName) {
     const nodes = await fetchStreetNodes(targetName, box);
@@ -438,6 +627,13 @@ interface AdminFetchContext {
    * omits this) - see lookupCoordinatesWithFallback's own doc for why
    * that split exists. */
   allowFallback?: boolean;
+  /** Whatever the caller already knows is cached, for an intersection
+   * query's own resolveIntersectionKeyed check (see that function's
+   * own doc) - the same flat cache object every caller already keeps
+   * (EditRouteScreen.tsx's own `cache` state, populated from /api/
+   * waypoints). Only read for an intersection-kind query; a plain
+   * address never needs it. */
+  cache: WaypointCache;
 }
 
 /** Lazily resolves the school's own address as an intersection query's
@@ -489,7 +685,28 @@ export async function fetchOneLocation(
   ctx: AdminFetchContext,
 ): Promise<
   | {
+      /** The cache key `entry` actually belongs under - equal to
+       * waypointCacheKey(query) for a plain address, or whenever an
+       * intersection resolved to its own base key same as always, but
+       * one of that key's own cardinal-labeled siblings
+       * (waypointCache.ts's own intersectionVariantKey) whenever this
+       * call bound to a second known crossing instead. The caller
+       * persists `entry` under *this* key, not whatever
+       * waypointCacheKey(query) alone would compute - the two only
+       * ever differ for an intersection query with a known sibling. */
+      key: string;
       entry: WaypointCacheEntry;
+      /** A second real candidate this call just discovered for an
+       * intersection query - a genuinely ambiguous Overpass result
+       * (two shared nodes for the one name pair), labeled and keyed by
+       * resolveIntersectionKeyed. Null the overwhelming rest of the
+       * time (every address query, and every intersection query that
+       * only ever had one real crossing, or already had both known).
+       * The caller should persist this too, under its own `key|entry`,
+       * so every future lookup - this route or any other - already
+       * knows both crossings exist instead of rediscovering the
+       * ambiguity from scratch. */
+      discoveredAlternate: { key: string; entry: WaypointCacheEntry } | null;
       anchor: { lat: number; lon: number } | null;
       /** The school's own address, as a real cache entry - only
        * present when this exact call is what freshly resolved it (a
@@ -512,6 +729,30 @@ export async function fetchOneLocation(
   if ("error" in anchorResult) return anchorResult;
   const { point: anchor, entry: anchorEntry } = anchorResult;
 
+  if (query.kind === "intersection") {
+    if (!anchor) {
+      return { error: "Couldn't resolve a search anchor for this intersection." };
+    }
+    const baseKey = waypointCacheKey(query);
+    const box = boundingBoxAround(anchor.lat, anchor.lon, DEFAULT_SEARCH_RADIUS_DEG);
+    const keyed = await resolveIntersectionKeyed(query, baseKey, ctx.cache, box, anchor, ctx.locationContext);
+    if (keyed.entry.status === "ok" || !ctx.allowFallback) {
+      return { key: keyed.key, entry: keyed.entry, discoveredAlternate: keyed.discoveredAlternate, anchor, anchorEntry, fallback: null };
+    }
+    // A genuine miss (nothing known, and Overpass found no shared node
+    // at all) with fallback allowed - the street-type/spelling/
+    // directional/loop-snap pipeline below, same as always. Never
+    // itself produces a second candidate to label - see
+    // resolveIntersectionToEntryWithFallback's own doc for why that's
+    // a deliberately simpler, single-result path.
+    const { entry, fallback } = await lookupCoordinatesWithFallback(query, ctx.locationContext, {
+      apiKey: ctx.apiKey,
+      anchor,
+      near: anchor,
+    });
+    return { key: baseKey, entry, discoveredAlternate: null, anchor, anchorEntry, fallback };
+  }
+
   const { entry, fallback } = ctx.allowFallback
     ? await lookupCoordinatesWithFallback(query, ctx.locationContext, {
         apiKey: ctx.apiKey,
@@ -526,7 +767,7 @@ export async function fetchOneLocation(
         }),
         fallback: null,
       };
-  return { entry, anchor, anchorEntry, fallback };
+  return { key: waypointCacheKey(query), entry, discoveredAlternate: null, anchor, anchorEntry, fallback };
 }
 
 /** Resolves any one geocodable (address or intersection) query,

@@ -88,10 +88,10 @@ export function levenshteinDistance(a: string, b: string): number {
  * real intersection even after correction - a point placed directly on
  * one of the two roads instead, snapped to whichever of its own points
  * is closest to the route, not a genuine crossing). */
-export type FallbackKind = "street-type" | "fuzzy-name" | "loop-snap";
+export type FallbackKind = "street-type" | "fuzzy-name" | "directional" | "loop-snap";
 
 export interface StreetMatch {
-  kind: "street-type" | "fuzzy-name";
+  kind: "street-type" | "fuzzy-name" | "directional";
   /** The real road name (exactly as OSM itself spells it) this input
    * was matched against - what a retried Overpass/ORS query should
    * actually search for instead of the original text. */
@@ -123,6 +123,74 @@ function fuzzyThreshold(length: number): number {
  * either bar - the caller's own next fallback (overpassGeocode.ts's
  * fetchStreetNodes, for a loop/circle) picks up from there.
  */
+/** A bare leading cardinal, the one thing splitStreetType's own
+ * trailing-word scope never touches - "N Shreibman Blvd" needs "N"
+ * recognized as a direction the same way "Blvd" is recognized as a
+ * street type, not as part of the road's own distinctive name.
+ * Matches only a complete leading word (one of exactly these eight),
+ * so a road genuinely named "Northside Dr" or "Eastland Ave" is never
+ * mistaken for a directional prefix - "North" the whole word, not
+ * "North" as a prefix of a longer one. */
+const LEADING_DIRECTION_PATTERN = /^(n|s|e|w|north|south|east|west)\.?\s+/i;
+
+function stripLeadingDirection(text: string): string {
+  return text.replace(LEADING_DIRECTION_PATTERN, "");
+}
+
+/** A name's own "core" - every word left once its trailing street-type
+ * word (splitStreetType) and leading cardinal (stripLeadingDirection)
+ * are both stripped, lowercased for comparison. "N Shreibman Blvd" and
+ * "East Nir Shreibman Blvd" don't share a core this way ("shreibman"
+ * vs "nir shreibman"), which is exactly why directionalCoreMatches
+ * below checks containment rather than equality. */
+function coreWords(name: string): string[] {
+  const { base } = splitStreetType(name);
+  return stripLeadingDirection(base.trim())
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Finds every real road (from `candidates`) whose own core contains
+ * every word of `name`'s core - the fallback tier for a road-name
+ * mismatch too large for bestStreetMatch's Levenshtein distance to
+ * catch: "N Shreibman Blvd" isn't a typo of "East Nir Shreibman Blvd",
+ * it's typed with the wrong cardinal *and* missing a whole word, which
+ * puts it well outside fuzzyThreshold's own proportional tolerance.
+ * Matching on core-word containment instead - does everything the
+ * typed name is actually distinctive for still show up in this real
+ * road's own name - catches it without needing an edit-distance bound
+ * at all.
+ *
+ * Requires every core word to be at least 3 characters - a bare
+ * initial or short stray word is too easy to coincidentally find
+ * inside an unrelated road's name, and a name with no core left at all
+ * after stripping (nothing but a direction and a street type) never
+ * matches anything here.
+ *
+ * Can return more than one match - "N Shreibman Blvd" alone doesn't
+ * say which side of a roundabout it means when the real road
+ * genuinely renames itself partway (plain "Nir Shreibman Blvd" one
+ * side, "E Nir Shreibman Blvd" the other) and the search box happens
+ * to contain both. A caller with exactly one match can treat it as a
+ * confident correction the same way a street-type/fuzzy-name match
+ * already is; two or more means this is a real ambiguity to resolve
+ * the same way two genuine crossings of one road pair already are
+ * (see cardinalLabel.ts) - not something to silently guess at.
+ */
+export function directionalCoreMatches(name: string, candidates: string[]): string[] {
+  const trimmed = name.trim();
+  if (!trimmed || candidates.length === 0) return [];
+  const nameWords = coreWords(trimmed).filter((word) => word.length >= 3);
+  if (nameWords.length === 0) return [];
+
+  return candidates.filter((candidate) => {
+    const candidateWords = new Set(coreWords(candidate));
+    return nameWords.every((word) => candidateWords.has(word));
+  });
+}
+
 export function bestStreetMatch(name: string, candidates: string[]): StreetMatch | null {
   const trimmed = name.trim();
   if (!trimmed || candidates.length === 0) return null;

@@ -56,6 +56,18 @@ export interface NavigationStep {
    * re-deriving anything client-side. Computed for every step, not
    * just stops, ahead of drawing the full route line later. */
   waypointKey: string;
+  /** An admin-placed coordinate that's this step's own permanent
+   * answer to "where is this stop/turn," independent of the shared
+   * Waypoint geocoding cache - see prisma/schema.prisma's own
+   * RouteStep.overrideLat/overrideLon doc comment. Always both null or
+   * both set together. resolveStepCoordinate (waypointCache.ts) is the
+   * one place that reads these alongside `waypointKey`/`cache` to
+   * decide a step's real point - every consumer that draws a route
+   * (RouteMap, StepScreen, routeReadiness, exportCsv, StartScreen)
+   * should go through that rather than reading `cache[waypointKey]`
+   * directly, so an override always wins consistently everywhere. */
+  overrideLat: number | null;
+  overrideLon: number | null;
   /** What the app speaks aloud when this step becomes current, as
    * separate parts spoken as separate utterances (e.g. stop number,
    * then location, then rider count) so there's an audible pause

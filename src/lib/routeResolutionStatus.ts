@@ -1,6 +1,6 @@
 import type { WaypointQuery } from "./deriveWaypoints";
 import type { WaypointCache } from "./waypointCache";
-import { waypointCacheKey } from "./waypointCache";
+import { resolveRouteCoordinates, waypointCacheKey } from "./waypointCache";
 
 /**
  * Per-row auto-resolve status, decoupled from wherever the actual
@@ -81,26 +81,44 @@ function notFoundReason(
 
 export function summarizeRouteResolution(
   waypoints: WaypointQuery[],
+  overrides: { overrideLat: number | null; overrideLon: number | null }[],
   cache: WaypointCache,
+  schoolAnchor: { lat: number; lon: number } | null = null,
 ): RowResolutionStatus[] {
   const confirmedRoads = confirmedRoadNames(cache);
+  // resolveRouteCoordinates below walks these in order, carrying
+  // forward whichever point last actually resolved as `near` - the
+  // same sequential context an intersection with a known second
+  // crossing needs to land on the right one (see
+  // resolveIntersectionCacheEntry's own doc comment) - rather than
+  // each row's own status being decided in isolation.
+  const resolved = resolveRouteCoordinates(
+    waypoints.map((waypoint, i) => ({
+      waypointKey: waypoint.kind === "unresolvable" ? "" : waypointCacheKey(waypoint),
+      overrideLat: overrides[i]?.overrideLat ?? null,
+      overrideLon: overrides[i]?.overrideLon ?? null,
+    })),
+    cache,
+    schoolAnchor,
+  );
 
-  return waypoints.map((waypoint) => {
+  return waypoints.map((waypoint, i) => {
     if (waypoint.kind === "unresolvable") {
       return { stepId: waypoint.stepId, status: "skipped", reason: waypoint.description };
     }
 
-    const entry = cache[waypointCacheKey(waypoint)];
-    if (entry?.status === "ok") {
+    const point = resolved[i];
+    if (point) {
       return {
         stepId: waypoint.stepId,
         status: "resolved",
-        lat: entry.lat,
-        lon: entry.lon,
-        displayName: entry.displayName,
+        lat: point.lat,
+        lon: point.lon,
+        displayName: point.displayName,
       };
     }
 
+    const entry = cache[waypointCacheKey(waypoint)];
     if (entry?.status === "error") {
       return {
         stepId: waypoint.stepId,

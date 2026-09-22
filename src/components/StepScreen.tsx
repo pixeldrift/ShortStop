@@ -267,7 +267,15 @@ export function StepScreen({
   // road-following line from /api/route-geometry (its own `path` prop
   // doc comment has the details, including where the school - passed
   // separately below - fits into that same ordered list).
-  const routePath = useMemo(() => route.steps.map((s) => s.waypointKey), [route]);
+  const routePath = useMemo(
+    () =>
+      route.steps.map((s) => ({
+        waypointKey: s.waypointKey,
+        overrideLat: s.overrideLat,
+        overrideLon: s.overrideLon,
+      })),
+    [route],
+  );
   // The school's own geocoded location (School.lat/lon), straight from
   // the route - not a Waypoint cache lookup, so changing a route's
   // school (EditRouteScreen) always shows the right pin immediately,

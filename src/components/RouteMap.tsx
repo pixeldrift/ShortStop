@@ -14,13 +14,16 @@ import { collapseAttribution, PMTILES_ATTRIBUTION, PMTILES_URL } from "@/lib/map
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
 import type { TripType, TurnDirection } from "@/lib/types";
+import { resolveRouteCoordinates } from "@/lib/waypointCache";
 import type { WaypointCache } from "@/lib/waypointCache";
 
-/** One "stop" step's marker: waypointKey looks it up in the route's own
- * geocoded sidecar cache (waypointsUrl prop, below), number is its
- * position among stops (1-indexed) for the pin's on-map label -
- * matching the same numbering RouteProgressBar/StopContent already show
- * for the same stop. */
+/** One "stop" step's marker: waypointKey looks it up in the resolved-
+ * coordinates map mountMapLibre builds from the `path` prop below
+ * (resolveRouteCoordinates, waypointCache.ts - an override if the step
+ * has one, otherwise the geocoded cache), number is its position among
+ * stops (1-indexed) for the pin's on-map label - matching the same
+ * numbering RouteProgressBar/StopContent already show for the same
+ * stop. */
 export type StopMarker = { waypointKey: string; number: number };
 
 /** One "turn" step's marker - waypointKey looks it up the same way a
@@ -38,6 +41,12 @@ export type TurnMarker = {
   direction?: TurnDirection;
   heading?: string;
 };
+
+/** One entry of the `path` prop below - a step's own key plus its own
+ * override, exactly what resolveStepCoordinate/resolveRouteCoordinates
+ * (waypointCache.ts) need to resolve it correctly and in the right
+ * sequential order. */
+export type PathPoint = { waypointKey: string; overrideLat: number | null; overrideLon: number | null };
 
 // La Vergne, TN's approximate town center - a placeholder anchor until
 // the route's own geocoded waypoints (deriveWaypoints.ts, and each
@@ -333,15 +342,19 @@ export function RouteMap({
    * only), populated for 125's (see TurnMarker's own doc comment for
    * the label scheme). */
   turns?: TurnMarker[];
-  /** Every step's own waypointKey, in the route's own order (stops and
-   * turns both - StepScreen.tsx derives this straight from
-   * route.steps). Used to build the ordered list of {lat, lon} points
-   * (school spliced in at whichever end `tripType` puts it) sent to
-   * /api/route-geometry for the actual road-following line - not drawn
-   * directly itself. Whichever of these don't have a cache entry (an
-   * ungeocoded or unresolvable step) are simply left out of that list,
+  /** Every step's own waypointKey (plus its own override, if it has
+   * one), in the route's own order (stops and turns both -
+   * StepScreen.tsx derives this straight from route.steps). Used to
+   * build the ordered list of {lat, lon} points (school spliced in at
+   * whichever end `tripType` puts it) sent to /api/route-geometry for
+   * the actual road-following line - not drawn directly itself.
+   * Resolved through resolveStepCoordinate (waypointCache.ts), so an
+   * override wins, and an ambiguous intersection lands on whichever of
+   * its own known candidates this point in the route is actually
+   * closest to; whichever of these still resolve to nothing at all (an
+   * ungeocoded or unresolvable step) are simply left out of the list,
    * same as a missing `stops`/`turns` marker. */
-  path?: string[];
+  path?: PathPoint[];
   /** The school's own geocoded location - School.lat/lon (see
    * scripts/geocodeSchools.ts), straight from the route
    * (StepScreen.tsx's own `schoolPoint`), not a Waypoint cache lookup -
@@ -561,7 +574,7 @@ interface MountArgs {
   syncToModeRef: React.RefObject<() => void>;
   stopsRef: React.RefObject<StopMarker[]>;
   turnsRef: React.RefObject<TurnMarker[]>;
-  pathRef: React.RefObject<string[]>;
+  pathRef: React.RefObject<PathPoint[]>;
   schoolRef: React.RefObject<{ lat: number; lon: number } | null | undefined>;
   schoolIsWaypointRef: React.RefObject<boolean>;
   tripTypeRef: React.RefObject<TripType | undefined>;
@@ -584,7 +597,7 @@ async function fetchCacheAndBuildOrderedWaypoints(
     | "orderedWaypointsRef"
     | "cancelledRef"
   >,
-): Promise<WaypointCache | null> {
+): Promise<{ cache: WaypointCache; resolvedByKey: Map<string, { lat: number; lon: number }> } | null> {
   const cache: WaypointCache = await fetch(args.waypointsUrlRef.current)
     .then((res): Promise<WaypointCache> | WaypointCache =>
       res.ok ? res.json() : {},
@@ -592,6 +605,21 @@ async function fetchCacheAndBuildOrderedWaypoints(
     .catch(() => ({}) as WaypointCache);
   if (args.cancelledRef()) return null;
   args.cacheRef.current = cache;
+
+  // Every step's own real point - an override if it has one, otherwise
+  // whichever cache candidate this point in the route's own sequence is
+  // actually closest to (resolveRouteCoordinates, waypointCache.ts) -
+  // resolved once, here, and shared by both the road-geometry request
+  // below and every pin this route ever draws (drawDrivingPins/
+  // drawOverviewPins), so they never disagree about where a step with a
+  // known second road crossing actually is.
+  const schoolAnchor = args.schoolRef.current ?? null;
+  const resolvedList = resolveRouteCoordinates(args.pathRef.current, cache, schoolAnchor);
+  const resolvedByKey = new Map<string, { lat: number; lon: number }>();
+  args.pathRef.current.forEach((point, i) => {
+    const resolved = resolvedList[i];
+    if (resolved) resolvedByKey.set(point.waypointKey, resolved);
+  });
 
   // The school only actually belongs in this list - and so only gets a
   // real road-geometry line drawn out to it - when schoolIsWaypointRef
@@ -610,10 +638,10 @@ async function fetchCacheAndBuildOrderedWaypoints(
       lon: args.schoolRef.current!.lon,
     });
   }
-  for (const key of args.pathRef.current) {
-    const entry = cache[key];
-    if (!entry || entry.status !== "ok") continue;
-    orderedWaypoints.push({ key, lat: entry.lat, lon: entry.lon });
+  for (const point of args.pathRef.current) {
+    const resolved = resolvedByKey.get(point.waypointKey);
+    if (!resolved) continue;
+    orderedWaypoints.push({ key: point.waypointKey, lat: resolved.lat, lon: resolved.lon });
   }
   if (includeSchool && args.tripTypeRef.current !== "dropoff") {
     orderedWaypoints.push({
@@ -623,7 +651,7 @@ async function fetchCacheAndBuildOrderedWaypoints(
     });
   }
   args.orderedWaypointsRef.current = orderedWaypoints;
-  return cache;
+  return { cache, resolvedByKey };
 }
 
 // MapLibre's own coordinate order is [lon, lat] - the opposite of the
@@ -806,13 +834,13 @@ function mountMapLibre(args: MountArgs): () => void {
           cacheRef,
           orderedWaypointsRef,
           cancelledRef,
-        }).then((resolvedCache) => {
-          if (cancelledRef() || !resolvedCache) return;
+        }).then((result) => {
+          if (cancelledRef() || !result) return;
           // Not just a rename - the nested drawOverviewPin/
-          // drawDrivingPins below need `cache` typed non-null in its
-          // own right, not merely narrowed from this callback's own
-          // parameter.
-          const cache = resolvedCache;
+          // drawDrivingPins below need `resolvedByKey` typed non-null
+          // in its own right, not merely narrowed from this callback's
+          // own parameter.
+          const { resolvedByKey } = result;
 
           if (orderedWaypointsRef.current.length > 1) {
             fetch("/api/route-geometry", {
@@ -932,8 +960,7 @@ function mountMapLibre(args: MountArgs): () => void {
                       ? { lat: liveLngLat[1], lon: liveLngLat[0] }
                       : (() => {
                           const key = activeWaypointKeyRef.current;
-                          const entry = key ? cache[key] : undefined;
-                          return entry && entry.status === "ok" ? entry : null;
+                          return key ? (resolvedByKey.get(key) ?? null) : null;
                         })();
                     // A step with no resolved coordinate yet (an
                     // unverified stop an admin still activated - see
@@ -1023,20 +1050,20 @@ function mountMapLibre(args: MountArgs): () => void {
           function drawDrivingPins() {
             clearPins();
             for (const stop of stopsRef.current) {
-              const entry = cache[stop.waypointKey];
-              if (!entry || entry.status !== "ok") continue;
+              const point = resolvedByKey.get(stop.waypointKey);
+              if (!point) continue;
               pins.push(
                 new maplibregl.Marker({
                   element: elementFromHtml(stopMarkerHtml(stop.number)),
                   anchor: "bottom",
                 })
-                  .setLngLat(toLngLat(entry))
+                  .setLngLat(toLngLat(point))
                   .addTo(mapInstance),
               );
             }
             for (const turn of turnsRef.current) {
-              const entry = cache[turn.waypointKey];
-              if (!entry || entry.status !== "ok") continue;
+              const point = resolvedByKey.get(turn.waypointKey);
+              if (!point) continue;
               const html = turnMarkerHtml(turn.direction, turn.heading);
               if (!html) continue;
               pins.push(
@@ -1044,7 +1071,7 @@ function mountMapLibre(args: MountArgs): () => void {
                   element: elementFromHtml(html),
                   anchor: "center",
                 })
-                  .setLngLat(toLngLat(entry))
+                  .setLngLat(toLngLat(point))
                   .addTo(mapInstance),
               );
             }
@@ -1085,8 +1112,8 @@ function mountMapLibre(args: MountArgs): () => void {
               activeWaypointKeyRef.current,
             );
             const key = activeWaypointKeyRef.current;
-            const entry = key ? cache[key] : undefined;
-            if (!entry || entry.status !== "ok") {
+            const point = key ? resolvedByKey.get(key) : undefined;
+            if (!point) {
               // No coordinate to fly to yet - still rotate on its own,
               // animated the same 1s as every other camera move here,
               // rather than leaving bearing stuck at whatever it last
@@ -1112,7 +1139,7 @@ function mountMapLibre(args: MountArgs): () => void {
             // motion, not a fast position flight with an instantly
             // snapped, separately-timed spin.
             mapInstance.flyTo({
-              center: toLngLat(entry),
+              center: toLngLat(point),
               zoom: STREET_ZOOM,
               ...(bearing != null ? { bearing } : {}),
               duration: DRIVING_FLY_DURATION_MS,

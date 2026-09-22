@@ -85,7 +85,7 @@ import type {
 import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { parseTimeInput } from "@/lib/time";
 import { tripTypeFullLabel } from "@/lib/tripType";
-import { waypointCacheKey } from "@/lib/waypointCache";
+import { resolveIntersectionCacheEntry, waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import { mergeLocationNames } from "@/lib/locationSuggestions";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -300,6 +300,8 @@ const BLANK_ROW: RawRouteRow = {
   side: "",
   notes: "",
   skip: false,
+  overrideLat: null,
+  overrideLon: null,
 };
 
 // placeholder:text-zinc-300 - much lighter than the browser/Tailwind
@@ -604,9 +606,14 @@ function StepRowView({
     actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
   // A place action's own from/location pair reads as an intersection
   // ("Main St & Oak Ave"); a turn's reads as the maneuver itself ("Main
-  // St onto Oak Ave") - same shape, different connector word, both set
-  // apart from the road names themselves (smaller, gray, italic) so
-  // neither reads as though it were part of a name. `effectiveFrom`
+  // St onto Oak Ave" for Left/Right/Turn Around/Pull Over, "Main St to
+  // Oak Ave" for Proceed/Return, "Main St on Oak Ave" for Continue/
+  // U-Turn - waypointConnectorWord's own fixed per-action vocabulary,
+  // same lookup formatWaypointInstruction/crossroadsLine already use so
+  // this reads the same wherever it shows up) - same shape either way,
+  // both set apart from the road names themselves (smaller, gray,
+  // italic) so neither reads as though it were part of a name.
+  // `effectiveFrom`
   // falls back to the tracked `previousRoad` when this row has no
   // explicit `fromLocation` of its own, so the subheading previews the
   // real intersection this row will actually resolve to - except for a
@@ -623,7 +630,7 @@ function StepRowView({
   const effectiveFrom = isPlainLocation
     ? null
     : row.fromLocation || previousRoad;
-  const connector = isPlaceAction ? "&" : "onto";
+  const connector = isPlaceAction ? "&" : waypointConnectorWord(row.action);
   const subheading = effectiveFrom ? (
     <>
       {effectiveFrom}{" "}
@@ -836,6 +843,7 @@ function StepRowEditor({
   onClickWaypointPin,
   onFetch,
   onManualCoordinates,
+  onOverrideCoordinates,
   onCancel,
   onDelete,
   onUpdate,
@@ -954,11 +962,21 @@ function StepRowEditor({
    * matches a School/SavedLocation that already has one). */
   onLocationChange: (value: string) => void;
   onFetch: () => void;
-  /** A coordinate typed/pasted directly into the Latitude/Longitude
-   * box, parsed and handed up on Save (see handleSave below) - writes
-   * straight into the shared waypoint cache, the same place a real
-   * Fetch would have, bypassing the geocoder entirely. */
+  /** "Update" - a coordinate typed/pasted directly into the Latitude/
+   * Longitude box (or dragged into place via PlaceCoordinatesModal),
+   * written straight into the shared waypoint cache, the same place a
+   * real Fetch would have - bypassing the geocoder entirely, but still
+   * shared with every other stop whose own road pair happens to match
+   * this one's. */
   onManualCoordinates: (lat: number, lon: number) => void;
+  /** "Override" - the same typed/dragged coordinate, but written as
+   * this row's own permanent overrideLat/overrideLon (onChange, staged
+   * into the draft the same as any other field edit) instead of the
+   * shared cache - independent of every other stop, and never silently
+   * replaced by a future Fetch (see EditRouteScreen's own
+   * fetchLocation, which now confirms before touching an already-
+   * overridden row). */
+  onOverrideCoordinates: (lat: number, lon: number) => void;
   onCancel: () => void;
   onDelete: () => void;
   onUpdate: () => void;
@@ -1176,10 +1194,7 @@ function StepRowEditor({
   }
 
   function handleSave() {
-    if (hasCoordsText) {
-      if (!manualCoords) return; // the box below already shows why, live
-      onManualCoordinates(manualCoords[0], manualCoords[1]);
-    }
+    if (hasCoordsText && !manualCoords) return; // the box below already shows why, live
     onUpdate();
   }
 
@@ -1405,6 +1420,10 @@ function StepRowEditor({
             onCancel={() => setShowPlaceModal(false)}
             onSetCoordinates={(lat, lon) => {
               onManualCoordinates(lat, lon);
+              setShowPlaceModal(false);
+            }}
+            onOverrideCoordinates={(lat, lon) => {
+              onOverrideCoordinates(lat, lon);
               setShowPlaceModal(false);
             }}
           />
@@ -1720,6 +1739,47 @@ function StepRowEditor({
                   Verified coordinates
                 </p>
               ) : null}
+              {row.overrideLat != null && row.overrideLon != null && (
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-blue-600">
+                  <MapPinIcon className="h-3.5 w-3.5 shrink-0" />
+                  Overridden - stays put even if the shared cache changes.
+                  <button
+                    type="button"
+                    onClick={() => onChange({ overrideLat: null, overrideLon: null })}
+                    className="font-semibold underline underline-offset-2"
+                  >
+                    Clear
+                  </button>
+                </p>
+              )}
+              {/* Two explicit ways to commit a typed/pasted coordinate,
+              same choice PlaceCoordinatesModal's own two buttons give a
+              dragged one - "Update" writes into the shared cache (every
+              other stop whose own road pair matches sees it too);
+              "Override" writes this row's own permanent coordinate
+              instead, independent of the cache and safe from a later
+              Fetch silently replacing it (see EditRouteScreen's own
+              fetchLocation, which confirms first for an already-
+              overridden row). Shown only once there's something valid
+              typed to actually act on. */}
+              {manualCoords && (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onManualCoordinates(manualCoords[0], manualCoords[1])}
+                    className="btn-glossy-light flex-1 rounded-lg bg-zinc-300 py-1.5 text-xs font-semibold text-zinc-900"
+                  >
+                    Update
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOverrideCoordinates(manualCoords[0], manualCoords[1])}
+                    className="btn-glossy-light flex-1 rounded-lg bg-zinc-300 py-1.5 text-xs font-semibold text-zinc-900"
+                  >
+                    Override
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Riders only really means anything for a stop (a turn has
@@ -2131,6 +2191,8 @@ function fallbackExplanation(fallback: FallbackDetail): string {
       return `No exact match, but a nearby road with a different street type looks like the same one: "${fallback.correctedQuery}".`;
     case "fuzzy-name":
       return `No exact match, but a nearby road with a similar spelling looks like the same one: "${fallback.correctedQuery}".`;
+    case "directional":
+      return `No exact match, but a nearby road with the same distinctive name (just a different or missing direction) looks like the same one: "${fallback.correctedQuery}".`;
     case "loop-snap":
       return `These two roads don't meet as a simple intersection here (often a loop or circle) - placed on "${fallback.correctedQuery}" instead, at the point closest to this route. Not a real crossing - only an approximation.`;
   }
@@ -2216,6 +2278,64 @@ function GeocodeConfirmModal({
             className="btn-glossy-blue font-heading flex-1 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white"
           >
             Accept
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Opened by fetchLocation's own single-row Fetch (globe button) when
+ * this row already carries its own override coordinate
+ * (RouteStep.overrideLat/overrideLon) - a fresh geocode would only ever
+ * be shadowed by that override (resolveStepCoordinate.ts always makes
+ * an override win), so this asks before spending the call at all. Keep
+ * leaves the override and the row untouched; Replace clears the
+ * override first (staged into draftRow, same as any other field edit)
+ * and then runs the real fetch, so the newly-resolved coordinate
+ * actually takes effect.
+ */
+function OverrideFetchConfirmModal({
+  onKeep,
+  onReplace,
+}: {
+  onKeep: () => void;
+  onReplace: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/50 p-6"
+      onClick={onKeep}
+    >
+      <div
+        className="animate-popup-pop w-full max-w-sm rounded-xl bg-[var(--background)] p-5 text-left shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-heading text-xl font-black tracking-tight">
+          Replace Override?
+        </h2>
+        <p className="mt-2 text-sm text-zinc-500">
+          This waypoint has a manually overridden coordinate. Fetching
+          will look up a fresh coordinate and clear the override so the
+          new one actually takes effect - otherwise it would just sit
+          there unused.
+        </p>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={onKeep}
+            className="btn-glossy-light font-heading flex-1 rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+          >
+            Keep Override
+          </button>
+          <button
+            type="button"
+            onClick={onReplace}
+            className="btn-glossy-blue font-heading flex-1 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white"
+          >
+            Replace
           </button>
         </div>
       </div>
@@ -3476,6 +3596,17 @@ export function EditRouteScreen({
   const [expandedIndex, setExpandedIndex] = useState<number | null>(
     quickEditTargetIndex,
   );
+  // Mirrors `expandedIndex` for doFetchLocation's own async continuation
+  // below - that function closes over whatever `expandedIndex` was at
+  // the moment Fetch was pressed, which the network round trip can
+  // easily outlive if the admin navigates to a different row (or closes
+  // the editor) before the response lands. A plain ref, kept in sync via
+  // effect rather than written during render (see react-hooks/refs),
+  // always reads the live value instead of that stale snapshot.
+  const expandedIndexRef = useRef(expandedIndex);
+  useEffect(() => {
+    expandedIndexRef.current = expandedIndex;
+  }, [expandedIndex]);
   const [draftRow, setDraftRow] = useState<RawRouteRow | null>(() => {
     if (!quickEdit) return null;
     return quickEdit.insertNewAfter
@@ -3621,6 +3752,15 @@ export function EditRouteScreen({
     entry: Extract<WaypointCacheEntry, { status: "ok" }>;
     fallback: FallbackDetail;
   } | null>(null);
+
+  // A single-row Fetch (globe button) pressed while this row still
+  // carries its own override (overrideLat/overrideLon both set) -
+  // OverrideFetchConfirmModal shows this and waits for Keep/Replace
+  // before ever spending the call (see fetchLocation's own doc
+  // comment). Null the rest of the time, including for every row with
+  // no override, which never touches this state at all.
+  const [pendingOverrideFetchConfirm, setPendingOverrideFetchConfirm] =
+    useState<GeocodableQuery | null>(null);
 
   /** GeocodeConfirmModal's own Accept - persists exactly the same way
    * a plain exact match already does (setCache + persistWaypoint),
@@ -3855,8 +3995,14 @@ export function EditRouteScreen({
     return deriveWaypointsWithContext(rows, schoolAddress);
   }, [mode, rows, hasIncompleteRow, hasRealSchoolAddress, schoolAddress]);
   const resolutionRows = useMemo(
-    () => summarizeRouteResolution(waypoints, cache),
-    [waypoints, cache],
+    () =>
+      summarizeRouteResolution(
+        waypoints,
+        rows.map((r) => ({ overrideLat: r.overrideLat, overrideLon: r.overrideLon })),
+        cache,
+        schoolAnchor,
+      ),
+    [waypoints, rows, cache, schoolAnchor],
   );
   const counts = useMemo(
     () => resolutionCounts(resolutionRows),
@@ -3972,10 +4118,15 @@ export function EditRouteScreen({
   );
   const draftStatus = useMemo(
     () =>
-      draftWaypoint
-        ? summarizeRouteResolution([draftWaypoint], cache)[0]
+      draftWaypoint && draftRow
+        ? summarizeRouteResolution(
+            [draftWaypoint],
+            [{ overrideLat: draftRow.overrideLat, overrideLon: draftRow.overrideLon }],
+            cache,
+            schoolAnchor,
+          )[0]
         : undefined,
-    [draftWaypoint, cache],
+    [draftWaypoint, draftRow, cache, schoolAnchor],
   );
 
   // Opens row `index`'s full editor - always switches straight to it
@@ -4203,6 +4354,8 @@ export function EditRouteScreen({
         side: "",
         notes: step.instruction,
         skip: false,
+        overrideLat: null,
+        overrideLon: null,
       }));
       const updatedRows = [
         ...rows.slice(0, gapIndex),
@@ -4351,12 +4504,33 @@ export function EditRouteScreen({
   // reads as resolved everywhere else that checks it (the collapsed
   // row's own green check, Publish's readiness count) the same way
   // either path got there.
+  // `near` - the same nearestResolvedGuess neighbor context
+  // StepRowEditor's own placementGuess/PlaceCoordinatesModal centering
+  // already uses - decides *which* row this write actually means for
+  // an intersection query with more than one already-known candidate
+  // (waypointCache.ts's own resolveIntersectionCacheEntry, the same
+  // "known candidates, nearest to context wins" check
+  // resolveIntersectionKeyed already runs before ever spending a fresh
+  // Overpass call). Without this, two genuinely different real
+  // crossings sharing the same road-pair name always collapsed into
+  // one shared cache row the moment either one's pin was moved by
+  // hand - this is what actually stops that: repositioning *this*
+  // row's own pin now updates whichever candidate this row is already
+  // showing, not blindly the pair's own base entry regardless of
+  // which of the two real crossings this particular stop is at. A
+  // plain address, or an intersection with no already-known sibling
+  // yet, behaves exactly as before either way.
   function setManualCoordinates(
     waypoint: GeocodableQuery,
     lat: number,
     lon: number,
+    near: { lat: number; lon: number } | null = null,
   ) {
-    const key = waypointCacheKey(waypoint);
+    const baseKey = waypointCacheKey(waypoint);
+    const key =
+      waypoint.kind === "intersection"
+        ? (resolveIntersectionCacheEntry(cache, baseKey, near)?.key ?? baseKey)
+        : baseKey;
     const entry: WaypointCacheEntry = {
       status: "ok",
       lat,
@@ -4369,7 +4543,30 @@ export function EditRouteScreen({
     persistWaypoint(key, entry);
   }
 
-  async function fetchLocation(waypoint: GeocodableQuery) {
+  /** Pulls the cardinal label straight off a resolved entry's own
+   * displayName ("Nir Shreibman Blvd & E Main St (North)" -> "(North)")
+   * - the exact same wording resolveIntersectionKeyed already computed
+   * the moment it discovered this road pair answers to two real points
+   * (see that function's own doc comment, resolveWaypoint.ts), rather
+   * than a fresh label of its own that could drift out of sync with it.
+   * Deliberately just "(North)", never "(northern crossing)" - the two
+   * points don't necessarily cross at either one (a T where one road
+   * simply ends into the other reads the same way here as a real
+   * four-way crossing does - see cardinalCompassWord's own doc
+   * comment, cardinalLabel.ts), so the label only ever says which of
+   * the two this is, never claims more than that. Null for any entry
+   * that isn't cardinal-labeled at all - an ordinary, unambiguous
+   * match, the overwhelming majority. */
+  function suggestedCrossingNote(displayName: string): string | null {
+    const match = displayName.match(/\((North|South|East|West)\)$/);
+    return match ? `(${match[1]})` : null;
+  }
+
+  /** Fetch's own real network round trip - shared by fetchLocation's
+   * ordinary immediate path and its own "Replace" confirm, once an
+   * override in the way has actually been cleared (see fetchLocation's
+   * own doc comment just below). */
+  async function doFetchLocation(waypoint: GeocodableQuery) {
     if (singleFetchCoolingDown) return; // the button's own disabled state should already prevent this
     setFetchError(null);
     setSingleFetchCoolingDown(true);
@@ -4394,9 +4591,42 @@ export function EditRouteScreen({
         return;
       }
 
-      const key = waypointCacheKey(waypoint);
-      setCache((prev) => ({ ...prev, [key]: data.result }));
-      persistWaypoint(key, data.result);
+      setCache((prev) => {
+        const next = { ...prev, [data.key]: data.result };
+        if (data.discoveredAlternate) next[data.discoveredAlternate.key] = data.discoveredAlternate.entry;
+        return next;
+      });
+      persistWaypoint(data.key, data.result);
+      if (data.discoveredAlternate) persistWaypoint(data.discoveredAlternate.key, data.discoveredAlternate.entry);
+
+      // A genuinely new second point for this exact road pair - the
+      // cache now holds both, but this row's own *location* text still
+      // won't carry the cardinal (no direction in the spoken driving
+      // instruction itself - see speech.ts's own bare-address
+      // treatment), so a driver reaching a repeated road name further
+      // down the route would otherwise have nothing explaining why.
+      // Stages the same "(North)" wording straight into this row's own
+      // notes for the admin to keep, edit, or clear - never silently
+      // overwriting whatever's already there, and only while this exact
+      // row is still the one open (expandedIndexRef - the admin could
+      // have moved on to a different row, or closed the editor
+      // outright, by the time this response actually lands).
+      if (
+        data.discoveredAlternate &&
+        data.result.status === "ok" &&
+        expandedIndexRef.current === waypoint.stepId
+      ) {
+        const suggestion = suggestedCrossingNote(data.result.displayName);
+        if (suggestion) {
+          setDraftRow((prev) => {
+            if (!prev || prev.notes.includes(suggestion)) return prev;
+            return {
+              ...prev,
+              notes: prev.notes.trim() ? `${prev.notes.trim()} ${suggestion}` : suggestion,
+            };
+          });
+        }
+      }
       if (data.result.status === "error" && data.result.rateLimited) {
         setFetchError({
           message:
@@ -4440,6 +4670,52 @@ export function EditRouteScreen({
         SINGLE_FETCH_COOLDOWN_MS,
       );
     }
+  }
+
+  /** StepRowEditor's own globe-button Fetch (single row) - a fresh
+   * geocode is pointless while this row's own override still stands,
+   * since resolveStepCoordinate.ts always makes an override win over
+   * whatever the cache ends up holding regardless. So when the draft
+   * row already carries one (see the onFetch call site's own
+   * currentOverride argument, read off draftRow at the moment Fetch is
+   * pressed), this holds off on doFetchLocation and instead opens
+   * OverrideFetchConfirmModal to ask first - Keep leaves the override
+   * (and the row) exactly as it was, Replace clears it (staged into
+   * draftRow the same way the Override button itself stages one, only
+   * persisted at the next Update/Save) and then runs the real fetch, so
+   * whatever comes back actually takes effect instead of silently
+   * losing to the override that's still there. A row with no override
+   * skips this gate entirely and fetches immediately, exactly as
+   * before. */
+  function fetchLocation(
+    waypoint: GeocodableQuery,
+    currentOverride?: { overrideLat: number | null; overrideLon: number | null } | null,
+  ) {
+    if (currentOverride?.overrideLat != null && currentOverride?.overrideLon != null) {
+      setPendingOverrideFetchConfirm(waypoint);
+      return;
+    }
+    void doFetchLocation(waypoint);
+  }
+
+  /** OverrideFetchConfirmModal's own Keep - closes the prompt, leaves
+   * the override and the row untouched. */
+  function keepOverrideOnFetch() {
+    setPendingOverrideFetchConfirm(null);
+  }
+
+  /** OverrideFetchConfirmModal's own Replace - clears the override
+   * (staged into draftRow, same as the Override button setting one in
+   * the first place - see the coordinate Field's own "Clear" button for
+   * the same handleDraftChange call) and only then runs the real
+   * fetch, so the freshly-resolved cache coordinate isn't immediately
+   * shadowed by the override it just replaced. */
+  function replaceOverrideOnFetch() {
+    if (!pendingOverrideFetchConfirm) return;
+    const waypoint = pendingOverrideFetchConfirm;
+    setPendingOverrideFetchConfirm(null);
+    handleDraftChange({ overrideLat: null, overrideLon: null });
+    void doFetchLocation(waypoint);
   }
 
   // Shared by both Fetch Coordinates modal buttons below - they only
@@ -4512,9 +4788,13 @@ export function EditRouteScreen({
         }
         if (data.anchor) setSchoolAnchor(data.anchor);
         persistSchoolAnchorIfFresh(data.anchorEntry);
-        const key = waypointCacheKey(waypoint);
-        setCache((prev) => ({ ...prev, [key]: data.result }));
-        persistWaypoint(key, data.result);
+        setCache((prev) => {
+          const next = { ...prev, [data.key]: data.result };
+          if (data.discoveredAlternate) next[data.discoveredAlternate.key] = data.discoveredAlternate.entry;
+          return next;
+        });
+        persistWaypoint(data.key, data.result);
+        if (data.discoveredAlternate) persistWaypoint(data.discoveredAlternate.key, data.discoveredAlternate.entry);
         setFetchingStepIds((prev) => {
           const next = new Set(prev);
           next.delete(waypoint.stepId);
@@ -4547,6 +4827,18 @@ export function EditRouteScreen({
     }
   }
 
+  // A batch Fetch's own override guard - unlike the single-row globe
+  // button (fetchLocation's own pendingOverrideFetchConfirm), a batch
+  // run never stops mid-list to ask; it just quietly leaves an
+  // already-overridden row alone, since fetching over it would only
+  // ever get shadowed by the override anyway (resolveStepCoordinate.ts)
+  // and an admin who wants that row re-fetched can still do so one row
+  // at a time via Fetch/Replace.
+  function isOverridden(waypoint: GeocodableQuery): boolean {
+    const row = rows[waypoint.stepId];
+    return row?.overrideLat != null && row?.overrideLon != null;
+  }
+
   // Only spends calls on what isn't already resolved - the Fetch
   // Coordinates modal's "Fetch Missing" button.
   function fetchMissingLocations() {
@@ -4554,7 +4846,8 @@ export function EditRouteScreen({
       waypoints.filter(
         (w): w is GeocodableQuery =>
           w.kind !== "unresolvable" &&
-          cache[waypointCacheKey(w)]?.status !== "ok",
+          cache[waypointCacheKey(w)]?.status !== "ok" &&
+          !isOverridden(w),
       ),
     );
   }
@@ -4562,9 +4855,12 @@ export function EditRouteScreen({
   // Deliberately re-spends a call on every geocodable row, "ok" ones
   // included - the modal's "Re-fetch All" button, for when an admin
   // suspects a previously-resolved coordinate is actually wrong.
+  // Overridden rows are skipped even here (see isOverridden above).
   function refetchAllLocations() {
     return runFetchAll(
-      waypoints.filter((w): w is GeocodableQuery => w.kind !== "unresolvable"),
+      waypoints.filter(
+        (w): w is GeocodableQuery => w.kind !== "unresolvable" && !isOverridden(w),
+      ),
     );
   }
 
@@ -5622,6 +5918,12 @@ export function EditRouteScreen({
             onReject={rejectFallbackMatch}
           />
         )}
+        {pendingOverrideFetchConfirm && (
+          <OverrideFetchConfirmModal
+            onKeep={keepOverrideOnFetch}
+            onReplace={replaceOverrideOnFetch}
+          />
+        )}
 
         {/* One row's own editor, as a modal popup rather than swapped
             in for its StepRowView above - only ever rendered for
@@ -5669,12 +5971,29 @@ export function EditRouteScreen({
                 onFetch={() =>
                   draftWaypoint &&
                   draftWaypoint.kind !== "unresolvable" &&
-                  fetchLocation(draftWaypoint)
+                  // fetchLocation's own async continuation reads
+                  // expandedIndexRef only after an await, never during
+                  // render - see that ref's own doc comment. This only
+                  // ever runs from this onClick handler, so the static
+                  // "may read during render" warning doesn't apply here.
+                  // eslint-disable-next-line react-hooks/refs
+                  fetchLocation(draftWaypoint, {
+                    overrideLat: draftRow?.overrideLat ?? null,
+                    overrideLon: draftRow?.overrideLon ?? null,
+                  })
                 }
                 onManualCoordinates={(lat, lon) =>
                   draftWaypoint &&
                   draftWaypoint.kind !== "unresolvable" &&
-                  setManualCoordinates(draftWaypoint, lat, lon)
+                  setManualCoordinates(
+                    draftWaypoint,
+                    lat,
+                    lon,
+                    nearestResolvedGuess(resolutionRows, index),
+                  )
+                }
+                onOverrideCoordinates={(lat, lon) =>
+                  handleDraftChange({ overrideLat: lat, overrideLon: lon })
                 }
                 canGoPrev={quickEdit ? false : visibleRowIndices.indexOf(index) > 0}
                 canGoNext={

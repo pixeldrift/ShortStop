@@ -2,6 +2,17 @@
 // text (subheadings, the CSV itself) keeps the abbreviated form - this is
 // audio-only, so a TTS engine doesn't read "Rd" as "rid" or skip it.
 const ROAD_ABBREVIATIONS: Record<string, string> = {
+  // Bare cardinal-direction prefixes/suffixes ("E Nir Shreibman Blvd",
+  // "Highway 41 N") - a single-letter word is otherwise never a real
+  // token in a road name, so there's no ambiguity worth guarding
+  // against the way a two-letter abbreviation sometimes needs. Written
+  // as typed everywhere else (this map is speech-only, same as every
+  // other entry here) - only pronunciation changes, not the road's own
+  // on-screen spelling.
+  n: "North",
+  s: "South",
+  e: "East",
+  w: "West",
   rd: "Road",
   ln: "Lane",
   dr: "Drive",

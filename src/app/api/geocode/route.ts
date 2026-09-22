@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 import { extractCityState } from "@/lib/geocode";
 import type { GeocodableQuery } from "@/lib/geocode";
 import { fetchOneLocation } from "@/lib/resolveWaypoint";
 import type { FallbackDetail } from "@/lib/resolveWaypoint";
-import type { WaypointCacheEntry } from "@/lib/waypointCache";
+import { CARDINAL_LABELS, intersectionVariantKey, waypointCacheKey } from "@/lib/waypointCache";
+import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
+import { toEntry } from "@/app/api/waypoints/route";
 
 /**
  * Server-side endpoint behind EditRouteScreen.tsx's "Fetch Location"
@@ -65,7 +68,19 @@ export interface GeocodeResponseBody {
    * Fetch Location/Fetch All flow actually saves it somewhere real,
    * not just this session's own `anchor` state above. */
   anchorEntry: WaypointCacheEntry | null;
+  /** The cache key `result` actually belongs under - see
+   * fetchOneLocation's own doc comment. The caller persists `result`
+   * under *this* key (via /api/waypoints), not necessarily whatever
+   * its own client-side waypointCacheKey(query) would compute - the
+   * two only ever differ for an intersection query bound to a known
+   * second crossing instead of its own base key. */
+  key: string;
   result: WaypointCacheEntry;
+  /** A second real candidate this request just discovered for an
+   * intersection query - see fetchOneLocation's own doc comment. Null
+   * the overwhelming rest of the time. The caller should persist this
+   * too, the same way it persists `key`/`result`. */
+  discoveredAlternate: { key: string; entry: WaypointCacheEntry } | null;
   /** Set only when `allowFallback` was sent and a fallback strategy is
    * what actually produced `result` - null for a plain exact match, or
    * whenever `allowFallback` wasn't sent at all. EditRouteScreen.tsx's
@@ -111,12 +126,29 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const anchor = body.anchor ?? null;
+
+  // Only an intersection query can have a known second crossing to
+  // bind to (resolveIntersectionKeyed's own doc, resolveWaypoint.ts) -
+  // a plain address never does, so this stays an empty object (no
+  // query) for the overwhelming majority of requests. Read straight
+  // from Postgres rather than trusting anything the client claims is
+  // cached - the shared cache table is the one source of truth here,
+  // not whatever this particular browser tab happened to fetch last.
+  let cache: WaypointCache = {};
+  if (body.query.kind === "intersection") {
+    const baseKey = waypointCacheKey(body.query);
+    const keys = [baseKey, ...CARDINAL_LABELS.map((label) => intersectionVariantKey(baseKey, label))];
+    const rows = await prisma.waypoint.findMany({ where: { cacheKey: { in: keys } } });
+    cache = Object.fromEntries(rows.map((row) => [row.cacheKey, toEntry(row)]));
+  }
+
   const result = await fetchOneLocation(body.query, {
     schoolAddress,
     locationContext,
     apiKey,
     anchor,
     allowFallback: body.allowFallback,
+    cache,
   });
   if ("error" in result)
     return NextResponse.json(
@@ -127,7 +159,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   const responseBody: GeocodeResponseBody = {
     anchor: result.anchor,
     anchorEntry: result.anchorEntry,
+    key: result.key,
     result: result.entry,
+    discoveredAlternate: result.discoveredAlternate,
     fallback: result.fallback,
   };
   return NextResponse.json(responseBody);

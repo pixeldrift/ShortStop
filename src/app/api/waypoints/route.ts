@@ -15,7 +15,12 @@ import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
  * every future load, not just this session's.
  */
 
-function toEntry(row: {
+/** Shared with /api/geocode/route.ts, which needs the same row->entry
+ * shape to look up a query's already-known cache siblings before
+ * resolving it fresh (see that route's own resolveIntersectionKeyed
+ * call) - kept here rather than duplicated since this route is the
+ * one that actually owns the Waypoint table's own row shape. */
+export function toEntry(row: {
   status: string;
   lat: number | null;
   lon: number | null;

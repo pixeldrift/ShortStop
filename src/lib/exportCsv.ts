@@ -1,5 +1,6 @@
 import type { NavigationStep, Route } from "./types";
-import type { WaypointCache } from "./waypointCache";
+import { resolveRouteCoordinates } from "./waypointCache";
+import type { ResolvedStepCoordinate, WaypointCache } from "./waypointCache";
 
 /** Wraps a single CSV field in quotes only when it actually needs it
  * (a comma, quote, or newline in the value), doubling any embedded
@@ -47,9 +48,13 @@ const STEP_HEADER = [
  * already do to place a pin, just written out as a CSV row instead of
  * used for a live map/lookup. Never triggers a new geocode of its own -
  * only ever reports whatever's already in memory. */
-function stepRow(step: NavigationStep, index: number, cache: WaypointCache): (string | number)[] {
-  const entry = cache[step.waypointKey];
-  const resolved = entry?.status === "ok" ? entry : undefined;
+function stepRow(
+  step: NavigationStep,
+  index: number,
+  resolved: ResolvedStepCoordinate | null,
+  cache: WaypointCache,
+): (string | number)[] {
+  const failed = !resolved && cache[step.waypointKey]?.status === "error";
   return [
     index + 1,
     step.kind,
@@ -58,7 +63,7 @@ function stepRow(step: NavigationStep, index: number, cache: WaypointCache): (st
     step.sideOfRoad ?? "",
     step.studentCount ?? "",
     step.specialInstruction ?? "",
-    resolved ? "resolved" : entry?.status === "error" ? "unresolved" : "not yet geocoded",
+    resolved ? "resolved" : failed ? "unresolved" : "not yet geocoded",
     resolved ? resolved.lat : "",
     resolved ? resolved.lon : "",
     resolved ? resolved.displayName : "",
@@ -67,9 +72,19 @@ function stepRow(step: NavigationStep, index: number, cache: WaypointCache): (st
 
 /** A route's own stops and turns, plus whatever coordinates are
  * already known for each, as CSV - everything the app already has in
- * memory, nothing this export triggers itself. */
+ * memory, nothing this export triggers itself. Resolved the same way
+ * routing/live navigation now do (resolveRouteCoordinates -
+ * waypointCache.ts): an override wins, and a step near a known second
+ * road crossing reports whichever candidate the route's own walk-
+ * through actually lands on, not just whatever the pair's own shared
+ * base cache entry happens to hold. */
 export function routeStepsToCsv(route: Route, cache: WaypointCache): string {
-  const rows = route.steps.map((step, index) => csvRow(stepRow(step, index, cache)));
+  const schoolAnchor =
+    route.schoolLat != null && route.schoolLon != null
+      ? { lat: route.schoolLat, lon: route.schoolLon }
+      : null;
+  const resolved = resolveRouteCoordinates(route.steps, cache, schoolAnchor);
+  const rows = route.steps.map((step, index) => csvRow(stepRow(step, index, resolved[index], cache)));
   return [csvRow(STEP_HEADER), ...rows].join("\n") + "\n";
 }
 

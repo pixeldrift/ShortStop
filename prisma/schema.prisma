@@ -203,6 +203,25 @@ model RouteStep {
   // Defaults false so every existing/seeded row (none of which have
   // ever set this) reads as "not skipped" without a backfill.
   skip       Boolean @default(false)
+  // An admin-placed coordinate that's this row's own, permanent answer
+  // to "where is this stop/turn" - set together (null together), and,
+  // once set, always wins over the shared Waypoint geocoding cache for
+  // this row specifically (see resolveStepCoordinate.ts), never
+  // touched by a later Fetch/Re-fetch of this row's own location text
+  // without an explicit "replace" confirm. Exists for the ordinary
+  // case (a geocoder guessed a few doors down, an admin drags the pin
+  // to the real spot) and, together with intersectionVariantKey's own
+  // cardinal-labeled cache siblings (waypointCache.ts), for a loop
+  // road crossing the same other road twice: the shared cache still
+  // does the automatic work of keeping the two crossings from
+  // collapsing into one point for every *un*-overridden row, but two
+  // stops at the same road pair can each pin their own coordinate here
+  // independent of that shared entry (and of each other) without any
+  // risk of colliding on a cache key, since this never is one - it's
+  // this row's own column, not shared with any other row or route no
+  // matter how many times the same road-pair text repeats.
+  overrideLat Float?
+  overrideLon Float?
 
   @@unique([routeId, sequence])
   @@map("route_steps")
