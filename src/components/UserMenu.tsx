@@ -207,12 +207,30 @@ function Field({
       <span className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
         {label}
       </span>
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-      />
+      <div className="relative">
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none ${
+            value ? "pr-9" : ""
+          }`}
+        />
+        {/* The same "clear search" X RouteListScreen/SchoolListScreen's
+            own search boxes already use, applied here too - every
+            free-text field in the app gets the same fast way to clear
+            instead of select-all-backspace by hand. */}
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            aria-label={`Clear ${label.toLowerCase()}`}
+            className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+          >
+            <CloseIcon className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
     </label>
   );
 }
