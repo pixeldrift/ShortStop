@@ -10,9 +10,16 @@ import type {
   Marker as MapLibreMarker,
 } from "maplibre-gl";
 import { ActionIcon, PersonSolidIcon } from "./icons";
-import { collapseAttribution, PMTILES_ATTRIBUTION, PMTILES_URL } from "@/lib/mapEngine";
+import {
+  collapseAttribution,
+  PMTILES_ATTRIBUTION,
+  PMTILES_URL,
+  ROUTE_LINE_OFFSET,
+  ROUTE_LINE_WIDTH,
+} from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
+import { spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
 import type { TripType, TurnDirection } from "@/lib/types";
 import { resolveRouteCoordinates } from "@/lib/waypointCache";
 import type { WaypointCache } from "@/lib/waypointCache";
@@ -902,7 +909,8 @@ function mountMapLibre(args: MountArgs): () => void {
                     layout: { "line-cap": "round", "line-join": "round" },
                     paint: {
                       "line-color": ROUTE_LINE_COLOR,
-                      "line-width": 4,
+                      "line-width": ROUTE_LINE_WIDTH,
+                      "line-offset": ROUTE_LINE_OFFSET,
                       "line-opacity": 0.85,
                       // A dash length of 0 here used to render as a
                       // solid line instead of a dotted one (dasharray
@@ -913,8 +921,12 @@ function mountMapLibre(args: MountArgs): () => void {
                       // portion still ahead) was showing up solid while
                       // route-traveled below (correctly plain/solid)
                       // read as the dotted one by comparison. [0.25, 2.5]
-                      // is a real, small dot with a real gap at this
-                      // line-width, not a value that can invert itself.
+                      // is a real, small dot with a real gap at
+                      // ROUTE_LINE_WIDTH's own zoom-scaled width, not a
+                      // value that can invert itself - and scales
+                      // proportionally with it by the same "line-width
+                      // units" relationship, same as it always did at
+                      // the old fixed width of 4.
                       "line-dasharray": [0.25, 2.5],
                     },
                   },
@@ -928,7 +940,8 @@ function mountMapLibre(args: MountArgs): () => void {
                     layout: { "line-cap": "round", "line-join": "round" },
                     paint: {
                       "line-color": ROUTE_LINE_COLOR,
-                      "line-width": 4,
+                      "line-width": ROUTE_LINE_WIDTH,
+                      "line-offset": ROUTE_LINE_OFFSET,
                       "line-opacity": 0.85,
                     },
                   },
@@ -1049,18 +1062,30 @@ function mountMapLibre(args: MountArgs): () => void {
 
           function drawDrivingPins() {
             clearPins();
-            for (const stop of stopsRef.current) {
-              const point = resolvedByKey.get(stop.waypointKey);
-              if (!point) continue;
+            // A route that genuinely stops twice at one real
+            // intersection (different directions of approach, at
+            // different times) resolves both stops to the same point -
+            // spread apart (same helper/threshold WaypointPreviewMap.tsx's
+            // own StopPin drawing uses) so both stay visible and
+            // tappable instead of one drawing directly on top of the
+            // other.
+            const resolvedStops = stopsRef.current
+              .map((stop) => ({ stop, point: resolvedByKey.get(stop.waypointKey) }))
+              .filter(
+                (entry): entry is { stop: StopMarker; point: { lat: number; lon: number } } =>
+                  entry.point != null,
+              );
+            const spreadPoints = spreadCoincidentPoints(resolvedStops.map((entry) => entry.point));
+            resolvedStops.forEach((entry, i) => {
               pins.push(
                 new maplibregl.Marker({
-                  element: elementFromHtml(stopMarkerHtml(stop.number)),
+                  element: elementFromHtml(stopMarkerHtml(entry.stop.number)),
                   anchor: "bottom",
                 })
-                  .setLngLat(toLngLat(point))
+                  .setLngLat(toLngLat(spreadPoints[i]))
                   .addTo(mapInstance),
               );
-            }
+            });
             for (const turn of turnsRef.current) {
               const point = resolvedByKey.get(turn.waypointKey);
               if (!point) continue;

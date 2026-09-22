@@ -5,7 +5,13 @@ import type { MutableRefObject } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { ExpandableMap } from "./ExpandableMap";
 import { MapPinIcon } from "./icons";
-import { collapseAttribution, PMTILES_ATTRIBUTION, PMTILES_URL } from "@/lib/mapEngine";
+import {
+  collapseAttribution,
+  PMTILES_ATTRIBUTION,
+  PMTILES_URL,
+  ROUTE_LINE_OFFSET,
+  ROUTE_LINE_WIDTH,
+} from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import type { RoutingResult } from "@/lib/routing/types";
 
@@ -297,7 +303,12 @@ function mountMapLibre(
               type: "line",
               source: "route-line",
               layout: { "line-cap": "round", "line-join": "round" },
-              paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
+              paint: {
+                "line-color": "#2563eb",
+                "line-width": ROUTE_LINE_WIDTH,
+                "line-offset": ROUTE_LINE_OFFSET,
+                "line-opacity": 0.7,
+              },
             });
           })
           .catch((err) => console.warn("Couldn't fetch route geometry:", err));

@@ -3,9 +3,16 @@
 import { useEffect, useRef } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
-import { collapseAttribution, PMTILES_ATTRIBUTION, PMTILES_URL } from "@/lib/mapEngine";
+import {
+  collapseAttribution,
+  PMTILES_ATTRIBUTION,
+  PMTILES_URL,
+  ROUTE_LINE_OFFSET,
+  ROUTE_LINE_WIDTH,
+} from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import type { RoutingResult } from "@/lib/routing/types";
+import { isSameLocation, spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
 
 const PREVIEW_ZOOM = 15;
 // Same 1s RouteMap.tsx's own driving-mode flyTo already uses for
@@ -32,26 +39,13 @@ const CURRENT_COLOR = "#2563eb"; // blue-600
 // Two independently-geocoded rows (a Stop and a turn typed for the same
 // physical corner, say) rarely land on the exact same lat/lon - close
 // enough that a human reads them as "the same intersection," but not
-// bit-for-bit identical. This is the threshold both the current-turn/
+// bit-for-bit identical. isSameLocation is what both the current-turn/
 // overlapping-stop hiding below and the camera-jump suppression in
-// flyToCenter use to treat two such points as one spot. ~0.0003
-// degrees of latitude is roughly 30m - comfortably smaller than the
-// gap between two genuinely different intersections on a normal street
-// grid, but bigger than the kind of noise two separate geocodes of
-// "the same corner" tend to produce. A plain box comparison, not a
-// real haversine distance - this only ever needs to answer "basically
-// the same spot or not," the same informal precision RouteMap.tsx's
-// own nearestCoordIndex already uses for a similar purpose.
-const SAME_LOCATION_THRESHOLD_DEG = 0.0003;
-function isSameLocation(
-  a: { lat: number; lon: number },
-  b: { lat: number; lon: number },
-): boolean {
-  return (
-    Math.abs(a.lat - b.lat) < SAME_LOCATION_THRESHOLD_DEG &&
-    Math.abs(a.lon - b.lon) < SAME_LOCATION_THRESHOLD_DEG
-  );
-}
+// flyToCenter use to treat two such points as one spot -
+// spreadCoincidentPoints (redrawStopPins, below) is the same threshold
+// put to the opposite use: a route that genuinely stops twice at one
+// real intersection still needs both dots visible, not one hiding the
+// other.
 
 /** One already-resolved Stop's own dot on the map - `rowIndex` (a real
  * index into EditRouteScreen's own `rows`) is what lets tapping one of
@@ -393,7 +387,11 @@ function mountMapLibre(
   function redrawStopPins(maplibregl: typeof import("maplibre-gl")) {
     if (!map) return;
     for (const marker of stopMarkers) marker.remove();
-    stopMarkers = visibleStopPins().map((pin) =>
+    // A route that genuinely stops twice at one real intersection (see
+    // this file's own top doc comment) resolves both rows to the same
+    // point - spread apart here so both stay visible and tappable
+    // instead of one drawing directly on top of the other.
+    stopMarkers = spreadCoincidentPoints(visibleStopPins()).map((pin) =>
       makeDotMarker(maplibregl, pin.lat, pin.lon, dotHtml(STOP_SIZE, STOP_COLOR, pin.stopNumber), pin.rowIndex).addTo(
         map!,
       ),
@@ -456,7 +454,12 @@ function mountMapLibre(
             type: "line",
             source: "preview-route-line",
             layout: { "line-cap": "round", "line-join": "round" },
-            paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
+            paint: {
+              "line-color": "#2563eb",
+              "line-width": ROUTE_LINE_WIDTH,
+              "line-offset": ROUTE_LINE_OFFSET,
+              "line-opacity": 0.7,
+            },
           });
         }
       })
