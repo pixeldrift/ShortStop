@@ -1,3 +1,5 @@
+import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
+
 /**
  * Shared MapLibre GL setup for every map in this app (RouteMap.tsx,
  * WaypointPreviewMap.tsx, PlaceCoordinatesModal.tsx) - self-hosted
@@ -86,3 +88,37 @@ export function collapseAttribution(container: HTMLElement): void {
   );
   if (details) details.open = false;
 }
+
+/** Zoom-interpolated line-width for every route line this app draws
+ * (RouteMap.tsx's own route-traveled/route-remaining, WaypointPreviewMap.tsx's
+ * preview-route-line, PlaceCoordinatesModal.tsx's route-line) - thinner
+ * zoomed out, thicker zoomed in, the same "reads like it has real
+ * width, not a fixed-pixel highlighter stroke" feel the base style's
+ * own road layers already have (protomapsStyle.ts). Not a true
+ * meters-wide road buffer - MapLibre's line-width is always screen
+ * pixels, never real-world distance, so this is an approximation tuned
+ * to feel right across the zoom range every map in this app actually
+ * operates in (roughly 12-18, see each file's own zoom constants), not
+ * a physically exact width at any one of them. */
+export const ROUTE_LINE_WIDTH: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  12,
+  2,
+  18,
+  6,
+];
+
+/** A small, fixed offset (MapLibre's own line-offset paint property, in
+ * line-width units - positive shifts right relative to the direction
+ * the line's own coordinates are drawn in) applied to every route line
+ * this app draws, same reasoning as ROUTE_LINE_WIDTH above. A route's
+ * own geometry already encodes real drive direction (the coordinate
+ * order is the literal path driven), so a consistent offset naturally
+ * separates two passes over the same street driven in opposite
+ * directions (a bus that doubles back down a road it was already on)
+ * into two parallel lines instead of one drawing directly over the
+ * other - the same way real traffic lanes read as separate rather than
+ * as one road. */
+export const ROUTE_LINE_OFFSET = 3;
