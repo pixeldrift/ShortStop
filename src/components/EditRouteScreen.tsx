@@ -2088,7 +2088,15 @@ function AddStepButton({
 }) {
   if (dragging) {
     return (
-      <div className="relative flex items-center justify-center py-1">
+      // h-8, not py-1 - the same fixed height the resting button below
+      // sits in, so every gap stays exactly the same size as the drag
+      // target moves between them. This used to be padding-sized
+      // around whatever happened to be in flow (nothing at all for a
+      // plain gap, the "Drop Here" pill for the current target), which
+      // meant each gap's own height changed the instant a drag crossed
+      // into or out of it - every row below reflowed and jumped under
+      // the finger that was mid-drag over it.
+      <div className="relative flex h-8 items-center justify-center">
         <div
           className={
             dropTarget
@@ -2106,18 +2114,23 @@ function AddStepButton({
   }
 
   return (
-    <div className="relative flex items-center justify-center py-1">
+    <div className="relative flex h-8 items-center justify-center">
       {/* Inset rather than the full row width - left-6/right-6 leaves
           exactly the scissors/compass buttons' own width (below) clear
           on each side, so the dashed line reads as running between them
           instead of visibly passing underneath. */}
       <div className="absolute left-6 right-6 border-t border-dashed border-zinc-300" />
+      {/* Flat, not glossy/zinc like the rest of this screen's real
+          buttons - a rounded-blue-square glyph now, the same blue the
+          scissors/compass links beside it already read in, rather than
+          competing with them as its own separate button style on the
+          same dashed line. */}
       <button
         type="button"
         onClick={onClick}
         disabled={disabled}
         aria-label="Add step here"
-        className="btn-glossy-light relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900 disabled:opacity-30"
+        className="relative z-10 flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-white active:bg-blue-700 disabled:opacity-30"
       >
         <PlusIcon className="h-3.5 w-3.5" />
       </button>
