@@ -126,6 +126,26 @@ export function openRouteServiceProvider(apiKey: string): RoutingProvider {
           // to the default would work today but silently stop
           // reporting steps the moment ORS's own default ever changed.
           instructions: true,
+          // ORS's own default ("recommended," a time-weighted blend)
+          // can pick a route that's genuinely longer in distance when
+          // one street along the direct path is modeled as slow enough
+          // (a low road class, a low tagged speed) that its time-cost
+          // estimate loses to a longer, faster-classed detour - even
+          // between two waypoints one street-length apart. Confirmed
+          // for real on a route that consistently backtracked down one
+          // subdivision street instead of continuing onto the very one
+          // its own turn-by-turn instructions named, resolved every
+          // time by forcing a shortest-distance leg through an extra
+          // via-point - which only papers over one specific leg an
+          // admin happened to notice, not the underlying preference
+          // that can misfire on any leg of any route. Every route this
+          // app ever computes is already short, local, subdivision-
+          // street travel end to end - there's no highway-vs-side-
+          // street tradeoff "fastest" is meant to solve here, so the
+          // shortest real distance between two consecutive stops is
+          // the correct answer far more often than a time-weighted
+          // detour is.
+          preference: "shortest",
         }),
       });
 
