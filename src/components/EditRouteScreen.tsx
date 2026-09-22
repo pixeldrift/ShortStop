@@ -871,10 +871,10 @@ function StepRowEditor({
    * fetched once on mount from /api/location-suggestions) - a street, a
    * business, anything successfully geocoded before, school names and
    * saved-location addresses included. Combined with every School/
-   * SavedLocation name (locationDatalistOptions below) to power the
-   * Location field's own <datalist> suggestions, a plain browser-native
-   * autocomplete against what's already known rather than a live map/
-   * geocoder search. */
+   * SavedLocation name (locationSuggestionOptions below) to power the
+   * Location field's own tap-to-select suggestions dropdown, matched
+   * against what's already known rather than a live map/geocoder
+   * search. */
   locationSuggestions: string[];
   /** Creates (`id: null`) or updates (`id` set) a saved location - the
    * address book's own "+ Add Location" footer button and each saved
@@ -1042,20 +1042,42 @@ function StepRowEditor({
     );
   }, [row.location, savedLocations]);
 
-  // The Location field's own <datalist> options - every already-
-  // geocoded location (locationSuggestions, fetched once by
-  // EditRouteScreen) plus every School and SavedLocation name outright,
-  // so picking one of those from the datalist fills Location with the
-  // exact text matchedSchool/matchedSavedLocation above already know
-  // how to recognize, turning straight into the linked-entity chip the
-  // same tap through AddressBookIcon's own popup would have produced -
-  // just a faster path to the same result for a name already memorized.
-  const locationDatalistOptions = useMemo(() => {
+  // The Location field's own suggestion list - every already-geocoded
+  // location (locationSuggestions, fetched once by EditRouteScreen)
+  // plus every School and SavedLocation name outright, so tapping one
+  // of those from the dropdown below fills Location with the exact
+  // text matchedSchool/matchedSavedLocation above already know how to
+  // recognize, turning straight into the linked-entity chip the same
+  // tap through AddressBookIcon's own popup would have produced - just
+  // a faster path to the same result for a name already memorized.
+  const locationSuggestionOptions = useMemo(() => {
     const names = new Set(locationSuggestions);
     for (const name of Object.keys(schools)) names.add(name);
     for (const loc of savedLocations) names.add(loc.name);
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [locationSuggestions, schools, savedLocations]);
+  // Whether the Location text box currently has focus - the dropdown
+  // below only ever shows while it does, same "only while you're
+  // actually looking at this field" gating a native <datalist> gets
+  // for free from the browser itself.
+  const [locationFocused, setLocationFocused] = useState(false);
+  // Up to 8 already-known names containing what's typed so far
+  // (case-insensitive, anywhere in the name - not just a prefix match,
+  // so typing "Ridley" still finds "Sam Ridley Parkway"), the exact
+  // current text excluded (nothing to suggest once it's already been
+  // typed in full). Empty (and so the dropdown below never renders)
+  // until there's actually something typed - same as a native
+  // <datalist> shows nothing for a blank field.
+  const locationMatches = useMemo(() => {
+    const query = row.location.trim().toLowerCase();
+    if (!query) return [];
+    return locationSuggestionOptions
+      .filter((name) => {
+        const lower = name.toLowerCase();
+        return lower !== query && lower.includes(query);
+      })
+      .slice(0, 8);
+  }, [row.location, locationSuggestionOptions]);
 
   // A plain address (a house number out front) or a matched school/
   // saved location (see above) each name one specific point on their
@@ -1472,15 +1494,17 @@ function StepRowEditor({
                       clearLabel="Clear location"
                     />
                   ) : (
-                    <>
+                    <div className="relative min-w-0 flex-1">
                       <input
-                        className={`min-w-0 flex-1 ${inputClass} ${
+                        className={`w-full ${inputClass} ${
                           status?.status === "unresolved"
                             ? "border-red-400 focus:border-red-500 focus:ring-red-500"
                             : ""
                         }`}
                         value={row.location}
                         onChange={(e) => onLocationChange(e.target.value)}
+                        onFocus={() => setLocationFocused(true)}
+                        onBlur={() => setLocationFocused(false)}
                         placeholder={
                           isSchoolAction
                             ? "LaVergne High School"
@@ -1488,25 +1512,46 @@ function StepRowEditor({
                               ? "123 Maple Dr"
                               : "Elm St"
                         }
-                        list="location-suggestions"
+                        autoComplete="off"
                       />
-                      {/* A plain browser-native <datalist>, not a real
-                          autocomplete component - locationDatalistOptions
-                          is every location this app already knows about
-                          (see its own doc comment just above: already-
-                          geocoded addresses/roads plus every School and
-                          SavedLocation name outright), so typing "Oak"
-                          here can suggest "Oak Ave" back exactly as it
-                          resolved before, without a live map/geocoder
-                          search. Still a free-typed field either way -
-                          picking a suggestion or ignoring it entirely
-                          both just set `value` above. */}
-                      <datalist id="location-suggestions">
-                        {locationDatalistOptions.map((name) => (
-                          <option key={name} value={name} />
-                        ))}
-                      </datalist>
-                    </>
+                      {/* A real in-page dropdown, not a native
+                          <datalist> - a datalist's own suggestion list
+                          is the browser/OS's own popup, which on a
+                          touchscreen tablet shows up docked against the
+                          on-screen keyboard rather than right under
+                          this field, and isn't reliably tappable the
+                          same way a plain list of buttons is. This is
+                          the same locationSuggestionOptions list (every
+                          already-known name), just filtered to what's
+                          actually typed so far and rendered as our own
+                          styled panel. onMouseDown/preventDefault on
+                          the panel (not the individual rows) stops a
+                          tap here from blurring the input first - a
+                          blur would otherwise close this panel (see
+                          onBlur above) before the row's own onClick
+                          ever got to fire. */}
+                      {locationFocused && locationMatches.length > 0 && (
+                        <ul
+                          className="absolute top-full left-0 z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg"
+                          onMouseDown={(e) => e.preventDefault()}
+                        >
+                          {locationMatches.map((name) => (
+                            <li key={name}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onLocationChange(name);
+                                  setLocationFocused(false);
+                                }}
+                                className="block w-full truncate px-3 py-2 text-left text-sm text-zinc-900 active:bg-blue-50"
+                              >
+                                {name}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   )}
                   <button
                     type="button"
@@ -3187,9 +3232,9 @@ export function EditRouteScreen({
   // resolved coordinate for, anywhere in the district - fetched once
   // per edit session, same "fetch on mount" shape as savedLocations
   // just above. Feeds StepRowEditor's own Location field suggestions
-  // alongside every School/SavedLocation name (a plain <datalist>, not
-  // a live map search) - see /api/location-suggestions's own doc
-  // comment.
+  // dropdown alongside every School/SavedLocation name (matched
+  // against what's already known, not a live map search) - see
+  // /api/location-suggestions's own doc comment.
   const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
   useEffect(() => {
     fetch("/api/location-suggestions")
@@ -3942,15 +3987,15 @@ export function EditRouteScreen({
   function handleDraftChange(patch: Partial<RawRouteRow>) {
     setDraftRow((prev) => (prev ? { ...prev, ...patch } : prev));
   }
-  /** The Location field's own onChange (typing, or picking one of its
-   * own <datalist> suggestions - both fire the same input event) - same
+  /** The Location field's own onChange (typing, or tapping one of its
+   * own suggestions dropdown rows - both just set the same text) - same
    * patch as handleDraftChange above, plus one extra step: if the new
    * text exactly matches a School or SavedLocation that already has its
    * own lat/lon, resolve this row immediately (setManualCoordinates)
    * instead of leaving it unresolved until Save/Update - the same
    * "resolves this row immediately" treatment LocationPickerModal's own
    * onSelect already gives a pick from the address book popup, now also
-   * true of typing (or datalist-picking) that exact same name by hand.
+   * true of typing (or dropdown-picking) that exact same name by hand.
    * Computes the new row's own waypoint fresh (computeDraftWaypointFor,
    * with `value` applied) rather than reading `draftWaypoint` itself -
    * that memo hasn't recomputed yet at the moment this fires

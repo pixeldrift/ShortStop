@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { CheckboxIcon, CloseIcon, DriverIcon } from "./icons";
+import { CheckboxIcon, CloseIcon, PersonSolidIcon } from "./icons";
 import type { CurrentUser } from "@/lib/currentUser";
 import { ADMIN_PERMISSIONS } from "@/lib/permissions";
 import type { Permissions } from "@/lib/permissions";
@@ -84,7 +84,7 @@ export function UserMenu({
         aria-label="Driver account and permissions"
         className="fixed top-3 right-4 z-30 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-zinc-400 active:bg-zinc-100 active:text-zinc-600"
       >
-        <DriverIcon className="h-6 w-6" />
+        <PersonSolidIcon className="h-6 w-6" />
       </button>
 
       {open && (
