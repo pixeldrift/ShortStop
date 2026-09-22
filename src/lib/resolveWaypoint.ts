@@ -16,7 +16,7 @@ import {
   streetTypeVariants,
 } from "./geocodeFallback";
 import type { FallbackKind } from "./geocodeFallback";
-import { cardinalLabels, squaredDistance } from "./cardinalLabel";
+import { cardinalCompassWord, cardinalLabels, squaredDistance } from "./cardinalLabel";
 import type { CardinalLabel } from "./cardinalLabel";
 import { CARDINAL_LABELS, intersectionVariantKey, waypointCacheKey } from "./waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "./waypointCache";
@@ -267,7 +267,7 @@ export async function resolveIntersectionKeyed(
           status: "ok",
           lat: primaryPoint.lat,
           lon: primaryPoint.lon,
-          displayName: `${label} (${labels.a} crossing)`,
+          displayName: `${label} (${cardinalCompassWord(labels.a)})`,
           source,
           provider: "overpass",
         },
@@ -277,7 +277,7 @@ export async function resolveIntersectionKeyed(
             status: "ok",
             lat: secondaryPoint.lat,
             lon: secondaryPoint.lon,
-            displayName: `${label} (${labels.b} crossing)`,
+            displayName: `${label} (${cardinalCompassWord(labels.b)})`,
             source,
             provider: "overpass",
           },

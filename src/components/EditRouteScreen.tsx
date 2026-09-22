@@ -4538,17 +4538,22 @@ export function EditRouteScreen({
     persistWaypoint(key, entry);
   }
 
-  /** Pulls the cardinal-crossing label straight off a resolved entry's
-   * own displayName ("Nir Shreibman Blvd & E Main St (northern
-   * crossing)" -> "(northern crossing)") - the exact same wording
-   * resolveIntersectionKeyed already computed the moment it discovered
-   * this road pair answers to two real crossings (see that function's
-   * own doc comment, resolveWaypoint.ts), rather than a fresh label of
-   * its own that could drift out of sync with it. Null for any entry
+  /** Pulls the cardinal label straight off a resolved entry's own
+   * displayName ("Nir Shreibman Blvd & E Main St (North)" -> "(North)")
+   * - the exact same wording resolveIntersectionKeyed already computed
+   * the moment it discovered this road pair answers to two real points
+   * (see that function's own doc comment, resolveWaypoint.ts), rather
+   * than a fresh label of its own that could drift out of sync with it.
+   * Deliberately just "(North)", never "(northern crossing)" - the two
+   * points don't necessarily cross at either one (a T where one road
+   * simply ends into the other reads the same way here as a real
+   * four-way crossing does - see cardinalCompassWord's own doc
+   * comment, cardinalLabel.ts), so the label only ever says which of
+   * the two this is, never claims more than that. Null for any entry
    * that isn't cardinal-labeled at all - an ordinary, unambiguous
    * match, the overwhelming majority. */
   function suggestedCrossingNote(displayName: string): string | null {
-    const match = displayName.match(/\((\w+ crossing)\)$/);
+    const match = displayName.match(/\((North|South|East|West)\)$/);
     return match ? `(${match[1]})` : null;
   }
 
@@ -4589,18 +4594,18 @@ export function EditRouteScreen({
       persistWaypoint(data.key, data.result);
       if (data.discoveredAlternate) persistWaypoint(data.discoveredAlternate.key, data.discoveredAlternate.entry);
 
-      // A genuinely new second crossing for this exact road pair - the
+      // A genuinely new second point for this exact road pair - the
       // cache now holds both, but this row's own *location* text still
       // won't carry the cardinal (no direction in the spoken driving
       // instruction itself - see speech.ts's own bare-address
       // treatment), so a driver reaching a repeated road name further
       // down the route would otherwise have nothing explaining why.
-      // Stages the same "(northern crossing)" wording straight into
-      // this row's own notes for the admin to keep, edit, or clear -
-      // never silently overwriting whatever's already there, and only
-      // while this exact row is still the one open (expandedIndexRef -
-      // the admin could have moved on to a different row, or closed the
-      // editor outright, by the time this response actually lands).
+      // Stages the same "(North)" wording straight into this row's own
+      // notes for the admin to keep, edit, or clear - never silently
+      // overwriting whatever's already there, and only while this exact
+      // row is still the one open (expandedIndexRef - the admin could
+      // have moved on to a different row, or closed the editor
+      // outright, by the time this response actually lands).
       if (
         data.discoveredAlternate &&
         data.result.status === "ok" &&

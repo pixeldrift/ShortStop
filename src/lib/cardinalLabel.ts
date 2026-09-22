@@ -9,6 +9,30 @@
  * just be more ways to guess wrong for no real gain here. */
 export type CardinalLabel = "northern" | "southern" | "eastern" | "western";
 
+/** The driver/admin-facing word for a CardinalLabel - "North" rather
+ * than "northern crossing". Two roads sharing a name twice don't
+ * necessarily cross each other at either point (a T where one road
+ * simply ends into the other reads the exact same way here as a real
+ * four-way crossing does), so the label only ever names which of the
+ * two this one is, never claims it's a "crossing" at all. Used
+ * anywhere this distinction is shown to a person - resolveWaypoint.ts's
+ * own displayName, EditRouteScreen.tsx's suggested note text - never
+ * for intersectionVariantKey's own cache-key suffix (waypointCache.ts),
+ * which stays whatever internal string it already is regardless of
+ * this wording. */
+export function cardinalCompassWord(label: CardinalLabel): "North" | "South" | "East" | "West" {
+  switch (label) {
+    case "northern":
+      return "North";
+    case "southern":
+      return "South";
+    case "eastern":
+      return "East";
+    case "western":
+      return "West";
+  }
+}
+
 /**
  * Labels two points by whichever axis actually separates them -
  * compares |Δlat| against |Δlon| and picks whichever is larger, so a
