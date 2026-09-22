@@ -2,7 +2,7 @@ import Image from "next/image";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ExpandableMap } from "./ExpandableMap";
 import { RouteMap } from "./RouteMap";
-import type { StopMarker, TurnMarker } from "./RouteMap";
+import type { RouteGeometryResult, StopMarker, TurnMarker } from "./RouteMap";
 import { RouteProgressBar } from "./RouteProgressBar";
 import { useCurrentTime } from "./StartScreen";
 import { StepTransition } from "./StepTransition";
@@ -23,10 +23,13 @@ import {
   TriangleIcon,
   TurnArrow,
 } from "./icons";
+import type { LatLon } from "@/lib/routeProgress";
 import { addressWithoutZip } from "@/lib/schoolAddress";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
+import { useLiveRouteProgress } from "@/lib/useLiveRouteProgress";
+import { useNavigationPrompts } from "@/lib/useNavigationPrompts";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
 import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { NavigationStep, Route, TripType } from "@/lib/types";
@@ -291,6 +294,34 @@ export function StepScreen({
   // sidecar file per route - RouteMap looks its own stops up from this
   // by key regardless, so a shared URL is a drop-in replacement.
   const waypointsUrl = "/api/waypoints";
+  // Set once by RouteMap's own onRouteGeometry callback below, the
+  // moment its internal /api/route-geometry fetch resolves - null
+  // until then (and for the whole trip if that fetch fails/never
+  // resolves, same "quietly do without it" fallback RouteMap's own
+  // line drawing already has). Reusing RouteMap's own fetch here
+  // rather than requesting the same route's geometry a second time -
+  // see RouteGeometryResult's own doc comment, RouteMap.tsx.
+  const [routeGeometry, setRouteGeometry] = useState<RouteGeometryResult | null>(null);
+  // useLiveRouteProgress's own LatLon convention ({lat, lon}), not
+  // RouteCoordinate's GeoJSON [lon, lat] tuples - converted once here
+  // rather than asking that hook to know about GeoJSON ordering at
+  // all. Empty until routeGeometry itself resolves, which
+  // useLiveRouteProgress already treats as "nothing to project onto
+  // yet" (onRoute stays false) rather than an error.
+  const routeLine = useMemo<LatLon[]>(
+    () => routeGeometry?.coordinates.map(([lon, lat]) => ({ lat, lon })) ?? [],
+    [routeGeometry],
+  );
+  const progressWaypoints = useMemo(
+    () => routeGeometry?.orderedWaypoints ?? [],
+    [routeGeometry],
+  );
+  const liveProgress = useLiveRouteProgress(routeLine, progressWaypoints);
+  // Started is always true here - RouteApp (page.tsx) only ever
+  // mounts StepScreen once useRouteStepper's own `started` flag is
+  // true (StartScreen shows instead while it's false) - so there's no
+  // separate prop for it to read.
+  useNavigationPrompts(route, currentIndex, phase, true, paused, liveProgress);
   // Guards the logo's exit-to-home tap, not the footer "End" button -
   // "End" only ever appears once the route is already finished
   // (arrived phase), so there's nothing left to lose by confirming it.
@@ -372,6 +403,7 @@ export function StepScreen({
               mode={phase === "depot" ? "overview" : "driving"}
               activeWaypointKey={step.waypointKey}
               onToggleRoster={hasRosterStops ? toggleRosterManually : undefined}
+              onRouteGeometry={setRouteGeometry}
             />
           )}
         />
