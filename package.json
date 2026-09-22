@@ -17,7 +17,8 @@
     "fill-stop-details": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fillStopDetails.js",
     "fill-start-times": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fillStartTimes.js",
     "fix-dr-transportation-address": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/fixDrTransportationAddress.js",
-    "prototype:overpass": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/prototypeOverpassGeocode.js"
+    "prototype:overpass": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/prototypeOverpassGeocode.js",
+    "cleanup-waypoint-cache": "tsc --project scripts/tsconfig.json && node scripts/.dist/scripts/cleanupWaypointCache.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

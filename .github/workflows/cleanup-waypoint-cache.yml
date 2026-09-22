@@ -1,0 +1,36 @@
+name: Clean up the waypoint cache
+
+# Manual-only, same reasoning as fix-dr-transportation-address.yml: this
+# repo's sandboxed dev environments can't reach a real Postgres server
+# directly, so scripts/cleanupWaypointCache.ts's own two passes - delete
+# every cache row no route step references anymore, then report (never
+# auto-fix) any near-duplicate names still in active use - have to run
+# from somewhere with normal network access. No ORS_API_KEY needed: this
+# never geocodes anything, it only reads/deletes rows already in the
+# waypoints table.
+#
+# Needs a DATABASE_URL repo secret (Settings -> Secrets and variables ->
+# Actions) - the same one every other DB-touching workflow here uses.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (log what would be deleted, delete nothing)"
+        type: boolean
+        default: true
+
+jobs:
+  cleanup-waypoint-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - run: npm run cleanup-waypoint-cache -- ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

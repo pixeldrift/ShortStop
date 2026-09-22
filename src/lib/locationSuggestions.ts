@@ -1,3 +1,5 @@
+import { normalizeLocationWhitespace } from "./waypointCache";
+
 /**
  * Every distinct location a Waypoint cache key (waypointCache.ts's own
  * `address:<text>`/`intersection:<a> & <b>` shape) already knows how to
@@ -27,16 +29,47 @@
  * location to begin with (see WaypointQuery's own doc comment).
  */
 export function extractLocationSuggestions(cacheKeys: string[]): string[] {
-  const names = new Set<string>();
+  const raw: string[] = [];
   for (const key of cacheKeys) {
     if (key.startsWith("address:")) {
       const address = key.slice("address:".length).trim().replace(/^\d+\s+/, "");
-      if (address) names.add(address);
+      if (address) raw.push(address);
     } else if (key.startsWith("intersection:")) {
       for (const road of key.slice("intersection:".length).split(" & ")) {
-        if (road.trim()) names.add(road.trim());
+        if (road.trim()) raw.push(road.trim());
       }
     }
   }
-  return Array.from(names).sort((a, b) => a.localeCompare(b));
+  return mergeLocationNames(raw);
+}
+
+/**
+ * Combines any number of location-name lists into one deduplicated,
+ * alphabetized list - the display-side half of duplicate prevention,
+ * complementing waypointCacheKey's own normalizeLocationWhitespace
+ * (which stops *new* near-duplicate cache rows from being created in
+ * the first place, but can't retroactively merge rows that already
+ * differ, nor names pulled from an entirely different source, like a
+ * School or SavedLocation name that happens to match a suggestion
+ * except for case or incidental whitespace).
+ *
+ * Two names collapse together whenever they're equal ignoring case and
+ * whitespace (via waypointCache.ts's own normalizeLocationWhitespace) -
+ * "Holland Ridge Dr", "holland ridge dr", and "Holland  Ridge Dr " all
+ * become one entry. Whichever spelling is encountered first wins as the
+ * displayed text (lists earlier in the argument list, and earlier
+ * entries within a list, take priority), so callers that want their own
+ * source's casing to win should pass it first.
+ */
+export function mergeLocationNames(...lists: string[][]): string[] {
+  const seen = new Map<string, string>();
+  for (const list of lists) {
+    for (const name of list) {
+      const normalized = normalizeLocationWhitespace(name);
+      if (!normalized) continue;
+      const dedupeKey = normalized.toLowerCase();
+      if (!seen.has(dedupeKey)) seen.set(dedupeKey, normalized);
+    }
+  }
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
 }

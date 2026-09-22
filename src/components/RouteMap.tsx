@@ -990,6 +990,22 @@ function mountMapLibre(args: MountArgs): () => void {
             clearPins();
             const ordered = orderedWaypointsRef.current;
             if (ordered.length === 0) return;
+            // Dots added first, the two endpoint pins second - MapLibre
+            // markers are plain DOM elements with no z-index of their
+            // own, so whichever gets added last simply paints on top.
+            // A dot sitting close enough to overlap an endpoint pin
+            // should always lose that overlap to the pin, never cover
+            // it - the pin is the one carrying the actual number/
+            // school glyph a driver needs to read.
+            for (const point of ordered.slice(1, -1)) {
+              const stop = stopsRef.current.find((s) => s.waypointKey === point.key);
+              if (!stop) continue;
+              pins.push(
+                new maplibregl.Marker({ element: elementFromHtml(stopDotHtml()), anchor: "center" })
+                  .setLngLat(toLngLat(point))
+                  .addTo(mapInstance),
+              );
+            }
             const endpoints =
               ordered.length === 1 ? [ordered[0]] : [ordered[0], ordered[ordered.length - 1]];
             for (const point of endpoints) {
@@ -998,15 +1014,6 @@ function mountMapLibre(args: MountArgs): () => void {
               if (!html) continue;
               pins.push(
                 new maplibregl.Marker({ element: elementFromHtml(html), anchor: "bottom" })
-                  .setLngLat(toLngLat(point))
-                  .addTo(mapInstance),
-              );
-            }
-            for (const point of ordered.slice(1, -1)) {
-              const stop = stopsRef.current.find((s) => s.waypointKey === point.key);
-              if (!stop) continue;
-              pins.push(
-                new maplibregl.Marker({ element: elementFromHtml(stopDotHtml()), anchor: "center" })
                   .setLngLat(toLngLat(point))
                   .addTo(mapInstance),
               );
