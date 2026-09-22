@@ -1149,6 +1149,17 @@ function StepRowEditor({
   );
   const hasCoordsText = coordsText.trim() !== "";
   const manualCoords = useMemo(() => parseLatLon(coordsText), [coordsText]);
+  // The exact Location text `coordsText` was last confirmed against -
+  // set alongside `coordsText` itself everywhere that sets it (initial
+  // seed here, the render-phase re-sync below, and the box's own
+  // onChange further down), so it always names whichever text these
+  // coordinates actually correspond to. Compared against the *current*
+  // `row.location` below (coordsStale) - editing Location doesn't
+  // touch this box at all, so without tracking this separately the
+  // coordinates just sit there unchanged, silently describing whatever
+  // the old text used to be instead of the new one.
+  const [coordsLocationText, setCoordsLocationText] = useState(row.location);
+  const coordsStale = hasCoordsText && coordsLocationText !== row.location;
 
   // The "place manually" map popup - opened by its own button beside
   // Fetch, below. Its own on/off state rather than reusing `expandedIndex`
@@ -1192,6 +1203,7 @@ function StepRowEditor({
   ) {
     setLastSyncedCoords([resolvedLat, resolvedLon]);
     setCoordsText(`${resolvedLat}, ${resolvedLon}`);
+    setCoordsLocationText(row.location);
   }
 
   function handleSave() {
@@ -1567,16 +1579,26 @@ function StepRowEditor({
                           the same locationSuggestionOptions list (every
                           already-known name), just filtered to what's
                           actually typed so far and rendered as our own
-                          styled panel. onMouseDown/preventDefault on
+                          styled panel. onPointerDown/preventDefault on
                           the panel (not the individual rows) stops a
                           tap here from blurring the input first - a
                           blur would otherwise close this panel (see
                           onBlur above) before the row's own onClick
-                          ever got to fire. */}
+                          ever got to fire. Pointer, not onMouseDown - on
+                          a real touchscreen a tap's own focus change
+                          already happens at touchstart, before a
+                          synthesized mousedown ever reaches this
+                          handler, so preventDefault there arrived too
+                          late to stop it (this app's own real device is
+                          a tablet/phone, same reasoning the drag-reorder
+                          rewrite already documents for Pointer Events
+                          over legacy mouse events). pointerdown fires in
+                          step with that same touchstart, early enough to
+                          actually suppress it. */}
                       {locationFocused && locationMatches.length > 0 && (
                         <ul
                           className="absolute top-full left-0 z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg"
-                          onMouseDown={(e) => e.preventDefault()}
+                          onPointerDown={(e) => e.preventDefault()}
                         >
                           {locationMatches.map((name) => (
                             <li key={name}>
@@ -1625,10 +1647,24 @@ function StepRowEditor({
                 onSaveSavedLocation={onSaveSavedLocation}
                 onFetchCoordinates={onFetchSavedLocationCoords}
                 onSelect={(choice) => {
-                  onChange({ location: choice.name });
-                  if (choice.lat != null && choice.lon != null) {
-                    onManualCoordinates(choice.lat, choice.lon);
-                  }
+                  // onLocationChange (handleLocationChange, EditRouteScreen),
+                  // not the plain onChange + a separate onManualCoordinates
+                  // call this used to make - that second call read
+                  // `draftWaypoint` from this render's own closure, still
+                  // holding the *previous* Location text's cache key at
+                  // the moment it ran (the onChange just above hadn't
+                  // actually re-rendered yet), so the coordinates address
+                  // book handed over landed under the wrong waypoint and
+                  // this row kept reading as unresolved even after
+                  // picking a school with known coordinates.
+                  // handleLocationChange already solves exactly this (see
+                  // its own doc comment) by recomputing the waypoint
+                  // fresh from the new text instead of trusting the stale
+                  // memo, and separately already knows how to look up a
+                  // school/saved-location's own lat/lon by name - so
+                  // reusing it here instead of duplicating that logic
+                  // fixes both the staleness and the duplication.
+                  onLocationChange(choice.name);
                   setShowLocationPicker(false);
                 }}
                 onClose={() => setShowLocationPicker(false)}
@@ -1672,12 +1708,23 @@ function StepRowEditor({
                       (hasCoordsText && !manualCoords) ||
                       (!hasCoordsText && status?.status === "unresolved")
                         ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                        : manualCoords || status?.status === "resolved"
-                          ? "border-green-400 focus:border-green-500 focus:ring-green-500"
-                          : ""
+                        : coordsStale
+                          ? "border-zinc-300 bg-zinc-50 text-zinc-400"
+                          : manualCoords || status?.status === "resolved"
+                            ? "border-green-400 focus:border-green-500 focus:ring-green-500"
+                            : ""
                     }`}
                     value={coordsText}
-                    onChange={(e) => setCoordsText(e.target.value)}
+                    onChange={(e) => {
+                      setCoordsText(e.target.value);
+                      // Typing here directly is its own deliberate
+                      // confirmation for whatever Location currently
+                      // says - clears staleness the same way a fresh
+                      // Fetch landing does (the render-phase sync
+                      // above), rather than leaving this box reading
+                      // grey the instant a stray keystroke touches it.
+                      setCoordsLocationText(row.location);
+                    }}
                     disabled={row.skip}
                   />
                   <button
@@ -1720,13 +1767,27 @@ function StepRowEditor({
             coordinates it's actually about) is never truncated - a
             "No shared node found in the search box"-length explanation
             needs to be read whole, not guessed at from its first few
-            words. */}
+            words. Stale (coordsStale) comes right after the malformed
+            check and before "Verified"/resolved - a stale value can
+            still *parse* as valid lat/lon (manualCoords doesn't know
+            it's for the wrong Location any more), so without this
+            check here too it would otherwise keep reading as a
+            confident green "Verified coordinates" for a location that
+            isn't the one shown any more. */}
               {hasCoordsText && !manualCoords ? (
                 <p className="mt-1 flex items-start gap-1 text-xs text-red-600">
                   <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
                     Enter latitude and longitude, separated by a space, comma,
                     or tab.
+                  </span>
+                </p>
+              ) : coordsStale ? (
+                <p className="mt-1 flex items-start gap-1 text-xs text-zinc-400">
+                  <WarningIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Location changed - these coordinates haven&apos;t been
+                    refreshed yet.
                   </span>
                 </p>
               ) : manualCoords ? (
@@ -4088,22 +4149,30 @@ export function EditRouteScreen({
   // *new* text's own cache key immediately rather than the stale one
   // `draftWaypoint` itself is still holding at the moment that change
   // first comes in.
+  //
+  // Checks completeness against `draftRows` (this row's own live edit
+  // substituted in), not the outer `hasIncompleteRow` above (which only
+  // ever reflects `rows` as last *committed* - i.e. from before this
+  // edit started). A brand-new row (Add Step's own blank one, the most
+  // common real case this hits) has an empty `location` in `rows` right
+  // up until Update/Save runs, so gating on that stale flag meant
+  // typing a location and hitting Fetch silently did nothing - Fetch
+  // read `draftWaypoint`, which this same stale gate was keeping
+  // undefined the whole time - and the only way to see it "work" was to
+  // Save, close, and reopen, at which point `rows` finally caught up.
   const computeDraftWaypointFor = useCallback(
     (row: RawRouteRow) => {
       if (expandedIndex === null) return undefined;
-      if (
-        mode !== "edit" ||
-        hasIncompleteRow ||
-        !hasRealSchoolAddress ||
-        rows.length === 0
-      )
+      if (mode !== "edit" || !hasRealSchoolAddress || rows.length === 0)
         return undefined;
       const draftRows = rows.map((r, i) => (i === expandedIndex ? row : r));
+      if (draftRows.some((r) => !r.action.trim() || !r.location.trim()))
+        return undefined;
       return deriveWaypointsWithContext(draftRows, schoolAddress).waypoints[
         expandedIndex
       ];
     },
-    [expandedIndex, rows, schoolAddress, mode, hasIncompleteRow, hasRealSchoolAddress],
+    [expandedIndex, rows, schoolAddress, mode, hasRealSchoolAddress],
   );
   const draftWaypoint = useMemo(
     () => (draftRow ? computeDraftWaypointFor(draftRow) : undefined),
