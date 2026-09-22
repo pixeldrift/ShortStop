@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  ChangeEvent,
+  InputHTMLAttributes,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { ExpandableMap } from "./ExpandableMap";
 import { IconTooltip } from "./IconTooltip";
 import { ScreenTransition } from "./ScreenTransition";
@@ -415,6 +419,58 @@ function Field({
       </span>
       {children}
     </label>
+  );
+}
+
+/** A plain text `<input>` with a small X that clears it, once there's
+ * actually something to clear - the exact "clear search" pattern
+ * RouteListScreen's/SchoolListScreen's own search boxes already used,
+ * shared here so every other free-text field in this screen gets the
+ * same fast way to clear instead of an admin having to select-all and
+ * backspace by hand. `className` is whatever the caller's own input
+ * classes already are (inputClass, an error variant, ...) - this only
+ * adds the relative wrapper, the button, and (only while the button's
+ * actually showing) the padding that keeps typed text from running
+ * underneath it; every other `<input>` prop passes straight through
+ * unchanged. Not used for a field a caller already renders inside its
+ * own custom wrapper alongside other buttons (StepRowEditor's own
+ * Location/coordinates boxes, EditSavedLocationModal's coordinates) -
+ * those still get the identical button, just placed by hand so it
+ * doesn't collide with what's already sitting next to them. */
+function ClearableInput({
+  value,
+  onChange,
+  className,
+  clearLabel,
+  disabled,
+  ...rest
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className: string;
+  clearLabel: string;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "className">) {
+  const showClear = value !== "" && !disabled;
+  return (
+    <div className="relative">
+      <input
+        {...rest}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className={`${className} ${showClear ? "pr-9" : ""}`}
+      />
+      {showClear && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label={clearLabel}
+          className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+        >
+          <CloseIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -1518,11 +1574,12 @@ function StepRowEditor({
               "from" road to name. */}
               {!isPlainLocation ? (
                 <Field label="From">
-                  <input
+                  <ClearableInput
                     className={inputClass}
                     value={row.fromLocation}
-                    onChange={(e) => onChange({ fromLocation: e.target.value })}
+                    onChange={(value) => onChange({ fromLocation: value })}
                     placeholder={previousRoad || "start of route"}
+                    clearLabel="Clear From"
                   />
                 </Field>
               ) : (
@@ -1552,6 +1609,8 @@ function StepRowEditor({
                     <div className="relative min-w-0 flex-1">
                       <input
                         className={`w-full ${inputClass} ${
+                          row.location ? "pr-9" : ""
+                        } ${
                           status?.status === "unresolved"
                             ? "border-red-400 focus:border-red-500 focus:ring-red-500"
                             : ""
@@ -1569,6 +1628,16 @@ function StepRowEditor({
                         }
                         autoComplete="off"
                       />
+                      {row.location && (
+                        <button
+                          type="button"
+                          onClick={() => onLocationChange("")}
+                          aria-label="Clear location"
+                          className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+                        >
+                          <CloseIcon className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       {/* A real in-page dropdown, not a native
                           <datalist> - a datalist's own suggestion list
                           is the browser/OS's own popup, which on a
@@ -1703,30 +1772,44 @@ function StepRowEditor({
                 }
               >
                 <div className="flex items-center gap-2">
-                  <input
-                    className={`${inputClass} flex-1 font-mono disabled:opacity-50 ${
-                      (hasCoordsText && !manualCoords) ||
-                      (!hasCoordsText && status?.status === "unresolved")
-                        ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                        : coordsStale
-                          ? "border-zinc-300 bg-zinc-50 text-zinc-400"
-                          : manualCoords || status?.status === "resolved"
-                            ? "border-green-400 focus:border-green-500 focus:ring-green-500"
-                            : ""
-                    }`}
-                    value={coordsText}
-                    onChange={(e) => {
-                      setCoordsText(e.target.value);
-                      // Typing here directly is its own deliberate
-                      // confirmation for whatever Location currently
-                      // says - clears staleness the same way a fresh
-                      // Fetch landing does (the render-phase sync
-                      // above), rather than leaving this box reading
-                      // grey the instant a stray keystroke touches it.
-                      setCoordsLocationText(row.location);
-                    }}
-                    disabled={row.skip}
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      className={`w-full ${inputClass} font-mono disabled:opacity-50 ${
+                        hasCoordsText && !row.skip ? "pr-9" : ""
+                      } ${
+                        (hasCoordsText && !manualCoords) ||
+                        (!hasCoordsText && status?.status === "unresolved")
+                          ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                          : coordsStale
+                            ? "border-zinc-300 bg-zinc-50 text-zinc-400"
+                            : manualCoords || status?.status === "resolved"
+                              ? "border-green-400 focus:border-green-500 focus:ring-green-500"
+                              : ""
+                      }`}
+                      value={coordsText}
+                      onChange={(e) => {
+                        setCoordsText(e.target.value);
+                        // Typing here directly is its own deliberate
+                        // confirmation for whatever Location currently
+                        // says - clears staleness the same way a fresh
+                        // Fetch landing does (the render-phase sync
+                        // above), rather than leaving this box reading
+                        // grey the instant a stray keystroke touches it.
+                        setCoordsLocationText(row.location);
+                      }}
+                      disabled={row.skip}
+                    />
+                    {hasCoordsText && !row.skip && (
+                      <button
+                        type="button"
+                        onClick={() => setCoordsText("")}
+                        aria-label="Clear coordinates"
+                        className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+                      >
+                        <CloseIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={onFetch}
@@ -1845,10 +1928,11 @@ function StepRowEditor({
               className={`mt-2 grid gap-2 ${isStop ? "grid-cols-[1fr_6.5rem]" : "grid-cols-1"}`}
             >
               <Field label="Driver Notes">
-                <input
+                <ClearableInput
                   className={inputClass}
                   value={row.notes}
-                  onChange={(e) => onChange({ notes: e.target.value })}
+                  onChange={(value) => onChange({ notes: value })}
+                  clearLabel="Clear driver notes"
                 />
               </Field>
               {isStop && (
@@ -2507,8 +2591,20 @@ function LocationPickerModal({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search"
-              className="w-full rounded-lg border border-zinc-300 bg-white py-1.5 pr-3 pl-9 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              className={`w-full rounded-lg border border-zinc-300 bg-white py-1.5 pl-9 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none ${
+                query ? "pr-9" : "pr-3"
+              }`}
             />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+              >
+                <CloseIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -2760,35 +2856,51 @@ function EditSavedLocationModal({
           <>
             <div className="mt-3 flex flex-col gap-2">
               <Field label="Name" required={!name.trim()}>
-                <input
+                <ClearableInput
                   className={inputClass}
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={setName}
                   placeholder="Bus Depot"
+                  clearLabel="Clear name"
                 />
               </Field>
               <Field label="Address" required={!address.trim()}>
-                <input
+                <ClearableInput
                   className={inputClass}
                   value={address}
-                  onChange={(e) => setAddress(e.target.value)}
+                  onChange={setAddress}
                   placeholder="1425 Lake Forest Dr, Smyrna, TN 37167"
+                  clearLabel="Clear address"
                 />
               </Field>
 
               <Field label="Latitude, longitude">
                 <div className="flex items-center gap-2">
-                  <input
-                    className={`${inputClass} flex-1 font-mono ${
-                      hasCoordsText && !manualCoords
-                        ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                        : manualCoords
-                          ? "border-green-400 focus:border-green-500 focus:ring-green-500"
-                          : ""
-                    }`}
-                    value={coordsText}
-                    onChange={(e) => setCoordsText(e.target.value)}
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      className={`w-full ${inputClass} font-mono ${
+                        hasCoordsText ? "pr-9" : ""
+                      } ${
+                        hasCoordsText && !manualCoords
+                          ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                          : manualCoords
+                            ? "border-green-400 focus:border-green-500 focus:ring-green-500"
+                            : ""
+                      }`}
+                      value={coordsText}
+                      onChange={(e) => setCoordsText(e.target.value)}
+                    />
+                    {hasCoordsText && (
+                      <button
+                        type="button"
+                        onClick={() => setCoordsText("")}
+                        aria-label="Clear coordinates"
+                        className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+                      >
+                        <CloseIcon className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={handleFetch}
@@ -4408,17 +4520,31 @@ export function EditRouteScreen({
         return;
       }
 
-      const newRows: RawRouteRow[] = steps.map((step) => ({
-        action: actionForManeuverType(step.type),
-        location: step.name || "Unnamed road",
-        fromLocation: "",
-        riderCount: "",
-        side: "",
-        notes: step.instruction,
-        skip: false,
-        overrideLat: null,
-        overrideLon: null,
-      }));
+      const newRows: RawRouteRow[] = steps.map((step) => {
+        const action = actionForManeuverType(step.type);
+        return {
+          action,
+          location: step.name || "Unnamed road",
+          fromLocation: "",
+          riderCount: "",
+          side: "",
+          // Left/Right already narrate the full maneuver on their own
+          // ("Turn Left onto Main St," buildRouteFromRows's own
+          // spokenAnnouncement) - copying ORS's own instruction text
+          // into notes too just repeats that same sentence back a
+          // second time (notes gets spoken too, right after), which
+          // meant every Autoroute run left an admin going back through
+          // to manually delete it from each turn. Only "Continue"
+          // (actionForManeuverType's own catch-all for roundabouts,
+          // keep-left/right, ...) actually loses real detail without
+          // it, so only that bucket still carries the instruction
+          // forward as a note.
+          notes: action === "Continue" ? step.instruction : "",
+          skip: false,
+          overrideLat: null,
+          overrideLon: null,
+        };
+      });
       const updatedRows = [
         ...rows.slice(0, gapIndex),
         ...newRows,
@@ -5375,15 +5501,15 @@ export function EditRouteScreen({
           label={tripType === "fieldtrip" ? "# / Name" : "#"}
           required={routeNumberMissing}
         >
-          <input
+          <ClearableInput
             className={
               showRequiredErrors && routeNumberMissing
                 ? errorInputClass
                 : inputClass
             }
             value={routeNumber}
-            onChange={(e) => {
-              setRouteNumber(e.target.value);
+            onChange={(value) => {
+              setRouteNumber(value);
               setDirty(true);
             }}
             // A Special (field trip) run isn't one of a district's own
@@ -5396,6 +5522,7 @@ export function EditRouteScreen({
             // constrained to digits), so nothing about *validation*
             // changes here, just what an admin is told to expect.
             placeholder={tripType === "fieldtrip" ? "123 or Zoo Trip" : "123"}
+            clearLabel="Clear route number"
           />
         </Field>
         <Field label="Trip" required={tripTypeMissing}>
@@ -5419,18 +5546,19 @@ export function EditRouteScreen({
           </select>
         </Field>
         <Field label="Start">
-          <input
+          <ClearableInput
             className={
               showRequiredErrors && startTimeInvalid
                 ? errorInputClass
                 : inputClass
             }
             value={departureTime}
-            onChange={(e) => {
-              setDepartureTime(e.target.value);
+            onChange={(value) => {
+              setDepartureTime(value);
               setDirty(true);
             }}
             placeholder="H:MM AM"
+            clearLabel="Clear start time"
           />
         </Field>
       </div>
@@ -5454,19 +5582,22 @@ export function EditRouteScreen({
                 clearLabel="Clear school"
               />
             ) : (
-              <input
-                className={`min-w-0 flex-1 ${
-                  showRequiredErrors && schoolNameMissing
-                    ? errorInputClass
-                    : inputClass
-                }`}
-                value={schoolName}
-                onChange={(e) => {
-                  setSchoolName(e.target.value);
-                  setDirty(true);
-                }}
-                placeholder="LaVergne High School"
-              />
+              <div className="min-w-0 flex-1">
+                <ClearableInput
+                  className={
+                    showRequiredErrors && schoolNameMissing
+                      ? errorInputClass
+                      : inputClass
+                  }
+                  value={schoolName}
+                  onChange={(value) => {
+                    setSchoolName(value);
+                    setDirty(true);
+                  }}
+                  placeholder="LaVergne High School"
+                  clearLabel="Clear school"
+                />
+              </div>
             )}
             <button
               type="button"
@@ -5504,14 +5635,15 @@ export function EditRouteScreen({
 
       <div className="mt-3 grid grid-cols-2 gap-3">
         <Field label="Bus number">
-          <input
+          <ClearableInput
             className={inputClass}
             value={busNumber}
-            onChange={(e) => {
-              setBusNumber(e.target.value);
+            onChange={(value) => {
+              setBusNumber(value);
               setDirty(true);
             }}
             placeholder="123"
+            clearLabel="Clear bus number"
           />
         </Field>
         {/* What happens once this route's last step is reached, instead
@@ -5622,13 +5754,34 @@ export function EditRouteScreen({
                 an uploaded file's text expands it the same way typing
                 would, since this is meant to read as secondary either way,
                 not a large form field of its own. */}
-            <textarea
-              ref={stepsTextareaRef}
-              className={`${inputClass} mt-1 min-h-[3.5rem] resize-none overflow-hidden font-mono text-sm`}
-              value={stepsText}
-              onChange={(e) => setStepsText(e.target.value)}
-              placeholder={STEPS_PLACEHOLDER}
-            />
+            <div className="relative">
+              <textarea
+                ref={stepsTextareaRef}
+                className={`${inputClass} mt-1 min-h-[3.5rem] resize-none overflow-hidden font-mono text-sm ${
+                  stepsText ? "pr-9" : ""
+                }`}
+                value={stepsText}
+                onChange={(e) => setStepsText(e.target.value)}
+                placeholder={STEPS_PLACEHOLDER}
+              />
+              {/* top-3/right-2 (a fixed corner), not top-1/2's own
+                  vertically-centered spot every single-line field's
+                  own clear button uses - this box grows with its own
+                  content (the height effect above), so centering
+                  against its current height would leave the button
+                  drifting to a different spot every time a line wraps
+                  or gets added. */}
+              {stepsText && (
+                <button
+                  type="button"
+                  onClick={() => setStepsText("")}
+                  aria-label="Clear pasted text"
+                  className="absolute top-3 right-2 p-1 text-zinc-400 active:text-zinc-600"
+                >
+                  <CloseIcon className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
 
             {missingRequired.length > 0 && (
               <p className="mt-2 text-xs text-amber-600">
