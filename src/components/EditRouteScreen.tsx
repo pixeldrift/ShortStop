@@ -962,20 +962,26 @@ function StepRowEditor({
    * matches a School/SavedLocation that already has one). */
   onLocationChange: (value: string) => void;
   onFetch: () => void;
-  /** "Update" - a coordinate typed/pasted directly into the Latitude/
-   * Longitude box (or dragged into place via PlaceCoordinatesModal),
-   * written straight into the shared waypoint cache, the same place a
-   * real Fetch would have - bypassing the geocoder entirely, but still
-   * shared with every other stop whose own road pair happens to match
-   * this one's. */
+  /** A coordinate written straight into the shared waypoint cache, the
+   * same place a real Fetch would have - bypassing the geocoder
+   * entirely, but still shared with every other stop whose own road
+   * pair happens to match this one's. Two callers: handleSave below,
+   * the moment a typed/pasted Latitude/Longitude edit actually differs
+   * from what's already resolved (there's no separate "commit" button
+   * for that box any more - Save/Update Row is it, same as every other
+   * field); and PlaceCoordinatesModal's own "Update Every Instance"
+   * button, for a coordinate dragged into place on the map instead of
+   * typed. */
   onManualCoordinates: (lat: number, lon: number) => void;
-  /** "Override" - the same typed/dragged coordinate, but written as
-   * this row's own permanent overrideLat/overrideLon (onChange, staged
-   * into the draft the same as any other field edit) instead of the
-   * shared cache - independent of every other stop, and never silently
-   * replaced by a future Fetch (see EditRouteScreen's own
-   * fetchLocation, which now confirms before touching an already-
-   * overridden row). */
+  /** The same dragged coordinate as onManualCoordinates above, but
+   * written as this row's own permanent overrideLat/overrideLon
+   * (onChange, staged into the draft the same as any other field edit)
+   * instead of the shared cache - independent of every other stop, and
+   * never silently replaced by a future Fetch (see EditRouteScreen's
+   * own fetchLocation, which now confirms before touching an already-
+   * overridden row). Only ever reachable via PlaceCoordinatesModal's
+   * own "Override Once" button - typing a coordinate by hand always
+   * means onManualCoordinates above, never this. */
   onOverrideCoordinates: (lat: number, lon: number) => void;
   onCancel: () => void;
   onDelete: () => void;
@@ -1195,6 +1201,21 @@ function StepRowEditor({
 
   function handleSave() {
     if (hasCoordsText && !manualCoords) return; // the box below already shows why, live
+    // A typed/pasted coordinate that actually differs from what's
+    // already resolved writes into the shared cache the same way a
+    // real Fetch would (onManualCoordinates) - there's no separate
+    // "Update" button for this box any more (see that prop's own doc
+    // comment), Save/Update Row is the one commit action for every
+    // field including this one. Comparing against resolvedLat/
+    // resolvedLon (not just "is there text") keeps this a no-op on the
+    // overwhelmingly common case - opening an already-resolved row and
+    // saving without touching the box at all.
+    if (
+      manualCoords &&
+      (manualCoords[0] !== resolvedLat || manualCoords[1] !== resolvedLon)
+    ) {
+      onManualCoordinates(manualCoords[0], manualCoords[1]);
+    }
     onUpdate();
   }
 
@@ -1751,34 +1772,6 @@ function StepRowEditor({
                     Clear
                   </button>
                 </p>
-              )}
-              {/* Two explicit ways to commit a typed/pasted coordinate,
-              same choice PlaceCoordinatesModal's own two buttons give a
-              dragged one - "Update" writes into the shared cache (every
-              other stop whose own road pair matches sees it too);
-              "Override" writes this row's own permanent coordinate
-              instead, independent of the cache and safe from a later
-              Fetch silently replacing it (see EditRouteScreen's own
-              fetchLocation, which confirms first for an already-
-              overridden row). Shown only once there's something valid
-              typed to actually act on. */}
-              {manualCoords && (
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onManualCoordinates(manualCoords[0], manualCoords[1])}
-                    className="btn-glossy-light flex-1 rounded-lg bg-zinc-300 py-1.5 text-xs font-semibold text-zinc-900"
-                  >
-                    Update
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onOverrideCoordinates(manualCoords[0], manualCoords[1])}
-                    className="btn-glossy-light flex-1 rounded-lg bg-zinc-300 py-1.5 text-xs font-semibold text-zinc-900"
-                  >
-                    Override
-                  </button>
-                </div>
               )}
             </div>
 

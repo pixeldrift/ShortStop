@@ -56,11 +56,12 @@ export function PlaceCoordinatesModal({
    * to draw between fewer than two points anyway. */
   routeContext: { lat: number; lon: number }[];
   onCancel: () => void;
-  /** "Update" - writes straight into the shared Waypoint cache, same as
-   * a real Fetch would (see StepRowEditor's own setManualCoordinates) -
-   * every other stop sharing this exact road pair sees it too. */
+  /** "Update Every Instance" - writes straight into the shared Waypoint
+   * cache, same as a real Fetch would (see StepRowEditor's own
+   * setManualCoordinates) - every other stop sharing this exact road
+   * pair sees it too. */
   onSetCoordinates: (lat: number, lon: number) => void;
-  /** "Override" - this row's own permanent coordinate
+  /** "Override Once" - this row's own permanent coordinate
    * (RouteStep.overrideLat/overrideLon, prisma/schema.prisma's own doc
    * comment), independent of the shared cache and never affecting any
    * other stop. Omitted entirely (no second button) wherever a caller
@@ -106,28 +107,33 @@ export function PlaceCoordinatesModal({
         ({center.lat.toFixed(5)}, {center.lon.toFixed(5)})
       </p>
 
+      {/* text-xs rather than every other footer row's usual text-sm -
+          "Update Every Instance"/"Override Once" need the room a third
+          button in this same max-w-sm card doesn't otherwise have; see
+          onSetCoordinates/onOverrideCoordinates's own doc comments for
+          what the two actually do. */}
       <div className="mt-4 flex gap-2">
         <button
           type="button"
           onClick={onCancel}
-          className="btn-glossy-light font-heading flex flex-1 items-center justify-center rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+          className="btn-glossy-light font-heading flex flex-1 items-center justify-center rounded-xl bg-zinc-300 py-3 text-xs font-semibold text-zinc-900"
         >
           Cancel
         </button>
         <button
           type="button"
           onClick={() => onSetCoordinates(center.lat, center.lon)}
-          className="btn-glossy-blue font-heading flex flex-1 items-center justify-center rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white"
+          className="btn-glossy-blue font-heading flex flex-1 items-center justify-center rounded-xl bg-blue-600 py-3 text-center text-xs font-semibold text-white"
         >
-          Update
+          Update Every Instance
         </button>
         {onOverrideCoordinates && (
           <button
             type="button"
             onClick={() => onOverrideCoordinates(center.lat, center.lon)}
-            className="btn-glossy-light font-heading flex flex-1 items-center justify-center rounded-xl bg-zinc-300 py-3 text-sm font-semibold text-zinc-900"
+            className="btn-glossy-light font-heading flex flex-1 items-center justify-center rounded-xl bg-zinc-300 py-3 text-xs font-semibold text-zinc-900"
           >
-            Override
+            Override Once
           </button>
         )}
       </div>
