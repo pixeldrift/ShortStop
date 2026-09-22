@@ -1321,7 +1321,7 @@ function StepRowEditor({
 
   return (
     <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
+      className="fixed inset-0 z-20 flex items-start justify-center bg-black/50 p-6"
       onClick={onCancel}
     >
       <div
@@ -1372,57 +1372,61 @@ function StepRowEditor({
             )}
           </div>
           {!showPlaceModal && (
-            <div className="flex shrink-0 flex-col items-center gap-1 pt-1">
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => onNavigate("prev")}
-                  disabled={!canGoPrev}
-                  aria-label="Previous waypoint"
-                  className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
-                    canGoPrev
-                      ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
-                      : "text-zinc-400"
-                  }`}
-                >
-                  <BackArrowIcon className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onNavigate("next")}
-                  disabled={!canGoNext}
-                  aria-label="Next waypoint"
-                  className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
-                    canGoNext
-                      ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
-                      : "text-zinc-400"
-                  }`}
-                >
-                  <RightArrowIcon className="h-4 w-4" />
-                </button>
-              </div>
-              {/* Same round plus button AddStepButton draws between two
-                  rows in the list behind this popup - inserts a blank
-                  waypoint right after this one and opens its own editor
-                  in place, without closing this one first. Under the
-                  arrows (not beside them) so it reads as "add a new
-                  waypoint after this one," not a third navigation
-                  direction alongside prev/next. */}
+            <div className="flex shrink-0 items-center gap-1 pt-1">
+              <button
+                type="button"
+                onClick={() => onNavigate("prev")}
+                disabled={!canGoPrev}
+                aria-label="Previous waypoint"
+                className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+                  canGoPrev
+                    ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
+                    : "text-zinc-400"
+                }`}
+              >
+                <BackArrowIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate("next")}
+                disabled={!canGoNext}
+                aria-label="Next waypoint"
+                className={`flex h-6 w-6 items-center justify-center rounded disabled:opacity-30 ${
+                  canGoNext
+                    ? "text-blue-600 active:bg-blue-50 active:text-blue-800"
+                    : "text-zinc-400"
+                }`}
+              >
+                <RightArrowIcon className="h-4 w-4" />
+              </button>
+              {/* Same "insert a blank waypoint right after this one, open
+                  its own editor in place" action AddStepButton draws
+                  between two rows in the list behind this popup - a
+                  plain blue "+" rather than a filled button box (that
+                  read as a third, equally-weighted control alongside
+                  prev/next, when it's actually a related-but-different
+                  action), and ml-2 (on top of the row's own gap-1) so it
+                  reads as its own thing sitting near the arrows, not a
+                  third member of that pair. */}
               <button
                 type="button"
                 onClick={onAddWaypointAfter}
                 aria-label="Insert a new waypoint after this one"
-                className="btn-glossy-light flex h-6 w-6 items-center justify-center rounded-lg bg-zinc-300 text-zinc-900"
+                className="ml-2 flex h-6 w-6 items-center justify-center rounded text-blue-600 active:bg-blue-50 active:text-blue-800"
               >
-                <PlusIcon className="h-3.5 w-3.5" />
+                <PlusIcon className="h-4 w-4" />
               </button>
             </div>
           )}
+          {/* Negative margin pulls this into the card's own p-5 padding
+              corner, closer to the card's true top-right than a plain
+              inline flex item (aligned with the header row's own
+              items-start) would otherwise sit. */}
           <button
             type="button"
             onClick={showPlaceModal ? () => setShowPlaceModal(false) : onCancel}
             aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
+            className="-mt-1.5 -mr-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
           >
             <CloseIcon className="h-5 w-5" />
           </button>
@@ -1963,7 +1967,11 @@ function AddStepButton({
 
   return (
     <div className="relative flex items-center justify-center py-1">
-      <div className="absolute inset-x-0 border-t border-dashed border-zinc-300" />
+      {/* Inset rather than the full row width - left-6/right-6 leaves
+          exactly the scissors/compass buttons' own width (below) clear
+          on each side, so the dashed line reads as running between them
+          instead of visibly passing underneath. */}
+      <div className="absolute left-6 right-6 border-t border-dashed border-zinc-300" />
       <button
         type="button"
         onClick={onClick}
@@ -1981,14 +1989,22 @@ function AddStepButton({
           boxes like Add/the rest of this screen - both are secondary,
           occasional actions on this one dashed line, not something
           that needs to visually compete with it the way the
-          always-relevant Add button does. */}
+          always-relevant Add button does. justify-start/justify-end
+          (rather than centering the icon within its own left-0/right-0
+          box) puts the icon glyph itself flush against the row's own
+          real left/right content edge - the same edge StepRowView's own
+          leading pin icon (a Stop) or trailing pencil/drag-handle group
+          sit flush against, so a scissors icon lines up directly under
+          the address pin above it instead of sitting inset from it by
+          whatever gap this button's own box padding would otherwise
+          leave. */}
       {onSplit && (
         <button
           type="button"
           onClick={onSplit}
           disabled={disabled}
           aria-label="Split route here"
-          className="absolute left-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+          className="absolute left-0 z-10 flex h-6 w-6 items-center justify-start text-blue-600 active:opacity-70 disabled:opacity-30"
         >
           {/* The source art is a right-pointing (open) pair of blades -
               unmirrored now that this sits on the left edge, so it
@@ -2004,7 +2020,7 @@ function AddStepButton({
           onClick={onAutoroute}
           disabled={disabled || autorouting}
           aria-label="Autoroute - fill in real driving directions between these two stops"
-          className="absolute right-0 z-10 flex h-6 w-6 items-center justify-center text-blue-600 active:opacity-70 disabled:opacity-30"
+          className="absolute right-0 z-10 flex h-6 w-6 items-center justify-end text-blue-600 active:opacity-70 disabled:opacity-30"
         >
           {autorouting ? (
             <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
