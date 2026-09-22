@@ -175,6 +175,33 @@ function schoolMarkerHtml(): string {
   );
 }
 
+/** What RouteMap reports back once it has successfully fetched this
+ * route's own road geometry - the same road-following line this
+ * component draws for itself, handed to whichever caller wants to
+ * build its own live-GPS-progress tracking (useLiveRouteProgress.ts)
+ * from the exact same data instead of requesting /api/route-geometry a
+ * second time for the same route. Fired once per mount, the moment the
+ * internal fetch resolves - this component's own road-geometry line
+ * only ever loads once per route (see this component's own doc
+ * comment on why the mount effect below has empty deps), so this never
+ * fires again afterward. */
+export interface RouteGeometryResult {
+  /** GeoJSON order ([lon, lat] per point), straight off the routing
+   * provider's own response - matches RoutingResult's own
+   * geometry.coordinates exactly, no conversion done here. */
+  coordinates: RouteCoordinate[];
+  /** Every step's own {lat, lon} that actually resolved in the cache,
+   * in route order - the same list this component's own road-geometry
+   * request was built from (OrderedWaypoint below), minus the school:
+   * the school never gets its own step id/waypointKey (no
+   * NavigationStep row exists for it even when it's a real waypoint -
+   * see this component's own `schoolIsWaypoint` prop doc comment), and
+   * every caller of this result (useLiveRouteProgress's own waypoints
+   * param) only ever tracks distance to a real step, keyed by its own
+   * waypointKey. */
+  orderedWaypoints: { key: string; lat: number; lon: number }[];
+}
+
 // The route's own ordered {lat, lon} sequence - every `path` step that
 // resolved in the cache, school spliced in at whichever end `tripType`
 // puts it (see `tripType`'s own prop doc) - built once when the cache
@@ -293,6 +320,7 @@ export function RouteMap({
   mode = "driving",
   activeWaypointKey,
   onToggleRoster,
+  onRouteGeometry,
 }: {
   className?: string;
   /** A pin per stop, at whatever position the geocode cache
@@ -388,6 +416,12 @@ export function RouteMap({
    * this swap). Omitted (no button at all) by every other caller -
    * StartScreen's overview map has no rider box to toggle. */
   onToggleRoster?: () => void;
+  /** Fired once this route's own road geometry finishes loading - see
+   * RouteGeometryResult's own doc comment above. Omitted by every
+   * caller that has no use for it (StartScreen's overview map, say) -
+   * this component's own drawing behavior is completely unaffected
+   * either way. */
+  onRouteGeometry?: (result: RouteGeometryResult) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cacheRef = useRef<WaypointCache | null>(null);
@@ -452,6 +486,15 @@ export function RouteMap({
   useEffect(() => {
     onToggleRosterRef.current = onToggleRoster;
   }, [onToggleRoster]);
+  // Same "read inside the async closure via a ref" reasoning as every
+  // other callback above - the road-geometry fetch that eventually
+  // calls this lives inside the mount effect's own one-time async
+  // chain, well after whatever onRouteGeometry identity StepScreen
+  // happened to pass on the render that triggered the mount.
+  const onRouteGeometryRef = useRef(onRouteGeometry);
+  useEffect(() => {
+    onRouteGeometryRef.current = onRouteGeometry;
+  }, [onRouteGeometry]);
 
   // Assigned once the mount effect below has a map/cache to work with -
   // brings the current mode/active step's camera (and, in driving mode,
@@ -489,6 +532,7 @@ export function RouteMap({
       modeRef,
       activeWaypointKeyRef,
       onToggleRosterRef,
+      onRouteGeometryRef,
     });
 
     return () => {
@@ -525,6 +569,7 @@ interface MountArgs {
   modeRef: React.RefObject<"overview" | "driving">;
   activeWaypointKeyRef: React.RefObject<string | null | undefined>;
   onToggleRosterRef: React.RefObject<(() => void) | undefined>;
+  onRouteGeometryRef: React.RefObject<((result: RouteGeometryResult) => void) | undefined>;
 }
 
 async function fetchCacheAndBuildOrderedWaypoints(
@@ -651,6 +696,7 @@ function mountMapLibre(args: MountArgs): () => void {
     modeRef,
     activeWaypointKeyRef,
     onToggleRosterRef,
+    onRouteGeometryRef,
   } = args;
 
   let map: MapLibreMap | undefined;
@@ -791,6 +837,12 @@ function mountMapLibre(args: MountArgs): () => void {
               .then((result) => {
                 if (cancelledRef() || !result) return;
                 const roadLngLats = result.geometry.coordinates;
+                onRouteGeometryRef.current?.({
+                  coordinates: roadLngLats,
+                  orderedWaypoints: orderedWaypointsRef.current.filter(
+                    (w): w is { key: string; lat: number; lon: number } => w.key != null,
+                  ),
+                });
                 // Two layers sharing one color (ROUTE_LINE_COLOR)
                 // rather than one - dotted ahead of the bus, solid
                 // behind it, so the line itself shows how far the
