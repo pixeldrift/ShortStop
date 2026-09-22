@@ -258,6 +258,8 @@ function parseHeaderlessLine(line: string, delimiter: string): RawRouteRow {
       side: "",
       notes: "",
       skip: false,
+      overrideLat: null,
+      overrideLon: null,
     };
   }
 
@@ -270,6 +272,8 @@ function parseHeaderlessLine(line: string, delimiter: string): RawRouteRow {
     side: "",
     notes: "",
     skip: false,
+    overrideLat: null,
+    overrideLon: null,
   };
 }
 
@@ -351,6 +355,8 @@ export function parseRouteImport(text: string): ImportParseResult {
       side: valueFor("side"),
       notes: valueFor("notes"),
       skip: valueFor("skip") === "true",
+      overrideLat: null,
+      overrideLon: null,
     };
   });
 

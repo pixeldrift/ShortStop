@@ -1,24 +1,31 @@
 import type { Route } from "./types";
+import { resolveRouteCoordinates } from "./waypointCache";
 import type { WaypointCache } from "./waypointCache";
 
 /**
- * Whether every one of a route's own geocodable steps already has an
- * "ok" entry in `cache` - the same rule EditRouteScreen.tsx enforces
- * before letting a route go "published" (see its own canPublish),
- * reused here so RouteListScreen's quick per-row "Publish" action can't
- * bypass it. Reads each step's own precomputed `waypointKey`
- * (parseRouteCsv.ts) directly rather than re-deriving waypoints from
- * scratch - an "unresolvable" key (see waypointCacheKey's own doc
- * comment for the `unresolvable:` prefix convention) never needed a
- * cache entry in the first place, so it's skipped rather than treated
- * as missing.
+ * Whether every one of a route's own geocodable steps already resolves
+ * to a real coordinate - an admin's own override (RouteStep.overrideLat/
+ * overrideLon), or an "ok" entry in `cache` (resolveRouteCoordinates,
+ * walking the route in order the same way live navigation now does, so
+ * a step near a known second road crossing is checked against whichever
+ * candidate it's actually closest to, not always the pair's own shared
+ * base entry). The same rule EditRouteScreen.tsx enforces before
+ * letting a route go "published" (see its own canPublish), reused here
+ * so RouteListScreen's quick per-row "Publish" action can't bypass it.
+ * An "unresolvable" step (see waypointCacheKey's own doc comment for
+ * the `unresolvable:` prefix convention) never needed a cache entry in
+ * the first place, so it's skipped rather than treated as missing.
  */
 export function isRouteFullyResolved(route: Route, cache: WaypointCache): boolean {
   if (route.steps.length === 0) return false;
-  return route.steps.every((step) => {
-    if (step.waypointKey.startsWith("unresolvable:")) return true;
-    return cache[step.waypointKey]?.status === "ok";
-  });
+  const resolved = resolveRouteCoordinates(
+    route.steps,
+    cache,
+    route.schoolLat != null && route.schoolLon != null ? { lat: route.schoolLat, lon: route.schoolLon } : null,
+  );
+  return route.steps.every(
+    (step, i) => step.waypointKey.startsWith("unresolvable:") || resolved[i] != null,
+  );
 }
 
 /** Fetches the geocode cache from Postgres (see src/app/api/waypoints)

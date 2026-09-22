@@ -184,3 +184,78 @@ export function resolveIntersectionCacheEntry(
   const nearest = nearestLabeledCandidate(known, near);
   return { key: nearest.key, entry: cache[nearest.key] as Extract<WaypointCacheEntry, { status: "ok" }> };
 }
+
+export interface ResolvedStepCoordinate {
+  lat: number;
+  lon: number;
+  displayName: string;
+  /** "override" when RouteStep.overrideLat/overrideLon won (see
+   * prisma/schema.prisma's own doc comment); "cache" for the ordinary
+   * shared-geocode-cache case, whichever of a base key's own known
+   * cardinal siblings ended up closest to `near`. */
+  source: "override" | "cache";
+}
+
+/**
+ * One step's real coordinate - the single place every consumer that
+ * draws or navigates a route (RouteMap, StepScreen, routeReadiness,
+ * exportCsv, StartScreen) should resolve through, instead of reading
+ * `cache[waypointKey]` directly. An admin's own override always wins
+ * when set - it's the "I looked at this stop and this is where it
+ * really is" answer, never second-guessed by a fresh geocode result.
+ * Otherwise falls through to the shared cache, intersection-aware
+ * (resolveIntersectionCacheEntry above) so a step whose road pair has
+ * two known crossings lands on whichever one this step's own `near`
+ * context is actually closest to, not always the pair's own base
+ * entry. Null only when neither an override nor any cache entry
+ * exists yet for this step at all - still genuinely unresolved.
+ */
+export function resolveStepCoordinate(
+  waypointKey: string,
+  override: { overrideLat: number | null; overrideLon: number | null },
+  cache: WaypointCache,
+  near: { lat: number; lon: number } | null,
+): ResolvedStepCoordinate | null {
+  if (override.overrideLat != null && override.overrideLon != null) {
+    return { lat: override.overrideLat, lon: override.overrideLon, displayName: "Manually placed", source: "override" };
+  }
+  if (waypointKey.startsWith("intersection:")) {
+    const resolved = resolveIntersectionCacheEntry(cache, waypointKey, near);
+    return resolved
+      ? { lat: resolved.entry.lat, lon: resolved.entry.lon, displayName: resolved.entry.displayName, source: "cache" }
+      : null;
+  }
+  const entry = cache[waypointKey];
+  return entry?.status === "ok"
+    ? { lat: entry.lat, lon: entry.lon, displayName: entry.displayName, source: "cache" }
+    : null;
+}
+
+/**
+ * resolveStepCoordinate above, run across a whole route's own steps in
+ * order - the sequential-context version geocodeRoute.ts's own batch
+ * pipeline already uses (`lastResolved`, carried from whichever stop
+ * last actually resolved) applied here to *reading* a route back
+ * instead of geocoding one, so a step near a known second crossing
+ * reads as whichever candidate the route's own walk-through is
+ * actually near at that point, not a fixed, context-free guess.
+ * `schoolAnchor` seeds `near` before anything on the route itself has
+ * resolved yet (the same role it plays for the first real geocode
+ * call, resolveWaypoint.ts's own `ctx.anchor`) - null when it isn't
+ * known, in which case the first ambiguous step with no earlier
+ * resolved neighbor falls back to whichever known candidate
+ * resolveIntersectionCacheEntry picks with no position to compare
+ * against at all (its own doc comment).
+ */
+export function resolveRouteCoordinates(
+  steps: { waypointKey: string; overrideLat: number | null; overrideLon: number | null }[],
+  cache: WaypointCache,
+  schoolAnchor: { lat: number; lon: number } | null,
+): (ResolvedStepCoordinate | null)[] {
+  let near = schoolAnchor;
+  return steps.map((step) => {
+    const resolved = resolveStepCoordinate(step.waypointKey, step, cache, near);
+    if (resolved) near = { lat: resolved.lat, lon: resolved.lon };
+    return resolved;
+  });
+}

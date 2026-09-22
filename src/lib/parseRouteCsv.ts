@@ -72,6 +72,16 @@ export interface RawRouteRow {
    * false via the `row.skip === "true"` read below), same as `side` is
    * already missing from route-120's own schema. */
   skip: boolean;
+  /** An admin-placed coordinate that's this row's own permanent answer
+   * to "where is this stop/turn," independent of the shared Waypoint
+   * geocoding cache - see prisma/schema.prisma's own RouteStep doc
+   * comment. Always both null or both set together. Absent from every
+   * CSV/import source (there's no column for it on a paper route
+   * sheet) - only ever set by an admin's own Override action
+   * (EditRouteScreen.tsx), so every CSV-parsing constructor of a
+   * RawRouteRow below defaults both to null. */
+  overrideLat: number | null;
+  overrideLon: number | null;
 }
 
 /** Splits a route steps sheet's data rows (header row dropped) into
@@ -101,6 +111,8 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
         side: row.side ?? "",
         notes: row.notes ?? "",
         skip: row.skip === "true",
+        overrideLat: null,
+        overrideLon: null,
       };
     });
 }
@@ -221,7 +233,7 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
   const waypoints = deriveWaypoints(rows, meta.schoolAddress);
 
   const steps: NavigationStep[] = rows.map((row, index) => {
-    const { action, location, fromLocation, riderCount, side, notes } = row;
+    const { action, location, fromLocation, riderCount, side, notes, overrideLat, overrideLon } = row;
     const studentCount = riderCount ? Number(riderCount) : undefined;
     const sideOfRoad = side || undefined;
     const specialInstruction = notes || undefined;
@@ -253,6 +265,8 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
         sideOfRoad,
         specialInstruction,
         waypointKey,
+        overrideLat,
+        overrideLon,
         announcement,
       };
     }
@@ -299,6 +313,8 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
       subheading: location || undefined,
       specialInstruction,
       waypointKey,
+      overrideLat,
+      overrideLon,
       announcement,
     };
   });

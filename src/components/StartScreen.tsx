@@ -28,6 +28,7 @@ import { addressWithoutZip } from "@/lib/schoolAddress";
 import { tripTypeFullLabel } from "@/lib/tripType";
 import type { NavigationStep, Route } from "@/lib/types";
 import { useSwipeBack } from "@/lib/useSwipeBack";
+import { resolveRouteCoordinates } from "@/lib/waypointCache";
 import type { WaypointCache } from "@/lib/waypointCache";
 
 /** "Published"/"Draft"/"Demo route" plus the color its own status
@@ -67,8 +68,12 @@ function coordinateCountLabel(
   );
   if (geocodable.length === 0)
     return { text: "No coordinates to verify", verified: true };
-  const resolved = geocodable.filter(
-    (s) => cache[s.waypointKey]?.status === "ok",
+  const schoolAnchor =
+    route.schoolLat != null && route.schoolLon != null
+      ? { lat: route.schoolLat, lon: route.schoolLon }
+      : null;
+  const resolved = resolveRouteCoordinates(geocodable, cache, schoolAnchor).filter(
+    (point) => point != null,
   ).length;
   return {
     text: `${resolved}/${geocodable.length} coordinates`,
@@ -208,7 +213,12 @@ export function StartScreen({
     [route],
   );
   const routePath = useMemo(
-    () => route.steps.map((s) => s.waypointKey),
+    () =>
+      route.steps.map((s) => ({
+        waypointKey: s.waypointKey,
+        overrideLat: s.overrideLat,
+        overrideLon: s.overrideLon,
+      })),
     [route],
   );
   const schoolPoint = useMemo(

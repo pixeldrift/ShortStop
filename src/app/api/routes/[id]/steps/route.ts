@@ -32,6 +32,8 @@ export async function GET(
     side: step.side,
     notes: step.notes,
     skip: step.skip,
+    overrideLat: step.overrideLat,
+    overrideLon: step.overrideLon,
   }));
 
   return NextResponse.json(steps);

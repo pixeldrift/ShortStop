@@ -150,6 +150,8 @@ async function main() {
         side: step.side,
         notes: step.notes,
         skip: step.skip,
+        overrideLat: step.overrideLat,
+        overrideLon: step.overrideLon,
       }));
 
       const school = schoolsByName.get(route.schoolName);
