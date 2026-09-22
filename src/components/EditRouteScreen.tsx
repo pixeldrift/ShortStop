@@ -606,9 +606,14 @@ function StepRowView({
     actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
   // A place action's own from/location pair reads as an intersection
   // ("Main St & Oak Ave"); a turn's reads as the maneuver itself ("Main
-  // St onto Oak Ave") - same shape, different connector word, both set
-  // apart from the road names themselves (smaller, gray, italic) so
-  // neither reads as though it were part of a name. `effectiveFrom`
+  // St onto Oak Ave" for Left/Right/Turn Around/Pull Over, "Main St to
+  // Oak Ave" for Proceed/Return, "Main St on Oak Ave" for Continue/
+  // U-Turn - waypointConnectorWord's own fixed per-action vocabulary,
+  // same lookup formatWaypointInstruction/crossroadsLine already use so
+  // this reads the same wherever it shows up) - same shape either way,
+  // both set apart from the road names themselves (smaller, gray,
+  // italic) so neither reads as though it were part of a name.
+  // `effectiveFrom`
   // falls back to the tracked `previousRoad` when this row has no
   // explicit `fromLocation` of its own, so the subheading previews the
   // real intersection this row will actually resolve to - except for a
@@ -625,7 +630,7 @@ function StepRowView({
   const effectiveFrom = isPlainLocation
     ? null
     : row.fromLocation || previousRoad;
-  const connector = isPlaceAction ? "&" : "onto";
+  const connector = isPlaceAction ? "&" : waypointConnectorWord(row.action);
   const subheading = effectiveFrom ? (
     <>
       {effectiveFrom}{" "}
