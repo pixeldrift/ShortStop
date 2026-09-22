@@ -692,12 +692,36 @@ function StepRowView({
               </>
             )}
           </span>
-          {isStop && row.riderCount && (
-            <span className="flex shrink-0 items-center gap-1 text-sm text-zinc-500">
-              <PersonSolidIcon className="h-4 w-4" />
-              {row.riderCount} rider{row.riderCount === "1" ? "" : "s"}
+          {(isStop && row.riderCount) ||
+          (!issue && status?.status === "resolved") ? (
+            <span className="flex shrink-0 items-center gap-2">
+              {isStop && row.riderCount && (
+                <span className="flex items-center gap-1 text-sm text-zinc-500">
+                  <PersonSolidIcon className="h-4 w-4" />
+                  {row.riderCount} rider{row.riderCount === "1" ? "" : "s"}
+                </span>
+              )}
+              {/* Confirmed coordinates, right in line with the stop name
+                  rather than a whole line of their own below - nobody
+                  reads the actual numbers, they're just a quick "yes,
+                  this resolved" glance (ResolutionIcon's green check
+                  already carries the same meaning), so folding them into
+                  this row instead of giving them their own real estate
+                  lets more of the list show at once. Unresolved/skipped/
+                  errored rows still get their own line below (the
+                  reason/View Error text is actually worth reading, not
+                  just confirmation). */}
+              {!issue && status?.status === "resolved" && (
+                <span className="flex items-center gap-1 text-xs text-zinc-400">
+                  <ResolutionIcon
+                    status={status.status}
+                    className="h-3.5 w-3.5 shrink-0"
+                  />
+                  {status.lat.toFixed(5)}, {status.lon.toFixed(5)}
+                </span>
+              )}
             </span>
-          )}
+          ) : null}
         </div>
         <p className="truncate text-zinc-700">
           {subheading || (
@@ -715,22 +739,25 @@ function StepRowView({
             {issue}
           </p>
         ) : (
-          /* The row's own real geocoding outcome - actual coordinates
-             once resolved (green check), the specific miss/error reason
-             otherwise (red X), or "- Instructions Only -" for a row
-             deriveWaypoints.ts flagged as never needing a location at
-             all (a driver instruction, not a real road). */
-          status && (
+          /* The row's own real geocoding outcome, for every status
+             except "resolved" - that one now shows inline with the stop
+             name above (title row's own coordinates span) instead of a
+             whole line here, since a green check + coordinates is just
+             a glance-confirmation nobody actually reads the numbers of.
+             The specific miss/error reason still gets its own line
+             (genuinely worth reading), same for "- Instructions Only -"
+             for a row deriveWaypoints.ts flagged as never needing a
+             location at all (a driver instruction, not a real road). */
+          status &&
+          status.status !== "resolved" && (
             <p className="mt-0.5 flex items-center gap-1 text-xs text-zinc-400">
               <ResolutionIcon
                 status={status.status}
                 className="h-3.5 w-3.5 shrink-0"
               />
-              {status.status === "resolved"
-                ? `${status.lat.toFixed(5)}, ${status.lon.toFixed(5)}`
-                : status.status === "skipped"
-                  ? "- Instructions Only -"
-                  : status.reason}
+              {status.status === "skipped"
+                ? "- Instructions Only -"
+                : status.reason}
               {status.status === "unresolved" && status.raw && (
                 <button
                   type="button"
