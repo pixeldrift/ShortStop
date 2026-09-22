@@ -58,6 +58,23 @@ export type WaypointCacheEntry =
  * entries - see WaypointCacheEntry above. */
 export type WaypointCache = Record<string, WaypointCacheEntry>;
 
+/** Trims and collapses any run of internal whitespace down to one
+ * plain space, so "Holland Ridge Dr", "Holland Ridge Dr " (a trailing
+ * space, easy to leave behind typing on a touchscreen), and
+ * "Holland  Ridge  Dr" (a doubled-up space) all resolve to the exact
+ * same text - and so, once run through waypointCacheKey below, the
+ * same cache entry - rather than each becoming its own independent,
+ * separately-geocoded "different place" that happens to display
+ * identically. Deliberately leaves case untouched: unlike whitespace,
+ * a road's own real capitalization ("McKinney", "O'Brien Rd") isn't
+ * something to guess a single canonical form for blindly, and every
+ * caller that actually needs case-insensitive matching (the location
+ * suggestions list, locationSuggestions.ts's own mergeLocationNames)
+ * already does that itself, on top of this. */
+export function normalizeLocationWhitespace(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
 /**
  * The cache key for a WaypointQuery - content-addressed, not tied to a
  * row index, which is what makes "edit the CSV, then refresh" work
@@ -70,14 +87,22 @@ export type WaypointCache = Record<string, WaypointCacheEntry>;
  * intersection's two roads are sorted before joining, so "A & B" and
  * "B & A" - the same real intersection, however the CSV happens to
  * state it on a given row - always resolve to one shared entry rather
- * than two redundant lookups. "unresolvable" queries never actually
+ * than two redundant lookups. Every piece of a query's own text runs
+ * through normalizeLocationWhitespace first, for the same "don't let
+ * an incidental difference fork one real place into two cache rows"
+ * reason the A/B sort exists. "unresolvable" queries never actually
  * reach the cache - the geocoding pipeline skips them before ever
  * calling this function (see geocodeRoute.ts) - but a key is still
  * defined here so the switch stays exhaustive at the type level.
  */
 export function waypointCacheKey(query: WaypointQuery): string {
-  if (query.kind === "address") return `address:${query.text}`;
-  if (query.kind === "unresolvable") return `unresolvable:${query.description}`;
-  const [a, b] = [query.roadA, query.roadB].sort((x, y) => x.localeCompare(y));
+  if (query.kind === "address")
+    return `address:${normalizeLocationWhitespace(query.text)}`;
+  if (query.kind === "unresolvable")
+    return `unresolvable:${normalizeLocationWhitespace(query.description)}`;
+  const [a, b] = [
+    normalizeLocationWhitespace(query.roadA),
+    normalizeLocationWhitespace(query.roadB),
+  ].sort((x, y) => x.localeCompare(y));
   return `intersection:${a} & ${b}`;
 }

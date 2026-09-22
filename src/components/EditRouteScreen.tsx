@@ -87,6 +87,7 @@ import { parseTimeInput } from "@/lib/time";
 import { tripTypeFullLabel } from "@/lib/tripType";
 import { waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
+import { mergeLocationNames } from "@/lib/locationSuggestions";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
 import type { GeocodeResponseBody } from "@/app/api/geocode/route";
 import type { FallbackDetail } from "@/lib/resolveWaypoint";
@@ -1050,12 +1051,15 @@ function StepRowEditor({
   // recognize, turning straight into the linked-entity chip the same
   // tap through AddressBookIcon's own popup would have produced - just
   // a faster path to the same result for a name already memorized.
-  const locationSuggestionOptions = useMemo(() => {
-    const names = new Set(locationSuggestions);
-    for (const name of Object.keys(schools)) names.add(name);
-    for (const loc of savedLocations) names.add(loc.name);
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
-  }, [locationSuggestions, schools, savedLocations]);
+  const locationSuggestionOptions = useMemo(
+    () =>
+      mergeLocationNames(
+        locationSuggestions,
+        Object.keys(schools),
+        savedLocations.map((loc) => loc.name),
+      ),
+    [locationSuggestions, schools, savedLocations],
+  );
   // Whether the Location text box currently has focus - the dropdown
   // below only ever shows while it does, same "only while you're
   // actually looking at this field" gating a native <datalist> gets
