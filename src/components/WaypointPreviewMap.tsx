@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
-import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
+import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 import { collapseAttribution, PMTILES_ATTRIBUTION, PMTILES_URL } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import type { RoutingResult } from "@/lib/routing/types";
@@ -126,6 +126,7 @@ function currentMarkerHtml(stopNumber: number | null, isTurn: boolean): string {
 interface PreviewMapController {
   flyToCenter(center: { lat: number; lon: number }, stopNumber: number | null, isTurn: boolean): void;
   setStopPins(stopPins: StopPin[]): void;
+  setRouteLine(routeLine: { lat: number; lon: number }[]): void;
   destroy(): void;
 }
 
@@ -159,10 +160,16 @@ interface PreviewMapController {
  * camera already is - a Stop and a turn typed for the same corner
  * shouldn't visibly reframe the map just to swap which marker shows
  * there; only an actual change of location does.
- * `routeLine`'s own road-following fetch still only happens once, on
- * mount - unlike `center`, it's the same whole-route line regardless of
- * which row is open, so there's nothing for a row-to-row navigation to
- * update there.
+ * `routeLine`'s own road-following fetch re-runs (setRouteLine, below)
+ * whenever `routeLine` itself actually changes identity - unlike
+ * `center`, it's the same whole-route line regardless of which row is
+ * open, so a plain row-to-row navigation never triggers this on its
+ * own, but a coordinate resolving (or an Update/Override/Fetch landing
+ * on some other row while this map is already open) does, and the
+ * drawn line needs to reflect that rather than staying frozen at
+ * whatever it looked like the moment this component first mounted -
+ * see EditRouteScreen's own routeContextPoints, the actual source this
+ * always reads from.
  */
 export function WaypointPreviewMap({
   center,
@@ -266,6 +273,19 @@ export function WaypointPreviewMap({
   }, [center.lat, center.lon, centerStopNumber, centerIsTurn]);
 
   useEffect(() => {
+    controllerRef.current?.setRouteLine(routeLine);
+    // routeLine itself, not its contents - EditRouteScreen's own
+    // routeContextPoints is already a useMemo (same reference across
+    // renders where nothing relevant changed), the same "caller keeps
+    // identity stable, this just trusts it" contract setStopPins below
+    // already relies on. Re-running this on every render would mean
+    // re-fetching /api/route-geometry constantly for no reason; missing
+    // a real change would mean this map drawing a stale line forever,
+    // which is exactly the bug this effect exists to fix (see this
+    // file's own top doc comment).
+  }, [routeLine]);
+
+  useEffect(() => {
     controllerRef.current?.setStopPins(stopPins);
   }, [stopPins]);
 
@@ -319,6 +339,24 @@ function mountMapLibre(
   let latestStopNumber = initialStopNumber;
   let latestIsTurn = initialIsTurn;
   let latestStopPins = initialStopPins;
+  let latestRouteLine = routeLine;
+  // False until the map's own "load" event fires - addSource/addLayer
+  // (inside drawRouteLine) need the style to have actually finished
+  // loading first, same gate RouteMap.tsx's own mountMapLibre already
+  // uses. setRouteLine, called well after mount, trusts this instead of
+  // re-registering its own "load" listener (which would never fire a
+  // second time - MapLibre's "load" is once-per-map, not once-per-
+  // listener) - draws immediately once this is true, otherwise leaves
+  // latestRouteLine for the mount-time "load" handler to pick up.
+  let mapStyleLoaded = false;
+  // Bumped on every drawRouteLine call, below - a fetch already in
+  // flight when a newer one starts (setRouteLine firing again before
+  // the previous /api/route-geometry response has landed) checks this
+  // against the id it was called with and quietly drops its own result
+  // rather than drawing over whatever the newer call already drew, or -
+  // worse - drawing itself *after* the newer one and winning the race
+  // with stale geometry.
+  let routeLineRequestId = 0;
 
   // Shared by every marker this renderer ever draws - a real DOM
   // element (elementFromHtml) wrapped in a maplibregl.Marker (dotHtml
@@ -362,6 +400,69 @@ function mountMapLibre(
     );
   }
 
+  // Fetches this route's own road-following geometry and (re)draws it -
+  // called once at mount (from the "load" handler below, since a fresh
+  // map has no style loaded yet to add a source/layer to) and again by
+  // setRouteLine, well after mount, whenever the caller's own routeLine
+  // prop actually changes (this file's own top doc comment on why that
+  // matters). `mapInstance` is threaded through as a param rather than
+  // read off the outer `map` closure - setRouteLine's own call already
+  // has to guard "is the map even built yet," and passing the
+  // known-non-null instance through keeps that check in exactly one
+  // place instead of two copies agreeing to stay in sync.
+  function drawRouteLine(mapInstance: MapLibreMap, nextRouteLine: { lat: number; lon: number }[]) {
+    const requestId = ++routeLineRequestId;
+    const existingSource = mapInstance.getSource("preview-route-line");
+    if (nextRouteLine.length <= 1) {
+      // Fewer than two points to draw a line between at all (the same
+      // "quietly do without it" case this always had) - clears
+      // whatever line a previous, since-invalidated routeLine left
+      // drawn, rather than leaving a stale one up with nothing left to
+      // justify it.
+      if (existingSource && mapInstance.getLayer("preview-route-line")) {
+        mapInstance.removeLayer("preview-route-line");
+      }
+      if (existingSource) mapInstance.removeSource("preview-route-line");
+      return;
+    }
+    fetch("/api/route-geometry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ waypoints: nextRouteLine }),
+    })
+      .then((res): Promise<RoutingResult> | null => {
+        // A non-OK response (quota exceeded, provider down) resolves
+        // rather than rejects, so it never reaches the .catch below -
+        // logged here so a missing line stays diagnosable instead of
+        // silently vanishing (see RouteMap.tsx's own identical fix).
+        if (res.ok) return res.json();
+        console.warn(`Couldn't fetch route geometry: HTTP ${res.status} ${res.statusText}`);
+        return null;
+      })
+      .then((result) => {
+        if (cancelledRef() || !result || requestId !== routeLineRequestId) return;
+        const data = {
+          type: "Feature" as const,
+          properties: {},
+          geometry: { type: "LineString" as const, coordinates: result.geometry.coordinates },
+        };
+        const existing = mapInstance.getSource("preview-route-line") as GeoJSONSource | undefined;
+        if (existing) {
+          existing.setData(data);
+        } else {
+          mapInstance.addSource("preview-route-line", { type: "geojson", data });
+          mapInstance.addLayer({
+            id: "preview-route-line",
+            type: "line",
+            source: "preview-route-line",
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
+          });
+        }
+      })
+      .catch((err) => console.warn("Couldn't fetch route geometry:", err));
+  }
+
   void import("maplibre-gl").then((maplibregl) =>
     import("pmtiles").then(({ Protocol }) => {
       if (cancelledRef()) return;
@@ -395,45 +496,11 @@ function mountMapLibre(
       ).addTo(mapInstance);
       currentMarker.getElement().style.zIndex = "10";
 
-      if (routeLine.length > 1) {
-        mapInstance.once("load", () => {
-          if (cancelledRef()) return;
-          fetch("/api/route-geometry", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ waypoints: routeLine }),
-          })
-            .then((res): Promise<RoutingResult> | null => {
-              // A non-OK response (quota exceeded, provider down)
-              // resolves rather than rejects, so it never reaches the
-              // .catch below - logged here so a missing line stays
-              // diagnosable instead of silently vanishing (see
-              // RouteMap.tsx's own identical fix).
-              if (res.ok) return res.json();
-              console.warn(`Couldn't fetch route geometry: HTTP ${res.status} ${res.statusText}`);
-              return null;
-            })
-            .then((result) => {
-              if (cancelledRef() || !result) return;
-              mapInstance.addSource("preview-route-line", {
-                type: "geojson",
-                data: {
-                  type: "Feature",
-                  properties: {},
-                  geometry: { type: "LineString", coordinates: result.geometry.coordinates },
-                },
-              });
-              mapInstance.addLayer({
-                id: "preview-route-line",
-                type: "line",
-                source: "preview-route-line",
-                layout: { "line-cap": "round", "line-join": "round" },
-                paint: { "line-color": "#2563eb", "line-width": 4, "line-opacity": 0.7 },
-              });
-            })
-            .catch((err) => console.warn("Couldn't fetch route geometry:", err));
-        });
-      }
+      mapInstance.once("load", () => {
+        if (cancelledRef()) return;
+        mapStyleLoaded = true;
+        drawRouteLine(mapInstance, latestRouteLine);
+      });
     }),
   );
 
@@ -466,6 +533,16 @@ function mountMapLibre(
     setStopPins(next) {
       latestStopPins = next;
       if (maplibreModule) redrawStopPins(maplibreModule);
+    },
+    setRouteLine(next) {
+      latestRouteLine = next;
+      // Not yet loaded: the mount-time "load" handler above will pick
+      // this up off latestRouteLine itself once it fires, same as
+      // flyToCenter/setStopPins already trust their own latest* values
+      // for an early call. Already loaded: draw it right now instead of
+      // waiting on a "load" event that already happened and will never
+      // fire again.
+      if (map && mapStyleLoaded) drawRouteLine(map, next);
     },
     destroy() {
       map?.remove();
