@@ -1567,16 +1567,26 @@ function StepRowEditor({
                           the same locationSuggestionOptions list (every
                           already-known name), just filtered to what's
                           actually typed so far and rendered as our own
-                          styled panel. onMouseDown/preventDefault on
+                          styled panel. onPointerDown/preventDefault on
                           the panel (not the individual rows) stops a
                           tap here from blurring the input first - a
                           blur would otherwise close this panel (see
                           onBlur above) before the row's own onClick
-                          ever got to fire. */}
+                          ever got to fire. Pointer, not onMouseDown - on
+                          a real touchscreen a tap's own focus change
+                          already happens at touchstart, before a
+                          synthesized mousedown ever reaches this
+                          handler, so preventDefault there arrived too
+                          late to stop it (this app's own real device is
+                          a tablet/phone, same reasoning the drag-reorder
+                          rewrite already documents for Pointer Events
+                          over legacy mouse events). pointerdown fires in
+                          step with that same touchstart, early enough to
+                          actually suppress it. */}
                       {locationFocused && locationMatches.length > 0 && (
                         <ul
                           className="absolute top-full left-0 z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg"
-                          onMouseDown={(e) => e.preventDefault()}
+                          onPointerDown={(e) => e.preventDefault()}
                         >
                           {locationMatches.map((name) => (
                             <li key={name}>
@@ -1625,10 +1635,24 @@ function StepRowEditor({
                 onSaveSavedLocation={onSaveSavedLocation}
                 onFetchCoordinates={onFetchSavedLocationCoords}
                 onSelect={(choice) => {
-                  onChange({ location: choice.name });
-                  if (choice.lat != null && choice.lon != null) {
-                    onManualCoordinates(choice.lat, choice.lon);
-                  }
+                  // onLocationChange (handleLocationChange, EditRouteScreen),
+                  // not the plain onChange + a separate onManualCoordinates
+                  // call this used to make - that second call read
+                  // `draftWaypoint` from this render's own closure, still
+                  // holding the *previous* Location text's cache key at
+                  // the moment it ran (the onChange just above hadn't
+                  // actually re-rendered yet), so the coordinates address
+                  // book handed over landed under the wrong waypoint and
+                  // this row kept reading as unresolved even after
+                  // picking a school with known coordinates.
+                  // handleLocationChange already solves exactly this (see
+                  // its own doc comment) by recomputing the waypoint
+                  // fresh from the new text instead of trusting the stale
+                  // memo, and separately already knows how to look up a
+                  // school/saved-location's own lat/lon by name - so
+                  // reusing it here instead of duplicating that logic
+                  // fixes both the staleness and the duplication.
+                  onLocationChange(choice.name);
                   setShowLocationPicker(false);
                 }}
                 onClose={() => setShowLocationPicker(false)}
