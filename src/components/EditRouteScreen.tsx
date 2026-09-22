@@ -85,7 +85,7 @@ import type {
 import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { parseTimeInput } from "@/lib/time";
 import { tripTypeFullLabel } from "@/lib/tripType";
-import { waypointCacheKey } from "@/lib/waypointCache";
+import { resolveIntersectionCacheEntry, waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import { mergeLocationNames } from "@/lib/locationSuggestions";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -2131,6 +2131,8 @@ function fallbackExplanation(fallback: FallbackDetail): string {
       return `No exact match, but a nearby road with a different street type looks like the same one: "${fallback.correctedQuery}".`;
     case "fuzzy-name":
       return `No exact match, but a nearby road with a similar spelling looks like the same one: "${fallback.correctedQuery}".`;
+    case "directional":
+      return `No exact match, but a nearby road with the same distinctive name (just a different or missing direction) looks like the same one: "${fallback.correctedQuery}".`;
     case "loop-snap":
       return `These two roads don't meet as a simple intersection here (often a loop or circle) - placed on "${fallback.correctedQuery}" instead, at the point closest to this route. Not a real crossing - only an approximation.`;
   }
@@ -4351,12 +4353,33 @@ export function EditRouteScreen({
   // reads as resolved everywhere else that checks it (the collapsed
   // row's own green check, Publish's readiness count) the same way
   // either path got there.
+  // `near` - the same nearestResolvedGuess neighbor context
+  // StepRowEditor's own placementGuess/PlaceCoordinatesModal centering
+  // already uses - decides *which* row this write actually means for
+  // an intersection query with more than one already-known candidate
+  // (waypointCache.ts's own resolveIntersectionCacheEntry, the same
+  // "known candidates, nearest to context wins" check
+  // resolveIntersectionKeyed already runs before ever spending a fresh
+  // Overpass call). Without this, two genuinely different real
+  // crossings sharing the same road-pair name always collapsed into
+  // one shared cache row the moment either one's pin was moved by
+  // hand - this is what actually stops that: repositioning *this*
+  // row's own pin now updates whichever candidate this row is already
+  // showing, not blindly the pair's own base entry regardless of
+  // which of the two real crossings this particular stop is at. A
+  // plain address, or an intersection with no already-known sibling
+  // yet, behaves exactly as before either way.
   function setManualCoordinates(
     waypoint: GeocodableQuery,
     lat: number,
     lon: number,
+    near: { lat: number; lon: number } | null = null,
   ) {
-    const key = waypointCacheKey(waypoint);
+    const baseKey = waypointCacheKey(waypoint);
+    const key =
+      waypoint.kind === "intersection"
+        ? (resolveIntersectionCacheEntry(cache, baseKey, near)?.key ?? baseKey)
+        : baseKey;
     const entry: WaypointCacheEntry = {
       status: "ok",
       lat,
@@ -4394,9 +4417,13 @@ export function EditRouteScreen({
         return;
       }
 
-      const key = waypointCacheKey(waypoint);
-      setCache((prev) => ({ ...prev, [key]: data.result }));
-      persistWaypoint(key, data.result);
+      setCache((prev) => {
+        const next = { ...prev, [data.key]: data.result };
+        if (data.discoveredAlternate) next[data.discoveredAlternate.key] = data.discoveredAlternate.entry;
+        return next;
+      });
+      persistWaypoint(data.key, data.result);
+      if (data.discoveredAlternate) persistWaypoint(data.discoveredAlternate.key, data.discoveredAlternate.entry);
       if (data.result.status === "error" && data.result.rateLimited) {
         setFetchError({
           message:
@@ -4512,9 +4539,13 @@ export function EditRouteScreen({
         }
         if (data.anchor) setSchoolAnchor(data.anchor);
         persistSchoolAnchorIfFresh(data.anchorEntry);
-        const key = waypointCacheKey(waypoint);
-        setCache((prev) => ({ ...prev, [key]: data.result }));
-        persistWaypoint(key, data.result);
+        setCache((prev) => {
+          const next = { ...prev, [data.key]: data.result };
+          if (data.discoveredAlternate) next[data.discoveredAlternate.key] = data.discoveredAlternate.entry;
+          return next;
+        });
+        persistWaypoint(data.key, data.result);
+        if (data.discoveredAlternate) persistWaypoint(data.discoveredAlternate.key, data.discoveredAlternate.entry);
         setFetchingStepIds((prev) => {
           const next = new Set(prev);
           next.delete(waypoint.stepId);
@@ -5674,7 +5705,12 @@ export function EditRouteScreen({
                 onManualCoordinates={(lat, lon) =>
                   draftWaypoint &&
                   draftWaypoint.kind !== "unresolvable" &&
-                  setManualCoordinates(draftWaypoint, lat, lon)
+                  setManualCoordinates(
+                    draftWaypoint,
+                    lat,
+                    lon,
+                    nearestResolvedGuess(resolutionRows, index),
+                  )
                 }
                 canGoPrev={quickEdit ? false : visibleRowIndices.indexOf(index) > 0}
                 canGoNext={

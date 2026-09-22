@@ -1,4 +1,6 @@
 import type { WaypointQuery } from "./deriveWaypoints";
+import { nearestLabeledCandidate } from "./cardinalLabel";
+import type { CardinalLabel } from "./cardinalLabel";
 
 /** What one geocode attempt returns - a hit, or a miss with a reason.
  * `source` is the exact text sent to the geocoder, `provider` is which
@@ -105,4 +107,80 @@ export function waypointCacheKey(query: WaypointQuery): string {
     normalizeLocationWhitespace(query.roadB),
   ].sort((x, y) => x.localeCompare(y));
   return `intersection:${a} & ${b}`;
+}
+
+/** cardinalLabel.ts's own fixed vocabulary, as a plain array - every
+ * possible cache key an intersection-kind base key could have a
+ * sibling under (see intersectionVariantKey below). Kept to exactly
+ * these four, not open-ended, so "does this key already have any
+ * siblings" is always a bounded, enumerable check (at most 4 extra
+ * lookups) rather than a scan. */
+export const CARDINAL_LABELS: readonly CardinalLabel[] = ["northern", "southern", "eastern", "western"];
+
+/**
+ * The cache key for a *second* real candidate point sharing the same
+ * road-pair base key - resolveWaypoint.ts's own resolveIntersectionKeyed
+ * mints one of these the first time Overpass reports two genuinely
+ * different shared nodes for the same pair (a loop road crossing the
+ * same other road twice), or the directional-name fallback
+ * (geocodeFallback.ts's directionalCoreMatches) turns up two distinct
+ * real roads for what was typed. `baseKey` must already be an
+ * `intersection:` key (waypointCacheKey's own output) - this only ever
+ * makes sense for that kind, an address or unresolvable query never
+ * has a "second real place" to disambiguate from the first.
+ *
+ * Deliberately still a plain string, in the exact same flat
+ * Record<key, entry> shape every existing cache consumer (the /api/
+ * waypoints route, EditRouteScreen.tsx, routeReadiness.ts...) already
+ * reads/writes - no new WaypointCacheEntry shape, no schema change.
+ * Two real crossings just become two ordinary rows that happen to
+ * share most of their key text, the same way any other cache entry
+ * does.
+ */
+export function intersectionVariantKey(baseKey: string, label: CardinalLabel): string {
+  return `${baseKey} (${label} crossing)`;
+}
+
+/**
+ * Which of an intersection base key's own known candidates (itself,
+ * plus whichever cardinal-labeled siblings already exist in `cache`)
+ * a given caller actually means - resolveWaypoint.ts's own
+ * resolveIntersectionKeyed runs the equivalent check server-side
+ * before ever spending a fresh Overpass call; this is the same idea
+ * for a caller that already has both the cache and a position to
+ * compare against on hand client-side (a manual pin-drag's own
+ * placementGuess, say) and just needs to know which existing row it's
+ * actually looking at - no network call, ever.
+ *
+ * Null when nothing at all is known yet for this base key (a genuine
+ * miss - nothing to pick from). With exactly one known candidate,
+ * that one - regardless of `near` - there's nothing to disambiguate.
+ * With two or more, whichever is closest to `near` when a position is
+ * given; without one, the base key's own entry if it has one, else
+ * simply the first known candidate (best-effort - there's no way to
+ * choose more precisely with no position to compare against at all).
+ */
+export function resolveIntersectionCacheEntry(
+  cache: WaypointCache,
+  baseKey: string,
+  near: { lat: number; lon: number } | null,
+): { key: string; entry: Extract<WaypointCacheEntry, { status: "ok" }> } | null {
+  const known: { key: string; label: CardinalLabel | null; lat: number; lon: number }[] = [];
+  const baseEntry = cache[baseKey];
+  if (baseEntry?.status === "ok") known.push({ key: baseKey, label: null, lat: baseEntry.lat, lon: baseEntry.lon });
+  for (const label of CARDINAL_LABELS) {
+    const variantKey = intersectionVariantKey(baseKey, label);
+    const variantEntry = cache[variantKey];
+    if (variantEntry?.status === "ok") {
+      known.push({ key: variantKey, label, lat: variantEntry.lat, lon: variantEntry.lon });
+    }
+  }
+
+  if (known.length === 0) return null;
+  if (known.length === 1 || !near) {
+    const chosen = known.find((k) => k.key === baseKey) ?? known[0];
+    return { key: chosen.key, entry: cache[chosen.key] as Extract<WaypointCacheEntry, { status: "ok" }> };
+  }
+  const nearest = nearestLabeledCandidate(known, near);
+  return { key: nearest.key, entry: cache[nearest.key] as Extract<WaypointCacheEntry, { status: "ok" }> };
 }
