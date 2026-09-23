@@ -19,7 +19,13 @@ import {
   ROUTE_LINE_WIDTH,
 } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
-import { initialBearing, nearestSegmentBearings } from "@/lib/routeProgress";
+import {
+  cumulativeDistances,
+  nearestSegmentBearings,
+  projectOntoRoute,
+  roadBearingAt,
+} from "@/lib/routeProgress";
+import type { LatLon } from "@/lib/routeProgress";
 import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
 import { spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
 import type { TripType, TurnDirection } from "@/lib/types";
@@ -204,9 +210,10 @@ export interface RouteGeometryResult {
 // never itself an active step a driver can be "at".
 type OrderedWaypoint = { key: string | null; lat: number; lon: number };
 
-// Driving mode's own "which way is the bus facing" - the bearing FROM
-// the previous waypoint TO the active one, i.e. the road the bus is
-// actually already on, not the road it's about to turn onto. This is
+// Driving mode's own "which way is the bus facing" - the real road
+// bearing (roadBearingAt, routeProgress.ts) at the active waypoint's
+// own spot along the actual road-following line, looking back the way
+// the bus just came, not the road it's about to turn onto. This is
 // deliberate, not an oversight: rotating to face the *next* leg the
 // instant a turn becomes the active step would spin the map toward a
 // road the bus hasn't reached yet, before the turn is actually
@@ -218,22 +225,30 @@ type OrderedWaypoint = { key: string | null; lat: number; lon: number };
 // really on the new road - and since "up" is however MapLibre renders
 // the *current* heading, "where we came from" is always straight down,
 // so an on-screen left/right always matches a real left/right turn.
-// Falls back to the bearing TOWARD the next
-// waypoint only at the route's very first step (Depart), where there's
-// no "came from" leg yet to face along. Null if there's nothing to
-// compute a direction from (the active key isn't in `ordered`, or it's
-// the route's only waypoint).
+// Using the actual road geometry here (not a straight line between
+// waypoints, which this used to be) is also what keeps this in
+// agreement with a turn sign's own bearing (nearestSegmentBearings,
+// same file) - both now read off the identical road line the same way,
+// so the map's own "up" and a turn sign's own rotation can't disagree
+// with each other the way two different bearing sources sometimes did.
+// Falls back to the bearing looking *ahead* only at the route's very
+// first step (Depart) or anywhere else roadBearingAt has no real
+// "incoming" distance to measure (the active point sits at, or before,
+// the very start of the fetched road line). Null if there's no road
+// geometry yet, or the active point doesn't resolve to a real
+// coordinate.
 function bearingAt(
-  ordered: OrderedWaypoint[],
-  activeWaypointKey: string | null | undefined,
+  coords: LatLon[],
+  cumulative: number[],
+  activePoint: LatLon | undefined,
 ): number | null {
-  if (!activeWaypointKey) return null;
-  const index = ordered.findIndex((w) => w.key === activeWaypointKey);
-  if (index === -1) return null;
-  if (index - 1 >= 0) return initialBearing(ordered[index - 1], ordered[index]);
-  if (index + 1 < ordered.length)
-    return initialBearing(ordered[index], ordered[index + 1]);
-  return null;
+  if (!activePoint || coords.length < 2) return null;
+  const projection = projectOntoRoute(coords, cumulative, activePoint);
+  if (!projection) return null;
+  return (
+    roadBearingAt(coords, cumulative, projection.distanceAlongRoute, "incoming") ??
+    roadBearingAt(coords, cumulative, projection.distanceAlongRoute, "outgoing")
+  );
 }
 
 /** Which point along a route's own road-geometry coordinates (lon/lat
@@ -1179,12 +1194,10 @@ function mountMapLibre(args: MountArgs): () => void {
             }
 
             applyRouteProgress?.();
-            const bearing = bearingAt(
-              orderedWaypointsRef.current,
-              activeWaypointKeyRef.current,
-            );
             const key = activeWaypointKeyRef.current;
             const point = key ? resolvedByKey.get(key) : undefined;
+            const roadLine = latestRoadGeometry.map(([lon, lat]) => ({ lat, lon }));
+            const bearing = bearingAt(roadLine, cumulativeDistances(roadLine), point);
             if (!point) {
               // No coordinate to fly to yet - still rotate on its own,
               // animated the same 1s as every other camera move here,
