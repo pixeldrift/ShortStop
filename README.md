@@ -60,10 +60,9 @@ screens (there's no login yet — see Roadmap).
 
 ## Route data
 
-Routes, schools, stops, and the geocoding cache all live in Postgres —
-the running app never reads a CSV directly. `public/data/` holds a set
-of sample routes and a school roster, used only to seed a local or
-freshly-created database (`npx prisma db seed`).
+Routes, schools, stops, and the geocoding cache all live in Postgres.
+There is a collection of sample route and school details in `public/data/`
+used only to seed a local or freshly-created database (`npx prisma db seed`).
 
 A route's stops can also be built by pasting or uploading a CSV/TSV
 directly into the admin **Add/Edit Route** screen — column headers are
@@ -84,7 +83,7 @@ adds a `row_number` column) and merges it into the route in memory —
 a blank cell keeps that field's current value, the word `null` clears
 it, a row with no (or unmatched) `row_number` is added as new, and a
 row missing from the file is dropped. Nothing is saved to Postgres
-until the screen's own Save, same as any other in-place edit there.
+until the screen's own Save..
 
 Once a route has stops, the **Fetch Coordinates** button resolves them
 to real coordinates (addresses via OpenRouteService, intersections via
@@ -93,7 +92,7 @@ looked up twice.
 
 ## Deploying
 
-The project is pushed to GitHub, then deoloyed through Vercel.
+The project is pushed to GitHub, then deployed through Vercel.
 
 Set `DATABASE_URL` and `ORS_API_KEY` in Vercel (Project Settings →
 Environment Variables, Production and Preview both). `next build` runs `prisma migrate deploy` first, so
@@ -105,56 +104,32 @@ Vercel value).
 
 ## Roadmap
 
-- Real authentication for Edit Mode — it's a client-side toggle today,
-  with no login and nothing preventing a driver from reaching it.
+- Real user authentication for Edit Mode. Currently this is only a
+  client-side toggle with no login. Anyone can edit.
 - A custom "Add to Home Screen" install prompt (`beforeinstallprompt`)
-  for a dashboard tablet - `public/manifest.json` now has real icons
-  (generated from `src/app/favicon.ico`'s own mark - see
+  for a dashboard tablet - `public/manifest.json` has icons. See
   `public/icons/`) and an `apple-touch-icon` for iOS, so installing
-  already works via the browser's own menu; this would just make that
-  discoverable without a driver needing to know it's there.
-- Rider check-in state resets on page reload (it's in-memory only, not
-  persisted).
-- GPS-based auto-advance as stops are reached, rather than only manual
-  button/remote advance.
+  already works via the browser's own menu. This makes it discoverable
+  without a user needing to know it's there.
+- True ridership logging. The rider check-in is currently UI demo only.
+  The data is only in local memory and does not save to the database.
 - `driverName`, `distance`, and `durationMinutes` are still placeholder
   values on every route (`src/lib/placeholderMeta.ts`) until real
   driver/routing data exists.
-- Printable, per-route sheets for handing to a substitute driver — the
-  admin "Download stops" link is a flat CSV export today.
-- Draggable map/content split on the turn-by-turn navigation screen
-  (`StepScreen.tsx`) — currently a fixed 30vh/70vh (portrait) or
-  42%/58% (landscape) split, with the content pane's own text/icon/
-  button sizing tuned to that split via `clamp()` (vh-based). Making
-  the divider draggable needs the content pane to handle being
-  squeezed past its current tuning - likely a minimum content height
+- Improved printable, per-route sheets design with user options.
+- Better responsive layout. Currently layout is refined for phones,
+  but should also be optimized for tablets. 
+- User options for data download, checkboxes for desired fields.
+- Draggable divider between map view and directions on the turn-by-turn
+  navigation screen. (`StepScreen.tsx`) is currently a fixed 30vh/70vh
+  (portrait) or 42%/58% (landscape) split, with the content pane's own
+  text/icon/button sizing tuned to that split via `clamp()` (vh-based).
+  Making the divider draggable needs the content pane to handle being
+  squeezed past its current tuning. This is likely a minimum content height
   with `overflow-y-auto` once dragged past where the current sizing
-  was designed for, not just naive shrinking - plus a stored split
-  ratio and double-tap-to-reset back to the default.
-- Full-screen map toggle — done for StepScreen's own nav map and
-  StartScreen's overview map (`ExpandableMap.tsx`, a small expand icon
-  in the map's own top-right corner that opens a second, full-screen
-  instance of the same map with an X to close it). Still needs the same
-  treatment on PlaceCoordinatesModal's map and the All Stops modal's.
-- Autoroute — the compass icon between two stops (mirroring the
-  scissors/split icon on the same dashed line) now works for that one
-  specific gap: it calls /api/route-geometry for just those two stops
-  with ORS's own `steps` (turn-by-turn maneuvers, not just the line
-  geometry RouteMap.tsx's map draws from), drops ORS's own boundary
-  Depart/Arrive steps, and splices the real turns in between into
-  `rows` as their own new rows - each one's coordinate written directly
-  into the waypoint cache from ORS's own answer (no separate geocode
-  round-trip), editable afterward like any hand-typed waypoint, and
-  only actually saved as real route steps (RouteStep rows) once the
-  admin hits this screen's own Save, same as everything else here.
-  Still needed: a whole-route version that runs across every gap that
-  doesn't have driving instructions yet in one pass, rather than one
-  compass tap per gap.
-- Desktop admin: live-edit-while-previewing navigation — a view where
-  an admin can be in edit mode for a route's turn-by-turn instructions
-  while simultaneously seeing them rendered the way a driver would see
-  them on StepScreen, both from the same screen, so a change's effect
-  is visible immediately rather than needing a separate preview step.
+  was designed for, not just naive shrinking. Also requires a stored split
+  ratio and a double tap on the divider to reset back to the default.
+- Admin mode optimized for desktop for easier route and stop editing.
 - Bus-specific auto-instructions — automatically inserts instructions
   a generic map app has no reason to know about (stopping before a
   railroad crossing is the concrete example), the kind of thing a new
@@ -164,17 +139,3 @@ Vercel value).
   of lookup `overpassGeocode.ts` already does for intersections) to
   find where these apply, then auto-inserts a real "Stop" step at that
   point the same way any other route step works.
-- Live, position-based helper info between waypoints — "Next stop in
-  300ft," "Next turn in 2 blocks," "Railroad crossing ahead in 500ft" -
-  computed on the fly from the bus's actual live GPS position against
-  the route's own road geometry, not authored into the waypoints
-  themselves the way the bus-specific auto-instructions item above is
-  (those become real, permanent route steps; this would be a runtime-
-  only overlay on StepScreen that says nothing at all until a driver's
-  live position puts it within range). Distinct enough from every other
-  roadmap item here - a genuinely different mechanism (continuous GPS
-  tracking against the road-geometry line RouteMap.tsx already fetches,
-  proximity thresholds, its own announcement/display timing so it
-  doesn't collide with a stop's own check-in announcement) - that it
-  needs its own planning pass before starting, not just picking it up
-  alongside everything else above.
