@@ -7,17 +7,25 @@ import ContinueSvg from "./icons/continue.svg";
 import DepartSvg from "./icons/depart.svg";
 import HeartFilledSvg from "./icons/heart-filled.svg";
 import HeartOutlineSvg from "./icons/heart-outline.svg";
+import LeftSvg from "./icons/left.svg";
 import ProceedSvg from "./icons/proceed.svg";
 import PullOverSvg from "./icons/pull-over.svg";
 import ReturnSvg from "./icons/return.svg";
+import RightSvg from "./icons/right.svg";
 import TriangleRoundedSvg from "./icons/triangle-rounded.svg";
 import TriangleSvg from "./icons/triangle.svg";
 import TurnAroundSvg from "./icons/turn-around.svg";
 import UTurnSvg from "./icons/u-turn.svg";
 
-/** The turn-sign image, mirrored for a left turn (the source art is a
- * right turn). Still a raster PNG, not one of the vector icons below -
- * nothing to extract to its own .svg file for. */
+/** The one big turn-sign graphic StepScreen's own live driving screen
+ * shows for the active step - mirrored for a left turn (the source art
+ * is a right turn). Still a raster PNG, not one of the vector diamond
+ * icons below - this is the one deliberate exception to those (see
+ * ACTION_ICONS' own doc comment): every *small* Left/Right glyph
+ * elsewhere (map markers, the progress bar, the admin row list) now
+ * uses the real left.svg/right.svg diamond instead of this image
+ * mirrored, but the one big full-screen sign a driver actually reads
+ * mid-turn stays exactly as it always has. */
 export function TurnArrow({
   direction,
   className,
@@ -137,6 +145,8 @@ export { default as MapPinIcon } from "./icons/map-pin.svg";
  * of waypoint rather than one more pin in the list. */
 export { default as FlagIcon } from "./icons/flag.svg";
 
+export { default as LeftIcon } from "./icons/left.svg";
+export { default as RightIcon } from "./icons/right.svg";
 export { default as ContinueIcon } from "./icons/continue.svg";
 export { default as ProceedIcon } from "./icons/proceed.svg";
 export { default as UTurnIcon } from "./icons/u-turn.svg";
@@ -146,13 +156,35 @@ export { default as ReturnIcon } from "./icons/return.svg";
 export { default as DepartIcon } from "./icons/depart.svg";
 export { default as ArriveIcon } from "./icons/arrive.svg";
 
-// Every non-Stop, non-Left/Right action (StepRowEditor's own Type
-// select) used to fall through to plain text with no icon at all in
-// both the admin row list and the real driving screen - this maps each
-// one to its own glyph so every action reads as distinctly as Stop's
-// pin or a turn's arrow already did. Left/Right aren't included here -
-// they keep using the mirrored TurnArrow image instead, unchanged.
+/** Not a rider Stop - the literal "stop the bus" sign (a railroad
+ * crossing, say), distinct from a Stop waypoint's own red pin. Not
+ * wired into any Type/action yet - there's no waypoint action for this
+ * kind of stop in the data model today - ready for whenever one exists. */
+export { default as RailroadCrossingIcon } from "./icons/railroad-crossing.svg";
+/** Not wired into anything yet - no route action or map marker calls
+ * for a parking glyph today. */
+export { default as ParkIcon } from "./icons/park.svg";
+/** Not wired into anything yet. Part of the same uploaded icon set as
+ * the diamonds above; kept for a future saved-location/pin distinction
+ * (MapPinIcon already covers a plain address elsewhere). A same-batch
+ * file also named for a *blue* pin renders as a red octagon instead
+ * (unrelated shape and color to its own name) and was left out
+ * entirely rather than exported under a name that doesn't match what
+ * it actually looks like. */
+export { default as PinRedIcon } from "./icons/pin-red.svg";
+
+// Every non-Stop action (StepRowEditor's own Type select) used to fall
+// through to plain text with no icon at all in both the admin row list
+// and the real driving screen - this maps each one to its own glyph so
+// every action reads as distinctly as Stop's own pin already did.
+// Left/Right are included here too, now that there's a real per-
+// direction diamond for each (left.svg/right.svg) instead of one
+// generic arrow that always needed mirroring - everywhere *except* the
+// one big turn-sign graphic StepScreen's own live driving screen shows
+// (TurnArrow above, deliberately still separate and unchanged).
 const ACTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  left: LeftSvg,
+  right: RightSvg,
   continue: ContinueSvg,
   proceed: ProceedSvg,
   "u-turn": UTurnSvg,
@@ -164,9 +196,9 @@ const ACTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
 };
 
 /** Looks up `ACTION_ICONS` by action name (case-insensitive) - null for
- * Stop/Left/Right/Complete or anything else not in the map, so a caller
- * can fall back to its own icon (or none) for those rather than this
- * needing to know about every action that isn't one of its own eight. */
+ * Stop/Complete or anything else not in the map, so a caller can fall
+ * back to its own icon (or none) for those rather than this needing to
+ * know about every action that isn't one of its own ten. */
 export function ActionIcon({ action, className }: { action: string; className?: string }) {
   const Svg = ACTION_ICONS[action.trim().toLowerCase()];
   return Svg ? <Svg className={className} /> : null;
