@@ -9,7 +9,8 @@ import type {
   Map as MapLibreMap,
   Marker as MapLibreMarker,
 } from "maplibre-gl";
-import { ActionIcon, PersonSolidIcon } from "./icons";
+import { PersonSolidIcon } from "./icons";
+import { setTurnDiamondRotation, turnDiamondHtml } from "./mapMarkerIcons";
 import {
   collapseAttribution,
   PMTILES_ATTRIBUTION,
@@ -36,11 +37,10 @@ export type StopMarker = { waypointKey: string; number: number };
 
 /** One "turn" step's marker - waypointKey looks it up the same way a
  * StopMarker does. `direction`/`heading` are the same step's own
- * NavigationStep fields (StepScreen.tsx's TurnContent renders this
- * exact pair the exact same way): a left/right turn draws the same
- * mirrored turn-arrow sign the driver's own screen shows for it,
- * anything else (Proceed, Depart, Arrive, ...) draws its own ActionIcon
- * glyph - the real per-step icon, not a generic "here's a turn" marker.
+ * NavigationStep fields, fed to turnDiamondHtml (mapMarkerIcons.tsx): a
+ * left/right turn draws a real arrow rotated to its own true compass
+ * bearing (see applyTurnRotations below), anything else (Proceed,
+ * Depart, Arrive, ...) draws its own already-distinct ActionIcon glyph.
  * Route 125's own steps sheet is the only one with real turn-by-turn
  * data today (every 120 route sheet is stops only) - this only ever
  * renders something there, but nothing here is specific to that route. */
@@ -140,46 +140,19 @@ function stopDotHtml(): string {
   return '<div class="h-2.5 w-2.5 rounded-full border border-white bg-red-600 shadow-sm"></div>';
 }
 
-// A turn's own on-map marker - the same mirrored turn-arrow sign
-// (`direction`) or ActionIcon glyph (`heading`) StepScreen's own
-// TurnContent shows for this exact step, not a generic "here's a turn"
-// placeholder - reusing the real icon (ActionIcon's own SVG rendered to
-// a plain HTML string via renderToStaticMarkup, same as any other
-// divIcon here) so a driver glancing at the map sees the same shape
-// they're about to see full-size. The arrow sign is already a
-// self-contained graphic (its own border/shadow baked into the PNG,
-// same as RouteProgressBar's own bare use of it) so it needs no extra
-// wrapper; the ActionIcon glyphs are bare stroke lines with no
-// background of their own, so those get a small white plate for
-// contrast against the tiles underneath. Null if a turn step somehow
-// has neither (shouldn't happen for real data, but nothing enforces
-// it) - the caller skips drawing a marker for it rather than showing
-// an empty one.
-function turnMarkerHtml(
-  direction: TurnDirection | undefined,
-  heading: string | undefined,
-): string | null {
-  if (direction) {
-    const mirror = direction === "left" ? ' style="transform: scaleX(-1)"' : "";
-    return `<img src="/assets/turn-arrow.png" class="h-8 w-8" alt=""${mirror} />`;
-  }
-  const icon = heading
-    ? renderToStaticMarkup(
-        <ActionIcon action={heading} className="h-4 w-4 text-zinc-800" />,
-      )
-    : "";
-  if (!icon) return null;
-  return (
-    '<div class="flex h-8 w-8 items-center justify-center rounded-full ' +
-    'border-2 border-zinc-700 bg-white shadow-md">' +
-    icon +
-    "</div>"
-  );
-}
+// A turn's own on-map marker - the same yellow diamond every other map
+// in this app now draws for a direction waypoint (turnDiamondHtml,
+// mapMarkerIcons.tsx - see its own doc comment), sized to roughly match
+// this map's own existing h-8 pin scale. Left/Right's own arrow is
+// rotated to its real compass bearing (setTurnDiamondRotation, called
+// from drawDrivingPins/applyTurnRotations below) rather than the old
+// raster sign's fixed mirror, which only ever showed roughly which way
+// relative to whatever the screen/camera happened to be facing.
+const TURN_DIAMOND_SIZE = 32;
 
 // The school itself - its own blue pin, distinct from a stop's red one
 // (a school is where the route starts or ends, never a stop a driver
-// checks riders in/out at) and a turn's plain yellow dot. Same teardrop
+// checks riders in/out at) and a turn's yellow diamond. Same teardrop
 // glyph MapPinIcon (icons.tsx) already draws elsewhere for an address -
 // as a raw SVG string here since MapLibre's Marker takes a real DOM
 // element (elementFromHtml below), not a React component directly.
@@ -753,15 +726,41 @@ function mountMapLibre(args: MountArgs): () => void {
   // "outer variable a later callback can still reach" reasoning
   // applyRouteProgress above already relies on.
   let latestRoadGeometry: RouteCoordinate[] = [];
+  // Every currently-drawn Left/Right turn's own arrow element, paired
+  // with its real compass bearing (setTurnDiamondRotation,
+  // mapMarkerIcons.tsx) - kept here, not just recomputed inside
+  // drawDrivingPins, so the map's own "rotate" listener below
+  // (registered once, right after the map itself is created) can keep
+  // every arrow correctly oriented throughout an entire live bearing
+  // animation (driving mode's own easeTo toward the bus's current
+  // heading), not just the one instant drawDrivingPins happened to run.
+  let turnArrowRotations: { element: HTMLElement; bearing: number | null }[] = [];
 
   function clearPins() {
     for (const marker of pins) marker.remove();
     pins = [];
+    turnArrowRotations = [];
+  }
+
+  // Re-applies every currently-drawn turn arrow's own real compass
+  // bearing against whatever the map's own on-screen bearing is right
+  // now - called once immediately after drawDrivingPins draws a fresh
+  // set (so a turn's arrow starts correctly oriented even mid-rotation,
+  // not just after the next "rotate" event ticks), and on every
+  // "rotate" event afterward so it stays correct as driving mode's own
+  // camera spin (bearingAt/easeTo below) continues to animate.
+  function applyTurnRotations() {
+    if (!map) return;
+    const mapBearing = map.getBearing();
+    for (const { element, bearing } of turnArrowRotations) {
+      setTurnDiamondRotation(element, bearing, mapBearing);
+    }
   }
 
   // Builds a real DOM element from one of this file's own HTML-string
-  // icon builders (stopMarkerHtml/turnMarkerHtml/schoolMarkerHtml) -
-  // MapLibre's own Marker takes an element, not an HTML string directly.
+  // icon builders (stopMarkerHtml/schoolMarkerHtml here, turnDiamondHtml
+  // in mapMarkerIcons.tsx) - MapLibre's own Marker takes an element, not
+  // an HTML string directly.
   function elementFromHtml(html: string): HTMLDivElement {
     const el = document.createElement("div");
     el.innerHTML = html;
@@ -799,6 +798,7 @@ function mountMapLibre(args: MountArgs): () => void {
       });
       const mapInstance = map;
       collapseAttribution(container);
+      mapInstance.on("rotate", applyTurnRotations);
       // showCompass: false - bearing here is driven programmatically
       // (direction of travel in driving mode), not something a driver
       // touches, so the compass puck would just be dead weight.
@@ -1105,17 +1105,25 @@ function mountMapLibre(args: MountArgs): () => void {
             for (const turn of turnsRef.current) {
               const point = resolvedByKey.get(turn.waypointKey);
               if (!point) continue;
-              const html = turnMarkerHtml(turn.direction, turn.heading);
+              const html = turnDiamondHtml(TURN_DIAMOND_SIZE, turn.direction, turn.heading);
               if (!html) continue;
+              const element = elementFromHtml(html);
+              if (turn.direction) {
+                turnArrowRotations.push({
+                  element,
+                  bearing: bearingByKey.get(turn.waypointKey) ?? null,
+                });
+              }
               pins.push(
                 new maplibregl.Marker({
-                  element: elementFromHtml(html),
+                  element,
                   anchor: "center",
                 })
                   .setLngLat(toLngLat(point))
                   .addTo(mapInstance),
               );
             }
+            applyTurnRotations();
             if (schoolRef.current) {
               pins.push(
                 new maplibregl.Marker({
