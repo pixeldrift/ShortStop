@@ -158,6 +158,87 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-halo-width": 1,
         },
       },
+      // A school's own dot, drawn under its label below - visible well
+      // before the label's own text can be (a driver/admin scanning a
+      // zoomed-out overview should still see roughly where a school
+      // sits, not just once zoomed in enough to read its name). Same
+      // blue schoolMarkerHtml already uses for this route's own school
+      // pin (RouteMap.tsx), so a school reads as the same "this matters"
+      // color everywhere in the app, not just at the one school this
+      // route actually visits - every other school nearby is real
+      // map context, not a route waypoint, so it's a plain dot rather
+      // than that pin's own teardrop glyph.
+      {
+        id: "pois-school",
+        type: "circle" as const,
+        source,
+        "source-layer": "pois",
+        filter: ["==", ["get", "kind"], "school"],
+        minzoom: 11,
+        paint: {
+          "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 18, 6],
+          "circle-color": "#2563eb",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1.5,
+        },
+      },
+      // A school's own name - the one basemap label in this style
+      // that's deliberately more prominent than a street name
+      // (roads-major-label just above), since a school is the single
+      // most important thing on this map for an app about driving kids
+      // to and from one. Same minzoom as its own dot above so the two
+      // always appear together.
+      {
+        id: "pois-school-label",
+        type: "symbol" as const,
+        source,
+        "source-layer": "pois",
+        filter: ["==", ["get", "kind"], "school"],
+        minzoom: 11,
+        layout: {
+          visibility: "visible" as const,
+          "text-field": ["get", "name"],
+          "text-font": LABEL_FONT,
+          "text-size": ["interpolate", ["linear"], ["zoom"], 11, 12, 18, 15],
+          "text-anchor": "top" as const,
+          "text-offset": [0, 0.6],
+        },
+        paint: {
+          "text-color": "#1d4ed8",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1.5,
+        },
+      },
+      // A building's own street number - real detail, but only once
+      // zoomed in close enough that it's actually useful (matching a
+      // physical house against the route on the ground, not reading a
+      // whole neighborhood's numbers off an overview). "address" is
+      // this schema's own kind for a standalone address point, distinct
+      // from a building's own footprint (which shares this same
+      // source-layer but renders through the plain "buildings" fill
+      // above, itself only from minzoom 15) - a symbol layer only ever
+      // draws the point geometries here regardless, but the explicit
+      // filter keeps this from ever matching a stray polygon feature
+      // that happened to carry the same field.
+      {
+        id: "buildings-housenumber-label",
+        type: "symbol" as const,
+        source,
+        "source-layer": "buildings",
+        filter: ["==", ["get", "kind"], "address"],
+        minzoom: 18,
+        layout: {
+          visibility: "visible" as const,
+          "text-field": ["get", "addr_housenumber"],
+          "text-font": LABEL_FONT,
+          "text-size": 10,
+        },
+        paint: {
+          "text-color": "#78716c",
+          "text-halo-color": "#ffffff",
+          "text-halo-width": 1,
+        },
+      },
     ],
   } as unknown as StyleSpecification;
 }
