@@ -1088,8 +1088,24 @@ function mountMapLibre(args: MountArgs): () => void {
             // routeProgress.ts); the turns/school sitting between them
             // in real trip order are what let the second visit's own
             // search only ever look past the first one, onto its own
-            // later, correctly-directioned pass.
-            const orderedBearings = nearestSegmentBearings(roadLine, orderedWaypointsRef.current);
+            // later, correctly-directioned pass. A Left/Right turn's own
+            // entry gets `preferOutgoing` - its sign needs the road
+            // being turned *onto*, not the one just traveled in on,
+            // unlike a stop (which wants the incoming road it's still
+            // sitting on) - see nearestSegmentBearings's own doc comment
+            // for why a plain nearest-segment search can't tell those
+            // apart on its own at a turn corner.
+            const turnDirectionKeys = new Set(
+              turnsRef.current.filter((turn) => turn.direction).map((turn) => turn.waypointKey),
+            );
+            const preferOutgoing = orderedWaypointsRef.current.map(
+              (waypoint) => waypoint.key != null && turnDirectionKeys.has(waypoint.key),
+            );
+            const orderedBearings = nearestSegmentBearings(
+              roadLine,
+              orderedWaypointsRef.current,
+              preferOutgoing,
+            );
             const bearingByKey = new Map<string, number | null>();
             orderedWaypointsRef.current.forEach((waypoint, i) => {
               if (waypoint.key != null) bearingByKey.set(waypoint.key, orderedBearings[i]);

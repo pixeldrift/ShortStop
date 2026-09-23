@@ -206,24 +206,52 @@ export function initialBearing(from: LatLon, to: LatLon): number {
  * apart (they're the same coordinate, sitting equally close to both
  * passes); trusting trip order to only search ahead is what actually
  * resolves each one to its own real pass, and its own real bearing.
- * spreadCoincidentPoints.ts is the one caller (offsetting a coincident
+ * spreadCoincidentPoints.ts is one caller (offsetting a coincident
  * group of stops onto the correct side of the road for each one's own
- * direction of travel) - null for every point when coords has fewer
- * than two points to begin with. */
-export function nearestSegmentBearings(coords: LatLon[], points: LatLon[]): (number | null)[] {
+ * direction of travel, which wants the road it *arrived* on) - null
+ * for every point when coords has fewer than two points to begin with.
+ *
+ * A point sitting right at a turn corner is equally close (≈0m) to
+ * both the segment ending there and the one starting there - the loop
+ * above only updates on a strict `<`, so a tie always keeps whichever
+ * one it reaches first, the *incoming* segment (lower index). That's
+ * the right call for a stop (spreadCoincidentPoints wants the road the
+ * bus is still traveling while stopped), but wrong for a turn marker,
+ * which needs the *outgoing* bearing - the road being turned onto, not
+ * the one just left. `preferOutgoing[i]` (aligned with `points`, same
+ * index) fixes that up per-point: once the normal search above has
+ * already found the incoming segment, if this point sits within
+ * TURN_VERTEX_EPSILON_METERS of that segment's own end vertex (real
+ * corner, not just somewhere along a long straight segment) and a
+ * following segment exists, swap to that segment's own bearing
+ * instead. */
+const TURN_VERTEX_EPSILON_METERS = 30;
+
+export function nearestSegmentBearings(
+  coords: LatLon[],
+  points: LatLon[],
+  preferOutgoing?: boolean[],
+): (number | null)[] {
   if (coords.length < 2) return points.map(() => null);
   let cursor = 0;
-  return points.map((point) => {
+  return points.map((point, i) => {
     let bestDistance = Infinity;
     let bestBearing: number | null = null;
     let bestIndex = cursor;
-    for (let i = cursor; i < coords.length - 1; i++) {
-      const { point: onSegment } = projectOntoSegment(point, coords[i], coords[i + 1]);
+    for (let j = cursor; j < coords.length - 1; j++) {
+      const { point: onSegment } = projectOntoSegment(point, coords[j], coords[j + 1]);
       const distance = haversineMeters(point, onSegment);
       if (distance < bestDistance) {
         bestDistance = distance;
-        bestBearing = initialBearing(coords[i], coords[i + 1]);
-        bestIndex = i;
+        bestBearing = initialBearing(coords[j], coords[j + 1]);
+        bestIndex = j;
+      }
+    }
+    if (preferOutgoing?.[i] && bestIndex + 2 < coords.length) {
+      const vertexDistance = haversineMeters(point, coords[bestIndex + 1]);
+      if (vertexDistance < TURN_VERTEX_EPSILON_METERS) {
+        bestBearing = initialBearing(coords[bestIndex + 1], coords[bestIndex + 2]);
+        bestIndex += 1;
       }
     }
     cursor = Math.min(bestIndex + 1, coords.length - 2);
