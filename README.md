@@ -77,6 +77,15 @@ optional "coming from" road, inferred from context when left blank
 (see the **Details** link next to Upload File in that screen, or
 `src/lib/parseRouteImport.ts` for the exact rules).
 
+An existing route's stops can be bulk-edited the same way: the
+**Upload / Update** button next to Download Waypoints on the Edit
+Waypoints screen re-imports a file built from that same download (it
+adds a `row_number` column) and merges it into the route in memory —
+a blank cell keeps that field's current value, the word `null` clears
+it, a row with no (or unmatched) `row_number` is added as new, and a
+row missing from the file is dropped. Nothing is saved to Postgres
+until the screen's own Save, same as any other in-place edit there.
+
 Once a route has stops, the **Fetch Coordinates** button resolves them
 to real coordinates (addresses via OpenRouteService, intersections via
 the Overpass API), caching every result so the same location is never
@@ -169,16 +178,3 @@ Vercel value).
   doesn't collide with a stop's own check-in announcement) - that it
   needs its own planning pass before starting, not just picking it up
   alongside everything else above.
-- Bulk waypoint upload/update for existing routes — extend the CSV
-  upload mechanism the initial route import already uses (see Route
-  data above) so it also works against a route that already has
-  waypoints, rather than only for creating a brand-new one: bulk-add
-  new steps to an existing route via the same upload, and bulk-update
-  an existing route's waypoints via the same mechanism. The download
-  side of this would need an id column added to the exported waypoint
-  CSV (`Download Waypoints` today has no id column) so an admin can
-  edit that file and re-upload it; on upload, rows whose id matches an
-  existing waypoint would update that waypoint's data, and rows with
-  new (or blank) ids would be inserted as new waypoints. Open design
-  question from this idea, not yet answered: "Should blank cells be
-  cleared, or left alone?"
