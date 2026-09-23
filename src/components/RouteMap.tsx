@@ -38,8 +38,9 @@ export type StopMarker = { waypointKey: string; number: number };
 /** One "turn" step's marker - waypointKey looks it up the same way a
  * StopMarker does. `direction`/`heading` are the same step's own
  * NavigationStep fields, fed to turnDiamondHtml (mapMarkerIcons.tsx): a
- * left/right turn draws a real arrow rotated to its own true compass
- * bearing (see applyTurnRotations below), anything else (Proceed,
+ * left/right turn draws its own real left.svg/right.svg sign, rotated
+ * whole (frame and arrow together) to its own true compass bearing
+ * (see applyTurnRotations below), anything else (Proceed,
  * Depart, Arrive, ...) draws its own already-distinct ActionIcon glyph.
  * Route 125's own steps sheet is the only one with real turn-by-turn
  * data today (every 120 route sheet is stops only) - this only ever
@@ -143,9 +144,10 @@ function stopDotHtml(): string {
 // A turn's own on-map marker - the same yellow diamond every other map
 // in this app now draws for a direction waypoint (turnDiamondHtml,
 // mapMarkerIcons.tsx - see its own doc comment), sized to roughly match
-// this map's own existing h-8 pin scale. Left/Right's own arrow is
-// rotated to its real compass bearing (setTurnDiamondRotation, called
-// from drawDrivingPins/applyTurnRotations below) rather than the old
+// this map's own existing h-8 pin scale. Left/Right's own whole sign
+// (frame and arrow together, unlike a rider pin) is rotated to its
+// real compass bearing (setTurnDiamondRotation, called from
+// drawDrivingPins/applyTurnRotations below) rather than the old
 // raster sign's fixed mirror, which only ever showed roughly which way
 // relative to whatever the screen/camera happened to be facing.
 const TURN_DIAMOND_SIZE = 32;
@@ -726,12 +728,12 @@ function mountMapLibre(args: MountArgs): () => void {
   // "outer variable a later callback can still reach" reasoning
   // applyRouteProgress above already relies on.
   let latestRoadGeometry: RouteCoordinate[] = [];
-  // Every currently-drawn Left/Right turn's own arrow element, paired
+  // Every currently-drawn Left/Right turn's own marker element, paired
   // with its real compass bearing (setTurnDiamondRotation,
   // mapMarkerIcons.tsx) - kept here, not just recomputed inside
   // drawDrivingPins, so the map's own "rotate" listener below
   // (registered once, right after the map itself is created) can keep
-  // every arrow correctly oriented throughout an entire live bearing
+  // every sign correctly oriented throughout an entire live bearing
   // animation (driving mode's own easeTo toward the bus's current
   // heading), not just the one instant drawDrivingPins happened to run.
   let turnArrowRotations: {
@@ -746,10 +748,10 @@ function mountMapLibre(args: MountArgs): () => void {
     turnArrowRotations = [];
   }
 
-  // Re-applies every currently-drawn turn arrow's own real compass
+  // Re-applies every currently-drawn turn sign's own real compass
   // bearing against whatever the map's own on-screen bearing is right
   // now - called once immediately after drawDrivingPins draws a fresh
-  // set (so a turn's arrow starts correctly oriented even mid-rotation,
+  // set (so a turn's sign starts correctly oriented even mid-rotation,
   // not just after the next "rotate" event ticks), and on every
   // "rotate" event afterward so it stays correct as driving mode's own
   // camera spin (bearingAt/easeTo below) continues to animate.
