@@ -35,6 +35,7 @@ import type { SchoolInfo } from "./parseSchoolsCsv";
 
 export type ImportColumnField =
   | "time"
+  | "rowNumber"
   | "action"
   | "location"
   | "fromLocation"
@@ -50,9 +51,16 @@ export type ImportColumnField =
 // alternative to it) is gone - `location` (this row's own real
 // position, always required) and `from_location` (optional context,
 // blank means "infer it") are the only names an import's header row is
-// ever matched against now.
+// ever matched against now. `rowNumber` ("row_number") is the odd one
+// out here - it never names a real RawRouteRow field at all (see
+// parseRouteBulkUpdate below), it's only ever meaningful for a bulk
+// *update* against an already-existing route's own rows, matched
+// against this same column-matching engine anyway so it gets the same
+// fuzzy-name/order-independent handling every other column already
+// does, rather than its own separate, narrower lookup.
 const CANONICAL_HEADER_NAMES: Record<ImportColumnField, string> = {
   time: "time",
+  rowNumber: "row_number",
   action: "action",
   location: "location",
   fromLocation: "from_location",
@@ -374,9 +382,15 @@ export function parseRouteImport(text: string): ImportParseResult {
  * exist elsewhere in this app. `time` is left out (every canonical
  * field except it, in the same order CANONICAL_FIELDS already lists
  * them) - RawRouteRow never carries a time of its own to round-trip.
+ * `rowNumber` is left out too, for the same reason - it isn't a real
+ * RawRouteRow field either, only ever meaningful for the bulk-update
+ * download/re-upload round trip (parseRouteBulkUpdate below), not this
+ * one.
  */
 export function serializeRouteImport(rows: RawRouteRow[]): string {
-  const fields = CANONICAL_FIELDS.filter((field) => field !== "time");
+  const fields = CANONICAL_FIELDS.filter(
+    (field) => field !== "time" && field !== "rowNumber",
+  );
   const header = fields.map((field) => CANONICAL_HEADER_NAMES[field]);
   const valueFor = (row: RawRouteRow, field: ImportColumnField): string => {
     switch (field) {
@@ -395,6 +409,7 @@ export function serializeRouteImport(rows: RawRouteRow[]): string {
       case "skip":
         return row.skip ? "true" : "false";
       case "time":
+      case "rowNumber":
         return "";
     }
   };
@@ -402,6 +417,203 @@ export function serializeRouteImport(rows: RawRouteRow[]): string {
     fields.map((field) => valueFor(row, field)).join("\t"),
   );
   return [header.join("\t"), ...lines].join("\n");
+}
+
+/** One uploaded row from a bulk-update paste/file - never a full
+ * RawRouteRow the way parseRouteImport's own `rows` are, since a
+ * matched row only patches whatever cells the file actually filled
+ * in, leaving the rest of an existing row exactly as it already was
+ * (see applyBulkUpdate below). */
+export interface BulkUpdateRow {
+  /** The row_number column's own value, 1-based against whichever
+   * rows list this gets applied to (EditRouteScreen's own `rows`,
+   * exactly as it stood the moment the file being uploaded was
+   * itself downloaded) - null when that cell was blank, or the
+   * column wasn't present in the file at all (a plain header-less
+   * paste, say), meaning "insert this as a brand-new row" rather than
+   * patch an existing one. */
+  rowNumber: number | null;
+  /** Only the fields this row's own line actually provided a real
+   * cell for - a field missing here means "leave whatever's already
+   * there" when patching an existing row (or "leave it blank" when
+   * inserting a new one). The one deliberate exception: a cell whose
+   * text is literally the word "null" (case-insensitive, matching
+   * this app's own documented convention for "clear this field on
+   * purpose") comes through here as "" - present, not missing - so it
+   * still overwrites an existing value rather than leaving it alone. */
+  patch: Partial<Record<ImportColumnField, string>>;
+}
+
+export interface BulkUpdateParseResult {
+  delimiter: string;
+  mapping: ImportColumnMapping[];
+  rows: BulkUpdateRow[];
+  unmatchedSourceHeaders: string[];
+  headerless: boolean;
+}
+
+// Every canonical field a bulk-update patch can actually carry -
+// row_number is handled on its own (BulkUpdateRow.rowNumber, not a
+// RawRouteRow field at all) and `time` was never a real field to
+// begin with (see RawRouteRow's own doc comment, parseRouteCsv.ts).
+const BULK_UPDATE_PATCH_FIELDS = CANONICAL_FIELDS.filter(
+  (field) => field !== "rowNumber" && field !== "time",
+);
+
+/**
+ * Parses a bulk-update paste/file - the same column-matching engine
+ * parseRouteImport uses (fuzzy header names, header-less fallback),
+ * but returning per-row *patches* instead of full RawRouteRow objects,
+ * since "this row's own cell was left blank" and "this row's own cell
+ * says null" mean two different things here (leave it alone vs.
+ * clear it) that parseRouteImport's own always-fully-resolved rows
+ * have no reason to distinguish - a brand-new route being typed from
+ * scratch has no existing value for a blank cell to "leave alone" in
+ * the first place. See applyBulkUpdate below for what actually turns
+ * these patches into real rows.
+ *
+ * A header-less paste (no row_number column possible without a real
+ * header row to name it) parses the same as parseRouteImport's own
+ * header-less case, just wrapped as an always-new (`rowNumber: null`)
+ * insert for each line, one-for-one - a plain list of new stops to
+ * add is exactly what a header-less paste already means anywhere else
+ * in this app.
+ */
+export function parseRouteBulkUpdate(text: string): BulkUpdateParseResult {
+  const lines = text
+    .trim()
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0);
+  const [firstLine] = lines;
+  const delimiter = detectDelimiter(firstLine ?? "");
+  const headerMapping = matchColumns(firstLine ?? "", delimiter);
+  const hasRecognizedHeader = headerMapping.some((m) => m.resolved);
+
+  if (!hasRecognizedHeader) {
+    const rows: BulkUpdateRow[] = lines.map((line) => {
+      const row = parseHeaderlessLine(line, delimiter);
+      const patch: Partial<Record<ImportColumnField, string>> = {
+        action: row.action,
+        location: row.location,
+      };
+      if (row.fromLocation) patch.fromLocation = row.fromLocation;
+      return { rowNumber: null, patch };
+    });
+    const mapping: ImportColumnMapping[] = CANONICAL_FIELDS.map((field) => ({
+      field,
+      sourceHeader: null,
+      sourceIndex: null,
+      resolved: field === "action" || field === "location",
+    }));
+    return { delimiter, mapping, rows, unmatchedSourceHeaders: [], headerless: true };
+  }
+
+  const dataLines = lines.slice(1);
+  const headers = firstLine.split(delimiter).map((h) => h.trim());
+  const matchedIndices = new Set(
+    headerMapping.map((m) => m.sourceIndex).filter((index): index is number => index !== null),
+  );
+  const unmatchedSourceHeaders = headers.filter((_, index) => !matchedIndices.has(index));
+  const rowNumberIndex = headerMapping.find((m) => m.field === "rowNumber")?.sourceIndex ?? null;
+
+  const rows: BulkUpdateRow[] = dataLines.map((line) => {
+    const values = line.split(delimiter).map((v) => v.trim());
+    // undefined = no real cell to read at all (blank, or the column
+    // wasn't present in this file) - left out of the patch entirely,
+    // so applyBulkUpdate's own `patch.field ?? existing.field` leaves
+    // a matched row's prior value untouched. "" only ever comes from
+    // the literal word "null" - a deliberate, explicit clear.
+    const cellFor = (field: ImportColumnField): string | undefined => {
+      const index = headerMapping.find((m) => m.field === field)?.sourceIndex;
+      const raw = index != null ? values[index] : undefined;
+      if (!raw) return undefined;
+      if (raw.toLowerCase() === "null") return "";
+      return field === "location" || field === "fromLocation"
+        ? normalizeStreetSuffix(raw)
+        : raw;
+    };
+    const patch: Partial<Record<ImportColumnField, string>> = {};
+    for (const field of BULK_UPDATE_PATCH_FIELDS) {
+      const value = cellFor(field);
+      if (value !== undefined) patch[field] = value;
+    }
+    const rowNumberCell = rowNumberIndex != null ? values[rowNumberIndex] : undefined;
+    const parsedRowNumber = rowNumberCell ? Number(rowNumberCell) : NaN;
+    return {
+      rowNumber: Number.isFinite(parsedRowNumber) ? parsedRowNumber : null,
+      patch,
+    };
+  });
+
+  return { delimiter, mapping: headerMapping, rows, unmatchedSourceHeaders, headerless: false };
+}
+
+export interface BulkUpdateResult {
+  rows: RawRouteRow[];
+  /** Every row_number the upload named that didn't match any row in
+   * `existingRows` (out of range, or the route's own rows shifted
+   * since the file was downloaded) - surfaced as an error for the
+   * admin to fix rather than silently guessed at either way (dropping
+   * it loses whatever that row meant to change; inserting it fresh
+   * risks a duplicate of a row that already exists under a different
+   * number now). Still included in the result's own `rows` as a
+   * best-effort new insert, same as a genuinely blank row_number
+   * would be, so one bad row number doesn't cost every other row in
+   * the same upload. */
+  unmatchedRowNumbers: number[];
+}
+
+/** Turns a bulk-update file's own parsed patches into a real, complete
+ * RawRouteRow[] - the file describes the *entire* resulting rows
+ * list, in its own order, the same "whole ordered list, not a diff
+ * against individual identities" model this app's Save already uses
+ * (see /api/routes POST's own doc comment): a row whose row_number
+ * matches one of `existingRows` patches that row (any field the file
+ * left blank keeps its prior value; a field set to "null" clears to
+ * ""); a row with no row_number (or one that matches nothing) is
+ * built fresh, blank cells included, the same way any other brand-new
+ * row already starts out. A row simply missing from the file - not
+ * reappearing as any line at all - is dropped, exactly like today's
+ * plain "paste replaces everything" import already implies for a
+ * route with nothing yet to preserve. */
+export function applyBulkUpdate(
+  existingRows: RawRouteRow[],
+  imported: BulkUpdateRow[],
+): BulkUpdateResult {
+  const unmatchedRowNumbers: number[] = [];
+
+  function buildRow(patch: Partial<Record<ImportColumnField, string>>): RawRouteRow {
+    return {
+      action: patch.action ?? "",
+      location: patch.location ?? "",
+      fromLocation: patch.fromLocation ?? "",
+      riderCount: patch.riderCount ?? "",
+      side: patch.side ?? "",
+      notes: patch.notes ?? "",
+      skip: patch.skip === "true",
+      overrideLat: null,
+      overrideLon: null,
+    };
+  }
+
+  const rows = imported.map(({ rowNumber, patch }) => {
+    const existing = rowNumber != null ? existingRows[rowNumber - 1] : undefined;
+    if (rowNumber != null && !existing) unmatchedRowNumbers.push(rowNumber);
+    if (!existing) return buildRow(patch);
+    return {
+      action: patch.action ?? existing.action,
+      location: patch.location ?? existing.location,
+      fromLocation: patch.fromLocation ?? existing.fromLocation,
+      riderCount: patch.riderCount ?? existing.riderCount,
+      side: patch.side ?? existing.side,
+      notes: patch.notes ?? existing.notes,
+      skip: patch.skip != null ? patch.skip === "true" : existing.skip,
+      overrideLat: existing.overrideLat,
+      overrideLon: existing.overrideLon,
+    };
+  });
+
+  return { rows, unmatchedRowNumbers };
 }
 
 /** Which of the two columns every row genuinely needs (`action`,

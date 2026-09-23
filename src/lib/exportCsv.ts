@@ -1,6 +1,6 @@
-import type { NavigationStep, Route } from "./types";
-import { resolveRouteCoordinates } from "./waypointCache";
-import type { ResolvedStepCoordinate, WaypointCache } from "./waypointCache";
+import type { Route } from "./types";
+import type { RawRouteRow } from "./parseRouteCsv";
+import type { RowResolutionStatus } from "./routeResolutionStatus";
 
 /** Wraps a single CSV field in quotes only when it actually needs it
  * (a comma, quote, or newline in the value), doubling any embedded
@@ -28,64 +28,67 @@ export function downloadCsv(filename: string, text: string): void {
   URL.revokeObjectURL(url);
 }
 
+// row_number through skip mirror RawRouteRow verbatim - the same
+// canonical names parseRouteImport/parseRouteBulkUpdate already match
+// an uploaded header against (row_number is the one addition neither
+// of those two field names describe on their own: see
+// BulkUpdateRow's own doc comment, parseRouteImport.ts) - so this
+// export is never just a report to look at, it's also exactly the
+// shape re-uploading through EditRouteScreen's own "Upload / Update"
+// expects back. status/lat/lon at the end are informational only
+// (this session's own already-resolved coordinate, if it has one) -
+// neither is a column parseRouteBulkUpdate recognizes, so editing or
+// deleting them before a re-upload changes nothing.
 const STEP_HEADER = [
-  "sequence",
-  "kind",
-  "direction",
+  "row_number",
+  "action",
   "location",
-  "side_of_road",
+  "from_location",
   "rider_count",
+  "side",
   "notes",
+  "skip",
   "status",
   "lat",
   "lon",
-  "resolved_address",
 ];
 
-/** One row per step (stop or turn), in route order, joined against
- * whatever this session's own waypoint cache already knows for it (see
- * step.waypointKey) - the same lookup routeReadiness.ts/StepScreen.tsx
- * already do to place a pin, just written out as a CSV row instead of
- * used for a live map/lookup. Never triggers a new geocode of its own -
- * only ever reports whatever's already in memory. */
 function stepRow(
-  step: NavigationStep,
+  row: RawRouteRow,
   index: number,
-  resolved: ResolvedStepCoordinate | null,
-  cache: WaypointCache,
+  status: RowResolutionStatus | undefined,
 ): (string | number)[] {
-  const failed = !resolved && cache[step.waypointKey]?.status === "error";
   return [
     index + 1,
-    step.kind,
-    step.direction ?? "",
-    step.subheading ?? "",
-    step.sideOfRoad ?? "",
-    step.studentCount ?? "",
-    step.specialInstruction ?? "",
-    resolved ? "resolved" : failed ? "unresolved" : "not yet geocoded",
-    resolved ? resolved.lat : "",
-    resolved ? resolved.lon : "",
-    resolved ? resolved.displayName : "",
+    row.action,
+    row.location,
+    row.fromLocation,
+    row.riderCount,
+    row.side,
+    row.notes,
+    row.skip ? "true" : "false",
+    status?.status ?? "",
+    status?.status === "resolved" ? status.lat : "",
+    status?.status === "resolved" ? status.lon : "",
   ];
 }
 
-/** A route's own stops and turns, plus whatever coordinates are
- * already known for each, as CSV - everything the app already has in
- * memory, nothing this export triggers itself. Resolved the same way
- * routing/live navigation now do (resolveRouteCoordinates -
- * waypointCache.ts): an override wins, and a step near a known second
- * road crossing reports whichever candidate the route's own walk-
- * through actually lands on, not just whatever the pair's own shared
- * base cache entry happens to hold. */
-export function routeStepsToCsv(route: Route, cache: WaypointCache): string {
-  const schoolAnchor =
-    route.schoolLat != null && route.schoolLon != null
-      ? { lat: route.schoolLat, lon: route.schoolLon }
-      : null;
-  const resolved = resolveRouteCoordinates(route.steps, cache, schoolAnchor);
-  const rows = route.steps.map((step, index) => csvRow(stepRow(step, index, resolved[index], cache)));
-  return [csvRow(STEP_HEADER), ...rows].join("\n") + "\n";
+/** A route's own stops and turns, exactly as EditRouteScreen's own
+ * `rows`/`resolutionRows` already have them in memory - nothing this
+ * export triggers itself, and the same authoring fields (not a
+ * separately-shaped report) an admin would type by hand, so the file
+ * this produces can be edited and handed straight back to "Upload /
+ * Update" rather than needing its own different format to prepare
+ * one. `resolutionRows` is optional and may be shorter than `rows`
+ * (EditRouteScreen's own guard conditions - see hasIncompleteRow's
+ * doc comment there) - a row past its end just reports a blank
+ * status/lat/lon, same as one that was never geocoded at all. */
+export function routeStepsToCsv(
+  rows: RawRouteRow[],
+  resolutionRows: (RowResolutionStatus | undefined)[] = [],
+): string {
+  const dataRows = rows.map((row, index) => csvRow(stepRow(row, index, resolutionRows[index])));
+  return [csvRow(STEP_HEADER), ...dataRows].join("\n") + "\n";
 }
 
 const ROUTE_HEADER = [

@@ -172,3 +172,61 @@ export function projectWaypoints(
     return { key: waypoint.key, distanceAlongRoute: projection?.distanceAlongRoute ?? 0 };
   });
 }
+
+/** Standard great-circle initial bearing (forward azimuth) from one
+ * point to another, in degrees clockwise from north. The one canonical
+ * copy - RouteMap.tsx's own driving-mode bearingAt and
+ * spreadCoincidentPoints.ts's own route-side offset both compute
+ * bearing off real coordinates, and there's no reason for that math to
+ * exist twice. */
+export function initialBearing(from: LatLon, to: LatLon): number {
+  const phi1 = toRadians(from.lat);
+  const phi2 = toRadians(to.lat);
+  const deltaLambda = toRadians(to.lon - from.lon);
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** One bearing per entry in `points` (`coords` itself, a route's own
+ * road-following line, in order) - the real direction of travel at
+ * each point's own spot along the route, not a straight line between
+ * two waypoints that may be nothing like the road itself. `points`
+ * must already be in trip order (the same order the road geometry
+ * itself was requested in - RouteMap.tsx's own orderedWaypointsRef,
+ * WaypointPreviewMap.tsx's own stopPins), because each point's own
+ * search only ever looks *forward* of wherever the previous point
+ * matched, never back over ground the trip has already covered. That
+ * restriction is what makes this usable at all for a route that
+ * doubles back and revisits the same real corner - coords passes
+ * through that one physical spot twice, once for each direction, so
+ * an independent nearest-segment search for two stops that both
+ * resolved to (nearly) that same corner can't tell the two visits
+ * apart (they're the same coordinate, sitting equally close to both
+ * passes); trusting trip order to only search ahead is what actually
+ * resolves each one to its own real pass, and its own real bearing.
+ * spreadCoincidentPoints.ts is the one caller (offsetting a coincident
+ * group of stops onto the correct side of the road for each one's own
+ * direction of travel) - null for every point when coords has fewer
+ * than two points to begin with. */
+export function nearestSegmentBearings(coords: LatLon[], points: LatLon[]): (number | null)[] {
+  if (coords.length < 2) return points.map(() => null);
+  let cursor = 0;
+  return points.map((point) => {
+    let bestDistance = Infinity;
+    let bestBearing: number | null = null;
+    let bestIndex = cursor;
+    for (let i = cursor; i < coords.length - 1; i++) {
+      const { point: onSegment } = projectOntoSegment(point, coords[i], coords[i + 1]);
+      const distance = haversineMeters(point, onSegment);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestBearing = initialBearing(coords[i], coords[i + 1]);
+        bestIndex = i;
+      }
+    }
+    cursor = Math.min(bestIndex + 1, coords.length - 2);
+    return bestBearing;
+  });
+}

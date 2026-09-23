@@ -63,7 +63,9 @@ import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { GeocodableQuery } from "@/lib/geocode";
 import { useDragReorder } from "@/lib/useDragReorder";
 import {
+  applyBulkUpdate,
   matchSchoolFromRows,
+  parseRouteBulkUpdate,
   parseRouteImport,
   serializeRouteImport,
   unresolvedRequiredFields,
@@ -3083,6 +3085,181 @@ function StopsFormatModal({ onClose }: { onClose: () => void }) {
 }
 
 /**
+ * Bulk-updates an *existing* route's own waypoints from a re-uploaded
+ * copy of "Download Waypoints" - the gap the plain "Or paste manually"
+ * upload above never covered (that one only ever exists for a brand-
+ * new route with nothing yet to merge against - see mode "add"'s own
+ * render branch). Reuses the same column-matching engine
+ * (parseRouteBulkUpdate, parseRouteImport.ts) with one addition: a
+ * `row_number` column ties an uploaded line back to whichever waypoint
+ * currently sits at that same position, so a matched row can *patch*
+ * just the cells the file actually filled in (a blank cell keeps
+ * whatever's already there; the word "null" clears it) instead of
+ * overwriting the whole row with blanks the way typing a brand-new one
+ * always does. Applying only ever updates this screen's own in-memory
+ * `rows` (marking it dirty, same as any other edit here) - Save/Cancel
+ * afterward work exactly as they already do, nothing about persistence
+ * changes for this.
+ */
+function BulkUpdateModal({
+  rows,
+  onApply,
+  onClose,
+}: {
+  rows: RawRouteRow[];
+  onApply: (rows: RawRouteRow[]) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const parseResult = useMemo(() => parseRouteBulkUpdate(text), [text]);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFileChosen(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // lets the same file be re-selected later
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setText(reader.result);
+        setError(null);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function handleApply() {
+    const result = applyBulkUpdate(rows, parseResult.rows);
+    if (result.unmatchedRowNumbers.length > 0) {
+      const plural = result.unmatchedRowNumbers.length > 1;
+      setError(
+        `Row number${plural ? "s" : ""} ${result.unmatchedRowNumbers.join(", ")} ` +
+          `${plural ? "don't" : "doesn't"} match any current waypoint - fix ` +
+          `${plural ? "them" : "it"} (or clear row_number to add as new) and try again.`,
+      );
+      return;
+    }
+    onApply(result.rows);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+    >
+      <div
+        className="animate-popup-pop flex max-h-[85dvh] w-full max-w-md flex-col rounded-xl bg-[var(--background)] shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-5 py-4">
+          <h2 className="font-heading text-xl font-black tracking-tight">
+            Upload / Update
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 active:bg-zinc-100"
+          >
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 text-left">
+          <p className="text-sm text-zinc-600">
+            Download this route&apos;s own waypoints first, edit that file,
+            then upload or paste it back here. Each row&apos;s own{" "}
+            <code className="font-mono text-xs">row_number</code> matches it
+            to the waypoint already in that position - leave a cell blank to
+            keep its current value, or type{" "}
+            <code className="font-mono text-xs">null</code> to clear it. A
+            row with no row_number is added as a new waypoint; a row you
+            delete from the file is removed here too.
+          </p>
+
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="btn-glossy-light flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-900"
+            >
+              <UploadIcon className="h-3.5 w-3.5" />
+              Upload File
+            </button>
+            <span className="text-xs text-zinc-400">CSV or TSV</span>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+              onChange={handleFileChosen}
+              className="hidden"
+            />
+          </div>
+
+          <p className="mt-3 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
+            Or paste manually
+          </p>
+          <div className="relative mt-1">
+            <textarea
+              className={`${inputClass} min-h-[8rem] font-mono text-sm ${
+                text ? "pr-9" : ""
+              }`}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setError(null);
+              }}
+              placeholder="row_number,action,location,from_location,rider_count,side,notes,skip"
+            />
+            {text && (
+              <button
+                type="button"
+                onClick={() => {
+                  setText("");
+                  setError(null);
+                }}
+                aria-label="Clear pasted text"
+                className="absolute top-3 right-2 p-1 text-zinc-400 active:text-zinc-600"
+              >
+                <CloseIcon className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {parseResult.unmatchedSourceHeaders.length > 0 && (
+            <p className="mt-2 text-xs text-zinc-500">
+              Ignored column
+              {parseResult.unmatchedSourceHeaders.length === 1 ? "" : "s"}:{" "}
+              {parseResult.unmatchedSourceHeaders.join(", ")}
+            </p>
+          )}
+          {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        </div>
+
+        <div className="flex shrink-0 items-center gap-3 border-t border-zinc-200 p-5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-glossy-light font-heading flex-1 rounded-xl bg-zinc-300 py-2.5 text-sm font-semibold text-zinc-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={parseResult.rows.length === 0}
+            className="btn-glossy-blue font-heading flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * This app's own explanation of a failed lookup ("OpenRouteService
  * geocoding returned 403 Forbidden for...", "No shared node found in
  * the search box") behind its own "View Error" popup, rather than
@@ -3843,6 +4020,9 @@ export function EditRouteScreen({
   // mode "add" only - the paste box's own "Details" link, see
   // StopsFormatModal above.
   const [showFormatModal, setShowFormatModal] = useState(false);
+  // mode "edit" only - the Upload/Update modal for bulk-editing an
+  // existing route's waypoints, see BulkUpdateModal above.
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
   // mode "edit" only - which of the two screens this whole component is
   // currently showing: the hub (the Route Details form itself, plus an
   // "Edit Waypoints" button down to the second screen) or the Stops and
@@ -5382,11 +5562,16 @@ export function EditRouteScreen({
     return buildRouteFromRows(currentRows, buildMetaFields(status));
   }, [routeNumber, mode, parseResult.rows, rows, status, buildMetaFields]);
 
+  // Edit mode's own `rows`/`resolutionRows`, not exportableRoute's own
+  // mode-ternary (add mode has no Download Waypoints button at all -
+  // see the footer this is called from) - and now genuinely the same
+  // shape "Upload / Update" reads back, not a separately-shaped
+  // report (see routeStepsToCsv's own doc comment).
   function handleDownloadCsv() {
     if (!exportableRoute) return;
     downloadCsv(
       `${exportableRoute.id}-stops.csv`,
-      routeStepsToCsv(exportableRoute, cache),
+      routeStepsToCsv(rows, resolutionRows),
     );
   }
 
@@ -6268,6 +6453,15 @@ export function EditRouteScreen({
                 <DownloadIcon className="h-4 w-4" />
                 Download Waypoints
               </button>
+              <button
+                type="button"
+                onClick={() => setShowBulkUpdateModal(true)}
+                aria-label="Bulk-add or update this route's waypoints from a file"
+                className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800"
+              >
+                <UploadIcon className="h-4 w-4" />
+                Upload / Update
+              </button>
             </div>
           )}
           {exportableRoute && <PrintRouteSheet route={exportableRoute} />}
@@ -6301,6 +6495,18 @@ export function EditRouteScreen({
             onFetchMissing={fetchMissingLocations}
             onRefetchAll={refetchAllLocations}
             onClose={() => setShowFetchModal(false)}
+          />
+        )}
+
+        {showBulkUpdateModal && (
+          <BulkUpdateModal
+            rows={rows}
+            onApply={(merged) => {
+              setRows(merged);
+              setDirty(true);
+              setShowBulkUpdateModal(false);
+            }}
+            onClose={() => setShowBulkUpdateModal(false)}
           />
         )}
       </div>

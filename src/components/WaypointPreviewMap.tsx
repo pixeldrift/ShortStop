@@ -11,6 +11,7 @@ import {
   ROUTE_LINE_WIDTH,
 } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
+import { nearestSegmentBearings } from "@/lib/routeProgress";
 import type { RoutingResult } from "@/lib/routing/types";
 import { isSameLocation, spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
 
@@ -334,6 +335,15 @@ function mountMapLibre(
   let latestIsTurn = initialIsTurn;
   let latestStopPins = initialStopPins;
   let latestRouteLine = routeLine;
+  // This route's own already-fetched road-following geometry (set once
+  // drawRouteLine's own /api/route-geometry call resolves) - what
+  // redrawStopPins passes to spreadCoincidentPoints so a coincident
+  // group of stops offsets onto the real side of the road the line
+  // itself draws that stop's pass on, rather than an arbitrary clock
+  // position. Empty until that first fetch lands, same "quietly do
+  // without it" fallback spreadCoincidentPoints already has for a
+  // route with under two points to draw a line between at all.
+  let latestRoadGeometry: { lat: number; lon: number }[] = [];
   // False until the map's own "load" event fires - addSource/addLayer
   // (inside drawRouteLine) need the style to have actually finished
   // loading first, same gate RouteMap.tsx's own mountMapLibre already
@@ -384,14 +394,42 @@ function mountMapLibre(
     return latestStopPins.filter((pin) => !isSameLocation(pin, latestCenter));
   }
 
+  // One bearing per StopPin in `pins` - matched against
+  // latestRouteLine (this route's own full, resolved, trip-ordered
+  // waypoint list, stops and turns and school alike - EditRouteScreen's
+  // own routeContextPoints, which a StopPin's own lat/lon always comes
+  // from verbatim, same index order, per stopPins's own doc comment
+  // there) by walking both lists in lockstep and consuming the next
+  // matching entry for each pin in turn - not just matching each pin's
+  // coordinate independently, which can't tell two visits to the same
+  // real corner apart on its own (nearestSegmentBearings's own doc
+  // comment, routeProgress.ts) the way trusting trip order does.
+  function stopBearings(pins: StopPin[]): (number | null)[] {
+    const orderedBearings = nearestSegmentBearings(latestRoadGeometry, latestRouteLine);
+    let cursor = 0;
+    return pins.map((pin) => {
+      while (
+        cursor < latestRouteLine.length &&
+        !(latestRouteLine[cursor].lat === pin.lat && latestRouteLine[cursor].lon === pin.lon)
+      ) {
+        cursor++;
+      }
+      if (cursor >= latestRouteLine.length) return null;
+      return orderedBearings[cursor++];
+    });
+  }
+
   function redrawStopPins(maplibregl: typeof import("maplibre-gl")) {
     if (!map) return;
     for (const marker of stopMarkers) marker.remove();
     // A route that genuinely stops twice at one real intersection (see
     // this file's own top doc comment) resolves both rows to the same
-    // point - spread apart here so both stay visible and tappable
-    // instead of one drawing directly on top of the other.
-    stopMarkers = spreadCoincidentPoints(visibleStopPins()).map((pin) =>
+    // point - spread apart here, onto whichever real side of the road
+    // latestRoadGeometry draws that stop's own pass on, so both stay
+    // visible and tappable instead of one drawing directly on top of
+    // the other.
+    const pins = visibleStopPins();
+    stopMarkers = spreadCoincidentPoints(pins, stopBearings(pins)).map((pin) =>
       makeDotMarker(maplibregl, pin.lat, pin.lon, dotHtml(STOP_SIZE, STOP_COLOR, pin.stopNumber), pin.rowIndex).addTo(
         map!,
       ),
@@ -421,6 +459,8 @@ function mountMapLibre(
         mapInstance.removeLayer("preview-route-line");
       }
       if (existingSource) mapInstance.removeSource("preview-route-line");
+      latestRoadGeometry = [];
+      if (maplibreModule) redrawStopPins(maplibreModule);
       return;
     }
     fetch("/api/route-geometry", {
@@ -462,6 +502,14 @@ function mountMapLibre(
             },
           });
         }
+        // Stop pins drawn before this fetch landed (the mount-time
+        // first paint, or any redraw while a newer routeLine was still
+        // in flight) used no real road geometry yet - redraw now so a
+        // coincident group of stops picks up the real side-of-road
+        // offset instead of staying on whatever this file's own
+        // fallback left them at.
+        latestRoadGeometry = result.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
+        if (maplibreModule) redrawStopPins(maplibreModule);
       })
       .catch((err) => console.warn("Couldn't fetch route geometry:", err));
   }
