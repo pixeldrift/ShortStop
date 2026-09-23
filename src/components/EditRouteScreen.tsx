@@ -475,6 +475,102 @@ function ClearableInput({
   );
 }
 
+/** A free-text field with its own in-page autocomplete dropdown - not a
+ * native <datalist>, whose own suggestion popup shows up docked against
+ * the on-screen keyboard on a touchscreen tablet rather than right under
+ * the field, and isn't reliably tappable the same way a plain list of
+ * buttons is. `options` names every already-known candidate (every
+ * already-geocoded location plus every School and SavedLocation name,
+ * see StepRowEditor's own locationSuggestionOptions), filtered here to
+ * whatever's actually typed so far, case-insensitively, anywhere in the
+ * name (not just a prefix), the exact current text excluded. Shared by
+ * StepRowEditor's own Location and From fields - both suggest from the
+ * exact same pool of known road/place names, so this is the one place
+ * that dropdown/blur-guard logic (see the onPointerDown comment below)
+ * lives, instead of each field keeping its own copy. onPointerDown/
+ * preventDefault on the panel (not the individual rows) stops a tap here
+ * from blurring the input first - a blur would otherwise close this
+ * panel (via onBlur) before the row's own onClick ever got to fire.
+ * Pointer, not onMouseDown - on a real touchscreen a tap's own focus
+ * change already happens at touchstart, before a synthesized mousedown
+ * ever reaches this handler, so preventDefault there arrived too late to
+ * stop it (this app's own real device is a tablet/phone, same reasoning
+ * the drag-reorder rewrite already documents for Pointer Events over
+ * legacy mouse events). pointerdown fires in step with that same
+ * touchstart, early enough to actually suppress it. */
+function LocationAutocompleteInput({
+  value,
+  onChange,
+  options,
+  placeholder,
+  clearLabel,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder?: string;
+  clearLabel: string;
+  className: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const matches = useMemo(() => {
+    const query = value.trim().toLowerCase();
+    if (!query) return [];
+    return options
+      .filter((name) => {
+        const lower = name.toLowerCase();
+        return lower !== query && lower.includes(query);
+      })
+      .slice(0, 8);
+  }, [value, options]);
+
+  return (
+    <div className="relative min-w-0 flex-1">
+      <input
+        className={`w-full ${className} ${value ? "pr-9" : ""}`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          aria-label={clearLabel}
+          className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
+        >
+          <CloseIcon className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {focused && matches.length > 0 && (
+        <ul
+          className="absolute top-full left-0 z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg"
+          onPointerDown={(e) => e.preventDefault()}
+        >
+          {matches.map((name) => (
+            <li key={name}>
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(name);
+                  setFocused(false);
+                }}
+                className="block w-full truncate px-3 py-2 text-left text-sm text-zinc-900 active:bg-blue-50"
+              >
+                {name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** A location field that's resolved to a real School or SavedLocation
  * by name (StepRowEditor's own Location field, EditRouteScreen's own
  * School field) - the outer box still reads as the same text-input
@@ -1130,28 +1226,10 @@ function StepRowEditor({
       ),
     [locationSuggestions, schools, savedLocations],
   );
-  // Whether the Location text box currently has focus - the dropdown
-  // below only ever shows while it does, same "only while you're
-  // actually looking at this field" gating a native <datalist> gets
-  // for free from the browser itself.
-  const [locationFocused, setLocationFocused] = useState(false);
-  // Up to 8 already-known names containing what's typed so far
-  // (case-insensitive, anywhere in the name - not just a prefix match,
-  // so typing "Ridley" still finds "Sam Ridley Parkway"), the exact
-  // current text excluded (nothing to suggest once it's already been
-  // typed in full). Empty (and so the dropdown below never renders)
-  // until there's actually something typed - same as a native
-  // <datalist> shows nothing for a blank field.
-  const locationMatches = useMemo(() => {
-    const query = row.location.trim().toLowerCase();
-    if (!query) return [];
-    return locationSuggestionOptions
-      .filter((name) => {
-        const lower = name.toLowerCase();
-        return lower !== query && lower.includes(query);
-      })
-      .slice(0, 8);
-  }, [row.location, locationSuggestionOptions]);
+  // The Location and From fields both suggest from this same pool
+  // (LocationAutocompleteInput, defined above - see its own doc comment)
+  // and each manages its own focus/filtering internally now, so neither
+  // field needs its own copy of that state up here any more.
 
   // A plain address (a house number out front) or a matched school/
   // saved location (see above) each name one specific point on their
@@ -1293,9 +1371,13 @@ function StepRowEditor({
   // actually worth a glance - while the connecting word joining it to
   // the label ("at"/"onto"/"&"...) stays gray and not bold, just
   // grammar holding the two names together. An intersection's own
-  // location ("X & Y") always breaks right after the "&" rather than
-  // wherever it happens to wrap on its own, so the two road names never
-  // read as one run-on line.
+  // location ("X & Y") keeps that same bold/gray split per word (each
+  // road name bold, the "&" between them gray) but flows as one plain
+  // run of text otherwise - no forced break at the "&" - so it wraps
+  // wherever the popup's own width actually puts it instead of always
+  // costing a line of its own (which, stacked under a name too long for
+  // one line by itself, used to run this to three lines instead of the
+  // two it needed).
   const instructionLine = (
     <>
       {isStop ? (
@@ -1329,8 +1411,7 @@ function StepRowEditor({
                     <span className="font-bold text-zinc-900">
                       {fromRoad}
                     </span>{" "}
-                    <span className="font-normal text-zinc-500">&</span>
-                    <br />
+                    <span className="font-normal text-zinc-500">&</span>{" "}
                     <span className="font-bold text-zinc-900">{toRoad}</span>
                   </>
                 );
@@ -1417,12 +1498,13 @@ function StepRowEditor({
                   destination change, not only after Update commits.
                   items-start (not -center) - the icon floats against the
                   top of the first line only, not the vertical center of
-                  the whole (now possibly two-line, see
-                  formatWaypointInstructionParts' own "&" split above)
-                  block. leading-[1.125] - roughly three-quarters of the
-                  1.5 line-height this paragraph would otherwise inherit,
-                  tight enough that two short road names read as one
-                  compact label instead of two loosely-spaced lines. */}
+                  the whole (this can still wrap onto a second line once
+                  the label/connector/location run of text outgrows the
+                  popup's own width) block. leading-[1.125] - roughly
+                  three-quarters of the 1.5 line-height this paragraph
+                  would otherwise inherit, tight enough that a wrapped
+                  second line reads as one compact label instead of two
+                  loosely-spaced lines. */}
                 <p className="mt-0.5 flex items-start gap-1.5 text-sm leading-[1.125]">
                   {instructionLine}
                 </p>
@@ -1569,10 +1651,11 @@ function StepRowEditor({
               "from" road to name. */}
               {!isPlainLocation ? (
                 <Field label="From">
-                  <ClearableInput
+                  <LocationAutocompleteInput
                     className={inputClass}
                     value={row.fromLocation}
                     onChange={(value) => onChange({ fromLocation: value })}
+                    options={locationSuggestionOptions}
                     placeholder={previousRoad || "start of route"}
                     clearLabel="Clear From"
                   />
@@ -1601,86 +1684,24 @@ function StepRowEditor({
                       clearLabel="Clear location"
                     />
                   ) : (
-                    <div className="relative min-w-0 flex-1">
-                      <input
-                        className={`w-full ${inputClass} ${
-                          row.location ? "pr-9" : ""
-                        } ${
-                          status?.status === "unresolved"
-                            ? "border-red-400 focus:border-red-500 focus:ring-red-500"
-                            : ""
-                        }`}
-                        value={row.location}
-                        onChange={(e) => onLocationChange(e.target.value)}
-                        onFocus={() => setLocationFocused(true)}
-                        onBlur={() => setLocationFocused(false)}
-                        placeholder={
-                          isSchoolAction
-                            ? "LaVergne High School"
-                            : /^\d/.test(row.location)
-                              ? "123 Maple Dr"
-                              : "Elm St"
-                        }
-                        autoComplete="off"
-                      />
-                      {row.location && (
-                        <button
-                          type="button"
-                          onClick={() => onLocationChange("")}
-                          aria-label="Clear location"
-                          className="absolute top-1/2 right-2 -translate-y-1/2 p-1 text-zinc-400 active:text-zinc-600"
-                        >
-                          <CloseIcon className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                      {/* A real in-page dropdown, not a native
-                          <datalist> - a datalist's own suggestion list
-                          is the browser/OS's own popup, which on a
-                          touchscreen tablet shows up docked against the
-                          on-screen keyboard rather than right under
-                          this field, and isn't reliably tappable the
-                          same way a plain list of buttons is. This is
-                          the same locationSuggestionOptions list (every
-                          already-known name), just filtered to what's
-                          actually typed so far and rendered as our own
-                          styled panel. onPointerDown/preventDefault on
-                          the panel (not the individual rows) stops a
-                          tap here from blurring the input first - a
-                          blur would otherwise close this panel (see
-                          onBlur above) before the row's own onClick
-                          ever got to fire. Pointer, not onMouseDown - on
-                          a real touchscreen a tap's own focus change
-                          already happens at touchstart, before a
-                          synthesized mousedown ever reaches this
-                          handler, so preventDefault there arrived too
-                          late to stop it (this app's own real device is
-                          a tablet/phone, same reasoning the drag-reorder
-                          rewrite already documents for Pointer Events
-                          over legacy mouse events). pointerdown fires in
-                          step with that same touchstart, early enough to
-                          actually suppress it. */}
-                      {locationFocused && locationMatches.length > 0 && (
-                        <ul
-                          className="absolute top-full left-0 z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-zinc-300 bg-white py-1 shadow-lg"
-                          onPointerDown={(e) => e.preventDefault()}
-                        >
-                          {locationMatches.map((name) => (
-                            <li key={name}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onLocationChange(name);
-                                  setLocationFocused(false);
-                                }}
-                                className="block w-full truncate px-3 py-2 text-left text-sm text-zinc-900 active:bg-blue-50"
-                              >
-                                {name}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
+                    <LocationAutocompleteInput
+                      className={`${inputClass} ${
+                        status?.status === "unresolved"
+                          ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                          : ""
+                      }`}
+                      value={row.location}
+                      onChange={onLocationChange}
+                      options={locationSuggestionOptions}
+                      placeholder={
+                        isSchoolAction
+                          ? "LaVergne High School"
+                          : /^\d/.test(row.location)
+                            ? "123 Maple Dr"
+                            : "Elm St"
+                      }
+                      clearLabel="Clear location"
+                    />
                   )}
                   <button
                     type="button"
@@ -6441,7 +6462,7 @@ export function EditRouteScreen({
                 className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800"
               >
                 <DownloadIcon className="h-4 w-4" />
-                Download Waypoints
+                Download
               </button>
               <button
                 type="button"
@@ -6450,7 +6471,7 @@ export function EditRouteScreen({
                 className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 active:text-blue-800"
               >
                 <UploadIcon className="h-4 w-4" />
-                Upload / Update
+                Upload
               </button>
             </div>
           )}
