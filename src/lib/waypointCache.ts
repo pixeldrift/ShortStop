@@ -77,6 +77,28 @@ export function normalizeLocationWhitespace(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
+/** Whether two location names are "the same" for matching a typed/row
+ * location against a known School or SavedLocation name (EditRouteScreen's
+ * own matchedSchool/matchedSavedLocation and every other by-name lookup
+ * alongside them) - case-insensitive, and collapsing internal whitespace
+ * runs the same way normalizeLocationWhitespace above (and, on the
+ * suggestion-list side, mergeLocationNames) already does. A School or
+ * SavedLocation name typed by hand into a CSV or this app's own address-
+ * book form can easily pick up a doubled-up space Object.keys(schools)/
+ * savedLocations.find still holds onto verbatim; the Location field's own
+ * suggestion dropdown (locationSuggestionOptions, built through
+ * mergeLocationNames) already normalizes that away, so a name picked
+ * straight from that dropdown could look identical on screen yet fail a
+ * comparison that only trims - never becoming the linked-entity chip a
+ * pick from the Address Book popup (which copies the raw name verbatim)
+ * already does for the exact same name. */
+export function locationNamesMatch(a: string, b: string): boolean {
+  return (
+    normalizeLocationWhitespace(a).toLowerCase() ===
+    normalizeLocationWhitespace(b).toLowerCase()
+  );
+}
+
 /**
  * The cache key for a WaypointQuery - content-addressed, not tied to a
  * row index, which is what makes "edit the CSV, then refresh" work

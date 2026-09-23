@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditRouteScreen } from "@/components/EditRouteScreen";
 import { Logo } from "@/components/Logo";
 import { RouteListScreen } from "@/components/RouteListScreen";
@@ -276,6 +276,20 @@ export default function Home() {
   // even though there's no real per-user account system backing either
   // one yet.
   const [adminMode, setAdminMode] = useState(false);
+  // How far down RouteListScreen's own list a driver had scrolled,
+  // keyed by which route list it was ("top-level" or a specific
+  // school's own scoped one) - a plain ref, not state, since writing it
+  // on every scroll tick should never itself trigger a re-render.
+  // RouteListScreen fully unmounts navigating to EditRouteScreen (only
+  // one `content` value is ever rendered at a time - see the big
+  // screen.kind switch below), so its own scroll position would
+  // otherwise reset to the top on every single return from editing a
+  // route, same as every other bit of local state there already does -
+  // this is the one exception, restored once by RouteListScreen's own
+  // getInitialScrollTop/onScrollTopChange props (below) rather than
+  // living in that component's own state, which this exact unmount
+  // already defeats.
+  const routeListScrollRef = useRef<Map<string, number>>(new Map());
   // The signed-in driver, this demo phase's own stand-in for a real
   // account (currentUser.ts's own doc comment has the full reasoning) -
   // UserMenu.tsx reads and edits this directly, including its own
@@ -634,6 +648,7 @@ export default function Home() {
       />
     );
   } else if (screen.kind === "school-routes") {
+    const scrollKey = `school:${screen.schoolName}`;
     content = (
       <RouteListScreen
         routes={routes.filter((route) => route.schoolName === screen.schoolName)}
@@ -649,6 +664,8 @@ export default function Home() {
         onSetRouteStatus={handleSetRouteStatus}
         onDeleteRoute={handleDeleteRoute}
         onToggleFavorite={handleToggleFavorite}
+        getInitialScrollTop={() => routeListScrollRef.current.get(scrollKey) ?? 0}
+        onScrollTopChange={(top) => routeListScrollRef.current.set(scrollKey, top)}
       />
     );
   } else {
@@ -667,6 +684,8 @@ export default function Home() {
         onSetRouteStatus={handleSetRouteStatus}
         onDeleteRoute={handleDeleteRoute}
         onToggleFavorite={handleToggleFavorite}
+        getInitialScrollTop={() => routeListScrollRef.current.get("top-level") ?? 0}
+        onScrollTopChange={(top) => routeListScrollRef.current.set("top-level", top)}
       />
     );
   }
