@@ -18,6 +18,7 @@ import {
   ROUTE_LINE_WIDTH,
 } from "@/lib/mapEngine";
 import { protomapsStyle } from "@/lib/protomapsStyle";
+import { initialBearing, nearestSegmentBearings } from "@/lib/routeProgress";
 import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
 import { spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
 import type { TripType, TurnDirection } from "@/lib/types";
@@ -227,22 +228,6 @@ export interface RouteGeometryResult {
 // `path` - null for the school, which is a real leg of the trip but
 // never itself an active step a driver can be "at".
 type OrderedWaypoint = { key: string | null; lat: number; lon: number };
-
-// Standard great-circle initial bearing (forward azimuth) from one
-// point to another, in degrees clockwise from north.
-function initialBearing(
-  from: { lat: number; lon: number },
-  to: { lat: number; lon: number },
-): number {
-  const phi1 = (from.lat * Math.PI) / 180;
-  const phi2 = (to.lat * Math.PI) / 180;
-  const deltaLambda = ((to.lon - from.lon) * Math.PI) / 180;
-  const y = Math.sin(deltaLambda) * Math.cos(phi2);
-  const x =
-    Math.cos(phi1) * Math.sin(phi2) -
-    Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
-  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
-}
 
 // Driving mode's own "which way is the bus facing" - the bearing FROM
 // the previous waypoint TO the active one, i.e. the road the bus is
@@ -758,6 +743,16 @@ function mountMapLibre(args: MountArgs): () => void {
   // point lookup coming up empty) leaves the split exactly where it
   // was rather than snapping back to 0.
   let lastRouteSplitIndex = 0;
+  // This route's own already-fetched road-following geometry (set once
+  // the /api/route-geometry request below resolves) - read by
+  // drawDrivingPins, which needs it to offset a coincident group of
+  // stops onto the real side of the road (spreadCoincidentPoints), not
+  // just to draw the line itself. Declared out here rather than read
+  // straight off the fetch's own closure since drawDrivingPins is
+  // defined one scope further out than that fetch's `.then`, same
+  // "outer variable a later callback can still reach" reasoning
+  // applyRouteProgress above already relies on.
+  let latestRoadGeometry: RouteCoordinate[] = [];
 
   function clearPins() {
     for (const marker of pins) marker.remove();
@@ -872,6 +867,7 @@ function mountMapLibre(args: MountArgs): () => void {
               .then((result) => {
                 if (cancelledRef() || !result) return;
                 const roadLngLats = result.geometry.coordinates;
+                latestRoadGeometry = roadLngLats;
                 onRouteGeometryRef.current?.({
                   coordinates: roadLngLats,
                   orderedWaypoints: orderedWaypointsRef.current.filter(
@@ -1066,16 +1062,36 @@ function mountMapLibre(args: MountArgs): () => void {
             // intersection (different directions of approach, at
             // different times) resolves both stops to the same point -
             // spread apart (same helper/threshold WaypointPreviewMap.tsx's
-            // own StopPin drawing uses) so both stay visible and
-            // tappable instead of one drawing directly on top of the
-            // other.
+            // own StopPin drawing uses) onto whichever real side of the
+            // road latestRoadGeometry (this route's own already-fetched
+            // road geometry) draws that stop's own pass on, so both
+            // stay visible and tappable instead of one drawing directly
+            // on top of the other.
             const resolvedStops = stopsRef.current
               .map((stop) => ({ stop, point: resolvedByKey.get(stop.waypointKey) }))
               .filter(
                 (entry): entry is { stop: StopMarker; point: { lat: number; lon: number } } =>
                   entry.point != null,
               );
-            const spreadPoints = spreadCoincidentPoints(resolvedStops.map((entry) => entry.point));
+            const roadLine = latestRoadGeometry.map(([lon, lat]) => ({ lat, lon }));
+            // Bearings computed over the *whole* trip-ordered waypoint
+            // list, not just resolvedStops on its own - a double-back's
+            // two visits to the same real corner are the same
+            // coordinate, so an independent search per stop can't tell
+            // them apart (nearestSegmentBearings's own doc comment,
+            // routeProgress.ts); the turns/school sitting between them
+            // in real trip order are what let the second visit's own
+            // search only ever look past the first one, onto its own
+            // later, correctly-directioned pass.
+            const orderedBearings = nearestSegmentBearings(roadLine, orderedWaypointsRef.current);
+            const bearingByKey = new Map<string, number | null>();
+            orderedWaypointsRef.current.forEach((waypoint, i) => {
+              if (waypoint.key != null) bearingByKey.set(waypoint.key, orderedBearings[i]);
+            });
+            const spreadPoints = spreadCoincidentPoints(
+              resolvedStops.map((entry) => entry.point),
+              resolvedStops.map((entry) => bearingByKey.get(entry.stop.waypointKey) ?? null),
+            );
             resolvedStops.forEach((entry, i) => {
               pins.push(
                 new maplibregl.Marker({
