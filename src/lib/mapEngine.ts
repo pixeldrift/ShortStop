@@ -40,7 +40,8 @@ import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
  * q579) - accepted here because nothing in this app ever hands
  * user-controlled or remote HTML to MapLibre's own sanitizer: every
  * marker is built from this app's own fixed icon strings
- * (stopMarkerHtml/turnMarkerHtml/schoolMarkerHtml in RouteMap.tsx) via
+ * (stopMarkerHtml/schoolMarkerHtml in RouteMap.tsx, turnDiamondHtml in
+ * mapMarkerIcons.tsx) via
  * a plain `el.innerHTML =`, never a MapLibre popup or any other API
  * that runs through DOM.sanitize(). Re-check this pin against
  * maplibre-gl-js#8186's status before ever bumping past 5.x again.

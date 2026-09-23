@@ -2004,7 +2004,8 @@ function StepRowEditor({
                   }`}
                   center={previewCenter}
                   centerStopNumber={stopNumber}
-                  centerIsTurn={!isStop}
+                  centerDirection={turnDirection ?? undefined}
+                  centerHeading={!isStop ? row.action : undefined}
                   routeLine={routeContext}
                   stopPins={stopPins}
                   onClickPin={onClickWaypointPin}
@@ -2437,7 +2438,6 @@ function GeocodeConfirmModal({
                 }`}
                 center={{ lat: entry.lat, lon: entry.lon }}
                 centerStopNumber={null}
-                centerIsTurn={false}
                 routeLine={routeLine}
                 stopPins={stopPins}
               />

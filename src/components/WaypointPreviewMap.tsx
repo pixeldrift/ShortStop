@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { GeoJSONSource, Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
+import { setTurnDiamondRotation, turnDiamondHtml } from "./mapMarkerIcons";
 import {
   collapseAttribution,
   PMTILES_ATTRIBUTION,
@@ -14,6 +15,7 @@ import { protomapsStyle } from "@/lib/protomapsStyle";
 import { nearestSegmentBearings } from "@/lib/routeProgress";
 import type { RoutingResult } from "@/lib/routing/types";
 import { isSameLocation, spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
+import type { TurnDirection } from "@/lib/types";
 
 const PREVIEW_ZOOM = 15;
 // Same 1s RouteMap.tsx's own driving-mode flyTo already uses for
@@ -34,7 +36,6 @@ const STOP_SIZE = 18;
 const TURN_SIZE = STOP_SIZE + 4;
 const CURRENT_SIZE = 24;
 const STOP_COLOR = "#ef4444"; // red-500
-const TURN_COLOR = "#facc15"; // yellow-400
 const CURRENT_COLOR = "#2563eb"; // blue-600
 
 // Two independently-geocoded rows (a Stop and a turn typed for the same
@@ -76,41 +77,29 @@ function dotHtml(size: number, color: string, text?: number): string {
   );
 }
 
-/** The current row's own HTML when it's a turn/direction rather than a
- * Stop - a rounded diamond (a rounded square rotated 45deg, via an
- * inner element so the rotation doesn't fight the outer element's own
- * positioning/click box, which MapLibre's Marker expects to be an
- * unrotated box of `height`x`height`) with a black border, echoing the
- * real turn-by-turn sign's own look (RouteMap.tsx's turnMarkerHtml)
- * rather than just being another plain dot. `height` is the box this
- * sits in; the inner square's own side is sized (height / sqrt(2)) so
- * the diamond's rendered point-to-point height comes out to roughly
- * `height` itself. */
-function diamondHtml(height: number, color: string): string {
-  const side = Math.round(height / Math.SQRT2);
-  const radius = Math.round(side * 0.22);
-  return (
-    `<div style="width:${height}px;height:${height}px;display:flex;` +
-    'align-items:center;justify-content:center;">' +
-    `<div style="width:${side}px;height:${side}px;background:${color};` +
-    `border:1.5px solid #000000;border-radius:${radius}px;` +
-    "box-shadow:0 1px 2px rgba(0,0,0,0.35);" +
-    'transform:rotate(45deg);"></div>' +
-    "</div>"
-  );
-}
-
 /** The current row's own marker HTML - a numbered blue circle for a
  * Stop (bigger than an ordinary StopPin's own, so it still reads as
  * "the one you're looking at" even sitting right next to one), or the
- * yellow diamond above for a turn/direction. The diamond only ever
- * appears here, for whichever row is actually open right now - there's
- * no separate, always-on marker for every other turn on the route the
- * way StopPin draws one for every other Stop; a route can have far more
- * turns than stops, and showing all of them at once read as clutter
- * without actually helping an admin place *this* row's own point. */
-function currentMarkerHtml(stopNumber: number | null, isTurn: boolean): string {
-  return isTurn ? diamondHtml(TURN_SIZE, TURN_COLOR) : dotHtml(CURRENT_SIZE, CURRENT_COLOR, stopNumber ?? undefined);
+ * shared yellow diamond (turnDiamondHtml, mapMarkerIcons.tsx) for a
+ * turn/direction - the same shape/symbol treatment RouteMap.tsx's own
+ * turn markers now draw. The diamond only ever appears here, for
+ * whichever row is actually open right now - there's no separate,
+ * always-on marker for every other turn on the route the way StopPin
+ * draws one for every other Stop; a route can have far more turns than
+ * stops, and showing all of them at once read as clutter without
+ * actually helping an admin place *this* row's own point. Falls back to
+ * the plain Stop dot for a malformed row turnDiamondHtml can't draw a
+ * real symbol for (neither `direction` nor `heading` set) rather than
+ * ever showing a blank diamond. */
+function currentMarkerHtml(
+  stopNumber: number | null,
+  direction: TurnDirection | undefined,
+  heading: string | undefined,
+): string {
+  return (
+    turnDiamondHtml(TURN_SIZE, direction, heading) ??
+    dotHtml(CURRENT_SIZE, CURRENT_COLOR, stopNumber ?? undefined)
+  );
 }
 
 /** What mountMapLibre hands back once mounted, so this component can
@@ -119,7 +108,12 @@ function currentMarkerHtml(stopNumber: number | null, isTurn: boolean): string {
  * and rebuilding a fresh one - see this file's own top doc comment for
  * why that distinction is the whole point. */
 interface PreviewMapController {
-  flyToCenter(center: { lat: number; lon: number }, stopNumber: number | null, isTurn: boolean): void;
+  flyToCenter(
+    center: { lat: number; lon: number },
+    stopNumber: number | null,
+    direction: TurnDirection | undefined,
+    heading: string | undefined,
+  ): void;
   setStopPins(stopPins: StopPin[]): void;
   setRouteLine(routeLine: { lat: number; lon: number }[]): void;
   destroy(): void;
@@ -169,7 +163,8 @@ interface PreviewMapController {
 export function WaypointPreviewMap({
   center,
   centerStopNumber,
-  centerIsTurn,
+  centerDirection,
+  centerHeading,
   routeLine,
   stopPins,
   onClickPin,
@@ -185,15 +180,16 @@ export function WaypointPreviewMap({
    * turn (or for GeocodeConfirmModal's own read-only instance, which
    * never threads a real number through). */
   centerStopNumber: number | null;
-  /** True when this row is a turn/direction rather than a Stop - draws
-   * the current marker as the yellow diamond (currentMarkerHtml above)
-   * instead of a numbered blue circle, and hides whichever StopPin (if
-   * any) sits at this same physical spot for as long as this row stays
-   * current. GeocodeConfirmModal's own instance always passes false -
-   * it doesn't know or need to distinguish a Stop from a turn for its
-   * one-off confirm preview, so it keeps the plain blue dot it always
-   * has, same as before this existed. */
-  centerIsTurn: boolean;
+  /** This row's own action, split the same way RouteMap.tsx's own
+   * TurnMarker is - `centerDirection` (Left/Right) or `centerHeading`
+   * (everything else) draws the current marker as the shared yellow
+   * diamond (currentMarkerHtml above) instead of a numbered blue
+   * circle, and hides whichever StopPin (if any) sits at this same
+   * physical spot for as long as this row stays current. Both omitted
+   * (GeocodeConfirmModal's own read-only instance, or a Stop) keeps the
+   * plain blue dot. */
+  centerDirection?: TurnDirection;
+  centerHeading?: string;
   /** Every already-resolved waypoint on this route, in order, school
    * included - the same list PlaceCoordinatesModal draws its own line
    * from (EditRouteScreen's routeContextPoints). */
@@ -239,7 +235,8 @@ export function WaypointPreviewMap({
       container,
       center,
       centerStopNumber,
-      centerIsTurn,
+      centerDirection,
+      centerHeading,
       routeLine,
       stopPins,
       onClickPinRef,
@@ -251,21 +248,22 @@ export function WaypointPreviewMap({
       controllerRef.current?.destroy();
       controllerRef.current = null;
     };
-    // Mount once - center/centerStopNumber/centerIsTurn/routeLine/
-    // stopPins's *initial* values seed the very first paint only; every
-    // later change is picked up by the effects below instead (this
-    // component's own doc comment on why that split exists).
+    // Mount once - center/centerStopNumber/centerDirection/
+    // centerHeading/routeLine/stopPins's *initial* values seed the very
+    // first paint only; every later change is picked up by the effects
+    // below instead (this component's own doc comment on why that
+    // split exists).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    controllerRef.current?.flyToCenter(center, centerStopNumber, centerIsTurn);
+    controllerRef.current?.flyToCenter(center, centerStopNumber, centerDirection, centerHeading);
     // Compares the coordinate/number/kind, not the object literal
     // StepRowEditor hands down fresh every render - this only needs to
     // fly (and redraw the current dot) when any of those actually
     // changed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [center.lat, center.lon, centerStopNumber, centerIsTurn]);
+  }, [center.lat, center.lon, centerStopNumber, centerDirection, centerHeading]);
 
   useEffect(() => {
     controllerRef.current?.setRouteLine(routeLine);
@@ -306,7 +304,8 @@ function mountMapLibre(
   container: HTMLDivElement,
   initialCenter: { lat: number; lon: number },
   initialStopNumber: number | null,
-  initialIsTurn: boolean,
+  initialDirection: TurnDirection | undefined,
+  initialHeading: string | undefined,
   routeLine: { lat: number; lon: number }[],
   initialStopPins: StopPin[],
   onClickPinRef: React.RefObject<((rowIndex: number) => void) | undefined>,
@@ -332,7 +331,8 @@ function mountMapLibre(
   // original params keeps that first paint correct either way.
   let latestCenter = initialCenter;
   let latestStopNumber = initialStopNumber;
-  let latestIsTurn = initialIsTurn;
+  let latestDirection = initialDirection;
+  let latestHeading = initialHeading;
   let latestStopPins = initialStopPins;
   let latestRouteLine = routeLine;
   // This route's own already-fetched road-following geometry (set once
@@ -385,13 +385,36 @@ function mountMapLibre(
 
   // Every StopPin, minus whichever one (if any) sits at the current
   // row's own spot while that row is itself a turn - see this file's
-  // own top doc comment for why. A Stop that IS the current row
-  // (latestIsTurn false) never needs this - its own StopPin is simply
-  // sitting directly under the bigger current marker, the same overlay
-  // this already relied on before isSameLocation existed.
+  // own top doc comment for why. A Stop that IS the current row (no
+  // direction/heading at all) never needs this - its own StopPin is
+  // simply sitting directly under the bigger current marker, the same
+  // overlay this already relied on before isSameLocation existed.
   function visibleStopPins(): StopPin[] {
-    if (!latestIsTurn) return latestStopPins;
+    if (!latestDirection && !latestHeading) return latestStopPins;
     return latestStopPins.filter((pin) => !isSameLocation(pin, latestCenter));
+  }
+
+  // The current row's own real compass bearing, when it's a Left/Right
+  // turn - the same "next leg" lookup stopBearings (below) already does
+  // per StopPin, just for this one point instead of a whole list.
+  // Unlike RouteMap.tsx's own applyTurnRotations, this map's own camera
+  // never rotates (no bearing option anywhere in this file), so the
+  // map's own on-screen bearing is always 0 - true compass bearing and
+  // screen angle are the same thing here, no live "rotate" listener
+  // needed the way RouteMap.tsx's own driving-mode camera spin requires.
+  function currentTurnBearing(): number | null {
+    if (!latestDirection) return null;
+    return nearestSegmentBearings(latestRoadGeometry, [latestCenter])[0];
+  }
+
+  // Re-applies the current marker's own real bearing (if it's a
+  // Left/Right turn) - called right after currentMarker's own HTML is
+  // (re)built, and again once latestRoadGeometry actually resolves
+  // (drawRouteLine's own fetch, below), since a turn drawn before that
+  // fetch lands has no real bearing to point at yet.
+  function applyCurrentMarkerRotation() {
+    if (!currentMarker) return;
+    setTurnDiamondRotation(currentMarker.getElement(), currentTurnBearing(), 0);
   }
 
   // One bearing per StopPin in `pins` - matched against
@@ -461,6 +484,7 @@ function mountMapLibre(
       if (existingSource) mapInstance.removeSource("preview-route-line");
       latestRoadGeometry = [];
       if (maplibreModule) redrawStopPins(maplibreModule);
+      applyCurrentMarkerRotation();
       return;
     }
     fetch("/api/route-geometry", {
@@ -510,6 +534,7 @@ function mountMapLibre(
         // fallback left them at.
         latestRoadGeometry = result.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
         if (maplibreModule) redrawStopPins(maplibreModule);
+        applyCurrentMarkerRotation();
       })
       .catch((err) => console.warn("Couldn't fetch route geometry:", err));
   }
@@ -542,10 +567,11 @@ function mountMapLibre(
         maplibregl,
         latestCenter.lat,
         latestCenter.lon,
-        currentMarkerHtml(latestStopNumber, latestIsTurn),
+        currentMarkerHtml(latestStopNumber, latestDirection, latestHeading),
         undefined,
       ).addTo(mapInstance);
       currentMarker.getElement().style.zIndex = "10";
+      applyCurrentMarkerRotation();
 
       mapInstance.once("load", () => {
         if (cancelledRef()) return;
@@ -556,7 +582,7 @@ function mountMapLibre(
   );
 
   return {
-    flyToCenter(next, stopNumber, isTurn) {
+    flyToCenter(next, stopNumber, direction, heading) {
       // Recorded regardless of whether the map itself has finished
       // loading yet - the async initial draw above reads these back
       // out, so an early navigation still paints correctly on first
@@ -565,7 +591,8 @@ function mountMapLibre(
       const previousCenter = latestCenter;
       latestCenter = next;
       latestStopNumber = stopNumber;
-      latestIsTurn = isTurn;
+      latestDirection = direction;
+      latestHeading = heading;
 
       if (!map) return;
       // Two rows resolved to (near enough) the same physical spot - a
@@ -577,8 +604,9 @@ function mountMapLibre(
       }
       currentMarker?.setLngLat([next.lon, next.lat]);
       if (currentMarker) {
-        currentMarker.getElement().innerHTML = currentMarkerHtml(stopNumber, isTurn);
+        currentMarker.getElement().innerHTML = currentMarkerHtml(stopNumber, direction, heading);
       }
+      applyCurrentMarkerRotation();
       if (maplibreModule) redrawStopPins(maplibreModule);
     },
     setStopPins(next) {
