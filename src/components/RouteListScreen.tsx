@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmModal } from "./ConfirmModal";
 import { IconTooltip } from "./IconTooltip";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
@@ -160,6 +160,8 @@ export function RouteListScreen({
   onSetRouteStatus,
   onDeleteRoute,
   onToggleFavorite,
+  getInitialScrollTop,
+  onScrollTopChange,
 }: {
   routes: Route[];
   /** Heading text - "Routes" (or "Edit Routes" in admin mode) when
@@ -225,7 +227,58 @@ export function RouteListScreen({
    * eyeball status toggle takes its place there instead, in admin
    * mode). */
   onToggleFavorite: (route: Route) => void;
+  /** Where the list's own scroll container should start - reads
+   * page.tsx's own remembered offset for whichever route list this is
+   * (top-level, or a specific school's own scoped one). A function,
+   * not a plain number, so page.tsx never has to read its own ref
+   * during render just to pass this down (React flags that even though
+   * nothing here ever touches the ref during *this* component's own
+   * render either - attachScrollContainer only ever calls it from a
+   * ref callback, which runs during commit, not render). Called once,
+   * the moment this component's first real scroll container mounts -
+   * see attachScrollContainer's own doc comment for why a single
+   * callback ref handles both the grouped and flat view's own divs.
+   * Omitted (defaults to starting at the top, same as before this
+   * existed) by any caller that doesn't need this - nothing here
+   * requires the pair. */
+  getInitialScrollTop?: () => number;
+  /** Fired on every scroll tick with this list's own current
+   * scrollTop - page.tsx's own RouteListScreen call sites just stash
+   * this straight into a ref (never state - a scroll-driven state
+   * update would be its own performance problem), so the *next* time
+   * this component mounts (returning from EditRouteScreen, most
+   * commonly - see page.tsx's own screen-switch comment for why this
+   * component unmounts at all rather than just hiding) it has
+   * something real to hand back through getInitialScrollTop above. */
+  onScrollTopChange?: (top: number) => void;
 }) {
+  // Whether attachScrollContainer (below) has already called
+  // getInitialScrollTop once - a ref (not state) so it survives across
+  // every re-render without itself causing one, and gates the restore
+  // to this component instance's very first scroll container (grouped
+  // view's own div, almost always, since `grouped` starts true) rather
+  // than re-firing and snapping the list back whenever `grouped` later
+  // toggles and swaps in the other view's own, separate div.
+  const restoredScrollRef = useRef(false);
+  // A callback ref, not a plain useRef + effect, because the actual
+  // scroll container isn't one stable DOM node for this component's
+  // whole lifetime - grouped/flat view (the `grouped` toggle below) are
+  // two separate divs, only one ever mounted at a time, and toggling
+  // between them unmounts one and mounts the other. A callback ref
+  // fires fresh on each of those mounts, so both of them wire up
+  // through this one function rather than needing two copies of the
+  // same restore-then-listen logic.
+  const attachScrollContainer = useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    if (!restoredScrollRef.current) {
+      node.scrollTop = getInitialScrollTop?.() ?? 0;
+      restoredScrollRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function handleListScroll(e: React.UIEvent<HTMLDivElement>) {
+    onScrollTopChange?.(e.currentTarget.scrollTop);
+  }
   // Edge-swipe-right to go back - a no-op (useSwipeBack's own doc
   // comment) on the top-level route list, which has no onBack at all.
   const swipeRef = useSwipeBack<HTMLDivElement>(onBack);
@@ -777,7 +830,11 @@ export function RouteListScreen({
           }`}
         >
           {grouped ? (
-            <div className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto">
+            <div
+              ref={attachScrollContainer}
+              onScroll={handleListScroll}
+              className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto"
+            >
               {groupedTree.map((routeNumberGroup) => {
                 const routeNumberExpanded = !collapsedRouteNumbers.has(
                   routeNumberGroup.routeNumber,
@@ -1159,7 +1216,11 @@ export function RouteListScreen({
               </span>
             )}
           </div>
-          <div className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto">
+          <div
+            ref={attachScrollContainer}
+            onScroll={handleListScroll}
+            className="min-h-0 flex-1 divide-y divide-zinc-200 overflow-y-auto"
+          >
             {filtered.map((route) => {
               const isPublished = isRoutePublished(route);
               const isAdminOnly = !isPublished;
