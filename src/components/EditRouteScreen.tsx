@@ -92,7 +92,7 @@ import type {
 import { schoolLevelLabel } from "@/lib/schoolLevel";
 import { parseTimeInput } from "@/lib/time";
 import { tripTypeFullLabel } from "@/lib/tripType";
-import { resolveIntersectionCacheEntry, waypointCacheKey } from "@/lib/waypointCache";
+import { locationNamesMatch, resolveIntersectionCacheEntry, waypointCacheKey } from "@/lib/waypointCache";
 import type { WaypointCache, WaypointCacheEntry } from "@/lib/waypointCache";
 import { mergeLocationNames } from "@/lib/locationSuggestions";
 import type { Route, RouteStatus, SchoolLevel, TripType } from "@/lib/types";
@@ -196,9 +196,8 @@ function crossroadsLine(
   const turnDirection =
     actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
 
-  const target = row.location.trim().toLowerCase();
-  const matchedSchool = target
-    ? Object.keys(schools).some((name) => name.trim().toLowerCase() === target)
+  const matchedSchool = row.location.trim()
+    ? Object.keys(schools).some((name) => locationNamesMatch(name, row.location))
     : false;
   const isPlainLocation = /^\d/.test(row.location.trim()) || matchedSchool;
   const effectiveFrom = isPlainLocation
@@ -676,9 +675,7 @@ function StepRowView({
   // what the expanded editor already treats as its own address.
   const isPlainLocation =
     /^\d/.test(row.location.trim()) ||
-    Object.keys(schools).some(
-      (name) => name.trim().toLowerCase() === row.location.trim().toLowerCase(),
-    );
+    Object.keys(schools).some((name) => locationNamesMatch(name, row.location));
   const effectiveFrom = isPlainLocation
     ? null
     : row.fromLocation || previousRoad;
@@ -1097,10 +1094,9 @@ function StepRowEditor({
   // suppresses the "From" field below the same way isPlainLocation
   // already does for one.
   const matchedSchool = useMemo(() => {
-    const target = row.location.trim().toLowerCase();
-    if (!target) return null;
-    const entry = Object.entries(schools).find(
-      ([name]) => name.trim().toLowerCase() === target,
+    if (!row.location.trim()) return null;
+    const entry = Object.entries(schools).find(([name]) =>
+      locationNamesMatch(name, row.location),
     );
     return entry ? { name: entry[0], info: entry[1] } : null;
   }, [row.location, schools]);
@@ -1111,12 +1107,9 @@ function StepRowEditor({
   // instead of the schools table - same "reads as linked to a real
   // entity, not just typed text" treatment either way.
   const matchedSavedLocation = useMemo(() => {
-    const target = row.location.trim().toLowerCase();
-    if (!target) return null;
+    if (!row.location.trim()) return null;
     return (
-      savedLocations.find(
-        (loc) => loc.name.trim().toLowerCase() === target,
-      ) ?? null
+      savedLocations.find((loc) => locationNamesMatch(loc.name, row.location)) ?? null
     );
   }, [row.location, savedLocations]);
 
@@ -3744,18 +3737,16 @@ export function EditRouteScreen({
     route?.schoolName ?? seedMeta?.schoolName ?? "",
   );
   const matchedSchool = useMemo(() => {
-    const target = schoolName.trim().toLowerCase();
-    if (!target) return null;
-    const entry = Object.entries(schools).find(
-      ([name]) => name.trim().toLowerCase() === target,
+    if (!schoolName.trim()) return null;
+    const entry = Object.entries(schools).find(([name]) =>
+      locationNamesMatch(name, schoolName),
     );
     return entry ? { name: entry[0], info: entry[1] } : null;
   }, [schoolName, schools]);
   const matchedSavedLocation = useMemo(() => {
-    const target = schoolName.trim().toLowerCase();
-    if (!target) return null;
+    if (!schoolName.trim()) return null;
     return (
-      savedLocations.find((loc) => loc.name.trim().toLowerCase() === target) ??
+      savedLocations.find((loc) => locationNamesMatch(loc.name, schoolName)) ??
       null
     );
   }, [schoolName, savedLocations]);
@@ -4526,11 +4517,10 @@ export function EditRouteScreen({
   function handleLocationChange(value: string) {
     handleDraftChange({ location: value });
 
-    const target = value.trim().toLowerCase();
-    if (!target || !draftRow) return;
+    if (!value.trim() || !draftRow) return;
     const matched: { lat: number | null; lon: number | null } | undefined =
-      Object.entries(schools).find(([name]) => name.trim().toLowerCase() === target)?.[1] ??
-      savedLocations.find((loc) => loc.name.trim().toLowerCase() === target);
+      Object.entries(schools).find(([name]) => locationNamesMatch(name, value))?.[1] ??
+      savedLocations.find((loc) => locationNamesMatch(loc.name, value));
     if (matched?.lat == null || matched.lon == null) return;
 
     const waypoint = computeDraftWaypointFor({ ...draftRow, location: value });
