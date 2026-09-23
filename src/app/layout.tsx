@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Open_Sans, Ubuntu } from "next/font/google";
 import "./globals.css";
 
@@ -24,6 +24,28 @@ export const metadata: Metadata = {
   icons: {
     apple: "/icons/apple-touch-icon.png",
   },
+};
+
+// No <meta name="viewport"> at all used to mean Next.js's own built-in
+// default (width=device-width, initial-scale=1, nothing pinning the
+// *maximum*) - every text input in this app already renders at 16px+
+// (EditRouteScreen.tsx's own inputClass, text-base) specifically so
+// Mobile Safari's "zoom the page to make a small input legible" heuristic
+// never has a font-size small enough to trigger, but that heuristic is
+// only ever a size *floor*, not something a page can otherwise opt out
+// of - and on the real tablet this app actually runs on, focusing the
+// Location field still zoomed in on tap, then (Mobile Safari's own
+// long-standing bug, not anything this app's JS does) often failed to
+// zoom back out once the on-screen keyboard closed, leaving the whole
+// page stuck zoomed in. maximumScale: 1 caps how far in the viewport can
+// ever go, at exactly the scale it already loads at - the standard fix
+// for this exact class of bug, and harmless for a driver's own pinch-
+// zoom since nothing here is precise enough work (turn-by-turn text,
+// route rows) to ever need zooming in past 100% in the first place.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
