@@ -44,7 +44,6 @@ import {
   SpinnerIcon,
   TrashIcon,
   TriangleIcon,
-  TurnArrow,
   UploadIcon,
   WarningIcon,
   XCircleIcon,
@@ -193,8 +192,6 @@ function crossroadsLine(
   const isStop = actionLower === "stop";
   const isSchoolAction = actionLower === "depart" || actionLower === "arrive";
   const isStopKind = isStop || isSchoolAction || actionLower === "complete";
-  const turnDirection =
-    actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
 
   const matchedSchool = row.location.trim()
     ? Object.keys(schools).some((name) => locationNamesMatch(name, row.location))
@@ -206,13 +203,6 @@ function crossroadsLine(
 
   const icon = isStop ? (
     <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
-  ) : isSchoolAction ? (
-    <ActionIcon
-      action={row.action}
-      className="h-4 w-4 shrink-0 text-blue-600"
-    />
-  ) : turnDirection ? (
-    <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
   ) : (
     <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
   );
@@ -743,12 +733,10 @@ function StepRowView({
     actionLower === "stop" ||
     actionLower === "depart" ||
     actionLower === "arrive";
-  // Only "Left"/"Right" actually have a direction (and the mirrored
-  // TurnArrow to go with it) - every other action (Continue, U-Turn,
-  // Turn Around, Proceed, Pull Over, Return, Depart, Arrive) gets its
-  // own icon instead (ActionIcon, icons.tsx) rather than reading as
-  // plain, icon-less text the way it used to, same as the real driving
-  // screen now does too (StepContent's own doc comment).
+  // Only "Left"/"Right" actually have a direction, still tracked here
+  // for the "Turn Left"/"Turn Right" label text below - the icon itself
+  // no longer branches on it (ActionIcon, icons.tsx, now covers every
+  // action including Left/Right with its own real diamond).
   const turnDirection =
     actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
   // A place action's own from/location pair reads as an intersection
@@ -814,26 +802,12 @@ function StepRowView({
                   </span>
                 )}
               </>
-            ) : actionLower === "depart" || actionLower === "arrive" ? (
-              <>
-                <ActionIcon
-                  action={row.action}
-                  className="h-4 w-4 shrink-0 text-blue-600"
-                />
-                {titleCaseAction(row.action)}
-              </>
-            ) : turnDirection ? (
-              <>
-                <TurnArrow
-                  direction={turnDirection}
-                  className="h-4 w-4 shrink-0"
-                />
-                Turn {turnDirection === "left" ? "Left" : "Right"}
-              </>
             ) : (
               <>
                 <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
-                {titleCaseAction(row.action) || "Turn"}
+                {turnDirection
+                  ? `Turn ${turnDirection === "left" ? "Left" : "Right"}`
+                  : titleCaseAction(row.action) || "Turn"}
               </>
             )}
           </span>
@@ -1171,11 +1145,11 @@ function StepRowEditor({
   const actionLower = row.action.toLowerCase();
   const isStop = actionLower === "stop";
   const isSchoolAction = actionLower === "depart" || actionLower === "arrive";
-  // Only "Left"/"Right" actually have a direction (and the mirrored
-  // TurnArrow to go with it) - every other action (Continue, U-Turn,
-  // Turn Around, Proceed, Pull Over, Return, Depart, Arrive) gets its
-  // own icon instead (ActionIcon) in the subtitle below, same as
-  // StepRowView's own identical derivation for the collapsed row.
+  // Only "Left"/"Right" actually have a direction - the subtitle's own
+  // icon below no longer branches on it (ActionIcon covers Left/Right
+  // too now), but WaypointPreviewMap's own centerDirection prop still
+  // needs it, same as StepRowView's own identical derivation does for
+  // the collapsed row.
   const turnDirection =
     actionLower === "left" ? "left" : actionLower === "right" ? "right" : null;
 
@@ -1385,13 +1359,6 @@ function StepRowEditor({
     <>
       {isStop ? (
         <MapPinIcon className="h-4 w-4 shrink-0 text-red-500" />
-      ) : isSchoolAction ? (
-        <ActionIcon
-          action={row.action}
-          className="h-4 w-4 shrink-0 text-blue-600"
-        />
-      ) : turnDirection ? (
-        <TurnArrow direction={turnDirection} className="h-4 w-4 shrink-0" />
       ) : (
         <ActionIcon action={row.action} className="h-4 w-4 shrink-0" />
       )}

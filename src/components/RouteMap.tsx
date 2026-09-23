@@ -734,7 +734,11 @@ function mountMapLibre(args: MountArgs): () => void {
   // every arrow correctly oriented throughout an entire live bearing
   // animation (driving mode's own easeTo toward the bus's current
   // heading), not just the one instant drawDrivingPins happened to run.
-  let turnArrowRotations: { element: HTMLElement; bearing: number | null }[] = [];
+  let turnArrowRotations: {
+    element: HTMLElement;
+    direction: TurnDirection;
+    bearing: number | null;
+  }[] = [];
 
   function clearPins() {
     for (const marker of pins) marker.remove();
@@ -752,8 +756,8 @@ function mountMapLibre(args: MountArgs): () => void {
   function applyTurnRotations() {
     if (!map) return;
     const mapBearing = map.getBearing();
-    for (const { element, bearing } of turnArrowRotations) {
-      setTurnDiamondRotation(element, bearing, mapBearing);
+    for (const { element, direction, bearing } of turnArrowRotations) {
+      setTurnDiamondRotation(element, direction, bearing, mapBearing);
     }
   }
 
@@ -1111,6 +1115,7 @@ function mountMapLibre(args: MountArgs): () => void {
               if (turn.direction) {
                 turnArrowRotations.push({
                   element,
+                  direction: turn.direction,
                   bearing: bearingByKey.get(turn.waypointKey) ?? null,
                 });
               }

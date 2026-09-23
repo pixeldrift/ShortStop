@@ -9,6 +9,7 @@ import { SchoolLevelIcon } from "./SchoolLevelIcon";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
+  ActionIcon,
   BackArrowIcon,
   CheckCircleIcon,
   CloseIcon,
@@ -19,7 +20,6 @@ import {
   PersonSolidIcon,
   RoundedTriangleIcon,
   TriangleIcon,
-  TurnArrow,
   XCircleIcon,
 } from "./icons";
 import { routeTitleSizeClass } from "@/lib/routeTitle";
@@ -514,17 +514,15 @@ function SchoolEntry({ route }: { route: Route }) {
   );
 }
 
-/** One turn step's row - same card shape as a stop's, but the turn
- * arrow (mirrored per direction, same as StepScreen's own big one)
- * stands in for the numbered map pin, and there's no rider count. Only
- * shown at all once the "Show directions" toggle is on (see AllStopsModal). */
+/** One turn step's row - same card shape as a stop's, but the action's
+ * own small diamond icon stands in for the numbered map pin, and
+ * there's no rider count. Only shown at all once the "Show directions"
+ * toggle is on (see AllStopsModal). */
 function TurnRow({ step }: { step: NavigationStep }) {
   return (
     <div className="py-3 text-left">
       <span className="font-heading flex items-center gap-1.5 text-base font-bold text-zinc-500">
-        {step.direction && (
-          <TurnArrow direction={step.direction} className="h-4 w-4 shrink-0" />
-        )}
+        <ActionIcon action={step.direction ?? step.heading ?? ""} className="h-4 w-4 shrink-0" />
         {step.heading}
       </span>
       <p className="text-zinc-700">{step.subheading}</p>

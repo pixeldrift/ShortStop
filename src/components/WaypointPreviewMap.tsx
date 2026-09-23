@@ -413,8 +413,8 @@ function mountMapLibre(
   // (drawRouteLine's own fetch, below), since a turn drawn before that
   // fetch lands has no real bearing to point at yet.
   function applyCurrentMarkerRotation() {
-    if (!currentMarker) return;
-    setTurnDiamondRotation(currentMarker.getElement(), currentTurnBearing(), 0);
+    if (!currentMarker || !latestDirection) return;
+    setTurnDiamondRotation(currentMarker.getElement(), latestDirection, currentTurnBearing(), 0);
   }
 
   // One bearing per StopPin in `pins` - matched against
