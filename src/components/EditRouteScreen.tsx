@@ -1367,13 +1367,16 @@ function StepRowEditor({
     stopNumber,
     isPlainLocation ? "" : row.fromLocation || previousRoad || "",
   );
-  // The waypoint's own real name(s) read in bold black - the thing
+  // The waypoint's own real name reads in bold black - the thing
   // actually worth a glance - while the connecting word joining it to
-  // the label ("at"/"onto"/"&"...) stays gray and not bold, just
-  // grammar holding the two names together. An intersection's own
-  // location ("X & Y") keeps that same bold/gray split per word (each
-  // road name bold, the "&" between them gray) but flows as one plain
-  // run of text otherwise - no forced break at the "&" - so it wraps
+  // the label ("at"/"onto"...) stays gray and not bold, just grammar
+  // holding the two together. An intersection's own location ("X & Y",
+  // formatWaypointInstructionParts' own effectiveFrom-then-location
+  // join) keeps that same treatment but per road: only the second half,
+  // the stop's own road (row.location itself, not the merely-contextual
+  // road it's currently on), is bold - the first half and the "&"
+  // between them both stay gray, same weight as "at". Flows as one
+  // plain run of text - no forced break at the "&" - so it wraps
   // wherever the popup's own width actually puts it instead of always
   // costing a line of its own (which, stacked under a name too long for
   // one line by itself, used to run this to three lines instead of the
@@ -1408,7 +1411,7 @@ function StepRowEditor({
                   instructionParts.location!.split(" & ");
                 return (
                   <>
-                    <span className="font-bold text-zinc-900">
+                    <span className="font-normal text-zinc-500">
                       {fromRoad}
                     </span>{" "}
                     <span className="font-normal text-zinc-500">&</span>{" "}
