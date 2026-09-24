@@ -113,11 +113,18 @@ const PIN_ASPECT_RATIO = 350 / 548;
  * pin's own visual tip - right there instead. */
 function pinHtml(height: number, stopNumber: number | null): string {
   const width = Math.round(height * PIN_ASPECT_RATIO);
+  // top:34% - pin.svg's own circular head sits centered at 34.0% of
+  // its own height (y=186.18 of a 548-tall viewBox), not 31%.
+  // font-size:height*0.3 - RouteMap.tsx's own stopMarkerHtml and
+  // StepScreen.tsx's own StopContent both land in the same ~0.27-0.31-
+  // of-height range for this same number; 0.42 read noticeably larger
+  // than either, tight enough inside the circle to crowd a two-digit
+  // stop number.
   const number =
     stopNumber != null
-      ? `<span style="position:absolute;top:31%;left:50%;transform:translate(-50%,-50%);` +
+      ? `<span style="position:absolute;top:34%;left:50%;transform:translate(-50%,-50%);` +
         `color:#b91c1c;font-weight:800;font-family:inherit;line-height:1;` +
-        `font-size:${Math.round(height * 0.42)}px;">${stopNumber}</span>`
+        `font-size:${Math.round(height * 0.3)}px;">${stopNumber}</span>`
       : "";
   return (
     `<div style="position:absolute;bottom:0;left:50%;width:${width}px;height:${height}px;` +
@@ -432,13 +439,15 @@ function mountMapLibre(
   }
 
   // Every StopPin, minus whichever one (if any) sits at the current
-  // row's own spot while that row is itself a turn - see this file's
-  // own top doc comment for why. A Stop that IS the current row (no
-  // direction/heading at all) never needs this - its own StopPin is
-  // simply sitting directly under the bigger current marker, the same
-  // overlay this already relied on before isSameLocation existed.
+  // row's own spot - see this file's own top doc comment for why.
+  // Always filtered, not just when the current row is a turn: a Stop
+  // that IS the current row used to rely on its own plain StopPin dot
+  // simply sitting directly *under* the bigger current marker instead
+  // of being excluded outright, on the assumption the bigger pin fully
+  // covered it - close, but the dot's own edge still peeked out from
+  // behind the pin's narrower body, showing both at once instead of
+  // one cleanly replacing the other.
   function visibleStopPins(): StopPin[] {
-    if (!latestDirection && !latestHeading) return latestStopPins;
     return latestStopPins.filter((pin) => !isSameLocation(pin, latestCenter));
   }
 

@@ -237,7 +237,10 @@ export function RouteProgressBar({
               {step.kind === "stop" ? (
                 <div className="relative">
                   <img src="/assets/pin.svg" alt="" className="h-6 w-auto drop-shadow-sm" />
-                  <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[0.5rem] leading-none font-black text-red-700">
+                  {/* top-34% - pin.svg's own circular head sits centered
+                      at 34.0% of its own height (y=186.18 of a 548-tall
+                      viewBox), not 31%. */}
+                  <span className="font-heading absolute top-[34%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[0.5rem] leading-none font-black text-red-700">
                     {stopNumbers[index]}
                   </span>
                 </div>

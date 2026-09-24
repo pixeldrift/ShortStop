@@ -1859,6 +1859,30 @@ function StepRowEditor({
                     refreshed yet.
                   </span>
                 </p>
+              ) : row.overrideLat != null && row.overrideLon != null ? (
+                // Replaces the ordinary Verified/Unresolved status line
+                // outright rather than stacking a second one below it -
+                // an override isn't a geocode result at all (there's no
+                // "stale"/"unresolved" state that even applies to a
+                // coordinate the admin placed by hand), so showing both
+                // read as two different things being said about the same
+                // one field. Short by design ("Overridden - Location
+                // manually placed", not the old, much longer "stays put
+                // even if the shared cache changes") - this whole card's
+                // own action buttons sit below every field, and the
+                // longer wording was routinely enough to push them out
+                // of view.
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-blue-600">
+                  <MapPinIcon className="h-3.5 w-3.5 shrink-0" />
+                  Overridden - Location manually placed
+                  <button
+                    type="button"
+                    onClick={() => onChange({ overrideLat: null, overrideLon: null })}
+                    className="font-semibold underline underline-offset-2"
+                  >
+                    Clear
+                  </button>
+                </p>
               ) : manualCoords ? (
                 <p className="mt-1 flex items-center gap-1 text-xs text-green-600">
                   <CheckCircleIcon className="h-3.5 w-3.5 shrink-0" />
@@ -1889,19 +1913,6 @@ function StepRowEditor({
                   Verified coordinates
                 </p>
               ) : null}
-              {row.overrideLat != null && row.overrideLon != null && (
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-blue-600">
-                  <MapPinIcon className="h-3.5 w-3.5 shrink-0" />
-                  Overridden - stays put even if the shared cache changes.
-                  <button
-                    type="button"
-                    onClick={() => onChange({ overrideLat: null, overrideLon: null })}
-                    className="font-semibold underline underline-offset-2"
-                  >
-                    Clear
-                  </button>
-                </p>
-              )}
             </div>
 
             {/* Riders only really means anything for a stop (a turn has
@@ -1963,7 +1974,7 @@ function StepRowEditor({
           useful once there are enough resolved stops nearby that the
           140px-tall preview gets crowded. */}
             <ExpandableMap
-              className="mt-3 h-40 w-full"
+              className="mt-3 h-[clamp(6rem,18vh,10rem)] w-full"
               renderMap={(mapClassName, isExpanded) => (
                 <WaypointPreviewMap
                   className={`relative z-0 ${mapClassName} ${
@@ -1980,7 +1991,20 @@ function StepRowEditor({
               )}
             />
 
-            <div className="mt-3 flex items-center gap-2">
+            {/* sticky bottom-0 - always reachable at the bottom of the
+                card the instant it's visible at all, not just once
+                scrolled down to (the outer card, still overflow-y-auto
+                above, is this footer's own nearest scrolling ancestor)
+                - a long status line (the coordinate override message,
+                say) pushing this further down the card used to be able
+                to leave it below the fold with no visible way back,
+                same problem ExpandableMap's own shorter clamp()'d height
+                above now also leaves less room for in the first place.
+                -mx-5 -mb-5 + matching px-5 py-3 undoes this card's own
+                p-5 on this one edge so the bar reads as flush with the
+                card's own bottom/sides, not floating with the card's
+                usual padding still showing on every side around it. */}
+            <div className="sticky bottom-0 -mx-5 -mb-5 mt-3 flex items-center gap-2 border-t border-zinc-200 bg-[var(--background)] px-5 py-3">
               {!hideDelete && (
                 <button
                   type="button"

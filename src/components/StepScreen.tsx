@@ -46,6 +46,19 @@ const DEPART_WINDOW_MINUTES = 5;
 // not cut short, before the step actually changes underneath it.
 const BUS_DEPART_MS = 450;
 
+// The rider check-in card's own tap-and-go auto-close (see
+// closeRosterWithBounce below): how long a just-tapped bubble sits fully
+// filled in before the card even starts closing - long enough to
+// actually register as "yes, that worked," not so long the driver is
+// left waiting on it before the next stop's own step can advance.
+const ROSTER_TAP_CONFIRM_MS = 550;
+// Matches animate-popup-pop-out's own duration (globals.css) -
+// closeRosterWithBounce holds the real close (the card's own unmount)
+// off for exactly this long so the animation gets to finish playing
+// rather than being cut short by the DOM node disappearing out from
+// under it.
+const ROSTER_CLOSE_ANIMATION_MS = 220;
+
 // The "nothing to report yet" value for useLiveRouteProgress's own
 // waypointDistanceByKey param, before RouteMap's own onRouteGeometry
 // callback has fired for the first time - a single shared empty Map
@@ -216,6 +229,31 @@ export function StepScreen({
   function closeRoster() {
     setViewedStepIndex(null);
     setAutoOfferedStepId(step.id);
+  }
+
+  // The card's own closing animation state - true only for the brief
+  // window between "start closing" and the real closeRoster() unmount,
+  // never persisted beyond that (a fresh open always starts false/pop-
+  // in). Read by RiderCheckInBox's own `closing` prop below.
+  const [rosterClosing, setRosterClosing] = useState(false);
+
+  // The tap-and-go auto-close's own real close (see this component's
+  // own onRiderTap wiring below, where this replaces a bare closeRoster()
+  // call) - lets the driver actually see the bubble they just tapped
+  // sitting filled in for a beat (ROSTER_TAP_CONFIRM_MS) before the card
+  // even starts closing, then plays its own overshoot-and-shrink pop-out
+  // (animate-popup-pop-out, globals.css) for ROSTER_CLOSE_ANIMATION_MS
+  // before actually unmounting it - the same "hold state for the
+  // animation's own real duration" pattern handleStart's own busDeparting
+  // flag already uses for the depot bus's send-off.
+  function closeRosterWithBounce() {
+    window.setTimeout(() => {
+      setRosterClosing(true);
+      window.setTimeout(() => {
+        setRosterClosing(false);
+        closeRoster();
+      }, ROSTER_CLOSE_ANIMATION_MS);
+    }, ROSTER_TAP_CONFIRM_MS);
   }
 
   // The map's own toggle control (RouteMap's onToggleRoster) - a real
@@ -446,9 +484,12 @@ export function StepScreen({
                   onRiderTap(viewedEntry.step.id, index, viewedExpectedCount);
                   // Tap-and-go only while this is still an untouched auto
                   // session showing the live current stop - see this
-                  // component's own rosterOrigin doc comment above.
+                  // component's own rosterOrigin doc comment above. A
+                  // brief confirm-then-bounce-close, not an instant
+                  // closeRoster() - see closeRosterWithBounce's own doc
+                  // comment for why.
                   if (rosterOrigin === "auto" && viewedStepIndex === currentIndex) {
-                    closeRoster();
+                    closeRosterWithBounce();
                   }
                 }}
                 onAddRider={() => onAddRider(viewedEntry.step.id, viewedExpectedCount)}
@@ -459,6 +500,7 @@ export function StepScreen({
                 onNext={() => goToStopSlot(viewedSlot + 1)}
                 showJumpToCurrent={liveStopIndex != null && viewedStepIndex !== liveStopIndex}
                 onJumpToCurrent={jumpToCurrentStop}
+                closing={rosterClosing}
               />
             </div>
           </>
@@ -788,9 +830,14 @@ function StopContent({
   return (
     <>
       <div className="relative shrink-0">
+        {/* pin.svg's own circular head sits centered at y=186.18 of its
+            548-tall viewBox (34.0%), not the 31% every one of this
+            pin's own callers used to use - close enough to look right
+            at a glance but landed the number/triangle a couple percent
+            above the head's own true visual center. */}
         <img src="/assets/pin.svg" alt="" className="h-[clamp(3.25rem,12vh,8rem)] w-auto" />
         {stopNumber && (
-          <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[clamp(1.15rem,3.75vh,2.5rem)] font-black text-red-700">
+          <span className="font-heading absolute top-[34%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[clamp(1.15rem,3.75vh,2.5rem)] font-black text-red-700">
             {stopNumber}
           </span>
         )}
@@ -798,7 +845,7 @@ function StopContent({
           <RoundedTriangleIcon
             direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
             className={
-              "absolute top-[31%] h-[clamp(2.1rem,6.5vh,4rem)] w-[clamp(1.05rem,3.25vh,2rem)] -translate-y-1/2 text-[#d54e48] " +
+              "absolute top-[34%] h-[clamp(2.1rem,6.5vh,4rem)] w-[clamp(1.05rem,3.25vh,2rem)] -translate-y-1/2 text-[#d54e48] " +
               (step.sideOfRoad.toLowerCase() === "left" ? "right-full mr-1.5" : "left-full ml-1.5")
             }
           />
@@ -836,6 +883,7 @@ function RiderCheckInBox({
   onNext,
   showJumpToCurrent,
   onJumpToCurrent,
+  closing,
 }: {
   /** The stop currently being viewed - not necessarily the live current
    * step (see onPrev/onNext below) - its own subheading is this box's
@@ -865,6 +913,12 @@ function RiderCheckInBox({
    * counts as current" details. */
   showJumpToCurrent: boolean;
   onJumpToCurrent: () => void;
+  /** True for the brief closing animation window only (StepScreen's own
+   * closeRosterWithBounce) - swaps the card's own pop-in animation for
+   * its pop-out mirror rather than the card just cutting away the
+   * instant closeRoster's real unmount fires. Undefined/false the rest
+   * of this card's life, pop-in as normal. */
+  closing?: boolean;
 }) {
   const isDropoff = tripType === "dropoff";
   // Sized to its own content (a handful of riders shouldn't force a
@@ -944,7 +998,7 @@ function RiderCheckInBox({
   return (
     <div
       ref={fitRef}
-      className="animate-popup-pop flex max-h-[78%] max-w-[95%] flex-col gap-[calc(0.5rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-2.5 shadow-lg"
+      className={`${closing ? "animate-popup-pop-out" : "animate-popup-pop"} flex max-h-[78%] max-w-[95%] flex-col gap-[calc(0.5rem*var(--fit-scale,1))] overflow-hidden rounded-xl border border-zinc-200 bg-[var(--background)] p-2.5 shadow-lg`}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Title row: which stop this is (number + crossroads), plus the

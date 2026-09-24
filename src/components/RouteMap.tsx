@@ -133,10 +133,12 @@ const LOCATION_DOT_HTML =
   "</span>";
 
 function stopMarkerHtml(stopNumber: number): string {
+  // pin.svg's own circular head sits centered at 34.0% of its own
+  // height (y=186.18 of a 548-tall viewBox), not 31%.
   return (
     '<div class="relative h-11 w-7">' +
     '<img src="/assets/pin.svg" class="h-full w-full" alt="" />' +
-    '<span class="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 ' +
+    '<span class="font-heading absolute top-[34%] left-1/2 -translate-x-1/2 -translate-y-1/2 ' +
     'text-xs font-black text-red-700">' +
     stopNumber +
     "</span>" +
