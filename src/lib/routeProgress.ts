@@ -247,31 +247,48 @@ export function initialBearing(from: LatLon, to: LatLon): number {
   return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
 }
 
-/** One bearing per entry in `points` (`coords` itself, a route's own
- * road-following line, in order) - the real direction of travel at
- * each point's own spot along the route (roadBearingAt above), not a
- * straight line between two waypoints that may be nothing like the
- * road itself, and not just whichever one geometry segment happens to
- * sit under that point either (see roadBearingAt's own doc comment for
- * why a single segment isn't trustworthy right at a turn corner).
- * `points` must already be in trip order (the same order the road
- * geometry itself was requested in - RouteMap.tsx's own
- * orderedWaypointsRef, WaypointPreviewMap.tsx's own stopPins), because
- * each point's own search only ever looks *forward* of wherever the
- * previous point matched, never back over ground the trip has already
- * covered. That restriction is what makes this usable at all for a
- * route that doubles back and revisits the same real corner - coords
- * passes through that one physical spot twice, once for each
- * direction, so an independent nearest-segment search for two stops
- * that both resolved to (nearly) that same corner can't tell the two
- * visits apart (they're the same coordinate, sitting equally close to
- * both passes); trusting trip order to only search ahead is what
- * actually resolves each one to its own real pass, and its own real
- * bearing. spreadCoincidentPoints.ts is one caller (offsetting a
- * coincident group of stops onto the correct side of the road for each
- * one's own direction of travel, which wants the road it *arrived* on)
- * - null for every point when coords has fewer than two points to
- * begin with.
+export interface WaypointRouteBearing {
+  /** Same units/origin as projectOntoRoute/pointAtDistance - meters
+   * from the route's own start, along the road, trip-order-safe (see
+   * this function's own doc comment) unlike a plain ad hoc
+   * projectOntoRoute call on an isolated point. */
+  distanceAlongRoute: number;
+  bearing: number | null;
+}
+
+/** One {distanceAlongRoute, bearing} pair per entry in `points`
+ * (`coords` itself, a route's own road-following line, in order) - the
+ * real direction of travel at each point's own spot along the route
+ * (roadBearingAt above), not a straight line between two waypoints
+ * that may be nothing like the road itself, and not just whichever one
+ * geometry segment happens to sit under that point either (see
+ * roadBearingAt's own doc comment for why a single segment isn't
+ * trustworthy right at a turn corner). `points` must already be in
+ * trip order (the same order the road geometry itself was requested in
+ * - RouteMap.tsx's own orderedWaypointsRef, WaypointPreviewMap.tsx's
+ * own stopPins), because each point's own search only ever looks
+ * *forward* of wherever the previous point matched, never back over
+ * ground the trip has already covered. That restriction is what makes
+ * this usable at all for a route that doubles back, or just has two
+ * turns onto nearby/crossing streets close together - coords can pass
+ * near that same physical spot more than once, so an independent
+ * nearest-segment search for two points that both resolve near it
+ * can't tell which real pass either one belongs to (they're
+ * equally close to both); trusting trip order to only search ahead is
+ * what actually resolves each one to its own real pass, both its own
+ * real bearing and its own real distance-along-route. That's also why
+ * RouteMap.tsx's own traveled/remaining route-line split reads its
+ * distance from here (bundled into the same trip-ordered pass every
+ * turn/stop's own bearing already runs) rather than a fresh, ordering-
+ * unaware projectOntoRoute call on just the one active waypoint -
+ * projectOntoRoute alone can't tell a route's second close pass near
+ * some corner from its first either, the exact same way an independent
+ * bearing search couldn't. spreadCoincidentPoints.ts is one caller of
+ * the bearing half (offsetting a coincident group of stops onto the
+ * correct side of the road for each one's own direction of travel,
+ * which wants the road it *arrived* on) - `{distanceAlongRoute: 0,
+ * bearing: null}` for every point when coords has fewer than two
+ * points to begin with.
  *
  * `preferOutgoing[i]` (aligned with `points`, same index) picks which
  * side of that point's own spot roadBearingAt looks toward: a stop
@@ -281,8 +298,8 @@ export function nearestSegmentBearings(
   coords: LatLon[],
   points: LatLon[],
   preferOutgoing?: boolean[],
-): (number | null)[] {
-  if (coords.length < 2) return points.map(() => null);
+): WaypointRouteBearing[] {
+  if (coords.length < 2) return points.map(() => ({ distanceAlongRoute: 0, bearing: null }));
   const cumulative = cumulativeDistances(coords);
   let cursor = 0;
   return points.map((point, i) => {
@@ -301,11 +318,12 @@ export function nearestSegmentBearings(
     cursor = Math.min(bestIndex + 1, coords.length - 2);
     const distanceAlongRoute =
       cumulative[bestIndex] + bestT * (cumulative[bestIndex + 1] - cumulative[bestIndex]);
-    return roadBearingAt(
+    const bearing = roadBearingAt(
       coords,
       cumulative,
       distanceAlongRoute,
       preferOutgoing?.[i] ? "outgoing" : "incoming",
     );
+    return { distanceAlongRoute, bearing };
   });
 }

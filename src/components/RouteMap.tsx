@@ -708,6 +708,28 @@ function mountMapLibre(args: MountArgs): () => void {
   // (updateRouteProgress's point lookup coming up empty) leaves the
   // split exactly where it was rather than snapping back to 0.
   let lastRouteSplitDistance = 0;
+  // Every waypoint's own real distance-along-route (meters) - populated
+  // once, eagerly, right after roadLine/roadCumulative themselves exist
+  // (search "distanceAlongRouteByKey.set" below), using the same trip-
+  // ordered nearestSegmentBearings search drawDrivingPins separately
+  // runs for every turn/stop's own real bearing. Read by
+  // updateRouteProgress (a sibling closure, not nested inside
+  // drawDrivingPins, and one whose own first call can happen before
+  // driving mode's pins are ever drawn) to look up the *active* step's
+  // own distance, instead of running a fresh, trip-order-unaware
+  // projectOntoRoute search on just that one point. That distinction
+  // matters here specifically: a plain ad hoc projection can't tell a
+  // route's second close pass near some corner (two turns onto nearby
+  // or crossing streets, say) from its first, the exact same ambiguity
+  // nearestSegmentBearings's own doc comment already describes for
+  // bearings - and picking the wrong one is exactly what made the
+  // traveled/remaining split look like it stopped making sense a few
+  // steps into a real drive. Distance doesn't depend on a turn's own
+  // preferOutgoing the way a bearing does, so this one plain pass
+  // (no preferOutgoing argument) is already exactly what drawDrivingPins'
+  // own preferOutgoing-aware pass would also compute for it - nothing
+  // is lost by not waiting for that one to run.
+  const distanceAlongRouteByKey = new Map<string, number>();
   // This route's own already-fetched road-following geometry (set once
   // the /api/route-geometry request below resolves) - read by
   // drawDrivingPins, which needs it to offset a coincident group of
@@ -951,6 +973,19 @@ function mountMapLibre(args: MountArgs): () => void {
                 const roadCumulative = cumulativeDistances(roadLine);
                 const roadTotalDistance = roadCumulative[roadCumulative.length - 1] ?? 0;
 
+                // Populates distanceAlongRouteByKey (declared outside
+                // this whole closure - see its own doc comment) right
+                // away, using the same trip-ordered search drawDrivingPins
+                // separately runs for bearings - so updateRouteProgress
+                // below always has a real, trip-order-safe distance for
+                // the active step ready, from its very first call.
+                nearestSegmentBearings(roadLine, orderedWaypointsRef.current).forEach(
+                  ({ distanceAlongRoute }, i) => {
+                    const key = orderedWaypointsRef.current[i]?.key;
+                    if (key != null) distanceAlongRouteByKey.set(key, distanceAlongRoute);
+                  },
+                );
+
                 // Splits roadLngLats at how far the bus has actually
                 // gotten - a live GPS fix (liveLngLat) when one exists,
                 // otherwise the active step's own resolved coordinate,
@@ -979,24 +1014,31 @@ function mountMapLibre(args: MountArgs): () => void {
                     // (nearly the entire road ending up on the dashed
                     // layer).
                     lastRouteSplitDistance = roadTotalDistance;
+                  } else if (liveLngLat) {
+                    // A real GPS fix is its own independent point, not
+                    // one of this route's own waypoints - no trip order
+                    // to preserve the way distanceAlongRouteByKey needs
+                    // for a waypoint below, so a plain projection is
+                    // both correct and as precise as this can get.
+                    const point = { lat: liveLngLat[1], lon: liveLngLat[0] };
+                    const projection = projectOntoRoute(roadLine, roadCumulative, point);
+                    if (projection) lastRouteSplitDistance = projection.distanceAlongRoute;
                   } else {
-                    const point = liveLngLat
-                      ? { lat: liveLngLat[1], lon: liveLngLat[0] }
-                      : (() => {
-                          const key = activeWaypointKeyRef.current;
-                          return key ? (resolvedByKey.get(key) ?? null) : null;
-                        })();
-                    // A step with no resolved coordinate yet (an
-                    // unverified stop an admin still activated - see
-                    // RouteListScreen's own warning for that) has
+                    // The active step's own real distance-along-route,
+                    // from distanceAlongRouteByKey (populated above,
+                    // trip-order-safe) rather than a fresh projection of
+                    // just this one point - see that map's own doc
+                    // comment for why an independent projection can pick
+                    // the wrong one of two close passes near the same
+                    // real corner. A step with no resolved key/distance
+                    // yet (an unverified stop an admin still activated -
+                    // see RouteListScreen's own warning for that) has
                     // nothing to compute a new split from - keep
                     // wherever the line last genuinely reached rather
-                    // than snapping the solid portion back to the
-                    // start.
-                    const projection = point
-                      ? projectOntoRoute(roadLine, roadCumulative, point)
-                      : null;
-                    if (projection) lastRouteSplitDistance = projection.distanceAlongRoute;
+                    // than snapping the solid portion back to the start.
+                    const key = activeWaypointKeyRef.current;
+                    const distance = key ? distanceAlongRouteByKey.get(key) : undefined;
+                    if (distance != null) lastRouteSplitDistance = distance;
                   }
                   // The interpolated split point itself becomes the
                   // shared last coordinate of the traveled slice and
@@ -1134,7 +1176,7 @@ function mountMapLibre(args: MountArgs): () => void {
             );
             const bearingByKey = new Map<string, number | null>();
             orderedWaypointsRef.current.forEach((waypoint, i) => {
-              if (waypoint.key != null) bearingByKey.set(waypoint.key, orderedBearings[i]);
+              if (waypoint.key != null) bearingByKey.set(waypoint.key, orderedBearings[i].bearing);
             });
             const spreadPoints = spreadCoincidentPoints(
               resolvedStops.map((entry) => entry.point),
