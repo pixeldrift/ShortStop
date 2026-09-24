@@ -226,29 +226,39 @@ type OrderedWaypoint = { key: string | null; lat: number; lon: number };
 // really on the new road - and since "up" is however MapLibre renders
 // the *current* heading, "where we came from" is always straight down,
 // so an on-screen left/right always matches a real left/right turn.
-// Using the actual road geometry here (not a straight line between
-// waypoints, which this used to be) is also what keeps this in
-// agreement with a turn sign's own bearing (nearestSegmentBearings,
-// same file) - both now read off the identical road line the same way,
-// so the map's own "up" and a turn sign's own rotation can't disagree
-// with each other the way two different bearing sources sometimes did.
-// Falls back to the bearing looking *ahead* only at the route's very
-// first step (Depart) or anywhere else roadBearingAt has no real
-// "incoming" distance to measure (the active point sits at, or before,
-// the very start of the fetched road line). Null if there's no road
-// geometry yet, or the active point doesn't resolve to a real
-// coordinate.
+// Takes `distanceAlongRoute` directly rather than a raw coordinate to
+// project itself - the caller looks that up from
+// distanceAlongRouteByKey (trip-order-safe, same map
+// updateRouteProgress's own traveled/remaining split reads from), not
+// a fresh ad hoc projectOntoRoute call on just this one point. That
+// distinction matters here for the exact same reason it did for that
+// split: a lone projection can't tell a route's second close pass near
+// some corner from its first, so on a route with turns onto nearby or
+// crossing streets it could resolve to an *earlier*, wrong stretch of
+// road - and since every turn sign's own on-screen rotation is
+// computed relative to this camera bearing (mapBearingDeg,
+// applyTurnRotations below), a wrong camera bearing here doesn't just
+// misrotate the camera itself, it throws off every sign's own apparent
+// rotation right along with it, however correct each one's own real
+// bearing already is. Using the actual road geometry here (not a
+// straight line between waypoints, which this used to be) is also what
+// keeps this in agreement with a turn sign's own bearing
+// (nearestSegmentBearings, same file) - both now read off the
+// identical road line the same way. Falls back to the bearing looking
+// *ahead* only at the route's very first step (Depart) or anywhere
+// else roadBearingAt has no real "incoming" distance to measure (the
+// active point sits at, or before, the very start of the fetched road
+// line). Null if there's no road geometry yet, or no real distance to
+// measure from.
 function bearingAt(
   coords: LatLon[],
   cumulative: number[],
-  activePoint: LatLon | undefined,
+  distanceAlongRoute: number | null,
 ): number | null {
-  if (!activePoint || coords.length < 2) return null;
-  const projection = projectOntoRoute(coords, cumulative, activePoint);
-  if (!projection) return null;
+  if (distanceAlongRoute == null || coords.length < 2) return null;
   return (
-    roadBearingAt(coords, cumulative, projection.distanceAlongRoute, "incoming") ??
-    roadBearingAt(coords, cumulative, projection.distanceAlongRoute, "outgoing")
+    roadBearingAt(coords, cumulative, distanceAlongRoute, "incoming") ??
+    roadBearingAt(coords, cumulative, distanceAlongRoute, "outgoing")
   );
 }
 
@@ -1250,7 +1260,8 @@ function mountMapLibre(args: MountArgs): () => void {
             const key = activeWaypointKeyRef.current;
             const point = key ? resolvedByKey.get(key) : undefined;
             const roadLine = latestRoadGeometry.map(([lon, lat]) => ({ lat, lon }));
-            const bearing = bearingAt(roadLine, cumulativeDistances(roadLine), point);
+            const activeDistance = key ? (distanceAlongRouteByKey.get(key) ?? null) : null;
+            const bearing = bearingAt(roadLine, cumulativeDistances(roadLine), activeDistance);
             if (!point) {
               // No coordinate to fly to yet - still rotate on its own,
               // animated the same 1s as every other camera move here,
