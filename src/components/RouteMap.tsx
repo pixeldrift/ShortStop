@@ -10,7 +10,7 @@ import type {
   Marker as MapLibreMarker,
 } from "maplibre-gl";
 import { PersonSolidIcon } from "./icons";
-import { setTurnDiamondRotation, turnDiamondHtml } from "./mapMarkerIcons";
+import { rotationKeyFor, setTurnDiamondRotation, turnDiamondHtml } from "./mapMarkerIcons";
 import {
   collapseAttribution,
   PMTILES_ATTRIBUTION,
@@ -750,17 +750,21 @@ function mountMapLibre(args: MountArgs): () => void {
   // "outer variable a later callback can still reach" reasoning
   // applyRouteProgress above already relies on.
   let latestRoadGeometry: RouteCoordinate[] = [];
-  // Every currently-drawn Left/Right turn's own marker element, paired
-  // with its real compass bearing (setTurnDiamondRotation,
+  // Every currently-drawn Left/Right/Continue/Proceed marker element,
+  // paired with its real compass bearing (setTurnDiamondRotation,
   // mapMarkerIcons.tsx) - kept here, not just recomputed inside
   // drawDrivingPins, so the map's own "rotate" listener below
   // (registered once, right after the map itself is created) can keep
   // every sign correctly oriented throughout an entire live bearing
   // animation (driving mode's own easeTo toward the bus's current
   // heading), not just the one instant drawDrivingPins happened to run.
+  // `rotationKey` is rotationKeyFor's own return value (mapMarkerIcons.tsx)
+  // - only ever a real key into that module's ARROW_DEFAULT_BEARING, so
+  // entries only exist here for markers that actually have a real-world
+  // pointing direction to rotate toward.
   let turnArrowRotations: {
     element: HTMLElement;
-    direction: TurnDirection;
+    rotationKey: string;
     bearing: number | null;
   }[] = [];
 
@@ -780,8 +784,8 @@ function mountMapLibre(args: MountArgs): () => void {
   function applyTurnRotations() {
     if (!map) return;
     const mapBearing = map.getBearing();
-    for (const { element, direction, bearing } of turnArrowRotations) {
-      setTurnDiamondRotation(element, direction, bearing, mapBearing);
+    for (const { element, rotationKey, bearing } of turnArrowRotations) {
+      setTurnDiamondRotation(element, rotationKey, bearing, mapBearing);
     }
   }
 
@@ -1024,31 +1028,53 @@ function mountMapLibre(args: MountArgs): () => void {
                     // (nearly the entire road ending up on the dashed
                     // layer).
                     lastRouteSplitDistance = roadTotalDistance;
-                  } else if (liveLngLat) {
-                    // A real GPS fix is its own independent point, not
-                    // one of this route's own waypoints - no trip order
-                    // to preserve the way distanceAlongRouteByKey needs
-                    // for a waypoint below, so a plain projection is
-                    // both correct and as precise as this can get.
-                    const point = { lat: liveLngLat[1], lon: liveLngLat[0] };
-                    const projection = projectOntoRoute(roadLine, roadCumulative, point);
-                    if (projection) lastRouteSplitDistance = projection.distanceAlongRoute;
                   } else {
-                    // The active step's own real distance-along-route,
-                    // from distanceAlongRouteByKey (populated above,
-                    // trip-order-safe) rather than a fresh projection of
-                    // just this one point - see that map's own doc
-                    // comment for why an independent projection can pick
-                    // the wrong one of two close passes near the same
-                    // real corner. A step with no resolved key/distance
-                    // yet (an unverified stop an admin still activated -
-                    // see RouteListScreen's own warning for that) has
-                    // nothing to compute a new split from - keep
-                    // wherever the line last genuinely reached rather
-                    // than snapping the solid portion back to the start.
+                    // Two independent candidates, combined by taking
+                    // whichever represents more progress rather than
+                    // picking one source and ignoring the other for the
+                    // rest of the drive. The active step's own real
+                    // distance-along-route comes from
+                    // distanceAlongRouteByKey (populated above, trip-
+                    // order-safe) rather than a fresh projection of just
+                    // this one point - see that map's own doc comment
+                    // for why an independent projection can pick the
+                    // wrong one of two close passes near the same real
+                    // corner. A live GPS fix is its own independent
+                    // point, not one of this route's own waypoints - no
+                    // trip order to preserve the way distanceAlongRouteByKey
+                    // needs for a waypoint, so a plain projection is both
+                    // correct and as precise as this can get for it.
+                    //
+                    // Taking the max matters because a single stale GPS
+                    // fix (the common case testing from a desk, or just
+                    // weak signal) used to latch updateRouteProgress onto
+                    // the liveLngLat branch permanently - every later
+                    // step advance updated distanceAlongRouteByKey right
+                    // on cue, but that branch never looked at it again
+                    // until watchPosition happened to deliver a fresh
+                    // fix, leaving the solid/dashed boundary stuck while
+                    // the driver kept tapping Next. Neither candidate can
+                    // regress the split backward this way either - a step
+                    // with no resolved key/distance yet (an unverified
+                    // stop an admin still activated - see
+                    // RouteListScreen's own warning for that) or a GPS
+                    // fix that fails to project just leaves
+                    // lastRouteSplitDistance wherever it last genuinely
+                    // reached instead of snapping back toward the start.
                     const key = activeWaypointKeyRef.current;
-                    const distance = key ? distanceAlongRouteByKey.get(key) : undefined;
-                    if (distance != null) lastRouteSplitDistance = distance;
+                    const waypointDistance = key ? distanceAlongRouteByKey.get(key) : undefined;
+                    let gpsDistance: number | undefined;
+                    if (liveLngLat) {
+                      const point = { lat: liveLngLat[1], lon: liveLngLat[0] };
+                      const projection = projectOntoRoute(roadLine, roadCumulative, point);
+                      if (projection) gpsDistance = projection.distanceAlongRoute;
+                    }
+                    const candidates = [waypointDistance, gpsDistance].filter(
+                      (d): d is number => d != null,
+                    );
+                    if (candidates.length > 0) {
+                      lastRouteSplitDistance = Math.max(...candidates);
+                    }
                   }
                   // The interpolated split point itself becomes the
                   // shared last coordinate of the traveled slice and
@@ -1166,18 +1192,22 @@ function mountMapLibre(args: MountArgs): () => void {
             // routeProgress.ts); the turns/school sitting between them
             // in real trip order are what let the second visit's own
             // search only ever look past the first one, onto its own
-            // later, correctly-directioned pass. A Left/Right turn's own
-            // entry gets `preferOutgoing` - its sign needs the road
-            // being turned *onto*, not the one just traveled in on,
-            // unlike a stop (which wants the incoming road it's still
-            // sitting on) - see nearestSegmentBearings's own doc comment
-            // for why a plain nearest-segment search can't tell those
-            // apart on its own at a turn corner.
-            const turnDirectionKeys = new Set(
-              turnsRef.current.filter((turn) => turn.direction).map((turn) => turn.waypointKey),
+            // later, correctly-directioned pass. Any rotatable turn/
+            // action's own entry (Left/Right/Continue/Proceed -
+            // rotationKeyFor, mapMarkerIcons.tsx) gets `preferOutgoing` -
+            // its sign needs the road it's actually about to be on, not
+            // the one just traveled in on, unlike a stop (which wants the
+            // incoming road it's still sitting on) - see
+            // nearestSegmentBearings's own doc comment for why a plain
+            // nearest-segment search can't tell those apart on its own at
+            // a turn corner.
+            const rotatableKeys = new Set(
+              turnsRef.current
+                .filter((turn) => rotationKeyFor(turn.direction, turn.heading) != null)
+                .map((turn) => turn.waypointKey),
             );
             const preferOutgoing = orderedWaypointsRef.current.map(
-              (waypoint) => waypoint.key != null && turnDirectionKeys.has(waypoint.key),
+              (waypoint) => waypoint.key != null && rotatableKeys.has(waypoint.key),
             );
             const orderedBearings = nearestSegmentBearings(
               roadLine,
@@ -1208,10 +1238,11 @@ function mountMapLibre(args: MountArgs): () => void {
               const html = turnDiamondHtml(TURN_DIAMOND_SIZE, turn.direction, turn.heading);
               if (!html) continue;
               const element = elementFromHtml(html);
-              if (turn.direction) {
+              const rotationKey = rotationKeyFor(turn.direction, turn.heading);
+              if (rotationKey != null) {
                 turnArrowRotations.push({
                   element,
-                  direction: turn.direction,
+                  rotationKey,
                   bearing: bearingByKey.get(turn.waypointKey) ?? null,
                 });
               }
