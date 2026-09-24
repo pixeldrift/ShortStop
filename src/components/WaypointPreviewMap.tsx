@@ -94,7 +94,23 @@ const PIN_ASPECT_RATIO = 350 / 548;
  * same way those other map builders do, not JSX. `height` is the pin's
  * own full height; `stopNumber` null draws a plain unnumbered pin
  * (GeocodeConfirmModal's own read-only instance, which never threads a
- * real Stop number through). */
+ * real Stop number through).
+ *
+ * makeDotMarker (below) always creates its own Marker with
+ * `anchor: "center"` - right for a plain circular dot (dotHtml) or the
+ * turn diamond (turnDiamondHtml, symmetric around its own center
+ * either way), but a pin's own real point is its bottom *tip*, not its
+ * bounding-box center. Rather than give makeDotMarker a second anchor
+ * mode (the one marker it builds this way, `currentMarker`, gets its
+ * own innerHTML swapped between a pin and a diamond across row
+ * navigation without ever being recreated - see currentMarker's own
+ * assignment further down - so its anchor can't just change per
+ * content type the way a plain per-call anchor argument would need),
+ * this positions itself: `position:absolute` with no width/height on
+ * the wrapper collapses it to the exact point MapLibre's own center-
+ * anchor transform already placed at the real coordinate, and
+ * `bottom:0;left:50%` then puts *this* box's own bottom-center - the
+ * pin's own visual tip - right there instead. */
 function pinHtml(height: number, stopNumber: number | null): string {
   const width = Math.round(height * PIN_ASPECT_RATIO);
   const number =
@@ -104,7 +120,8 @@ function pinHtml(height: number, stopNumber: number | null): string {
         `font-size:${Math.round(height * 0.42)}px;">${stopNumber}</span>`
       : "";
   return (
-    `<div style="position:relative;width:${width}px;height:${height}px;">` +
+    `<div style="position:absolute;bottom:0;left:50%;width:${width}px;height:${height}px;` +
+    `transform:translateX(-50%);">` +
     `<img src="/assets/pin.svg" alt="" style="width:100%;height:100%;` +
     `filter:drop-shadow(0 1px 2px rgba(0,0,0,.35));" />${number}</div>`
   );
