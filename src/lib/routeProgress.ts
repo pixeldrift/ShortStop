@@ -7,12 +7,13 @@
  * here touches React, MapLibre, or the DOM, so it's trivial to sanity-
  * check by hand or from a plain script, unlike a hook.
  *
- * Distinct from RouteMap.tsx's own nearestCoordIndex, which this isn't
- * a replacement for - that one only ever ranks a route line's own
- * points against each other in plain degree-space (good enough to
- * split a drawn line into traveled/remaining), never reports a real
- * distance. Everything below reports real meters, because time-to-
- * maneuver = distance / speed is meaningless in degrees.
+ * RouteMap.tsx's own traveled/remaining route-line split
+ * (updateRouteProgress) is the other real caller, for the same reason:
+ * a plain nearest-*vertex* search (in degree-space, no real distance)
+ * used to do that job on its own, but could only ever split the drawn
+ * line at wherever that stretch's own geometry vertices happened to be
+ * spaced, visibly snapping instead of landing exactly on the point the
+ * active step or a live GPS fix actually sits at.
  */
 
 export interface LatLon {
@@ -146,8 +147,12 @@ export function projectOntoRoute(
  * projectOntoRoute report), clamped to the line's own start/end -
  * roadBearingAt's own building block for "the real point a fixed
  * distance before/after somewhere along this road," not just whichever
- * geometry vertex happens to be nearest that distance. */
-function pointAtDistance(coords: LatLon[], cumulative: number[], targetDistance: number): LatLon {
+ * geometry vertex happens to be nearest that distance. Exported for the
+ * same reason projectOntoRoute is: RouteMap.tsx's own traveled/
+ * remaining route-line split (updateRouteProgress) needs the exact
+ * point a distance-along-route value falls on, not just which
+ * geometry vertex is closest to it. */
+export function pointAtDistance(coords: LatLon[], cumulative: number[], targetDistance: number): LatLon {
   const clamped = Math.max(0, Math.min(targetDistance, cumulative[cumulative.length - 1]));
   if (coords.length === 1 || clamped <= 0) return coords[0];
   for (let i = 1; i < cumulative.length; i++) {

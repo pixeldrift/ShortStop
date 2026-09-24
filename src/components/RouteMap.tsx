@@ -22,6 +22,7 @@ import { protomapsStyle } from "@/lib/protomapsStyle";
 import {
   cumulativeDistances,
   nearestSegmentBearings,
+  pointAtDistance,
   projectOntoRoute,
   roadBearingAt,
 } from "@/lib/routeProgress";
@@ -251,32 +252,6 @@ function bearingAt(
   );
 }
 
-/** Which point along a route's own road-geometry coordinates (lon/lat
- * order, per RouteCoordinate) sits closest to `point` - how far along
- * the drawn line the "traveled" (solid) / "remaining" (dashed) split
- * below falls. Plain Euclidean comparison in degree-space, not a real
- * haversine/projection - close enough to tell which of a route's own
- * points is nearest at the scale one route ever covers (a few miles),
- * and this only ever needs to rank points against each other, never
- * report a real distance. */
-function nearestCoordIndex(
-  coords: RouteCoordinate[],
-  point: { lat: number; lon: number },
-): number {
-  let bestIndex = 0;
-  let bestDistSq = Infinity;
-  for (let i = 0; i < coords.length; i++) {
-    const [lon, lat] = coords[i];
-    const dLat = lat - point.lat;
-    const dLon = lon - point.lon;
-    const distSq = dLat * dLat + dLon * dLon;
-    if (distSq < bestDistSq) {
-      bestDistSq = distSq;
-      bestIndex = i;
-    }
-  }
-  return bestIndex;
-}
 
 /**
  * A real, pannable/zoomable map - replaces the static "Demo only
@@ -727,12 +702,12 @@ function mountMapLibre(args: MountArgs): () => void {
   // applyRouteProgress just below) are what let the one reach the other.
   let liveLngLat: [number, number] | null = null;
   let applyRouteProgress: (() => void) | undefined;
-  // The last index into roadLngLats the route line's own traveled/
-  // remaining split actually landed on - held onto so a driving-mode
-  // step with no resolved coordinate of its own (updateRouteProgress's
-  // point lookup coming up empty) leaves the split exactly where it
-  // was rather than snapping back to 0.
-  let lastRouteSplitIndex = 0;
+  // The last distance-along-route (meters) the route line's own
+  // traveled/remaining split actually landed on - held onto so a
+  // driving-mode step with no resolved coordinate of its own
+  // (updateRouteProgress's point lookup coming up empty) leaves the
+  // split exactly where it was rather than snapping back to 0.
+  let lastRouteSplitDistance = 0;
   // This route's own already-fetched road-following geometry (set once
   // the /api/route-geometry request below resolves) - read by
   // drawDrivingPins, which needs it to offset a coincident group of
@@ -965,26 +940,45 @@ function mountMapLibre(args: MountArgs): () => void {
                   "roads-major-label",
                 );
 
+                // roadLngLats converted to {lat,lon} + its own
+                // cumulative distances, computed once per route-geometry
+                // fetch (roadLngLats itself never changes after this) -
+                // updateRouteProgress below needs both every time it
+                // runs (every step advance, every live GPS fix), so
+                // building them once here instead of per call avoids
+                // re-walking the whole line on every single GPS fix.
+                const roadLine: LatLon[] = roadLngLats.map(([lon, lat]) => ({ lat, lon }));
+                const roadCumulative = cumulativeDistances(roadLine);
+                const roadTotalDistance = roadCumulative[roadCumulative.length - 1] ?? 0;
+
                 // Splits roadLngLats at how far the bus has actually
-                // gotten - a live GPS fix (liveLngLat) when one
-                // exists, otherwise the active step's own resolved
-                // coordinate, same "something to show even without
-                // GPS" fallback the rest of driving mode already leans
-                // on. Assigned to applyRouteProgress (declared outside
-                // this whole closure) so watchPosition's own callback -
-                // which lives outside it too, since it's registered
-                // after this fetch/cache chain rather than inside it -
-                // can still trigger a redraw the moment a new GPS fix
-                // arrives.
+                // gotten - a live GPS fix (liveLngLat) when one exists,
+                // otherwise the active step's own resolved coordinate,
+                // same "something to show even without GPS" fallback the
+                // rest of driving mode already leans on. Splits at the
+                // real interpolated point that distance falls on
+                // (pointAtDistance), not just whichever geometry vertex
+                // happens to be nearest it (that used to be
+                // nearestCoordIndex's own job) - a route-geometry
+                // provider can space its own vertices anywhere from a
+                // few meters to tens of meters apart, and snapping to
+                // one instead of the real point is exactly what made the
+                // dashed/solid boundary look like it landed somewhere
+                // arbitrary instead of lining up with the current step.
+                // Assigned to applyRouteProgress (declared outside this
+                // whole closure) so watchPosition's own callback - which
+                // lives outside it too, since it's registered after this
+                // fetch/cache chain rather than inside it - can still
+                // trigger a redraw the moment a new GPS fix arrives.
                 function updateRouteProgress() {
                   if (modeRef.current !== "driving") {
                     // No live progress to show outside actual turn-by-
                     // turn navigation - the whole line renders as
                     // "traveled" (solid) rather than "remaining"
-                    // (dashed), which splitIndex 0 would otherwise do
+                    // (dashed), which distance 0 would otherwise do
                     // (nearly the entire road ending up on the dashed
                     // layer).
-                    lastRouteSplitIndex = roadLngLats.length - 1;
+                    lastRouteSplitDistance = roadTotalDistance;
                   } else {
                     const point = liveLngLat
                       ? { lat: liveLngLat[1], lon: liveLngLat[0] }
@@ -999,14 +993,31 @@ function mountMapLibre(args: MountArgs): () => void {
                     // wherever the line last genuinely reached rather
                     // than snapping the solid portion back to the
                     // start.
-                    if (point) lastRouteSplitIndex = nearestCoordIndex(roadLngLats, point);
+                    const projection = point
+                      ? projectOntoRoute(roadLine, roadCumulative, point)
+                      : null;
+                    if (projection) lastRouteSplitDistance = projection.distanceAlongRoute;
                   }
-                  const splitIndex = lastRouteSplitIndex;
+                  // The interpolated split point itself becomes the
+                  // shared last coordinate of the traveled slice and
+                  // first coordinate of the remaining slice, so the two
+                  // lines still join up exactly (rather than leaving a
+                  // gap or an overlap the width of whatever geometry
+                  // segment the split happened to fall inside).
+                  const splitPoint = pointAtDistance(roadLine, roadCumulative, lastRouteSplitDistance);
+                  const splitLngLat: RouteCoordinate = [splitPoint.lon, splitPoint.lat];
+                  let splitVertexIndex = 0;
+                  while (
+                    splitVertexIndex < roadCumulative.length &&
+                    roadCumulative[splitVertexIndex] < lastRouteSplitDistance
+                  ) {
+                    splitVertexIndex++;
+                  }
                   (mapInstance.getSource("route-traveled") as GeoJSONSource)?.setData(
-                    lineFeature(roadLngLats.slice(0, splitIndex + 1)),
+                    lineFeature([...roadLngLats.slice(0, splitVertexIndex), splitLngLat]),
                   );
                   (mapInstance.getSource("route-remaining") as GeoJSONSource)?.setData(
-                    lineFeature(roadLngLats.slice(splitIndex)),
+                    lineFeature([splitLngLat, ...roadLngLats.slice(splitVertexIndex)]),
                   );
                 }
                 applyRouteProgress = updateRouteProgress;
