@@ -17,11 +17,27 @@ export const metadata: Metadata = {
   title: "ShortStop",
   description: "Step-by-step navigation for school bus drivers.",
   manifest: "/manifest.json",
-  // iOS Safari's own "Add to Home Screen" reads this tag directly, not
+  // iOS Safari's own "Add to Home Screen" reads `apple` directly, not
   // manifest.json's own icons array (that's what Android/desktop
   // installs use, via the manifest link above) - both need to be set
   // for the app to get a real icon on every platform's homescreen.
+  // `icon` is the plain browser-tab favicon, unrelated to either
+  // install path - favicon.ico as a sizes:"any" fallback for whatever
+  // can't use the PNGs (old browsers, OS taskbar pinning), the PNGs
+  // themselves for everywhere that can, at the sizes those contexts
+  // actually request. This used to come for free from src/app/
+  // favicon.ico (Next's own file-based icon convention - a file
+  // literally at that path auto-generates its own <link> tag, no
+  // metadata needed), but that file now lives under public/icons/
+  // instead, outside where that convention looks - so it needs to be
+  // wired in here explicitly, the same as apple already was.
   icons: {
+    icon: [
+      { url: "/icons/favicon.ico", sizes: "any" },
+      { url: "/icons/icon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icons/icon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/icon-48.png", sizes: "48x48", type: "image/png" },
+    ],
     apple: "/icons/apple-touch-icon.png",
   },
 };

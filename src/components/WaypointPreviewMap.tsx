@@ -23,10 +23,7 @@ const PREVIEW_ZOOM = 15;
 // move, not a value picked fresh for this component.
 const FLY_TO_DURATION_MS = 1000;
 
-// Diameters, in CSS pixels. The current row's own dot is bigger than a
-// plain Stop's ("slightly bigger than it is already," and the one
-// place a number is guaranteed legible even if a stop's own plain dot
-// ever felt tight).
+// Diameter, in CSS pixels, of a plain (non-current) Stop's own dot.
 const STOP_SIZE = 18;
 // The current row's own diamond, when it's a turn/direction rather
 // than a Stop - sized so its own rendered point-to-point height works
@@ -34,9 +31,14 @@ const STOP_SIZE = 18;
 // so the same "weight" at a glance) as a STOP_SIZE circle rather than
 // reading as a much smaller accent mark next to one.
 const TURN_SIZE = STOP_SIZE + 4;
-const CURRENT_SIZE = 24;
+// The current row's own pin height, when it's a Stop - bigger than a
+// plain Stop's own dot for the same reason TURN_SIZE is bigger than
+// STOP_SIZE (a much larger visual "weight," not just a slightly bigger
+// dot), now that it's the same real pin.svg shape every other numbered-
+// stop visual already draws (pinHtml below) rather than a plain colored
+// circle of its own.
+const CURRENT_PIN_HEIGHT = 34;
 const STOP_COLOR = "#ef4444"; // red-500
-const CURRENT_COLOR = "#2563eb"; // blue-600
 
 // Two independently-geocoded rows (a Stop and a turn typed for the same
 // physical corner, say) rarely land on the exact same lat/lon - close
@@ -61,45 +63,74 @@ export interface StopPin {
   stopNumber: number;
 }
 
-/** One colored, optionally-numbered dot's own HTML - MapLibre's Marker
- * takes a real DOM element, built from this string via elementFromHtml
- * below, so a stop/current dot's actual look never has to be written
- * twice. `size` is a full diameter, not a radius. */
-function dotHtml(size: number, color: string, text?: number): string {
+/** One colored, numbered dot's own HTML - MapLibre's Marker takes a
+ * real DOM element, built from this string via elementFromHtml below,
+ * so a plain Stop's own dot look never has to be written twice. `size`
+ * is a full diameter, not a radius. */
+function dotHtml(size: number, color: string, text: number): string {
   return (
     `<div style="width:${size}px;height:${size}px;border-radius:9999px;` +
     `background:${color};border:1.5px solid #ffffff;` +
     "box-shadow:0 1px 2px rgba(0,0,0,0.35);" +
     "display:flex;align-items:center;justify-content:center;" +
     "color:#ffffff;font-weight:800;font-family:inherit;line-height:1;" +
-    (text != null ? `font-size:${Math.round(size * 0.5)}px;` : "") +
-    `">${text ?? ""}</div>`
+    `font-size:${Math.round(size * 0.5)}px;">${text}</div>`
   );
 }
 
-/** The current row's own marker HTML - a numbered blue circle for a
- * Stop (bigger than an ordinary StopPin's own, so it still reads as
- * "the one you're looking at" even sitting right next to one), or the
- * shared yellow diamond (turnDiamondHtml, mapMarkerIcons.tsx) for a
- * turn/direction - the same shape/symbol treatment RouteMap.tsx's own
- * turn markers now draw. The diamond only ever appears here, for
- * whichever row is actually open right now - there's no separate,
- * always-on marker for every other turn on the route the way StopPin
- * draws one for every other Stop; a route can have far more turns than
- * stops, and showing all of them at once read as clutter without
- * actually helping an admin place *this* row's own point. Falls back to
- * the plain Stop dot for a malformed row turnDiamondHtml can't draw a
- * real symbol for (neither `direction` nor `heading` set) rather than
- * ever showing a blank diamond. */
+// pin.svg's own intrinsic aspect ratio (public/assets/pin.svg's own
+// viewBox) - what lets pinHtml below derive a matching width from just
+// the one height a caller actually cares about, the same way
+// `w-auto`/an explicit height alone already sizes it correctly
+// everywhere else this same file draws it (StepScreen.tsx,
+// RouteProgressBar.tsx, RouteMap.tsx's own stopMarkerHtml).
+const PIN_ASPECT_RATIO = 350 / 548;
+
+/** The real numbered pin's own HTML (not a plain colored dot) - the
+ * same pin.svg/number-inside-the-pin's-own-circle look StepScreen.tsx's
+ * live driving header, RouteProgressBar.tsx's own strip, and
+ * RouteMap.tsx's stopMarkerHtml all already draw, reimplemented here as
+ * a raw HTML string since this file builds MapLibre marker elements the
+ * same way those other map builders do, not JSX. `height` is the pin's
+ * own full height; `stopNumber` null draws a plain unnumbered pin
+ * (GeocodeConfirmModal's own read-only instance, which never threads a
+ * real Stop number through). */
+function pinHtml(height: number, stopNumber: number | null): string {
+  const width = Math.round(height * PIN_ASPECT_RATIO);
+  const number =
+    stopNumber != null
+      ? `<span style="position:absolute;top:31%;left:50%;transform:translate(-50%,-50%);` +
+        `color:#b91c1c;font-weight:800;font-family:inherit;line-height:1;` +
+        `font-size:${Math.round(height * 0.42)}px;">${stopNumber}</span>`
+      : "";
+  return (
+    `<div style="position:relative;width:${width}px;height:${height}px;">` +
+    `<img src="/assets/pin.svg" alt="" style="width:100%;height:100%;` +
+    `filter:drop-shadow(0 1px 2px rgba(0,0,0,.35));" />${number}</div>`
+  );
+}
+
+/** The current row's own marker HTML - the real numbered pin (pinHtml
+ * above, bigger than an ordinary StopPin's own plain dot, so it still
+ * reads as "the one you're looking at" even sitting right next to one)
+ * for a Stop, or the shared yellow diamond (turnDiamondHtml,
+ * mapMarkerIcons.tsx) for a turn/direction - the same shape/symbol
+ * treatment RouteMap.tsx's own turn markers now draw. The diamond only
+ * ever appears here, for whichever row is actually open right now -
+ * there's no separate, always-on marker for every other turn on the
+ * route the way StopPin draws one for every other Stop; a route can
+ * have far more turns than stops, and showing all of them at once read
+ * as clutter without actually helping an admin place *this* row's own
+ * point. Falls back to the plain (possibly unnumbered) pin for a
+ * malformed row turnDiamondHtml can't draw a real symbol for (neither
+ * `direction` nor `heading` set) rather than ever showing a blank
+ * diamond. */
 function currentMarkerHtml(
   stopNumber: number | null,
   direction: TurnDirection | undefined,
   heading: string | undefined,
 ): string {
-  return (
-    turnDiamondHtml(TURN_SIZE, direction, heading) ??
-    dotHtml(CURRENT_SIZE, CURRENT_COLOR, stopNumber ?? undefined)
-  );
+  return turnDiamondHtml(TURN_SIZE, direction, heading) ?? pinHtml(CURRENT_PIN_HEIGHT, stopNumber);
 }
 
 /** What mountMapLibre hands back once mounted, so this component can

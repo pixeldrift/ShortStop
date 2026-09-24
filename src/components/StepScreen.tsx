@@ -21,7 +21,6 @@ import {
   RightArrowIcon,
   RoundedTriangleIcon,
   TriangleIcon,
-  TurnArrow,
 } from "./icons";
 import type { LatLon } from "@/lib/routeProgress";
 import { addressWithoutZip } from "@/lib/schoolAddress";
@@ -728,8 +727,8 @@ function TurnContent({
   return (
     <>
       {step.direction ? (
-        <TurnArrow
-          direction={step.direction}
+        <ActionIcon
+          action={step.direction}
           className="h-[clamp(3.25rem,12vh,8rem)] w-[clamp(3.25rem,12vh,8rem)]"
         />
       ) : (
@@ -781,13 +780,7 @@ function StopContent({
   return (
     <>
       <div className="relative shrink-0">
-        <Image
-          src="/assets/pin.png"
-          alt=""
-          width={350}
-          height={548}
-          className="h-[clamp(3.25rem,12vh,8rem)] w-auto"
-        />
+        <img src="/assets/pin.svg" alt="" className="h-[clamp(3.25rem,12vh,8rem)] w-auto" />
         {stopNumber && (
           <span className="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-[clamp(1.15rem,3.75vh,2.5rem)] font-black text-red-700">
             {stopNumber}

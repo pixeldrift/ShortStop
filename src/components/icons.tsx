@@ -1,5 +1,3 @@
-import Image from "next/image";
-import type { TurnDirection } from "@/lib/types";
 import ArriveSvg from "./icons/arrive.svg";
 import CheckboxCheckedSvg from "./icons/checkbox-checked.svg";
 import CheckboxUncheckedSvg from "./icons/checkbox-unchecked.svg";
@@ -16,34 +14,6 @@ import TriangleRoundedSvg from "./icons/triangle-rounded.svg";
 import TriangleSvg from "./icons/triangle.svg";
 import TurnAroundSvg from "./icons/turn-around.svg";
 import UTurnSvg from "./icons/u-turn.svg";
-
-/** The one big turn-sign graphic StepScreen's own live driving screen
- * shows for the active step - mirrored for a left turn (the source art
- * is a right turn). Still a raster PNG, not one of the vector diamond
- * icons below - this is the one deliberate exception to those (see
- * ACTION_ICONS' own doc comment): every *small* Left/Right glyph
- * elsewhere (map markers, the progress bar, the admin row list) now
- * uses the real left.svg/right.svg diamond instead of this image
- * mirrored, but the one big full-screen sign a driver actually reads
- * mid-turn stays exactly as it always has. */
-export function TurnArrow({
-  direction,
-  className,
-}: {
-  direction: TurnDirection;
-  className?: string;
-}) {
-  return (
-    <Image
-      src="/assets/turn-arrow.png"
-      alt=""
-      width={797}
-      height={797}
-      className={className}
-      style={direction === "left" ? { transform: "scaleX(-1)" } : undefined}
-    />
-  );
-}
 
 // Every icon below is a standalone .svg file under ./icons/ (see
 // next.config.ts's own turbopack.rules for the @svgr/webpack wiring,
@@ -179,9 +149,11 @@ export { default as PinRedIcon } from "./icons/pin-red.svg";
 // every action reads as distinctly as Stop's own pin already did.
 // Left/Right are included here too, now that there's a real per-
 // direction diamond for each (left.svg/right.svg) instead of one
-// generic arrow that always needed mirroring - everywhere *except* the
-// one big turn-sign graphic StepScreen's own live driving screen shows
-// (TurnArrow above, deliberately still separate and unchanged).
+// generic arrow that always needed mirroring - including the one big
+// turn-sign graphic StepScreen's own live driving screen shows
+// (TurnContent, StepScreen.tsx), which reads straight off this same
+// ACTION_ICONS map at a larger size rather than keeping its own
+// separate mirrored-raster component the way it used to.
 const ACTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   left: LeftSvg,
   right: RightSvg,
@@ -227,9 +199,6 @@ export { default as EyeOffIcon } from "./icons/eye-off.svg";
 export { default as SearchIcon } from "./icons/search.svg";
 export { default as AmIcon } from "./icons/am.svg";
 export { default as PmIcon } from "./icons/pm.svg";
-/** A driver's face - not wired into anything yet, ready for a future
- * per-driver user-settings screen. */
-export { default as DriverIcon } from "./icons/driver.svg";
 export { default as GlobeIcon } from "./icons/globe.svg";
 export { default as SpinnerIcon } from "./icons/spinner.svg";
 export { default as CloseIcon } from "./icons/close.svg";

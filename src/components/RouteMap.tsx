@@ -127,7 +127,7 @@ const LOCATION_DOT_HTML =
 function stopMarkerHtml(stopNumber: number): string {
   return (
     '<div class="relative h-11 w-7">' +
-    '<img src="/assets/pin.png" class="h-full w-full" alt="" />' +
+    '<img src="/assets/pin.svg" class="h-full w-full" alt="" />' +
     '<span class="font-heading absolute top-[31%] left-1/2 -translate-x-1/2 -translate-y-1/2 ' +
     'text-xs font-black text-red-700">' +
     stopNumber +
