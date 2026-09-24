@@ -1,22 +1,9 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 24 24">
-  <!-- Generator: Adobe Illustrator 30.0.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 123)  -->
-  <defs>
-    <style>
-      .st0 {
-        fill: none;
-        stroke: #000;
-        stroke-linecap: round;
-        stroke-linejoin: round;
-        stroke-width: 2px;
-      }
-    </style>
-  </defs>
-  <path class="st0" d="M3.91,3.09h15.38c1.26,0,2.27,1.02,2.27,2.27v13.05c0,1.26-1.02,2.27-2.27,2.27H3.91V3.09h0Z"/>
-  <path class="st0" d="M5.54,7.05h-3.26"/>
-  <path class="st0" d="M5.54,11.89h-3.26"/>
-  <path class="st0" d="M5.54,16.69h-3.26"/>
-  <path class="st0" d="M15,7.87c-1.77,0-3.21,1.44-3.21,3.21s1.86,4.33,2.75,5.42c.24.29.68.29.92,0,.89-1.09,2.75-3.58,2.75-5.42s-1.44-3.21-3.21-3.21Z"/>
-  <line class="st0" x1="8.37" y1="20.69" x2="8.37" y2="3.09"/>
-  <circle cx="15" cy="11.02" r="1.06"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true">
+  <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.91,3.09h15.38c1.26,0,2.27,1.02,2.27,2.27v13.05c0,1.26-1.02,2.27-2.27,2.27H3.91V3.09h0Z" />
+  <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.54,7.05h-3.26" />
+  <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.54,11.89h-3.26" />
+  <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.54,16.69h-3.26" />
+  <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15,7.87c-1.77,0-3.21,1.44-3.21,3.21s1.86,4.33,2.75,5.42c.24.29.68.29.92,0,.89-1.09,2.75-3.58,2.75-5.42s-1.44-3.21-3.21-3.21Z" />
+  <line fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" x1="8.37" y1="20.69" x2="8.37" y2="3.09" />
+  <circle fill="currentColor" cx="15" cy="11.02" r="1.06" />
 </svg>
