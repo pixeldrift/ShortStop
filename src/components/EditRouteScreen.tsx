@@ -495,6 +495,7 @@ function LocationAutocompleteInput({
   placeholder,
   clearLabel,
   className,
+  onFocusedChange,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -502,8 +503,21 @@ function LocationAutocompleteInput({
   placeholder?: string;
   clearLabel: string;
   className: string;
+  /** Reports this field's own focused state outward - optional, only
+   * StepRowEditor's own From field uses it (to expand its own grid
+   * cell over its siblings while active, since it's otherwise too
+   * narrow to read what's typed or see the full suggestion list
+   * without clipping). Fires alongside every `setFocused` call below,
+   * suggestion-pick included - picking one is as much "done editing"
+   * as a real blur is, so the caller's own expanded layout collapses
+   * right back at the same moment. */
+  onFocusedChange?: (focused: boolean) => void;
 }) {
   const [focused, setFocused] = useState(false);
+  function updateFocused(next: boolean) {
+    setFocused(next);
+    onFocusedChange?.(next);
+  }
   const matches = useMemo(() => {
     const query = value.trim().toLowerCase();
     if (!query) return [];
@@ -521,8 +535,8 @@ function LocationAutocompleteInput({
         className={`w-full ${className} ${value ? "pr-9" : ""}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onFocus={() => updateFocused(true)}
+        onBlur={() => updateFocused(false)}
         placeholder={placeholder}
         autoComplete="off"
       />
@@ -547,7 +561,7 @@ function LocationAutocompleteInput({
                 type="button"
                 onClick={() => {
                   onChange(name);
-                  setFocused(false);
+                  updateFocused(false);
                 }}
                 className="block w-full truncate px-3 py-2 text-left text-sm text-zinc-900 active:bg-blue-50"
               >
@@ -1274,6 +1288,20 @@ function StepRowEditor({
   // showPlaceModal above.
   const [showRowErrorDetail, setShowRowErrorDetail] = useState(false);
 
+  // Whether the From field is currently focused - the Type/Side/From
+  // row below is too narrow for From to show much of what's typed, or
+  // more than a couple of its own suggestion-list rows before they're
+  // clipped by the row's own height. While this is true, that row
+  // expands From's own grid cell leftward to cover Type/Side entirely
+  // (LocationAutocompleteInput's own onFocusedChange below) rather than
+  // giving From a wider *permanent* share of the row and squeezing an
+  // already-tight Type dropdown - most of the time nobody's typing in
+  // From at all, so the width is only ever borrowed while it's actually
+  // in use, then handed back the moment focus leaves (a real blur, or
+  // picking a suggestion - LocationAutocompleteInput's own doc comment
+  // on why the two read the same to it).
+  const [fromExpanded, setFromExpanded] = useState(false);
+
   // Re-syncs the box the moment a Fetch actually lands - `status` is
   // derived from the shared cache (EditRouteScreen's own `cache` state),
   // which fetchLocation already updates as soon as the response comes
@@ -1564,7 +1592,11 @@ function StepRowEditor({
           />
         ) : (
           <>
-            <div className="mt-3 grid grid-cols-[3fr_2fr_3fr] gap-2">
+            {/* relative - the anchor fromExpanded's own overlay
+                (below) positions itself against, so it covers exactly
+                this row's own Type/Side/From cells and nothing else in
+                the card around it. */}
+            <div className="relative mt-3 grid grid-cols-[3fr_2fr_3fr] gap-2">
               <Field label="Type" required>
                 <select
                   className={inputClass}
@@ -1620,16 +1652,33 @@ function StepRowEditor({
               above) - neither is part of an intersection, so there's no
               "from" road to name. */}
               {!isPlainLocation ? (
-                <Field label="From">
-                  <LocationAutocompleteInput
-                    className={inputClass}
-                    value={row.fromLocation}
-                    onChange={(value) => onChange({ fromLocation: value })}
-                    options={locationSuggestionOptions}
-                    placeholder={previousRoad || "start of route"}
-                    clearLabel="Clear From"
-                  />
-                </Field>
+                // fromExpanded - this cell alone breaks out of the grid
+                // (absolute, spanning left-0 to right-0 against the
+                // grid's own relative positioning above) to cover
+                // Type/Side entirely while From is focused, rather than
+                // giving it a wider permanent share of the row - see
+                // fromExpanded's own doc comment above for why. Collapses
+                // right back into its ordinary grid cell (no special
+                // className at all) the moment focus leaves.
+                <div
+                  className={
+                    fromExpanded
+                      ? "absolute inset-y-0 left-0 right-0 z-20 rounded-lg border border-blue-400 bg-[var(--background)] p-1.5 shadow-lg"
+                      : undefined
+                  }
+                >
+                  <Field label="From">
+                    <LocationAutocompleteInput
+                      className={inputClass}
+                      value={row.fromLocation}
+                      onChange={(value) => onChange({ fromLocation: value })}
+                      onFocusedChange={setFromExpanded}
+                      options={locationSuggestionOptions}
+                      placeholder={previousRoad || "start of route"}
+                      clearLabel="Clear From"
+                    />
+                  </Field>
+                </div>
               ) : (
                 <span />
               )}
