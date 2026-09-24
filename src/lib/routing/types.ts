@@ -69,6 +69,28 @@ export interface RoutingResult {
   distanceMeters?: number;
   durationSeconds?: number;
   steps?: RoutingStep[];
+  /** Every input waypoint's own exact distance-along-route (meters from
+   * the route's start), aligned index-for-index with the `waypoints`
+   * array `route()` was called with - waypointDistances[0] is always 0
+   * (the route's own start), waypointDistances[waypointDistances.length
+   * - 1] is the route's own total distance. Straight from the routing
+   * engine's own real, per-leg distances (a provider that reports one
+   * distance per leg between consecutive input coordinates, ORS
+   * included, can always build this by walking a running sum), never a
+   * nearest-point search after the fact - this is exact by
+   * construction, since `waypoints` is exactly what the engine was
+   * asked to route through, in this same order. A caller that used to
+   * derive a waypoint's own distance-along-route by projecting its
+   * coordinate back onto the returned geometry (routeProgress.ts's own
+   * nearestSegmentBearings/projectOntoRoute) should prefer this instead
+   * wherever it's available - a route that doubles back and re-crosses
+   * the same real corner more than once can make that kind of after-
+   * the-fact projection resolve to the wrong pass, since two different
+   * waypoints can legitimately sit near the same physical spot; this
+   * field carries no such ambiguity, because it was never a guess.
+   * Undefined only for a provider that doesn't report per-leg
+   * distances at all (not ORS, which always does). */
+  waypointDistances?: number[];
   provider: string;
 }
 
