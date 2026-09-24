@@ -170,16 +170,17 @@ const TURN_DIAMOND_SIZE = 32;
 
 // The school itself - its own blue pin, distinct from a stop's red one
 // (a school is where the route starts or ends, never a stop a driver
-// checks riders in/out at) and a turn's yellow diamond. Same teardrop
-// glyph MapPinIcon (icons.tsx) already draws elsewhere for an address -
-// as a raw SVG string here since MapLibre's Marker takes a real DOM
-// element (elementFromHtml below), not a React component directly.
+// checks riders in/out at) and a turn's yellow diamond. Draws from
+// pin-blue.svg the same way stopMarkerHtml (above) draws from pin.svg -
+// not the plain MapPinIcon glyph (icons.tsx), which is reserved for
+// UI-only uses (a label next to an address) and never belongs on an
+// actual map surface. Same h-11 w-7 box as stopMarkerHtml so a school
+// pin reads as the same "weight" as a stop pin, just recolored.
 function schoolMarkerHtml(): string {
   return (
-    '<svg viewBox="0 0 24 24" width="32" height="32" fill="#2563eb" ' +
-    'style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.45))" xmlns="http://www.w3.org/2000/svg">' +
-    '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" />' +
-    "</svg>"
+    '<div class="relative h-11 w-7">' +
+    '<img src="/assets/pin-blue.svg" class="h-full w-full" alt="" />' +
+    "</div>"
   );
 }
 

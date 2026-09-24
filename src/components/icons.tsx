@@ -134,14 +134,23 @@ export { default as RailroadCrossingIcon } from "./icons/railroad-crossing.svg";
 /** Not wired into anything yet - no route action or map marker calls
  * for a parking glyph today. */
 export { default as ParkIcon } from "./icons/park.svg";
-/** Not wired into anything yet. Part of the same uploaded icon set as
- * the diamonds above; kept for a future saved-location/pin distinction
- * (MapPinIcon already covers a plain address elsewhere). A same-batch
- * file also named for a *blue* pin renders as a red octagon instead
- * (unrelated shape and color to its own name) and was left out
- * entirely rather than exported under a name that doesn't match what
- * it actually looks like. */
+/** The mini pin markers this app's maps actually draw for "this is the
+ * point being placed/edited right now" - PinRedIcon for an ordinary
+ * stop (PlaceCoordinatesModal's own fixed placement pin), PinBlueIcon
+ * wherever the plain MapPinIcon glyph would otherwise have to stand in
+ * for a real map marker (MapPinIcon itself stays UI-only - a label
+ * next to an address, never something drawn on a map surface). The
+ * file that used to export here under the name "pin-blue" was actually
+ * a red octagon (unrelated shape and color to its own name) and got
+ * left out entirely rather than exported under a mismatched name - it's
+ * since been correctly renamed to StopSignIcon below, and this is now
+ * the *real* blue pin. */
 export { default as PinRedIcon } from "./icons/pin-red.svg";
+export { default as PinBlueIcon } from "./icons/pin-blue.svg";
+/** Not wired into anything yet - no route action or map marker calls
+ * for a plain stop-sign glyph today (distinct from a Stop waypoint's
+ * own red numbered pin). */
+export { default as StopSignIcon } from "./icons/stop-sign.svg";
 
 // Every non-Stop action (StepRowEditor's own Type select) used to fall
 // through to plain text with no icon at all in both the admin row list
