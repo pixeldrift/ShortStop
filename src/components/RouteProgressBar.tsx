@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TurnArrow } from "./icons";
+import { ActionIcon } from "./icons";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
 import type { NavigationStep } from "@/lib/types";
 
@@ -248,7 +248,7 @@ export function RouteProgressBar({
                   </span>
                 </div>
               ) : (
-                step.direction && <TurnArrow direction={step.direction} className="h-6 w-6" />
+                <ActionIcon action={step.direction ?? step.heading ?? ""} className="h-6 w-6" />
               )}
             </div>
           );

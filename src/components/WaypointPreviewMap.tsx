@@ -395,16 +395,18 @@ function mountMapLibre(
   }
 
   // The current row's own real compass bearing, when it's a Left/Right
-  // turn - the same "next leg" lookup stopBearings (below) already does
-  // per StopPin, just for this one point instead of a whole list.
-  // Unlike RouteMap.tsx's own applyTurnRotations, this map's own camera
-  // never rotates (no bearing option anywhere in this file), so the
-  // map's own on-screen bearing is always 0 - true compass bearing and
-  // screen angle are the same thing here, no live "rotate" listener
-  // needed the way RouteMap.tsx's own driving-mode camera spin requires.
+  // turn - `preferOutgoing: [true]` (nearestSegmentBearings's own doc
+  // comment, routeProgress.ts) since a turn sign needs the road being
+  // turned *onto*, unlike stopBearings (below), which deliberately
+  // wants the *incoming* road a stop still sits on. Unlike RouteMap.tsx's
+  // own applyTurnRotations, this map's own camera never rotates (no
+  // bearing option anywhere in this file), so the map's own on-screen
+  // bearing is always 0 - true compass bearing and screen angle are the
+  // same thing here, no live "rotate" listener needed the way
+  // RouteMap.tsx's own driving-mode camera spin requires.
   function currentTurnBearing(): number | null {
     if (!latestDirection) return null;
-    return nearestSegmentBearings(latestRoadGeometry, [latestCenter])[0];
+    return nearestSegmentBearings(latestRoadGeometry, [latestCenter], [true])[0];
   }
 
   // Re-applies the current marker's own real bearing (if it's a
@@ -413,8 +415,8 @@ function mountMapLibre(
   // (drawRouteLine's own fetch, below), since a turn drawn before that
   // fetch lands has no real bearing to point at yet.
   function applyCurrentMarkerRotation() {
-    if (!currentMarker) return;
-    setTurnDiamondRotation(currentMarker.getElement(), currentTurnBearing(), 0);
+    if (!currentMarker || !latestDirection) return;
+    setTurnDiamondRotation(currentMarker.getElement(), latestDirection, currentTurnBearing(), 0);
   }
 
   // One bearing per StopPin in `pins` - matched against
