@@ -454,7 +454,7 @@ function mountMapLibre(
   // RouteMap.tsx's own driving-mode camera spin requires.
   function currentTurnBearing(): number | null {
     if (!latestDirection) return null;
-    return nearestSegmentBearings(latestRoadGeometry, [latestCenter], [true])[0];
+    return nearestSegmentBearings(latestRoadGeometry, [latestCenter], [true])[0].bearing;
   }
 
   // Re-applies the current marker's own real bearing (if it's a
@@ -488,7 +488,7 @@ function mountMapLibre(
         cursor++;
       }
       if (cursor >= latestRouteLine.length) return null;
-      return orderedBearings[cursor++];
+      return orderedBearings[cursor++].bearing;
     });
   }
 
