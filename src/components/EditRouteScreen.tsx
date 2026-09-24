@@ -2005,7 +2005,17 @@ function StepRowEditor({
                 card's own bottom/sides, not floating with the card's
                 usual padding still showing on every side around it. */}
             <div className="sticky bottom-0 -mx-5 -mb-5 mt-3 flex items-center gap-2 border-t border-zinc-200 bg-[var(--background)] px-5 py-3">
-              {!hideDelete && (
+              {/* Hidden for `isNew` too, not just `hideDelete` - a row
+                  that only exists as an unsaved draft (addRow's own
+                  freshly-inserted blank row) was never actually added to
+                  the route yet, so there's nothing real for Delete to
+                  remove; Cancel already discards it the same way (see
+                  handleCancelRow's own doc comment). The title above
+                  flips from "Add Waypoint" to "Edit Waypoint" the moment
+                  Save/Update commits it and `isNew` goes false, and
+                  Delete becomes available from then on, same as any
+                  other row. */}
+              {!hideDelete && !isNew && (
                 <button
                   type="button"
                   onClick={onDelete}
@@ -4345,20 +4355,35 @@ export function EditRouteScreen({
     () => rows.some((r) => !r.action.trim() || !r.location.trim()),
     [rows],
   );
-  const { waypoints, previousRoads } = useMemo(() => {
-    if (
-      mode !== "edit" ||
-      hasIncompleteRow ||
-      !hasRealSchoolAddress ||
-      rows.length === 0
-    ) {
+  // Ungated - unlike `waypoints`/`resolutionRows` below, this doesn't
+  // bail just because some row (almost always the very one an admin is
+  // mid-way through adding right now, its own `location` still blank)
+  // is incomplete. `deriveWaypointsWithContext` itself tolerates a blank
+  // row fine (its own doc comment); the gate below exists to keep a
+  // blank row's own garbage text out of the Fetch-All button's query
+  // list and the Valid/Missing stats, not because the derivation itself
+  // needs every row filled in. Every row's own `previousRoads` entry
+  // only reflects rows *before* it (deriveWaypointsWithContext pushes it
+  // before touching `currentRoad` for that row - see its own doc
+  // comment), so the one row that's actually blank right now never
+  // corrupts anyone else's, including its own - StepRowEditor's own
+  // "From" placeholder needs that real road even while this row's own
+  // Location is still empty, not "start of route" just because nothing
+  // else about this row has been filled in yet.
+  const ungatedDerived = useMemo(() => {
+    if (mode !== "edit" || !hasRealSchoolAddress || rows.length === 0) {
       return {
         waypoints: [] as WaypointQuery[],
         previousRoads: [] as (string | null)[],
       };
     }
     return deriveWaypointsWithContext(rows, schoolAddress);
-  }, [mode, rows, hasIncompleteRow, hasRealSchoolAddress, schoolAddress]);
+  }, [mode, rows, hasRealSchoolAddress, schoolAddress]);
+  const previousRoads = ungatedDerived.previousRoads;
+  const waypoints = useMemo(
+    () => (hasIncompleteRow ? [] : ungatedDerived.waypoints),
+    [hasIncompleteRow, ungatedDerived],
+  );
   const resolutionRows = useMemo(
     () =>
       summarizeRouteResolution(
@@ -4368,6 +4393,30 @@ export function EditRouteScreen({
         schoolAnchor,
       ),
     [waypoints, rows, cache, schoolAnchor],
+  );
+  // Same reasoning as `ungatedDerived` above, one level further down the
+  // pipeline - StepRowEditor's own placementGuess (the map's default
+  // center for a brand-new waypoint) needs its *neighbors'* already-
+  // resolved coordinates, which live in a resolution pass over
+  // `waypoints`. The gated `resolutionRows` above goes empty the instant
+  // the new row being added is itself incomplete (which is exactly when
+  // the map first opens for it), so placementGuess would otherwise
+  // always fall back to the fixed default center instead of the real
+  // previous/next neighbor. Kept as its own separate pass rather than
+  // switching `resolutionRows` itself to the ungated waypoints - every
+  // other consumer of `resolutionRows` (list-row status badges, the
+  // Valid/Missing stats, the Fetch-All button's own target list, CSV
+  // export) intentionally still treats "a row is incomplete" as "nothing
+  // here is resolved yet," and this stays out of that.
+  const placementResolutionRows = useMemo(
+    () =>
+      summarizeRouteResolution(
+        ungatedDerived.waypoints,
+        rows.map((r) => ({ overrideLat: r.overrideLat, overrideLon: r.overrideLon })),
+        cache,
+        schoolAnchor,
+      ),
+    [ungatedDerived, rows, cache, schoolAnchor],
   );
   const counts = useMemo(
     () => resolutionCounts(resolutionRows),
@@ -6381,7 +6430,7 @@ export function EditRouteScreen({
                     : false
                 }
                 fetchLocked={singleFetchCoolingDown}
-                placementGuess={nearestResolvedGuess(resolutionRows, index)}
+                placementGuess={nearestResolvedGuess(placementResolutionRows, index)}
                 routeContext={routeContextPoints}
                 stopPins={stopPins}
                 onChange={handleDraftChange}
@@ -6408,7 +6457,7 @@ export function EditRouteScreen({
                     draftWaypoint,
                     lat,
                     lon,
-                    nearestResolvedGuess(resolutionRows, index),
+                    nearestResolvedGuess(placementResolutionRows, index),
                   )
                 }
                 onOverrideCoordinates={(lat, lon) =>
