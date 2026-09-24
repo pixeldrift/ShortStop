@@ -261,8 +261,9 @@ type OrderedWaypoint = { key: string | null; lat: number; lon: number };
 // bearing already is. Using the actual road geometry here (not a
 // straight line between waypoints, which this used to be) is also what
 // keeps this in agreement with a turn sign's own bearing
-// (nearestSegmentBearings, same file) - both now read off the
-// identical road line the same way. Falls back to the bearing looking
+// (drawDrivingPins, same file) - both now read off the identical road
+// line, at the same distanceAlongRouteByKey value, the same way. Falls
+// back to the bearing looking
 // *ahead* only at the route's very first step (Depart) or anywhere
 // else roadBearingAt has no real "incoming" distance to measure (the
 // active point sits at, or before, the very start of the fetched road
@@ -1172,39 +1173,33 @@ function mountMapLibre(args: MountArgs): () => void {
                   entry.point != null,
               );
             const roadLine = latestRoadGeometry.map(([lon, lat]) => ({ lat, lon }));
-            // Bearings computed over the *whole* trip-ordered waypoint
-            // list, not just resolvedStops on its own - a double-back's
-            // two visits to the same real corner are the same
-            // coordinate, so an independent search per stop can't tell
-            // them apart (nearestSegmentBearings's own doc comment,
-            // routeProgress.ts); the turns/school sitting between them
-            // in real trip order are what let the second visit's own
-            // search only ever look past the first one, onto its own
-            // later, correctly-directioned pass. Any rotatable turn/
-            // action's own entry (Left/Right/Continue/Proceed -
-            // rotationKeyFor, mapMarkerIcons.tsx) gets `preferOutgoing` -
-            // its sign needs the road it's actually about to be on, not
-            // the one just traveled in on, unlike a stop (which wants the
-            // incoming road it's still sitting on) - see
-            // nearestSegmentBearings's own doc comment for why a plain
-            // nearest-segment search can't tell those apart on its own at
-            // a turn corner.
+            const roadCumulative = cumulativeDistances(roadLine);
+            // Every real bearing read straight off distanceAlongRouteByKey
+            // (populated from the routing provider's own exact per-leg
+            // distances - see that map's own doc comment) via
+            // roadBearingAt, not a fresh nearestSegmentBearings search -
+            // a double-back's two visits to the same real corner already
+            // resolve to two different, correct distances there, so
+            // there's no "which pass" ambiguity left for a bearing search
+            // to have to untangle either. Any rotatable turn/action's own
+            // entry (Left/Right/Continue/Proceed - rotationKeyFor,
+            // mapMarkerIcons.tsx) looks "outgoing" - its sign needs the
+            // road it's actually about to be on, not the one just
+            // traveled in on, unlike a stop (which wants the incoming
+            // road it's still sitting on, the default direction
+            // roadBearingAt itself takes when passed "incoming").
             const rotatableKeys = new Set(
               turnsRef.current
                 .filter((turn) => rotationKeyFor(turn.direction, turn.heading) != null)
                 .map((turn) => turn.waypointKey),
             );
-            const preferOutgoing = orderedWaypointsRef.current.map(
-              (waypoint) => waypoint.key != null && rotatableKeys.has(waypoint.key),
-            );
-            const orderedBearings = nearestSegmentBearings(
-              roadLine,
-              orderedWaypointsRef.current,
-              preferOutgoing,
-            );
             const bearingByKey = new Map<string, number | null>();
-            orderedWaypointsRef.current.forEach((waypoint, i) => {
-              if (waypoint.key != null) bearingByKey.set(waypoint.key, orderedBearings[i].bearing);
+            orderedWaypointsRef.current.forEach((waypoint) => {
+              if (waypoint.key == null) return;
+              const distance = distanceAlongRouteByKey.get(waypoint.key);
+              if (distance == null) return;
+              const direction = rotatableKeys.has(waypoint.key) ? "outgoing" : "incoming";
+              bearingByKey.set(waypoint.key, roadBearingAt(roadLine, roadCumulative, distance, direction));
             });
             const spreadPoints = spreadCoincidentPoints(
               resolvedStops.map((entry) => entry.point),
