@@ -1,4 +1,5 @@
 import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
+import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 
 /**
  * Shared MapLibre GL setup for every map in this app (RouteMap.tsx,
@@ -123,3 +124,111 @@ export const ROUTE_LINE_WIDTH: ExpressionSpecification = [
  * other - the same way real traffic lanes read as separate rather than
  * as one road. */
 export const ROUTE_LINE_OFFSET = 3;
+
+const SCHOOL_BUILDING_HIGHLIGHT_SOURCE = "school-building-highlight";
+
+/** Fills the school's own real building footprint the same blue every
+ * school pin already uses (schoolMarkerHtml, RouteMap.tsx), so it stands
+ * out against every other building nearby's plain tan fill
+ * (protomapsStyle.ts's own "buildings" layer) - the one building on the
+ * map that's actually this route's destination, not just another
+ * rooftop. Can't be a plain style filter the way pois-school is
+ * (protomapsStyle.ts): the basemap's own "buildings" source-layer
+ * carries no amenity=school tag on the polygon itself - kind_detail is
+ * empty for every real building in the current extract (checked
+ * directly against the pmtiles file's own vector-tile bytes, not just
+ * the schema docs) - so there's nothing a declarative filter could ever
+ * match on. Finds the right polygon at runtime instead: queries
+ * whatever the basemap's own "buildings" fill layer has actually
+ * rendered right under the school's own point, and redraws that one
+ * feature's real geometry into its own source/layer, painted directly
+ * above the base fill (and below roads/labels/pins, same stacking the
+ * base fill itself already has) so the school's building reads as
+ * highlighted, not just present.
+ *
+ * Self-maintaining rather than a one-shot call: attaches its own "idle"
+ * listener (fires once the map has actually finished rendering every
+ * tile in view - a query run any earlier could hit a tile still in
+ * flight and find nothing) and re-queries/redraws on every one of those,
+ * so a caller only ever needs to keep `schoolRef.current` up to date
+ * (RouteMap.tsx already does, for its own `school` prop) - no separate
+ * "the school changed, please redraw" call of its own to remember. A
+ * school whose point isn't on-screen yet (still zoomed out in overview
+ * mode, or below the base fill's own minzoom 15) simply queries empty
+ * until the map actually gets there, the same "nothing to show until
+ * you're close enough" behavior the base fill already has.
+ */
+export function installSchoolBuildingHighlight(
+  map: MapLibreMap,
+  // A plain `{ current }` shape, not React.RefObject - this file has no
+  // other React dependency, and every caller already has a real
+  // useRef-backed ref (schoolRef, RouteMap.tsx) that satisfies this
+  // structurally with no cast needed.
+  schoolRef: { current: { lat: number; lon: number } | null | undefined },
+): void {
+  let layerAdded = false;
+
+  function ensureLayer() {
+    if (layerAdded) return;
+    map.addSource(SCHOOL_BUILDING_HIGHLIGHT_SOURCE, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    // beforeId "roads-minor" - directly above the base "buildings" fill,
+    // below every road/label/pin, matching the base fill's own existing
+    // stacking (protomapsStyle.ts's own layer order) rather than
+    // painting over roads that cross the building's own footprint.
+    map.addLayer(
+      {
+        id: SCHOOL_BUILDING_HIGHLIGHT_SOURCE,
+        type: "fill",
+        source: SCHOOL_BUILDING_HIGHLIGHT_SOURCE,
+        paint: {
+          "fill-color": "#2563eb",
+          "fill-opacity": 0.55,
+          "fill-outline-color": "#1d4ed8",
+        },
+      },
+      "roads-minor",
+    );
+    layerAdded = true;
+  }
+
+  function refresh() {
+    const school = schoolRef.current;
+    ensureLayer();
+    const source = map.getSource(SCHOOL_BUILDING_HIGHLIGHT_SOURCE) as
+      | GeoJSONSource
+      | undefined;
+    if (!source) return;
+    if (!school) {
+      source.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+    const point = map.project([school.lon, school.lat]);
+    // A small box, not a single point - queryRenderedFeatures needs
+    // real screen-pixel area to hit-test against, and the school pin's
+    // own anchor ("bottom", schoolMarkerHtml) doesn't necessarily land
+    // exactly on the building's own rendered fill pixel-for-pixel.
+    const features = map.queryRenderedFeatures(
+      [
+        [point.x - 4, point.y - 4],
+        [point.x + 4, point.y + 4],
+      ],
+      { layers: ["buildings"] },
+    );
+    const building = features.find((f) => f.properties?.kind === "building");
+    source.setData(
+      building
+        ? {
+            type: "FeatureCollection",
+            features: [
+              { type: "Feature", geometry: building.geometry, properties: {} },
+            ],
+          }
+        : { type: "FeatureCollection", features: [] },
+    );
+  }
+
+  map.on("idle", refresh);
+}
