@@ -9,7 +9,6 @@ import type {
 import { ExpandableMap } from "./ExpandableMap";
 import { IconTooltip } from "./IconTooltip";
 import { ScreenTransition } from "./ScreenTransition";
-import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
 import { PrintRouteSheet } from "./PrintRouteSheet";
@@ -37,6 +36,7 @@ import {
   PrintIcon,
   ReverseIcon,
   RightArrowIcon,
+  RouteIcon,
   RoundedTriangleIcon,
   SaveIcon,
   ScissorsIcon,
@@ -61,6 +61,7 @@ import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { GeocodableQuery } from "@/lib/geocode";
 import { useDragReorder } from "@/lib/useDragReorder";
+import { useWaypointMapVisible } from "@/lib/useWaypointMapVisible";
 import {
   applyBulkUpdate,
   matchSchoolFromRows,
@@ -972,6 +973,7 @@ function StepRowEditor({
   placementGuess,
   routeContext,
   stopPins,
+  mapVisible,
   onChange,
   onLocationChange,
   onClickWaypointPin,
@@ -1083,6 +1085,13 @@ function StepRowEditor({
    * alone. `rowIndex` is what lets tapping one of those dots open that
    * row's own editor (onClickWaypointPin below). */
   stopPins: StopPin[];
+  /** The shared "show the small preview map" preference
+   * (useWaypointMapVisible.ts) - off hides the ExpandableMap/
+   * WaypointPreviewMap block below outright, giving this card's own
+   * fields more room and letting the list itself (EditRouteScreen's
+   * own scroll container, above this row) show more rows at once
+   * without scrolling. */
+  mapVisible: boolean;
   onChange: (patch: Partial<RawRouteRow>) => void;
   /** Opens a different row's own editor in place of this one - the
    * same "save this row's draft, then open the target" goToRowIndex
@@ -2021,24 +2030,28 @@ function StepRowEditor({
           second, independent full-screen instance) is the one part of
           this that isn't already visible in the small inline box -
           useful once there are enough resolved stops nearby that the
-          140px-tall preview gets crowded. */}
-            <ExpandableMap
-              className="mt-3 h-[clamp(6rem,18vh,10rem)] w-full"
-              renderMap={(mapClassName, isExpanded) => (
-                <WaypointPreviewMap
-                  className={`relative z-0 ${mapClassName} ${
-                    isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
-                  }`}
-                  center={previewCenter}
-                  centerStopNumber={stopNumber}
-                  centerDirection={turnDirection ?? undefined}
-                  centerHeading={!isStop ? row.action : undefined}
-                  routeLine={routeContext}
-                  stopPins={stopPins}
-                  onClickPin={onClickWaypointPin}
-                />
-              )}
-            />
+          140px-tall preview gets crowded. Skipped outright (not just
+          collapsed) when the shared map preference is off - see
+          `mapVisible`'s own doc comment above. */}
+            {mapVisible && (
+              <ExpandableMap
+                className="mt-3 h-[clamp(6rem,18vh,10rem)] w-full"
+                renderMap={(mapClassName, isExpanded) => (
+                  <WaypointPreviewMap
+                    className={`relative z-0 ${mapClassName} ${
+                      isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
+                    }`}
+                    center={previewCenter}
+                    centerStopNumber={stopNumber}
+                    centerDirection={turnDirection ?? undefined}
+                    centerHeading={!isStop ? row.action : undefined}
+                    routeLine={routeContext}
+                    stopPins={stopPins}
+                    onClickPin={onClickWaypointPin}
+                  />
+                )}
+              />
+            )}
 
             {/* sticky bottom-0 - always reachable at the bottom of the
                 card the instant it's visible at all, not just once
@@ -3979,6 +3992,9 @@ export function EditRouteScreen({
   // next unverified" below is the other way to reach the same rows
   // without leaving the full list.
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
+  // Shared with every other waypoint list in the app (AllStopsModal,
+  // StartScreen.tsx) - see useWaypointMapVisible's own doc comment.
+  const [mapVisible, setMapVisible] = useWaypointMapVisible();
   // The scrollable rows container - jumpToNextUnverified below scrolls
   // within this specifically, not the whole page (see subScreen
   // "stops"'s own layout: this list is its own internal scroll region).
@@ -6278,35 +6294,78 @@ export function EditRouteScreen({
           {/* Blue outline in edit mode, matching RouteListScreen's own
               admin-mode box border - this screen is always mid-edit. */}
           <div className="flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border-2 border-blue-400 text-left">
-            {/* Both toggles live at the top of the list box itself now,
-                next to each other, rather than each with its own
-                full-width row above it - they're both view filters on
-                the exact list directly below them, not route-level
-                settings like Fetch Coordinates. */}
-            <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-zinc-200 px-4 py-2.5">
-              <ToggleSwitch
-                checked={stopsOnly}
-                onChange={setStopsOnly}
-                label="Stops only"
-              />
-              <ToggleSwitch
-                checked={showUnverifiedOnly}
-                onChange={setShowUnverifiedOnly}
-                label="Unverified only"
-              />
-              {/* Only offered from the full list - "Unverified only"
-                  above already narrows to exactly these rows, so a
-                  shortcut to find one among them would be redundant. */}
+            {/* Every waypoint-viewing option in one compact, never-
+                wrapping row - icon toggles (RouteListScreen's own
+                filter-row pattern: blue/active, zinc-300/inactive,
+                aria-pressed + a real label for anyone not reading the
+                icon) rather than each getting its own full labeled
+                ToggleSwitch, which wrapped onto a second line the
+                moment more than two of these lived here together.
+                overflow-x-auto is a last-resort safety net, not the
+                intended layout - this app's own max-w-md screens never
+                actually get narrow enough to need it. */}
+            <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-200 px-4 py-2.5">
+              <span className="shrink-0 text-xs font-semibold text-zinc-500">
+                {absoluteStopNumbers.size} stop
+                {absoluteStopNumbers.size === 1 ? "" : "s"}
+              </span>
+              <div className="h-4 w-px shrink-0 bg-zinc-200" aria-hidden="true" />
+              {/* Shared with every other waypoint list in the app
+                  (useWaypointMapVisible.ts) - off here also hides
+                  AllStopsModal's own overview map and every row's own
+                  inline preview below, freeing more room to see list
+                  rows without scrolling. */}
+              <button
+                type="button"
+                onClick={() => setMapVisible(!mapVisible)}
+                aria-pressed={mapVisible}
+                aria-label={mapVisible ? "Hide map" : "Show map"}
+                className={`shrink-0 ${mapVisible ? "text-blue-600" : "text-zinc-300"}`}
+              >
+                <RouteIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setStopsOnly(!stopsOnly)}
+                aria-pressed={stopsOnly}
+                aria-label={
+                  stopsOnly
+                    ? "Showing stops only"
+                    : "Showing stops and directions"
+                }
+                className={`shrink-0 ${stopsOnly ? "text-blue-600" : "text-zinc-300"}`}
+              >
+                <MapPinIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUnverifiedOnly(!showUnverifiedOnly)}
+                aria-pressed={showUnverifiedOnly}
+                aria-label={
+                  showUnverifiedOnly
+                    ? "Showing errors only"
+                    : "Show errors only"
+                }
+                className={`shrink-0 ${showUnverifiedOnly ? "text-blue-600" : "text-zinc-300"}`}
+              >
+                <XCircleIcon className="h-4 w-4" />
+              </button>
+              {/* Only offered from the full list - "errors only" above
+                  already narrows to exactly these rows, so a shortcut
+                  to find one among them would be redundant. */}
               {!showUnverifiedOnly && unverifiedRowIndices.length > 0 && (
-                <button
-                  type="button"
-                  onClick={jumpToNextUnverified}
-                  className="ml-auto flex shrink-0 items-center gap-1 text-xs font-semibold text-zinc-900"
-                >
-                  <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
-                  Next
-                  <ArrowDownToLineIcon className="h-3.5 w-3.5" />
-                </button>
+                <>
+                  <div className="h-4 w-px shrink-0 bg-zinc-200" aria-hidden="true" />
+                  <button
+                    type="button"
+                    onClick={jumpToNextUnverified}
+                    className="ml-auto flex shrink-0 items-center gap-1 text-xs font-semibold text-zinc-900"
+                  >
+                    <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
+                    Next
+                    <ArrowDownToLineIcon className="h-3.5 w-3.5" />
+                  </button>
+                </>
               )}
             </div>
             {/* The last Autoroute attempt's own outcome, when it wasn't
@@ -6482,6 +6541,7 @@ export function EditRouteScreen({
                 placementGuess={nearestResolvedGuess(placementResolutionRows, index)}
                 routeContext={routeContextPoints}
                 stopPins={stopPins}
+                mapVisible={mapVisible}
                 onChange={handleDraftChange}
                 onLocationChange={handleLocationChange}
                 onClickWaypointPin={goToRowIndex}

@@ -4,9 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ExpandableMap } from "./ExpandableMap";
 import { IconTooltip } from "./IconTooltip";
 import { RouteMap } from "./RouteMap";
-import type { StopMarker, TurnMarker } from "./RouteMap";
+import type { PathPoint, StopMarker, TurnMarker } from "./RouteMap";
 import { SchoolLevelIcon } from "./SchoolLevelIcon";
-import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import {
   ActionIcon,
@@ -18,6 +17,7 @@ import {
   FlagIcon,
   MapPinIcon,
   PersonSolidIcon,
+  RouteIcon,
   RoundedTriangleIcon,
   TriangleIcon,
   XCircleIcon,
@@ -28,6 +28,7 @@ import { addressWithoutZip } from "@/lib/schoolAddress";
 import { tripTypeFullLabel } from "@/lib/tripType";
 import type { NavigationStep, Route } from "@/lib/types";
 import { useSwipeBack } from "@/lib/useSwipeBack";
+import { useWaypointMapVisible } from "@/lib/useWaypointMapVisible";
 import { resolveRouteCoordinates } from "@/lib/waypointCache";
 import type { WaypointCache } from "@/lib/waypointCache";
 
@@ -465,6 +466,11 @@ export function StartScreen({
       {showStopsModal && (
         <AllStopsModal
           route={route}
+          stopMarkers={stopMarkers}
+          turnMarkers={turnMarkers}
+          routePath={routePath}
+          schoolPoint={schoolPoint}
+          schoolIsWaypoint={schoolIsWaypoint}
           onClose={() => setShowStopsModal(false)}
           onEditStops={onEditStops}
         />
@@ -553,14 +559,34 @@ function TurnRow({ step }: { step: NavigationStep }) {
  * not an optional turn-by-turn detail. */
 function AllStopsModal({
   route,
+  stopMarkers,
+  turnMarkers,
+  routePath,
+  schoolPoint,
+  schoolIsWaypoint,
   onClose,
   onEditStops,
 }: {
   route: Route;
+  /** Same markers/line StartScreen's own overview map already builds
+   * for itself (stopMarkers/turnMarkers/routePath/schoolPoint/
+   * schoolIsWaypoint, all straight off `route.steps`) - reused here
+   * rather than re-derived, so this modal's own map (below, gated
+   * behind the shared `mapVisible` preference) draws the exact same
+   * pins/line the screen behind it already does. */
+  stopMarkers: StopMarker[];
+  turnMarkers: TurnMarker[];
+  routePath: PathPoint[];
+  schoolPoint: { lat: number; lon: number } | null;
+  schoolIsWaypoint: boolean;
   onClose: () => void;
   onEditStops: () => void;
 }) {
   const [showTurns, setShowTurns] = useState(false);
+  // Shared with every other waypoint list in the app (EditRouteScreen's
+  // own Edit Waypoints screen) - see useWaypointMapVisible's own doc
+  // comment.
+  const [mapVisible, setMapVisible] = useWaypointMapVisible();
 
   // The one route.steps row (if any) that explicitly names the school -
   // Depart/Arrive are the two actions reserved for it (see
@@ -631,26 +657,70 @@ function AllStopsModal({
           </button>
         </div>
 
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-5 py-2">
-          <span className="text-sm font-semibold text-zinc-500">
+        {/* Icon toggles, not full labeled switches - matches
+            EditRouteScreen's own compact waypoint-viewing row
+            (useWaypointMapVisible.ts, RouteIcon/MapPinIcon here mean
+            the exact same thing there: blue/pressed = on). */}
+        <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-200 px-5 py-2">
+          <span className="shrink-0 text-sm font-semibold text-zinc-500">
             {stopCounter} stop{stopCounter === 1 ? "" : "s"}
           </span>
-          <div className="flex items-center gap-2">
-            <ToggleSwitch
-              checked={showTurns}
-              onChange={setShowTurns}
-              label="Show directions"
-            />
-            <button
-              type="button"
-              onClick={onEditStops}
-              aria-label="Edit waypoints"
-              className="text-blue-600 active:text-blue-800"
-            >
-              <EditIcon className="h-4 w-4" />
-            </button>
-          </div>
+          <div className="h-4 w-px shrink-0 bg-zinc-200" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={() => setMapVisible(!mapVisible)}
+            aria-pressed={mapVisible}
+            aria-label={mapVisible ? "Hide map" : "Show map"}
+            className={`shrink-0 ${mapVisible ? "text-blue-600" : "text-zinc-300"}`}
+          >
+            <RouteIcon className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTurns(!showTurns)}
+            aria-pressed={!showTurns}
+            aria-label={showTurns ? "Showing stops and directions" : "Showing stops only"}
+            className={`shrink-0 ${!showTurns ? "text-blue-600" : "text-zinc-300"}`}
+          >
+            <MapPinIcon className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onEditStops}
+            aria-label="Edit waypoints"
+            className="ml-auto shrink-0 text-blue-600 active:text-blue-800"
+          >
+            <EditIcon className="h-4 w-4" />
+          </button>
         </div>
+
+        {/* The exact same overview map behind this modal (StartScreen's
+            own stopMarkers/turnMarkers/routePath/schoolPoint) - toggled
+            by the shared mapVisible preference so a long route's own
+            stop list can trade this for more visible rows instead of
+            scrolling past it every time. */}
+        {mapVisible && (
+          <div className="shrink-0 border-b border-zinc-200 px-5 py-2">
+            <ExpandableMap
+              className="h-[clamp(6rem,18vh,10rem)] w-full"
+              renderMap={(mapClassName, isExpanded) => (
+                <RouteMap
+                  className={`relative z-0 ${mapClassName} ${
+                    isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
+                  }`}
+                  stops={stopMarkers}
+                  turns={turnMarkers}
+                  path={routePath}
+                  school={schoolPoint}
+                  schoolIsWaypoint={schoolIsWaypoint}
+                  tripType={route.tripType}
+                  waypointsUrl="/api/waypoints"
+                  mode="overview"
+                />
+              )}
+            />
+          </div>
+        )}
 
         <div className="divide-y divide-zinc-200 overflow-y-auto px-5">
           {route.steps.map((step) => {
