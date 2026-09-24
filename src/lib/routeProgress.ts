@@ -256,6 +256,20 @@ export interface WaypointRouteBearing {
   bearing: number | null;
 }
 
+// How far (meters, along the route's own cumulative distance - not as
+// the crow flies) nearestSegmentBearings's own search keeps looking past
+// the closest match it's found so far before giving up and committing to
+// it, rather than continuing on toward the route's own end. Generous
+// enough to bridge ordinary routing-provider vertex spacing and a
+// genuinely-nearby stop/turn a couple hundred meters past the cursor
+// (this window keeps extending for as long as a closer match keeps
+// turning up), nowhere near enough to reach a route's own later re-
+// crossing of the same real corner (a double-back is real additional
+// driving distance away, not another hundred meters of the same
+// stretch) - see nearestSegmentBearings's own doc comment for why that
+// distinction matters.
+const LOCAL_MATCH_LOOKAHEAD_METERS = 200;
+
 /** One {distanceAlongRoute, bearing} pair per entry in `points`
  * (`coords` itself, a route's own road-following line, in order) - the
  * real direction of travel at each point's own spot along the route
@@ -293,7 +307,26 @@ export interface WaypointRouteBearing {
  * `preferOutgoing[i]` (aligned with `points`, same index) picks which
  * side of that point's own spot roadBearingAt looks toward: a stop
  * wants the incoming road it's still sitting on (the default), a turn
- * sign wants the outgoing road it's turning onto. */
+ * sign wants the outgoing road it's turning onto.
+ *
+ * Trusting trip order to only search ahead of the cursor stops a later
+ * point from matching a real pass the trip has already covered, but on
+ * its own doesn't stop the opposite mistake: naively taking the single
+ * *closest* segment out of every one from the cursor to the route's own
+ * end would let a route's *later* re-crossing of this exact point's real
+ * corner (the second half of the very double-back this function exists
+ * to handle) win the match outright, whenever that later pass's own
+ * geometry happened to sit even a hair closer than the correct,
+ * immediately-following segment - routing-provider noise, a slightly
+ * different lane offset, anything. That doesn't just misplace this one
+ * point either - the cursor would then jump to sit right after that far-
+ * later match, so every point still to come this call loses the trip-
+ * order restriction for the rest of the route too. LOCAL_MATCH_LOOKAHEAD_METERS
+ * below is what actually prevents it: the search commits to the first
+ * real local minimum it finds (stops once it's moved that far along the
+ * route past the closest match so far without anything closer turning
+ * up), rather than continuing on toward a possibly-closer match that
+ * really belongs to a different, later pass through the same spot. */
 export function nearestSegmentBearings(
   coords: LatLon[],
   points: LatLon[],
@@ -313,6 +346,24 @@ export function nearestSegmentBearings(
         bestDistance = distance;
         bestT = t;
         bestIndex = j;
+      } else if (cumulative[j] - cumulative[bestIndex] > LOCAL_MATCH_LOOKAHEAD_METERS) {
+        // Scanning all the way to the route's own end used to mean a
+        // route that doubles back - re-crossing this same real corner
+        // again much later in the trip - could win the match outright,
+        // whenever that later pass's own geometry happened to sit even a
+        // hair closer to this point than the correct, immediately-
+        // following segment (routing-provider noise, a slightly
+        // different lane offset, anything). That doesn't just misplace
+        // *this* point - cursor then jumps to sit right after that far-
+        // later match, so the trip-order restriction (only ever search
+        // forward of the cursor) stops protecting every point still to
+        // come this call, for the rest of the route. Once we've moved
+        // this far past the closest match found so far without anything
+        // closer turning up, that's a real local minimum - a later, even
+        // closer-looking match beyond it belongs to a different, later
+        // pass through the same physical spot, not a better fit for this
+        // one.
+        break;
       }
     }
     cursor = Math.min(bestIndex + 1, coords.length - 2);
