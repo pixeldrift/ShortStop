@@ -46,6 +46,15 @@ const DEPART_WINDOW_MINUTES = 5;
 // not cut short, before the step actually changes underneath it.
 const BUS_DEPART_MS = 450;
 
+// The "nothing to report yet" value for useLiveRouteProgress's own
+// waypointDistanceByKey param, before RouteMap's own onRouteGeometry
+// callback has fired for the first time - a single shared empty Map
+// instance rather than a fresh `new Map()` on every render this
+// component's own `routeGeometry` is still null, so that hook's own
+// useMemo (keyed on this reference) doesn't treat "still nothing" as a
+// change worth recomputing over.
+const EMPTY_WAYPOINT_DISTANCES = new Map<string, number>();
+
 export function StepScreen({
   route,
   step,
@@ -319,11 +328,10 @@ export function StepScreen({
     () => routeGeometry?.coordinates.map(([lon, lat]) => ({ lat, lon })) ?? [],
     [routeGeometry],
   );
-  const progressWaypoints = useMemo(
-    () => routeGeometry?.orderedWaypoints ?? [],
-    [routeGeometry],
+  const liveProgress = useLiveRouteProgress(
+    routeLine,
+    routeGeometry?.waypointDistances ?? EMPTY_WAYPOINT_DISTANCES,
   );
-  const liveProgress = useLiveRouteProgress(routeLine, progressWaypoints);
   // Started is always true here - RouteApp (page.tsx) only ever
   // mounts StepScreen once useRouteStepper's own `started` flag is
   // true (StartScreen shows instead while it's false) - so there's no

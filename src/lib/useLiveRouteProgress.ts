@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  cumulativeDistances,
-  haversineMeters,
-  projectOntoRoute,
-  projectWaypoints,
-} from "./routeProgress";
+import { cumulativeDistances, haversineMeters, projectOntoRoute } from "./routeProgress";
 import type { LatLon, WaypointProgress } from "./routeProgress";
 
 /** Beyond this, a live fix reads as "not actually on this route" -
@@ -17,6 +12,23 @@ import type { LatLon, WaypointProgress } from "./routeProgress";
  * `onRoute` is false instead of acting on a projection that doesn't
  * mean anything. */
 const MAX_ON_ROUTE_METERS = 60;
+
+/** How far (route meters, not as the crow flies) a live GPS fix's own
+ * projection is allowed to move from the *previous* fix's own known
+ * position in one tick - see projectOntoRoute's own
+ * searchNearDistance/maxDeviationMeters doc comment (routeProgress.ts)
+ * for why bounding this search matters at all: a route that loops back
+ * on itself (a driven loop around a block, exactly the shape a real
+ * test drive is likely to take) can otherwise let a live fix snap onto
+ * the wrong pass the instant it's geometrically closer. Generous enough
+ * to cover ordinary watchPosition timing (fixes every ~1-5s under
+ * enableHighAccuracy) even at a speed well past anything this app's own
+ * neighborhood-street routes see, plus real slack for an occasional gap
+ * between fixes - nowhere near enough to reach a route's own later re-
+ * crossing of the same real corner, which is real additional driving
+ * distance away, not another couple hundred meters of the same
+ * stretch. */
+const MAX_LIVE_FIX_JUMP_METERS = 250;
 
 /** How many recent fixes the speed estimate averages over - smooths a
  * single noisy fix rather than letting it swing a speed-derived time-
@@ -65,21 +77,18 @@ export interface LiveRouteProgress {
  * Watches the browser's own live GPS feed and continuously projects it
  * onto a route's road-following line (routeProgress.ts) - the shared
  * foundation for GPS auto-advance and time-based navigation prompting
- * alike, both of which need the same two numbers (how far along the
- * route the bus actually is, how fast it's actually going) computed
- * the same way. Not wired into either yet - this is just the live-
- * tracking primitive both will be built on.
+ * alike (useNavigationPrompts.ts), both of which need the same two
+ * numbers (how far along the route the bus actually is, how fast it's
+ * actually going) computed the same way.
  *
  * Deliberately its own independent watchPosition, not shared with
  * RouteMap.tsx's own (used there to draw the live position dot and
  * split the drawn line into traveled/remaining) - consolidating the
- * two into one GPS watch is a reasonable follow-up once a real
- * consumer of this hook exists, but RouteMap.tsx's own watcher is
- * deeply embedded in one large closure-based mountMapLibre function,
- * not something to restructure speculatively before there's a second
- * caller to actually justify it.
+ * two into one GPS watch is a reasonable follow-up, but RouteMap.tsx's
+ * own watcher is deeply embedded in one large closure-based
+ * mountMapLibre function, not something to restructure speculatively.
  *
- * `routeLine`/`waypoints` are read through refs inside the
+ * `routeLine`/`waypointDistanceByKey` are read through refs inside the
  * watchPosition callback rather than closed over directly - they can
  * legitimately change after this hook first mounts (a route's own
  * geometry usually finishes loading asynchronously, after this hook's
@@ -88,15 +97,31 @@ export interface LiveRouteProgress {
  * watchPosition subscription is meant to be long-lived for as long as
  * the screen needs live position, not something to tear down and
  * restart every time upstream data finishes loading.
+ *
+ * `waypointDistanceByKey` is every real waypoint's own exact distance-
+ * along-route, straight from RouteMap.tsx's own RouteGeometryResult
+ * (which gets it from the routing provider's own exact per-leg
+ * distances, routing/types.ts) - not derived here via a fresh
+ * projectOntoRoute search per waypoint the way this hook used to (that
+ * search shares the exact same "which pass" ambiguity a route that
+ * doubles back can create for any nearest-point search over the
+ * returned geometry, routeProgress.ts's own nearestSegmentBearings doc
+ * comment has the full story). The live GPS fix itself still needs its
+ * own fresh projectOntoRoute call below - a moving point genuinely has
+ * no fixed position to look up ahead of time the way a waypoint does.
  */
 export function useLiveRouteProgress(
   routeLine: LatLon[],
-  waypoints: (LatLon & { key: string })[],
+  waypointDistanceByKey: Map<string, number>,
 ): LiveRouteProgress {
   const cumulative = useMemo(() => cumulativeDistances(routeLine), [routeLine]);
-  const waypointDistances = useMemo(
-    () => projectWaypoints(routeLine, cumulative, waypoints),
-    [routeLine, cumulative, waypoints],
+  const waypointDistances = useMemo<WaypointProgress[]>(
+    () =>
+      Array.from(waypointDistanceByKey, ([key, distanceAlongRoute]) => ({
+        key,
+        distanceAlongRoute,
+      })),
+    [waypointDistanceByKey],
   );
 
   const routeLineRef = useRef(routeLine);
@@ -115,6 +140,14 @@ export function useLiveRouteProgress(
   // since nothing ever renders off this list directly, only the
   // speedMps value derived from it.
   const recentFixesRef = useRef<{ point: LatLon; atMs: number }[]>([]);
+  // The last fix's own real distanceAlongRoute - read by the very next
+  // fix to bound its own search (MAX_LIVE_FIX_JUMP_METERS above), a ref
+  // rather than the exposed `distanceAlongRoute` state since it needs
+  // to stay set even through a fix that comes back untrusted (off-route
+  // or too far to project confidently) - see its own update site below
+  // for why that distinction matters. Null until the first successful
+  // projection, same as `distanceAlongRoute` state itself.
+  const lastKnownDistanceRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("geolocation" in navigator)) return;
@@ -127,11 +160,38 @@ export function useLiveRouteProgress(
         };
         setLiveFix(point);
 
-        const projection = projectOntoRoute(
-          routeLineRef.current,
-          cumulativeRef.current,
-          point,
-        );
+        // Bounded to near the previous fix's own position when one
+        // exists (see projectOntoRoute's own searchNearDistance/
+        // maxDeviationMeters doc comment for why) - falls back to an
+        // unbounded search whenever there's no prior position to bound
+        // against yet (the very first fix), or the bounded search came
+        // up with nothing at all (a real gap bigger than
+        // MAX_LIVE_FIX_JUMP_METERS since the last one - the phone was
+        // asleep, a tunnel, whatever), rather than reporting no
+        // progress at all over a gap the bound itself was never meant
+        // to cover.
+        const lastKnown = lastKnownDistanceRef.current;
+        const projection =
+          (lastKnown != null &&
+            projectOntoRoute(
+              routeLineRef.current,
+              cumulativeRef.current,
+              point,
+              lastKnown,
+              MAX_LIVE_FIX_JUMP_METERS,
+            )) ||
+          projectOntoRoute(routeLineRef.current, cumulativeRef.current, point);
+
+        if (projection) {
+          // Anchors the *next* fix's own bounded search, regardless of
+          // whether this fix passes the onRoute trust threshold below -
+          // even an off-route fix (briefly parked, weak signal) still
+          // projects somewhere near the bus's own real neighborhood on
+          // the route, and keeping the anchor fresh is what lets the
+          // next good fix self-heal instead of searching near a
+          // position that's gone stale.
+          lastKnownDistanceRef.current = projection.distanceAlongRoute;
+        }
         if (projection && projection.distanceFromRoute <= MAX_ON_ROUTE_METERS) {
           setDistanceAlongRoute(projection.distanceAlongRoute);
           setOnRoute(true);

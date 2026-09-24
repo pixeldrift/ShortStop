@@ -116,20 +116,48 @@ export interface RouteProjection {
  * cumulativeDistances(coords) - passed in rather than recomputed here
  * so a caller checking many fixes against the same route line (every
  * watchPosition callback, for the whole drive) only ever walks the
- * line once, at load time. Returns null only for an empty route line -
- * a single-point line still projects onto that one point. */
+ * line once, at load time. Returns null only for an empty route line
+ * (or a `searchNearDistance`/`maxDeviationMeters` window with no
+ * segment inside it at all) - a single-point line still projects onto
+ * that one point.
+ *
+ * `searchNearDistance`/`maxDeviationMeters`, when both given, restrict
+ * the search to segments whose own cumulative distance falls within
+ * `maxDeviationMeters` of `searchNearDistance`, instead of scanning the
+ * route's entire length - useLiveRouteProgress's own one real caller
+ * uses this to bound each new live GPS fix's search to near wherever
+ * the *previous* fix actually landed, since a real vehicle can only
+ * have moved a bounded distance since then. That constraint matters
+ * for the same reason nearestSegmentBearings's own doc comment
+ * describes for a route's static waypoints: an unrestricted nearest-
+ * point search can't tell a route's later re-crossing of some real
+ * corner (a driven loop around a block, say) from its first, correct
+ * pass, and would happily snap a live fix onto whichever one just
+ * happens to be a hair closer. A moving point has no fixed position of
+ * its own to protect with a trip-ordered cursor the way a waypoint
+ * does, so the constraint has to come from real-world physics (how far
+ * a vehicle can plausibly travel between fixes) instead. Both
+ * parameters omitted searches the whole line, same as before this
+ * existed - the right behavior for a cold-start fix with no prior
+ * position to bound against yet. */
 export function projectOntoRoute(
   coords: LatLon[],
   cumulative: number[],
   point: LatLon,
+  searchNearDistance?: number,
+  maxDeviationMeters?: number,
 ): RouteProjection | null {
   if (coords.length === 0) return null;
   if (coords.length === 1) {
     return { distanceAlongRoute: 0, distanceFromRoute: haversineMeters(point, coords[0]) };
   }
+  const bounded = searchNearDistance != null && maxDeviationMeters != null;
+  const lowerBound = bounded ? searchNearDistance - maxDeviationMeters : -Infinity;
+  const upperBound = bounded ? searchNearDistance + maxDeviationMeters : Infinity;
 
   let best: RouteProjection | null = null;
   for (let i = 0; i < coords.length - 1; i++) {
+    if (cumulative[i + 1] < lowerBound || cumulative[i] > upperBound) continue;
     const { point: onSegment, t } = projectOntoSegment(point, coords[i], coords[i + 1]);
     const distanceFromRoute = haversineMeters(point, onSegment);
     if (best && distanceFromRoute >= best.distanceFromRoute) continue;
@@ -211,28 +239,6 @@ export interface WaypointProgress {
   distanceAlongRoute: number;
 }
 
-/** Projects every tracked waypoint onto the route line once, up
- * front - a waypoint's own position along the route never changes for
- * as long as that route's geometry doesn't, so this only needs
- * recomputing when routeLine or the waypoint list itself changes, not
- * on every GPS fix. A waypoint whose own coordinate happens to sit
- * exactly on the line (the overwhelmingly common case - waypoints are
- * usually among the very points the routing provider's own line
- * passes through) projects with distanceFromRoute ~0; one that
- * doesn't (a manually placed pin slightly off the snapped road) still
- * projects to its nearest point on the line, same as a live GPS fix
- * would. */
-export function projectWaypoints(
-  coords: LatLon[],
-  cumulative: number[],
-  waypoints: (LatLon & { key: string })[],
-): WaypointProgress[] {
-  return waypoints.map((waypoint) => {
-    const projection = projectOntoRoute(coords, cumulative, waypoint);
-    return { key: waypoint.key, distanceAlongRoute: projection?.distanceAlongRoute ?? 0 };
-  });
-}
-
 /** Standard great-circle initial bearing (forward azimuth) from one
  * point to another, in degrees clockwise from north. The one canonical
  * copy - roadBearingAt below is its one real caller now, but there's
@@ -255,6 +261,20 @@ export interface WaypointRouteBearing {
   distanceAlongRoute: number;
   bearing: number | null;
 }
+
+// How far (meters, along the route's own cumulative distance - not as
+// the crow flies) nearestSegmentBearings's own search keeps looking past
+// the closest match it's found so far before giving up and committing to
+// it, rather than continuing on toward the route's own end. Generous
+// enough to bridge ordinary routing-provider vertex spacing and a
+// genuinely-nearby stop/turn a couple hundred meters past the cursor
+// (this window keeps extending for as long as a closer match keeps
+// turning up), nowhere near enough to reach a route's own later re-
+// crossing of the same real corner (a double-back is real additional
+// driving distance away, not another hundred meters of the same
+// stretch) - see nearestSegmentBearings's own doc comment for why that
+// distinction matters.
+const LOCAL_MATCH_LOOKAHEAD_METERS = 200;
 
 /** One {distanceAlongRoute, bearing} pair per entry in `points`
  * (`coords` itself, a route's own road-following line, in order) - the
@@ -293,7 +313,26 @@ export interface WaypointRouteBearing {
  * `preferOutgoing[i]` (aligned with `points`, same index) picks which
  * side of that point's own spot roadBearingAt looks toward: a stop
  * wants the incoming road it's still sitting on (the default), a turn
- * sign wants the outgoing road it's turning onto. */
+ * sign wants the outgoing road it's turning onto.
+ *
+ * Trusting trip order to only search ahead of the cursor stops a later
+ * point from matching a real pass the trip has already covered, but on
+ * its own doesn't stop the opposite mistake: naively taking the single
+ * *closest* segment out of every one from the cursor to the route's own
+ * end would let a route's *later* re-crossing of this exact point's real
+ * corner (the second half of the very double-back this function exists
+ * to handle) win the match outright, whenever that later pass's own
+ * geometry happened to sit even a hair closer than the correct,
+ * immediately-following segment - routing-provider noise, a slightly
+ * different lane offset, anything. That doesn't just misplace this one
+ * point either - the cursor would then jump to sit right after that far-
+ * later match, so every point still to come this call loses the trip-
+ * order restriction for the rest of the route too. LOCAL_MATCH_LOOKAHEAD_METERS
+ * below is what actually prevents it: the search commits to the first
+ * real local minimum it finds (stops once it's moved that far along the
+ * route past the closest match so far without anything closer turning
+ * up), rather than continuing on toward a possibly-closer match that
+ * really belongs to a different, later pass through the same spot. */
 export function nearestSegmentBearings(
   coords: LatLon[],
   points: LatLon[],
@@ -313,6 +352,24 @@ export function nearestSegmentBearings(
         bestDistance = distance;
         bestT = t;
         bestIndex = j;
+      } else if (cumulative[j] - cumulative[bestIndex] > LOCAL_MATCH_LOOKAHEAD_METERS) {
+        // Scanning all the way to the route's own end used to mean a
+        // route that doubles back - re-crossing this same real corner
+        // again much later in the trip - could win the match outright,
+        // whenever that later pass's own geometry happened to sit even a
+        // hair closer to this point than the correct, immediately-
+        // following segment (routing-provider noise, a slightly
+        // different lane offset, anything). That doesn't just misplace
+        // *this* point - cursor then jumps to sit right after that far-
+        // later match, so the trip-order restriction (only ever search
+        // forward of the cursor) stops protecting every point still to
+        // come this call, for the rest of the route. Once we've moved
+        // this far past the closest match found so far without anything
+        // closer turning up, that's a real local minimum - a later, even
+        // closer-looking match beyond it belongs to a different, later
+        // pass through the same physical spot, not a better fit for this
+        // one.
+        break;
       }
     }
     cursor = Math.min(bestIndex + 1, coords.length - 2);

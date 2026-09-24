@@ -58,12 +58,35 @@ interface OrsDirectionsFeature {
   properties: {
     summary?: { distance: number; duration: number };
     // One entry per leg between two consecutive input coordinates -
-    // Autoroute (this app's one real caller today) only ever requests
-    // exactly two coordinates, so this is always a single-element
-    // array in practice, but every leg's own steps are still flattened
-    // together (stepsFromFeature below) rather than assuming that.
-    segments?: { steps: OrsDirectionsStep[] }[];
+    // Autoroute (this app's own compass-button caller) only ever
+    // requests exactly two coordinates, so this is a single-element
+    // array there, but RouteMap.tsx's own caller requests every real
+    // waypoint in trip order at once, making this one entry per leg of
+    // the whole trip - every leg's own steps are still flattened
+    // together (stepsFromFeature below) rather than assuming a single
+    // leg, and each leg's own `distance` is what waypointDistances
+    // below is built from.
+    segments?: { distance: number; steps: OrsDirectionsStep[] }[];
   };
+}
+
+// Every input waypoint's own distance-along-route, built by walking a
+// running sum of each leg's own real distance - segments[i] is exactly
+// the leg between input coordinate i and i+1, so this is a running total
+// with no search or guessing involved anywhere (see RoutingResult's own
+// waypointDistances doc comment, types.ts, for why that matters for a
+// route that doubles back). `segments` undefined/empty (a provider
+// response with no segments at all - shouldn't happen for ORS with
+// `instructions: true`, but not load-bearing to assume) returns an empty
+// array rather than guessing zeroes for waypoints that might not even
+// exist.
+function waypointDistancesFromFeature(feature: OrsDirectionsFeature): number[] {
+  const segments = feature.properties.segments ?? [];
+  const distances = [0];
+  for (const segment of segments) {
+    distances.push(distances[distances.length - 1] + segment.distance);
+  }
+  return distances;
 }
 
 interface OrsDirectionsResponse {
@@ -180,6 +203,7 @@ export function openRouteServiceProvider(apiKey: string): RoutingProvider {
         distanceMeters: feature.properties.summary?.distance,
         durationSeconds: feature.properties.summary?.duration,
         steps: stepsFromFeature(feature),
+        waypointDistances: waypointDistancesFromFeature(feature),
         provider: "openrouteservice",
       };
     },
