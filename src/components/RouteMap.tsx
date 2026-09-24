@@ -196,16 +196,6 @@ export interface RouteGeometryResult {
    * provider's own response - matches RoutingResult's own
    * geometry.coordinates exactly, no conversion done here. */
   coordinates: RouteCoordinate[];
-  /** Every step's own {lat, lon} that actually resolved in the cache,
-   * in route order - the same list this component's own road-geometry
-   * request was built from (OrderedWaypoint below), minus the school:
-   * the school never gets its own step id/waypointKey (no
-   * NavigationStep row exists for it even when it's a real waypoint -
-   * see this component's own `schoolIsWaypoint` prop doc comment), and
-   * every caller of this result (useLiveRouteProgress's own waypoints
-   * param) only ever tracks distance to a real step, keyed by its own
-   * waypointKey. */
-  orderedWaypoints: { key: string; lat: number; lon: number }[];
   /** Every real waypoint's own exact distance-along-route (meters from
    * the route's start), keyed by waypointKey - the same map this
    * component's own distanceAlongRouteByKey is built from
@@ -942,9 +932,6 @@ function mountMapLibre(args: MountArgs): () => void {
 
                 onRouteGeometryRef.current?.({
                   coordinates: roadLngLats,
-                  orderedWaypoints: orderedWaypointsRef.current.filter(
-                    (w): w is { key: string; lat: number; lon: number } => w.key != null,
-                  ),
                   waypointDistances: new Map(distanceAlongRouteByKey),
                 });
                 // Two layers, two solid colors (light ahead, dark

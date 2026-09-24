@@ -211,28 +211,6 @@ export interface WaypointProgress {
   distanceAlongRoute: number;
 }
 
-/** Projects every tracked waypoint onto the route line once, up
- * front - a waypoint's own position along the route never changes for
- * as long as that route's geometry doesn't, so this only needs
- * recomputing when routeLine or the waypoint list itself changes, not
- * on every GPS fix. A waypoint whose own coordinate happens to sit
- * exactly on the line (the overwhelmingly common case - waypoints are
- * usually among the very points the routing provider's own line
- * passes through) projects with distanceFromRoute ~0; one that
- * doesn't (a manually placed pin slightly off the snapped road) still
- * projects to its nearest point on the line, same as a live GPS fix
- * would. */
-export function projectWaypoints(
-  coords: LatLon[],
-  cumulative: number[],
-  waypoints: (LatLon & { key: string })[],
-): WaypointProgress[] {
-  return waypoints.map((waypoint) => {
-    const projection = projectOntoRoute(coords, cumulative, waypoint);
-    return { key: waypoint.key, distanceAlongRoute: projection?.distanceAlongRoute ?? 0 };
-  });
-}
-
 /** Standard great-circle initial bearing (forward azimuth) from one
  * point to another, in degrees clockwise from north. The one canonical
  * copy - roadBearingAt below is its one real caller now, but there's

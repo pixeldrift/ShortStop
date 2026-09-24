@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  cumulativeDistances,
-  haversineMeters,
-  projectOntoRoute,
-  projectWaypoints,
-} from "./routeProgress";
+import { cumulativeDistances, haversineMeters, projectOntoRoute } from "./routeProgress";
 import type { LatLon, WaypointProgress } from "./routeProgress";
 
 /** Beyond this, a live fix reads as "not actually on this route" -
@@ -65,21 +60,18 @@ export interface LiveRouteProgress {
  * Watches the browser's own live GPS feed and continuously projects it
  * onto a route's road-following line (routeProgress.ts) - the shared
  * foundation for GPS auto-advance and time-based navigation prompting
- * alike, both of which need the same two numbers (how far along the
- * route the bus actually is, how fast it's actually going) computed
- * the same way. Not wired into either yet - this is just the live-
- * tracking primitive both will be built on.
+ * alike (useNavigationPrompts.ts), both of which need the same two
+ * numbers (how far along the route the bus actually is, how fast it's
+ * actually going) computed the same way.
  *
  * Deliberately its own independent watchPosition, not shared with
  * RouteMap.tsx's own (used there to draw the live position dot and
  * split the drawn line into traveled/remaining) - consolidating the
- * two into one GPS watch is a reasonable follow-up once a real
- * consumer of this hook exists, but RouteMap.tsx's own watcher is
- * deeply embedded in one large closure-based mountMapLibre function,
- * not something to restructure speculatively before there's a second
- * caller to actually justify it.
+ * two into one GPS watch is a reasonable follow-up, but RouteMap.tsx's
+ * own watcher is deeply embedded in one large closure-based
+ * mountMapLibre function, not something to restructure speculatively.
  *
- * `routeLine`/`waypoints` are read through refs inside the
+ * `routeLine`/`waypointDistanceByKey` are read through refs inside the
  * watchPosition callback rather than closed over directly - they can
  * legitimately change after this hook first mounts (a route's own
  * geometry usually finishes loading asynchronously, after this hook's
@@ -88,15 +80,31 @@ export interface LiveRouteProgress {
  * watchPosition subscription is meant to be long-lived for as long as
  * the screen needs live position, not something to tear down and
  * restart every time upstream data finishes loading.
+ *
+ * `waypointDistanceByKey` is every real waypoint's own exact distance-
+ * along-route, straight from RouteMap.tsx's own RouteGeometryResult
+ * (which gets it from the routing provider's own exact per-leg
+ * distances, routing/types.ts) - not derived here via a fresh
+ * projectOntoRoute search per waypoint the way this hook used to (that
+ * search shares the exact same "which pass" ambiguity a route that
+ * doubles back can create for any nearest-point search over the
+ * returned geometry, routeProgress.ts's own nearestSegmentBearings doc
+ * comment has the full story). The live GPS fix itself still needs its
+ * own fresh projectOntoRoute call below - a moving point genuinely has
+ * no fixed position to look up ahead of time the way a waypoint does.
  */
 export function useLiveRouteProgress(
   routeLine: LatLon[],
-  waypoints: (LatLon & { key: string })[],
+  waypointDistanceByKey: Map<string, number>,
 ): LiveRouteProgress {
   const cumulative = useMemo(() => cumulativeDistances(routeLine), [routeLine]);
-  const waypointDistances = useMemo(
-    () => projectWaypoints(routeLine, cumulative, waypoints),
-    [routeLine, cumulative, waypoints],
+  const waypointDistances = useMemo<WaypointProgress[]>(
+    () =>
+      Array.from(waypointDistanceByKey, ([key, distanceAlongRoute]) => ({
+        key,
+        distanceAlongRoute,
+      })),
+    [waypointDistanceByKey],
   );
 
   const routeLineRef = useRef(routeLine);
