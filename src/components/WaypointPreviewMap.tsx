@@ -455,25 +455,37 @@ function mountMapLibre(
   // turn - `preferOutgoing: [true]` (nearestSegmentBearings's own doc
   // comment, routeProgress.ts) since a turn sign needs the road being
   // turned *onto*, unlike stopBearings (below), which deliberately
-  // wants the *incoming* road a stop still sits on. Unlike RouteMap.tsx's
-  // own applyTurnRotations, this map's own camera never rotates (no
-  // bearing option anywhere in this file), so the map's own on-screen
-  // bearing is always 0 - true compass bearing and screen angle are the
-  // same thing here, no live "rotate" listener needed the way
-  // RouteMap.tsx's own driving-mode camera spin requires.
+  // wants the *incoming* road a stop still sits on.
   function currentTurnBearing(): number | null {
     if (!latestDirection) return null;
     return nearestSegmentBearings(latestRoadGeometry, [latestCenter], [true])[0].bearing;
   }
 
   // Re-applies the current marker's own real bearing (if it's a
-  // Left/Right turn) - called right after currentMarker's own HTML is
-  // (re)built, and again once latestRoadGeometry actually resolves
+  // Left/Right turn) against whatever the map's own on-screen bearing
+  // is right now - called right after currentMarker's own HTML is
+  // (re)built, again once latestRoadGeometry actually resolves
   // (drawRouteLine's own fetch, below), since a turn drawn before that
-  // fetch lands has no real bearing to point at yet.
+  // fetch lands has no real bearing to point at yet, and on every
+  // "rotate" event (registered right after the map itself is created,
+  // below) so it stays correct as the user drags to rotate the map.
+  // This map has no programmatic bearing animation of its own (unlike
+  // RouteMap.tsx's driving-mode camera spin), but MapLibre's default
+  // interaction handlers still let a user rotate it by hand (a
+  // two-finger twist on a touch device, or a right-click drag with a
+  // mouse) - `map.getBearing()` was previously assumed to always read
+  // 0 on the theory that nothing here ever rotates the camera, which
+  // missed that user gesture entirely and left every turn sign frozen
+  // at its screen angle from the moment it was drawn instead of
+  // turning along with the map underneath it.
   function applyCurrentMarkerRotation() {
     if (!currentMarker || !latestDirection) return;
-    setTurnDiamondRotation(currentMarker.getElement(), latestDirection, currentTurnBearing(), 0);
+    setTurnDiamondRotation(
+      currentMarker.getElement(),
+      latestDirection,
+      currentTurnBearing(),
+      map?.getBearing() ?? 0,
+    );
   }
 
   // One bearing per StopPin in `pins` - matched against
@@ -617,6 +629,7 @@ function mountMapLibre(
       });
       const mapInstance = map;
       collapseAttribution(container);
+      mapInstance.on("rotate", applyCurrentMarkerRotation);
 
       redrawStopPins(maplibregl);
       // This row's own point - created last (a higher z-index than
