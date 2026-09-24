@@ -206,6 +206,17 @@ export interface RouteGeometryResult {
    * param) only ever tracks distance to a real step, keyed by its own
    * waypointKey. */
   orderedWaypoints: { key: string; lat: number; lon: number }[];
+  /** Every real waypoint's own exact distance-along-route (meters from
+   * the route's start), keyed by waypointKey - the same map this
+   * component's own distanceAlongRouteByKey is built from
+   * (RoutingResult.waypointDistances, routing/types.ts - straight from
+   * the routing provider's own per-leg distances, not a nearest-point
+   * search). A snapshot at the moment this callback fires, not a live
+   * reference - this component's own copy never changes after its
+   * first route-geometry fetch resolves anyway (same "loads once per
+   * route" reasoning this whole result already carries), so there's
+   * nothing for a caller to miss by holding onto its own copy. */
+  waypointDistances: Map<string, number>;
 }
 
 // The route's own ordered {lat, lon} sequence - every `path` step that
@@ -717,26 +728,22 @@ function mountMapLibre(args: MountArgs): () => void {
   // split exactly where it was rather than snapping back to 0.
   let lastRouteSplitDistance = 0;
   // Every waypoint's own real distance-along-route (meters) - populated
-  // once, eagerly, right after roadLine/roadCumulative themselves exist
-  // (search "distanceAlongRouteByKey.set" below), using the same trip-
-  // ordered nearestSegmentBearings search drawDrivingPins separately
-  // runs for every turn/stop's own real bearing. Read by
-  // updateRouteProgress (a sibling closure, not nested inside
-  // drawDrivingPins, and one whose own first call can happen before
-  // driving mode's pins are ever drawn) to look up the *active* step's
-  // own distance, instead of running a fresh, trip-order-unaware
-  // projectOntoRoute search on just that one point. That distinction
-  // matters here specifically: a plain ad hoc projection can't tell a
-  // route's second close pass near some corner (two turns onto nearby
-  // or crossing streets, say) from its first, the exact same ambiguity
-  // nearestSegmentBearings's own doc comment already describes for
-  // bearings - and picking the wrong one is exactly what made the
-  // traveled/remaining split look like it stopped making sense a few
-  // steps into a real drive. Distance doesn't depend on a turn's own
-  // preferOutgoing the way a bearing does, so this one plain pass
-  // (no preferOutgoing argument) is already exactly what drawDrivingPins'
-  // own preferOutgoing-aware pass would also compute for it - nothing
-  // is lost by not waiting for that one to run.
+  // once, eagerly, the moment the route-geometry fetch itself resolves
+  // (search "distanceAlongRouteByKey.set" below), straight from that
+  // response's own RoutingResult.waypointDistances (routing/types.ts) -
+  // the routing provider's own exact per-leg distances, aligned index-
+  // for-index with orderedWaypointsRef.current (the same array the
+  // request itself was built from), not a nearest-point search over the
+  // returned geometry. Read by updateRouteProgress (a sibling closure,
+  // not nested inside drawDrivingPins, and one whose own first call can
+  // happen before driving mode's pins are ever drawn) to look up the
+  // *active* step's own distance, instead of running a fresh
+  // projectOntoRoute search on just that one point (which, being a
+  // nearest-point search, could still resolve to the wrong pass on a
+  // route that doubles back - the routing provider's own per-leg
+  // distances carry no such ambiguity, since no pass is ever "found,"
+  // each one is just handed straight over). drawDrivingPins reads this
+  // same map for turn/stop bearings too, for the identical reason.
   const distanceAlongRouteByKey = new Map<string, number>();
   // This route's own already-fetched road-following geometry (set once
   // the /api/route-geometry request below resolves) - read by
@@ -898,11 +905,46 @@ function mountMapLibre(args: MountArgs): () => void {
                 if (cancelledRef() || !result) return;
                 const roadLngLats = result.geometry.coordinates;
                 latestRoadGeometry = roadLngLats;
+
+                // Populates distanceAlongRouteByKey (declared outside
+                // this whole closure - see its own doc comment) right
+                // away, straight from the routing provider's own exact
+                // per-leg distances (result.waypointDistances,
+                // routing/types.ts) - aligned index-for-index with
+                // orderedWaypointsRef.current, the exact array this
+                // fetch's own request body was built from just above.
+                // No search or projection involved, unlike the
+                // nearestSegmentBearings-based approach this replaced:
+                // the routing provider computed this route through
+                // exactly these points, in this order, so there's simply
+                // nothing to guess - not even in principle can a route
+                // that doubles back and re-crosses the same real corner
+                // resolve a waypoint to the wrong pass this way, since no
+                // pass is ever "found," each one is just handed straight
+                // over. Falls back to the old trip-ordered search only
+                // for a (today hypothetical - ORS always reports this)
+                // provider that doesn't report per-leg distances at all.
+                if (result.waypointDistances) {
+                  result.waypointDistances.forEach((distance, i) => {
+                    const key = orderedWaypointsRef.current[i]?.key;
+                    if (key != null) distanceAlongRouteByKey.set(key, distance);
+                  });
+                } else {
+                  const roadLine: LatLon[] = roadLngLats.map(([lon, lat]) => ({ lat, lon }));
+                  nearestSegmentBearings(roadLine, orderedWaypointsRef.current).forEach(
+                    ({ distanceAlongRoute }, i) => {
+                      const key = orderedWaypointsRef.current[i]?.key;
+                      if (key != null) distanceAlongRouteByKey.set(key, distanceAlongRoute);
+                    },
+                  );
+                }
+
                 onRouteGeometryRef.current?.({
                   coordinates: roadLngLats,
                   orderedWaypoints: orderedWaypointsRef.current.filter(
                     (w): w is { key: string; lat: number; lon: number } => w.key != null,
                   ),
+                  waypointDistances: new Map(distanceAlongRouteByKey),
                 });
                 // Two layers, two solid colors (light ahead, dark
                 // behind - ROUTE_LINE_COLOR_REMAINING/_TRAVELED above),
@@ -967,19 +1009,6 @@ function mountMapLibre(args: MountArgs): () => void {
                 const roadLine: LatLon[] = roadLngLats.map(([lon, lat]) => ({ lat, lon }));
                 const roadCumulative = cumulativeDistances(roadLine);
                 const roadTotalDistance = roadCumulative[roadCumulative.length - 1] ?? 0;
-
-                // Populates distanceAlongRouteByKey (declared outside
-                // this whole closure - see its own doc comment) right
-                // away, using the same trip-ordered search drawDrivingPins
-                // separately runs for bearings - so updateRouteProgress
-                // below always has a real, trip-order-safe distance for
-                // the active step ready, from its very first call.
-                nearestSegmentBearings(roadLine, orderedWaypointsRef.current).forEach(
-                  ({ distanceAlongRoute }, i) => {
-                    const key = orderedWaypointsRef.current[i]?.key;
-                    if (key != null) distanceAlongRouteByKey.set(key, distanceAlongRoute);
-                  },
-                );
 
                 // Splits roadLngLats at how far the bus has actually
                 // gotten - always the *active step's* own real distance-
