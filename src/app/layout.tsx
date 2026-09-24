@@ -53,15 +53,22 @@ export const metadata: Metadata = {
 // Location field still zoomed in on tap, then (Mobile Safari's own
 // long-standing bug, not anything this app's JS does) often failed to
 // zoom back out once the on-screen keyboard closed, leaving the whole
-// page stuck zoomed in. maximumScale: 1 caps how far in the viewport can
-// ever go, at exactly the scale it already loads at - the standard fix
-// for this exact class of bug, and harmless for a driver's own pinch-
-// zoom since nothing here is precise enough work (turn-by-turn text,
-// route rows) to ever need zooming in past 100% in the first place.
+// page stuck zoomed in. maximumScale: 1 alone (the standard fix for
+// this exact class of bug most places document) turned out not to be
+// enough on its own - the lat/lon box in the coordinate-edit card kept
+// triggering the same zoom-on-focus even with it set, since
+// maximum-scale is still just a *cap* a browser can choose to read
+// loosely, not a hard "never zoom" instruction. userScalable: false is
+// the harder line some iOS Safari versions actually need to respect
+// that cap for zoom-on-focus, not just pinch-zoom - harmless for a
+// driver's own use here too, since nothing in this app (turn-by-turn
+// text, route rows) is precise enough work to ever need zooming in past
+// 100% in the first place.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

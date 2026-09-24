@@ -149,8 +149,15 @@ export function TopBar({
               dropoff route every rider already boarded back at the
               school, so what's actually being counted stop by stop is
               how many have now gotten *off*, not how many are freshly
-              "onboard." */}
-          {totalOnboard} {tripType === "dropoff" ? "dropped off" : "onboard"}
+              "onboard." Kept to one short word ("off"/"on"), not
+              "dropped off"/"onboard" - this sits in a fixed-width grid
+              cell next to the route number and bus number, and the
+              longer wording wrapped onto two lines there. Will read
+              "N on M" (an onboard total counting down on drop-offs)
+              once a starting headcount is actually collected - for now
+              there's nothing to count down from, so this stays a
+              running tally either way. */}
+          {totalOnboard} {tripType === "dropoff" ? "off" : "on"}
         </div>
       </div>
     </div>

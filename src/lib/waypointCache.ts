@@ -268,6 +268,21 @@ export function resolveStepCoordinate(
  * resolved neighbor falls back to whichever known candidate
  * resolveIntersectionCacheEntry picks with no position to compare
  * against at all (its own doc comment).
+ *
+ * An override never updates `near` for the steps after it, even though
+ * it's the most accurate position available - deliberately, since
+ * `near` exists purely to support *other* steps' own cache-based
+ * ambiguity resolution, and an override is a single-row, surgical
+ * correction ("this one step's real spot, don't second-guess it" - its
+ * own doc comment above), not a new anchor meant to steer how some
+ * *different*, unreviewed step resolves its own ambiguity. Without this,
+ * overriding one step of a route that revisits the same ambiguous road
+ * pair (two stops or a stop and a turn, both named for a street with two
+ * known crossings) could silently drag a neighboring, untouched step's
+ * own cache-based pick over to match the override - the exact way one
+ * admin's override of a single stop was seen to also relocate an
+ * adjacent turn's own diamond onto the same corner, well past what that
+ * edit ever asked for.
  */
 export function resolveRouteCoordinates(
   steps: { waypointKey: string; overrideLat: number | null; overrideLon: number | null }[],
@@ -277,7 +292,9 @@ export function resolveRouteCoordinates(
   let near = schoolAnchor;
   return steps.map((step) => {
     const resolved = resolveStepCoordinate(step.waypointKey, step, cache, near);
-    if (resolved) near = { lat: resolved.lat, lon: resolved.lon };
+    if (resolved && resolved.source !== "override") {
+      near = { lat: resolved.lat, lon: resolved.lon };
+    }
     return resolved;
   });
 }
