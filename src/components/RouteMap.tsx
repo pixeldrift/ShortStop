@@ -23,7 +23,6 @@ import {
   cumulativeDistances,
   nearestSegmentBearings,
   pointAtDistance,
-  projectOntoRoute,
   roadBearingAt,
 } from "@/lib/routeProgress";
 import type { LatLon } from "@/lib/routeProgress";
@@ -91,11 +90,19 @@ const DRIVING_FLY_DURATION_MS = 1000;
 // (drawDrivingPins) reuses as-is once crossed.
 const OVERVIEW_DETAIL_ZOOM = 15;
 
-// The road-following route line's own color - deliberately lighter
-// than the school/stop pins' own blue (#2563eb, schoolMarkerHtml/
+// The road-following route line's own two colors - both deliberately
+// distinct from the school/stop pins' own blue (#2563eb, schoolMarkerHtml/
 // stopMarkerHtml below) so the line never reads as though it were just
-// another pin, especially where one sits right on top of it.
-const ROUTE_LINE_COLOR = "#60a5fa";
+// another pin, especially where one sits right on top of it. Two solid
+// colors, not one color split dashed-vs-solid the way this used to work -
+// a dashed line's own dash phase visibly crawls/resets on every redraw
+// (every step advance, every live GPS fix, and MapLibre's own internal
+// re-tessellation as the driving camera's bearing animates), which read
+// as the line itself jittering rather than smoothly extending. Solid
+// throughout, light ahead and dark behind, shows the exact same traveled/
+// remaining split with no redraw-driven flicker.
+const ROUTE_LINE_COLOR_REMAINING = "#93c5fd";
+const ROUTE_LINE_COLOR_TRAVELED = "#1d4ed8";
 
 /** A plain GeoJSON LineString Feature wrapping `coordinates` - the
  * shape mountMapLibre's own route-line sources need, built fresh on
@@ -702,15 +709,6 @@ function mountMapLibre(args: MountArgs): () => void {
   // tracked so the map's own "zoomend" handler only redraws pins on an
   // actual crossing, not on every zoom tick.
   let overviewDetailed = false;
-  // The live GPS fix (watchPosition below), in [lon, lat] order - null
-  // until the first one arrives, or forever if geolocation is denied/
-  // unavailable. Read by updateRouteProgress (defined once the route
-  // line itself exists) to split the drawn line at how far the bus has
-  // actually gotten, not just which step the driver has manually
-  // advanced to - watchPosition's own callback lives outside the
-  // closure that function is defined in, so this (and
-  // applyRouteProgress just below) are what let the one reach the other.
-  let liveLngLat: [number, number] | null = null;
   let applyRouteProgress: (() => void) | undefined;
   // The last distance-along-route (meters) the route line's own
   // traveled/remaining split actually landed on - held onto so a
@@ -906,20 +904,19 @@ function mountMapLibre(args: MountArgs): () => void {
                     (w): w is { key: string; lat: number; lon: number } => w.key != null,
                   ),
                 });
-                // Two layers sharing one color (ROUTE_LINE_COLOR)
-                // rather than one - dotted ahead of the bus, solid
-                // behind it, so the line itself shows how far the
-                // route has actually been driven, not just that it
-                // exists. Both start empty; updateRouteProgress below
-                // (called once immediately, and again on every step
-                // advance/live GPS fix) is what actually splits
-                // roadLngLats between them. beforeId (both layers)
-                // places them directly under the road-name labels
-                // (added earlier, in protomapsStyle.ts's own layer
-                // list) so street names stay legible over the route
-                // instead of the line painting over them - addLayer
-                // with no beforeId would otherwise stack this on top
-                // of literally everything already in the style,
+                // Two layers, two solid colors (light ahead, dark
+                // behind - ROUTE_LINE_COLOR_REMAINING/_TRAVELED above),
+                // so the line itself shows how far the route has
+                // actually been driven, not just that it exists. Both
+                // start empty; updateRouteProgress below (called once
+                // immediately, and again on every step advance) is what
+                // actually splits roadLngLats between them. beforeId
+                // (both layers) places them directly under the road-name
+                // labels (added earlier, in protomapsStyle.ts's own
+                // layer list) so street names stay legible over the
+                // route instead of the line painting over them -
+                // addLayer with no beforeId would otherwise stack this
+                // on top of literally everything already in the style,
                 // labels included.
                 mapInstance.addSource("route-remaining", {
                   type: "geojson",
@@ -936,26 +933,10 @@ function mountMapLibre(args: MountArgs): () => void {
                     source: "route-remaining",
                     layout: { "line-cap": "round", "line-join": "round" },
                     paint: {
-                      "line-color": ROUTE_LINE_COLOR,
+                      "line-color": ROUTE_LINE_COLOR_REMAINING,
                       "line-width": ROUTE_LINE_WIDTH,
                       "line-offset": ROUTE_LINE_OFFSET,
                       "line-opacity": 0.85,
-                      // A dash length of 0 here used to render as a
-                      // solid line instead of a dotted one (dasharray
-                      // values are in line-width units, so [0, 2] meant
-                      // "0px dash, 8px gap" at width 4 - GL's dash
-                      // shader treats that degenerate case as always-on
-                      // rather than always-off) - route-remaining (the
-                      // portion still ahead) was showing up solid while
-                      // route-traveled below (correctly plain/solid)
-                      // read as the dotted one by comparison. [0.25, 2.5]
-                      // is a real, small dot with a real gap at
-                      // ROUTE_LINE_WIDTH's own zoom-scaled width, not a
-                      // value that can invert itself - and scales
-                      // proportionally with it by the same "line-width
-                      // units" relationship, same as it always did at
-                      // the old fixed width of 4.
-                      "line-dasharray": [0.25, 2.5],
                     },
                   },
                   "roads-major-label",
@@ -967,7 +948,7 @@ function mountMapLibre(args: MountArgs): () => void {
                     source: "route-traveled",
                     layout: { "line-cap": "round", "line-join": "round" },
                     paint: {
-                      "line-color": ROUTE_LINE_COLOR,
+                      "line-color": ROUTE_LINE_COLOR_TRAVELED,
                       "line-width": ROUTE_LINE_WIDTH,
                       "line-offset": ROUTE_LINE_OFFSET,
                       "line-opacity": 0.85,
@@ -1001,80 +982,58 @@ function mountMapLibre(args: MountArgs): () => void {
                 );
 
                 // Splits roadLngLats at how far the bus has actually
-                // gotten - a live GPS fix (liveLngLat) when one exists,
-                // otherwise the active step's own resolved coordinate,
-                // same "something to show even without GPS" fallback the
-                // rest of driving mode already leans on. Splits at the
-                // real interpolated point that distance falls on
-                // (pointAtDistance), not just whichever geometry vertex
-                // happens to be nearest it (that used to be
-                // nearestCoordIndex's own job) - a route-geometry
-                // provider can space its own vertices anywhere from a
-                // few meters to tens of meters apart, and snapping to
-                // one instead of the real point is exactly what made the
-                // dashed/solid boundary look like it landed somewhere
-                // arbitrary instead of lining up with the current step.
-                // Assigned to applyRouteProgress (declared outside this
-                // whole closure) so watchPosition's own callback - which
-                // lives outside it too, since it's registered after this
-                // fetch/cache chain rather than inside it - can still
-                // trigger a redraw the moment a new GPS fix arrives.
+                // gotten - always the *active step's* own real distance-
+                // along-route (distanceAlongRouteByKey, populated above,
+                // trip-order-safe), for every waypoint kind (turn or
+                // stop alike - the active step's own resolved coordinate,
+                // not just a stop's), never a live GPS fix. A GPS
+                // projection used to be blended in (taking whichever of
+                // the two candidates was further along), but a single
+                // coarse/inaccurate fix - the common case testing from a
+                // desk, or just weak signal - could project onto a
+                // wildly wrong point on the route (nearest a *later* stop
+                // the bus hasn't actually reached yet, say) and that
+                // reading could never be un-taken once it landed, since
+                // the whole point of taking the max was to never regress
+                // the split backward - the traveled portion would jump
+                // far ahead of the real position and stay stuck there for
+                // the rest of the drive, no matter how many turns still
+                // lay between. The step the driver has actually advanced
+                // to (via Next, same as every other piece of driving
+                // mode's own state) is the one source of truth this app
+                // already trusts for "where are we now" - GPS still drives
+                // the separate blue location dot (watchPosition below),
+                // just not this split. Splits at the real interpolated
+                // point that distance falls on (pointAtDistance), not
+                // just whichever geometry vertex happens to be nearest it
+                // (that used to be nearestCoordIndex's own job) - a
+                // route-geometry provider can space its own vertices
+                // anywhere from a few meters to tens of meters apart, and
+                // snapping to one instead of the real point is exactly
+                // what made the traveled/remaining boundary look like it
+                // landed somewhere arbitrary instead of lining up with
+                // the current step. Assigned to applyRouteProgress
+                // (declared outside this whole closure) so a later step
+                // advance - whose own effect lives outside this fetch's
+                // `.then`, in RouteMap's own [mode, activeWaypointKey]
+                // effect - can still trigger a redraw.
                 function updateRouteProgress() {
                   if (modeRef.current !== "driving") {
                     // No live progress to show outside actual turn-by-
                     // turn navigation - the whole line renders as
-                    // "traveled" (solid) rather than "remaining"
-                    // (dashed), which distance 0 would otherwise do
-                    // (nearly the entire road ending up on the dashed
-                    // layer).
+                    // "traveled" rather than "remaining", which distance
+                    // 0 would otherwise do (nearly the entire road ending
+                    // up on the remaining layer).
                     lastRouteSplitDistance = roadTotalDistance;
                   } else {
-                    // Two independent candidates, combined by taking
-                    // whichever represents more progress rather than
-                    // picking one source and ignoring the other for the
-                    // rest of the drive. The active step's own real
-                    // distance-along-route comes from
-                    // distanceAlongRouteByKey (populated above, trip-
-                    // order-safe) rather than a fresh projection of just
-                    // this one point - see that map's own doc comment
-                    // for why an independent projection can pick the
-                    // wrong one of two close passes near the same real
-                    // corner. A live GPS fix is its own independent
-                    // point, not one of this route's own waypoints - no
-                    // trip order to preserve the way distanceAlongRouteByKey
-                    // needs for a waypoint, so a plain projection is both
-                    // correct and as precise as this can get for it.
-                    //
-                    // Taking the max matters because a single stale GPS
-                    // fix (the common case testing from a desk, or just
-                    // weak signal) used to latch updateRouteProgress onto
-                    // the liveLngLat branch permanently - every later
-                    // step advance updated distanceAlongRouteByKey right
-                    // on cue, but that branch never looked at it again
-                    // until watchPosition happened to deliver a fresh
-                    // fix, leaving the solid/dashed boundary stuck while
-                    // the driver kept tapping Next. Neither candidate can
-                    // regress the split backward this way either - a step
-                    // with no resolved key/distance yet (an unverified
-                    // stop an admin still activated - see
-                    // RouteListScreen's own warning for that) or a GPS
-                    // fix that fails to project just leaves
+                    // A step with no resolved key/distance yet (an
+                    // unverified stop an admin still activated - see
+                    // RouteListScreen's own warning for that) leaves
                     // lastRouteSplitDistance wherever it last genuinely
                     // reached instead of snapping back toward the start.
                     const key = activeWaypointKeyRef.current;
-                    const waypointDistance = key ? distanceAlongRouteByKey.get(key) : undefined;
-                    let gpsDistance: number | undefined;
-                    if (liveLngLat) {
-                      const point = { lat: liveLngLat[1], lon: liveLngLat[0] };
-                      const projection = projectOntoRoute(roadLine, roadCumulative, point);
-                      if (projection) gpsDistance = projection.distanceAlongRoute;
-                    }
-                    const candidates = [waypointDistance, gpsDistance].filter(
-                      (d): d is number => d != null,
-                    );
-                    if (candidates.length > 0) {
-                      lastRouteSplitDistance = Math.max(...candidates);
-                    }
+                    const distance = key ? distanceAlongRouteByKey.get(key) : undefined;
+                    if (distance != null) lastRouteSplitDistance = distance;
                   }
                   // The interpolated split point itself becomes the
                   // shared last coordinate of the traveled slice and
@@ -1364,8 +1323,6 @@ function mountMapLibre(args: MountArgs): () => void {
           } else {
             locationMarker.setLngLat(lngLat);
           }
-          liveLngLat = lngLat;
-          applyRouteProgress?.();
         },
         (error) => {
           console.warn("Geolocation unavailable:", error.message);
