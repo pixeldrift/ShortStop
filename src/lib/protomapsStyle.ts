@@ -44,6 +44,25 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
       [source]: {
         type: "vector" as const,
         url: `pmtiles://${pmtilesUrl}`,
+        // The real extract (public/maps/middle-tennessee.pmtiles) only
+        // ever has tiles through z15 (PMTiles' own v3 header, byte 101 -
+        // checked directly against the file, not assumed from the
+        // schema docs) - Protomaps' basemap builder stops generalizing
+        // new detail past that and expects the *renderer* to overzoom
+        // the z15 tile for anything deeper, not the archive to carry
+        // real z16+ tiles of its own. Declaring that here is what
+        // actually makes that overzoom happen: MapLibre only stretches
+        // a source's own deepest tile past `maxzoom` when the source
+        // says where that deepest tile is - left unset, it defaults to
+        // requesting genuinely deeper zooms straight from the pmtiles://
+        // protocol handler instead, which simply has nothing to hand
+        // back for a zoom the archive never wrote (confirmed directly -
+        // a raw z18 PMTiles.getZxy() call over this exact file returns
+        // undefined), so every layer below gated to open only past z15
+        // (buildings-housenumber-label, currently the only one) never
+        // painted anything at all, at any zoom, regardless of its own
+        // minzoom.
+        maxzoom: 15,
       },
     },
     layers: [
@@ -219,14 +238,20 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
       // above, itself only from minzoom 15) - a symbol layer only ever
       // draws the point geometries here regardless, but the explicit
       // filter keeps this from ever matching a stray polygon feature
-      // that happened to carry the same field.
+      // that happened to carry the same field. minzoom 17, not some
+      // deeper zoom - matches RouteMap.tsx's own STREET_ZOOM, the
+      // camera zoom driving mode already flies to for every step, so a
+      // driver already at street level sees these without a further
+      // manual pinch. (The source's own maxzoom above, not this value,
+      // is what previously kept these from ever painting at all - see
+      // its own doc comment.)
       {
         id: "buildings-housenumber-label",
         type: "symbol" as const,
         source,
         "source-layer": "buildings",
         filter: ["==", ["get", "kind"], "address"],
-        minzoom: 18,
+        minzoom: 17,
         layout: {
           visibility: "visible" as const,
           "text-field": ["get", "addr_housenumber"],

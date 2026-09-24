@@ -13,6 +13,7 @@ import { PersonSolidIcon } from "./icons";
 import { rotationKeyFor, setTurnDiamondRotation, turnDiamondHtml } from "./mapMarkerIcons";
 import {
   collapseAttribution,
+  installSchoolBuildingHighlight,
   PMTILES_ATTRIBUTION,
   PMTILES_URL,
   ROUTE_LINE_OFFSET,
@@ -882,6 +883,11 @@ function mountMapLibre(args: MountArgs): () => void {
       const mapInstance = map;
       collapseAttribution(container);
       mapInstance.on("rotate", applyTurnRotations);
+      // schoolRef already stays current on its own (this component's
+      // own sync effect, above) - the highlight just needs to be told
+      // where to look once, self-maintains from there (see its own doc
+      // comment, mapEngine.ts).
+      installSchoolBuildingHighlight(mapInstance, schoolRef);
       // showCompass: false - bearing here is driven programmatically
       // (direction of travel in driving mode), not something a driver
       // touches, so the compass puck would just be dead weight.
