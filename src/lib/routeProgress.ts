@@ -116,20 +116,48 @@ export interface RouteProjection {
  * cumulativeDistances(coords) - passed in rather than recomputed here
  * so a caller checking many fixes against the same route line (every
  * watchPosition callback, for the whole drive) only ever walks the
- * line once, at load time. Returns null only for an empty route line -
- * a single-point line still projects onto that one point. */
+ * line once, at load time. Returns null only for an empty route line
+ * (or a `searchNearDistance`/`maxDeviationMeters` window with no
+ * segment inside it at all) - a single-point line still projects onto
+ * that one point.
+ *
+ * `searchNearDistance`/`maxDeviationMeters`, when both given, restrict
+ * the search to segments whose own cumulative distance falls within
+ * `maxDeviationMeters` of `searchNearDistance`, instead of scanning the
+ * route's entire length - useLiveRouteProgress's own one real caller
+ * uses this to bound each new live GPS fix's search to near wherever
+ * the *previous* fix actually landed, since a real vehicle can only
+ * have moved a bounded distance since then. That constraint matters
+ * for the same reason nearestSegmentBearings's own doc comment
+ * describes for a route's static waypoints: an unrestricted nearest-
+ * point search can't tell a route's later re-crossing of some real
+ * corner (a driven loop around a block, say) from its first, correct
+ * pass, and would happily snap a live fix onto whichever one just
+ * happens to be a hair closer. A moving point has no fixed position of
+ * its own to protect with a trip-ordered cursor the way a waypoint
+ * does, so the constraint has to come from real-world physics (how far
+ * a vehicle can plausibly travel between fixes) instead. Both
+ * parameters omitted searches the whole line, same as before this
+ * existed - the right behavior for a cold-start fix with no prior
+ * position to bound against yet. */
 export function projectOntoRoute(
   coords: LatLon[],
   cumulative: number[],
   point: LatLon,
+  searchNearDistance?: number,
+  maxDeviationMeters?: number,
 ): RouteProjection | null {
   if (coords.length === 0) return null;
   if (coords.length === 1) {
     return { distanceAlongRoute: 0, distanceFromRoute: haversineMeters(point, coords[0]) };
   }
+  const bounded = searchNearDistance != null && maxDeviationMeters != null;
+  const lowerBound = bounded ? searchNearDistance - maxDeviationMeters : -Infinity;
+  const upperBound = bounded ? searchNearDistance + maxDeviationMeters : Infinity;
 
   let best: RouteProjection | null = null;
   for (let i = 0; i < coords.length - 1; i++) {
+    if (cumulative[i + 1] < lowerBound || cumulative[i] > upperBound) continue;
     const { point: onSegment, t } = projectOntoSegment(point, coords[i], coords[i + 1]);
     const distanceFromRoute = haversineMeters(point, onSegment);
     if (best && distanceFromRoute >= best.distanceFromRoute) continue;
