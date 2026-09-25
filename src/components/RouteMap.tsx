@@ -1159,6 +1159,29 @@ function mountMapLibre(args: MountArgs): () => void {
         if (cancelledRef() || !result) return;
         resolvedByKey = result.resolvedByKey;
 
+        // drawDrivingPins itself only ever gets called from
+        // syncToModeRef's own two "reveal them for the first time"
+        // branches below, each already guarded by
+        // drivingPinsRevealedRef so a step advance never redraws (and
+        // re-flashes) pins that are already showing - correct for that
+        // case, but it means syncToModeRef's own call at the bottom of
+        // this function, on a *second* resolveAndRedraw, does nothing
+        // for the pins themselves once they've already been revealed
+        // once: resolvedByKey just above is fresh, but every pin
+        // already on the map was placed by whichever drawDrivingPins
+        // call revealed them, at whatever resolvedByKey held back
+        // then, and nothing about that placement was ever going to
+        // change on its own just because the Map behind it did. Call
+        // it directly here instead, once immediately (this route's own
+        // pins - including this one - update to their real position
+        // right away) and again once fresh road geometry lands below
+        // (so a moved stop's own spreadCoincidentPoints offset and
+        // turn-sign bearings, both read off latestRoadGeometry, aren't
+        // left stale a beat behind resolvedByKey itself).
+        if (modeRef.current === "driving" && drivingPinsRevealedRef.current) {
+          drawDrivingPins();
+        }
+
         if (orderedWaypointsRef.current.length > 1) {
           fetch("/api/route-geometry", {
             method: "POST",
@@ -1377,6 +1400,15 @@ function mountMapLibre(args: MountArgs): () => void {
               }
               applyRouteProgress = updateRouteProgress;
               updateRouteProgress();
+              // Second call, same guard as the one right after
+              // resolvedByKey itself updates above - this route's own
+              // fresh road geometry just landed, so any pin whose own
+              // spreadCoincidentPoints offset or turn-sign bearing
+              // reads off latestRoadGeometry gets a chance to correct
+              // itself too, not just its raw lat/lon.
+              if (modeRef.current === "driving" && drivingPinsRevealedRef.current) {
+                drawDrivingPins();
+              }
 
               if (modeRef.current === "overview" && roadLngLats.length > 0) {
                 const lons = roadLngLats.map((c) => c[0]);
