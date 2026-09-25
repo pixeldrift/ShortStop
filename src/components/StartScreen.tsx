@@ -200,7 +200,7 @@ export function StartScreen({
     let stopCount = 0;
     return route.steps
       .filter((s) => s.kind === "stop")
-      .map((s) => ({ waypointKey: s.waypointKey, number: ++stopCount }));
+      .map((s) => ({ waypointKey: s.waypointKey, stepId: s.id, number: ++stopCount }));
   }, [route]);
   const turnMarkers = useMemo<TurnMarker[]>(
     () =>
@@ -208,6 +208,7 @@ export function StartScreen({
         .filter((s) => s.kind === "turn")
         .map((s) => ({
           waypointKey: s.waypointKey,
+          stepId: s.id,
           direction: s.direction,
           heading: s.heading,
         })),
@@ -217,6 +218,7 @@ export function StartScreen({
     () =>
       route.steps.map((s) => ({
         waypointKey: s.waypointKey,
+        stepId: s.id,
         overrideLat: s.overrideLat,
         overrideLon: s.overrideLon,
       })),

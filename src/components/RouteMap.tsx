@@ -34,36 +34,55 @@ import type { TripType, TurnDirection } from "@/lib/types";
 import { resolveRouteCoordinates } from "@/lib/waypointCache";
 import type { WaypointCache } from "@/lib/waypointCache";
 
-/** One "stop" step's marker: waypointKey looks it up in the resolved-
- * coordinates map mountMapLibre builds from the `path` prop below
- * (resolveRouteCoordinates, waypointCache.ts - an override if the step
- * has one, otherwise the geocoded cache), number is its position among
- * stops (1-indexed) for the pin's on-map label - matching the same
- * numbering RouteProgressBar/StopContent already show for the same
- * stop. */
-export type StopMarker = { waypointKey: string; number: number };
+/** One "stop" step's marker. `waypointKey` is the *geocoding* cache key
+ * (resolveStepCoordinate/resolveRouteCoordinates, waypointCache.ts) - a
+ * plain "roadA & roadB" text pair, deliberately shared by every step at
+ * the same real corner so they reuse one cached lookup. A loop road
+ * (Cedar Park Cir, say) that crosses the same other road (Holland Ridge
+ * Dr) at two genuinely different physical corners produces that exact
+ * same text twice, for two real, different points - so `waypointKey`
+ * must never be used as a map key for a *resolved point*, only handed
+ * to the cache lookup itself. `stepId` (this step's own NavigationStep.id
+ * - unique and stable for the step's whole lifetime, buildRouteFromRows
+ * never reassigning one id to two steps) is what actually looks this
+ * marker's point up in the resolved-coordinates map mountMapLibre
+ * builds from the `path` prop below - see resolvedByKey's own doc
+ * comment for the bug this fixes. `number` is this stop's position
+ * among stops (1-indexed) for the pin's on-map label - matching the
+ * same numbering RouteProgressBar/StopContent already show for the
+ * same stop. */
+export type StopMarker = { waypointKey: string; stepId: number; number: number };
 
-/** One "turn" step's marker - waypointKey looks it up the same way a
- * StopMarker does. `direction`/`heading` are the same step's own
- * NavigationStep fields, fed to turnDiamondHtml (mapMarkerIcons.tsx): a
- * left/right turn draws its own real left.svg/right.svg sign, rotated
- * whole (frame and arrow together) to its own true compass bearing
- * (see applyTurnRotations below), anything else (Proceed,
- * Depart, Arrive, ...) draws its own already-distinct ActionIcon glyph.
- * Route 125's own steps sheet is the only one with real turn-by-turn
- * data today (every 120 route sheet is stops only) - this only ever
- * renders something there, but nothing here is specific to that route. */
+/** One "turn" step's marker - `waypointKey`/`stepId` split the same way
+ * StopMarker's own do (see its doc comment). `direction`/`heading` are
+ * the same step's own NavigationStep fields, fed to turnDiamondHtml
+ * (mapMarkerIcons.tsx): a left/right turn draws its own real
+ * left.svg/right.svg sign, rotated whole (frame and arrow together) to
+ * its own true compass bearing (see applyTurnRotations below), anything
+ * else (Proceed, Depart, Arrive, ...) draws its own already-distinct
+ * ActionIcon glyph. Route 125's own steps sheet is the only one with
+ * real turn-by-turn data today (every 120 route sheet is stops only) -
+ * this only ever renders something there, but nothing here is specific
+ * to that route. */
 export type TurnMarker = {
   waypointKey: string;
+  stepId: number;
   direction?: TurnDirection;
   heading?: string;
 };
 
-/** One entry of the `path` prop below - a step's own key plus its own
- * override, exactly what resolveStepCoordinate/resolveRouteCoordinates
+/** One entry of the `path` prop below - a step's own cache key plus its
+ * own override, exactly what resolveStepCoordinate/resolveRouteCoordinates
  * (waypointCache.ts) need to resolve it correctly and in the right
- * sequential order. */
-export type PathPoint = { waypointKey: string; overrideLat: number | null; overrideLon: number | null };
+ * sequential order, plus `stepId` (StopMarker's own doc comment has why
+ * this can't just be `waypointKey` again) for mountMapLibre to key the
+ * *result* of that resolution by. */
+export type PathPoint = {
+  waypointKey: string;
+  stepId: number;
+  overrideLat: number | null;
+  overrideLon: number | null;
+};
 
 // La Vergne, TN's approximate town center - a placeholder anchor until
 // the route's own geocoded waypoints (deriveWaypoints.ts, and each
@@ -211,16 +230,20 @@ export interface RouteGeometryResult {
    * geometry.coordinates exactly, no conversion done here. */
   coordinates: RouteCoordinate[];
   /** Every real waypoint's own exact distance-along-route (meters from
-   * the route's start), keyed by waypointKey - the same map this
-   * component's own distanceAlongRouteByKey is built from
+   * the route's start), keyed by stepId (NavigationStep.id) - the same
+   * map this component's own distanceAlongRouteByKey is built from
    * (RoutingResult.waypointDistances, routing/types.ts - straight from
    * the routing provider's own per-leg distances, not a nearest-point
-   * search). A snapshot at the moment this callback fires, not a live
+   * search). Keyed by stepId rather than the shared waypointKey cache
+   * text for the same reason StopMarker's own doc comment gives - two
+   * different steps at two different real corners of a loop road can
+   * share that same text, and a Map can only hold one value per key.
+   * A snapshot at the moment this callback fires, not a live
    * reference - this component's own copy never changes after its
    * first route-geometry fetch resolves anyway (same "loads once per
    * route" reasoning this whole result already carries), so there's
    * nothing for a caller to miss by holding onto its own copy. */
-  waypointDistances: Map<string, number>;
+  waypointDistances: Map<number, number>;
 }
 
 // The route's own ordered {lat, lon} sequence - every `path` step that
@@ -228,10 +251,12 @@ export interface RouteGeometryResult {
 // puts it (see `tripType`'s own prop doc) - built once when the cache
 // resolves and reused for the road-geometry request, overview mode's
 // "fit the whole route" bounds, and driving mode's bearing (below).
-// `key` is the step's own waypointKey for anything that came from
-// `path` - null for the school, which is a real leg of the trip but
-// never itself an active step a driver can be "at".
-type OrderedWaypoint = { key: string | null; lat: number; lon: number };
+// `key` is the step's own stepId for anything that came from `path` -
+// null for the school, which is a real leg of the trip but never
+// itself an active step a driver can be "at". Deliberately stepId, not
+// waypointKey - see StopMarker's own doc comment for why the shared
+// cache-key text can't double as a per-step identity here.
+type OrderedWaypoint = { key: number | null; lat: number; lon: number };
 
 // Driving mode's own "which way is the bus facing" - the real road
 // bearing (roadBearingAt, routeProgress.ts) at the active waypoint's
@@ -317,7 +342,7 @@ export function RouteMap({
   tripType,
   waypointsUrl,
   mode = "driving",
-  activeWaypointKey,
+  activeStepId,
   onToggleRoster,
   onRouteGeometry,
 }: {
@@ -332,8 +357,8 @@ export function RouteMap({
    * only), populated for 125's (see TurnMarker's own doc comment for
    * the label scheme). */
   turns?: TurnMarker[];
-  /** Every step's own waypointKey (plus its own override, if it has
-   * one), in the route's own order (stops and turns both -
+  /** Every step's own stepId/waypointKey pair (plus its own override, if
+   * it has one), in the route's own order (stops and turns both -
    * StepScreen.tsx derives this straight from route.steps). Used to
    * build the ordered list of {lat, lon} points (school spliced in at
    * whichever end `tripType` puts it) sent to /api/route-geometry for
@@ -394,22 +419,24 @@ export function RouteMap({
    * framed to fit the whole route - the route-info screen and the
    * depot/Ready-to-Depart phase, before the driver has started stepping
    * through anything. "driving" (the default, matching every caller's
-   * behavior before this prop existed) follows `activeWaypointKey` at
+   * behavior before this prop existed) follows `activeStepId` at
    * street level instead of framing the whole route at once, rotated so
    * the direction of travel always faces up - every stop/turn pin only
    * appears once the map actually arrives there, not the moment driving
-   * mode starts (see `activeWaypointKey`'s own doc comment). */
+   * mode starts (see `activeStepId`'s own doc comment). */
   mode?: "overview" | "driving";
-  /** The current step's own waypointKey - driving mode only. The map
-   * flies to this location's cache entry (street zoom, rotated to face
-   * the next waypoint) whenever it changes, rather than refitting
-   * bounds, so advancing through steps feels like following along
-   * instead of repeatedly reframing the whole route. Every stop/turn/
-   * school pin is held back until the very first of these flights
+  /** The current step's own stepId (NavigationStep.id) - driving mode
+   * only. The map flies to this step's own resolved point (street zoom,
+   * rotated to face the next waypoint) whenever it changes, rather than
+   * refitting bounds, so advancing through steps feels like following
+   * along instead of repeatedly reframing the whole route. Every stop/
+   * turn/school pin is held back until the very first of these flights
    * actually arrives, so they appear at street level alongside the
    * driver rather than popping in back at the overview's zoomed-out
-   * framing. Ignored in overview mode. */
-  activeWaypointKey?: string | null;
+   * framing. Ignored in overview mode. Deliberately stepId, not
+   * waypointKey - see StopMarker's own doc comment for why the shared
+   * cache-key text can't double as a per-step identity here. */
+  activeStepId?: number | null;
   /** Adds a small button to the map's own top-left control stack (same
    * corner as the zoom buttons, directly beneath them) that calls this
    * when tapped - StepScreen's own manual show/hide for the rider
@@ -476,10 +503,10 @@ export function RouteMap({
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
-  const activeWaypointKeyRef = useRef(activeWaypointKey);
+  const activeStepIdRef = useRef(activeStepId);
   useEffect(() => {
-    activeWaypointKeyRef.current = activeWaypointKey;
-  }, [activeWaypointKey]);
+    activeStepIdRef.current = activeStepId;
+  }, [activeStepId]);
   // Read by ShowRidersControl's own click handler (below) rather than
   // closed over directly, so a fresh function identity every StepScreen
   // render (its own toggleRosterManually isn't memoized) doesn't need
@@ -511,7 +538,7 @@ export function RouteMap({
   // itself untouched by any of this.
   useEffect(() => {
     syncToModeRef.current();
-  }, [mode, activeWaypointKey]);
+  }, [mode, activeStepId]);
 
   // Same "starts as a no-op, only ever assigned once there's a real map
   // to act on" shape as syncToModeRef above.
@@ -522,7 +549,7 @@ export function RouteMap({
   // override saved from elsewhere (another admin's own device, mid-
   // trip, say - or any future flow that touches this route's own steps
   // while this same map instance stays mounted) rather than a step
-  // advance, which the [mode, activeWaypointKey] effect above already
+  // advance, which the [mode, activeStepId] effect above already
   // covers on its own. The mount effect just below only ever resolves
   // coordinates and draws pins once, at the map's own "load" event -
   // pathRef.current itself does stay current (see its own sync effect
@@ -558,7 +585,7 @@ export function RouteMap({
       tripTypeRef,
       waypointsUrlRef,
       modeRef,
-      activeWaypointKeyRef,
+      activeStepIdRef,
       onToggleRosterRef,
       onRouteGeometryRef,
     });
@@ -596,7 +623,7 @@ interface MountArgs {
   tripTypeRef: React.RefObject<TripType | undefined>;
   waypointsUrlRef: React.RefObject<string>;
   modeRef: React.RefObject<"overview" | "driving">;
-  activeWaypointKeyRef: React.RefObject<string | null | undefined>;
+  activeStepIdRef: React.RefObject<number | null | undefined>;
   onToggleRosterRef: React.RefObject<(() => void) | undefined>;
   onRouteGeometryRef: React.RefObject<((result: RouteGeometryResult) => void) | undefined>;
   /** Assigned once mountMapLibre has resolved coordinates and drawn
@@ -626,7 +653,7 @@ async function fetchCacheAndBuildOrderedWaypoints(
     | "orderedWaypointsRef"
     | "cancelledRef"
   >,
-): Promise<{ cache: WaypointCache; resolvedByKey: Map<string, { lat: number; lon: number }> } | null> {
+): Promise<{ cache: WaypointCache; resolvedByKey: Map<number, { lat: number; lon: number }> } | null> {
   const cache: WaypointCache = await fetch(args.waypointsUrlRef.current)
     .then((res): Promise<WaypointCache> | WaypointCache =>
       res.ok ? res.json() : {},
@@ -641,13 +668,26 @@ async function fetchCacheAndBuildOrderedWaypoints(
   // resolved once, here, and shared by both the road-geometry request
   // below and every pin this route ever draws (drawDrivingPins/
   // drawOverviewPins), so they never disagree about where a step with a
-  // known second road crossing actually is.
+  // known second road crossing actually is. Keyed by stepId, not
+  // waypointKey (still what resolveRouteCoordinates itself takes, above
+  // - that's the shared *cache* key, deliberately reused across two
+  // steps at the same real corner): a loop road crossing the same other
+  // road at two different real corners (Cedar Park Cir & Holland Ridge
+  // Dr, say) produces that exact same "roadA & roadB" text for two
+  // genuinely different steps, and a Map can only hold one value per
+  // key - keying the *result* by waypointKey the way this used to let
+  // the second step's own resolved point silently overwrite the
+  // first's, so both ended up sharing one step's coordinate (wrong for
+  // whichever one lost the race) in every pin drawn from this map and
+  // in the /api/route-geometry request built from it below, even
+  // though resolvedList itself (one real, independently-resolved entry
+  // per path index, override included) never had this problem at all.
   const schoolAnchor = args.schoolRef.current ?? null;
   const resolvedList = resolveRouteCoordinates(args.pathRef.current, cache, schoolAnchor);
-  const resolvedByKey = new Map<string, { lat: number; lon: number }>();
+  const resolvedByKey = new Map<number, { lat: number; lon: number }>();
   args.pathRef.current.forEach((point, i) => {
     const resolved = resolvedList[i];
-    if (resolved) resolvedByKey.set(point.waypointKey, resolved);
+    if (resolved) resolvedByKey.set(point.stepId, resolved);
   });
 
   // The school only actually belongs in this list - and so only gets a
@@ -668,9 +708,9 @@ async function fetchCacheAndBuildOrderedWaypoints(
     });
   }
   for (const point of args.pathRef.current) {
-    const resolved = resolvedByKey.get(point.waypointKey);
+    const resolved = resolvedByKey.get(point.stepId);
     if (!resolved) continue;
-    orderedWaypoints.push({ key: point.waypointKey, lat: resolved.lat, lon: resolved.lon });
+    orderedWaypoints.push({ key: point.stepId, lat: resolved.lat, lon: resolved.lon });
   }
   if (includeSchool && args.tripTypeRef.current !== "dropoff") {
     orderedWaypoints.push({
@@ -752,7 +792,7 @@ function mountMapLibre(args: MountArgs): () => void {
     tripTypeRef,
     waypointsUrlRef,
     modeRef,
-    activeWaypointKeyRef,
+    activeStepIdRef,
     onToggleRosterRef,
     onRouteGeometryRef,
   } = args;
@@ -789,7 +829,7 @@ function mountMapLibre(args: MountArgs): () => void {
   // distances carry no such ambiguity, since no pass is ever "found,"
   // each one is just handed straight over). drawDrivingPins reads this
   // same map for turn/stop bearings too, for the identical reason.
-  const distanceAlongRouteByKey = new Map<string, number>();
+  const distanceAlongRouteByKey = new Map<number, number>();
   // This route's own already-fetched road-following geometry (set once
   // the /api/route-geometry request below resolves) - read by
   // drawDrivingPins, which needs it to offset a coincident group of
@@ -811,7 +851,7 @@ function mountMapLibre(args: MountArgs): () => void {
   // existed the moment *they* were defined - fine the first time, but
   // exactly the kind of staleness refreshResolutionRef exists to fix
   // when resolveAndRedraw runs again later.
-  let resolvedByKey = new Map<string, { lat: number; lon: number }>();
+  let resolvedByKey = new Map<number, { lat: number; lon: number }>();
   // Every currently-drawn Left/Right/Continue/Proceed marker element,
   // paired with its real compass bearing (setTurnDiamondRotation,
   // mapMarkerIcons.tsx) - kept here, not just recomputed inside
@@ -933,7 +973,7 @@ function mountMapLibre(args: MountArgs): () => void {
       // three close over resolvedByKey/latestRoadGeometry/
       // distanceAlongRouteByKey as the outer mutables they now are (see
       // each one's own doc comment above), so a long-lived caller (the
-      // "zoomend" listener below, or the [mode, activeWaypointKey]
+      // "zoomend" listener below, or the [mode, activeStepId]
       // effect's own syncToModeRef.current() call, registered once and
       // never touched again after this) always reads whatever
       // resolveAndRedraw most recently resolved, not a stale snapshot
@@ -965,7 +1005,7 @@ function mountMapLibre(args: MountArgs): () => void {
         // it - the pin is the one carrying the actual number/
         // school glyph a driver needs to read.
         for (const point of ordered.slice(1, -1)) {
-          const stop = stopsRef.current.find((s) => s.waypointKey === point.key);
+          const stop = stopsRef.current.find((s) => s.stepId === point.key);
           if (!stop) continue;
           pins.push(
             new maplibregl.Marker({ element: elementFromHtml(stopDotHtml()), anchor: "center" })
@@ -976,7 +1016,7 @@ function mountMapLibre(args: MountArgs): () => void {
         const endpoints =
           ordered.length === 1 ? [ordered[0]] : [ordered[0], ordered[ordered.length - 1]];
         for (const point of endpoints) {
-          const stop = stopsRef.current.find((s) => s.waypointKey === point.key);
+          const stop = stopsRef.current.find((s) => s.stepId === point.key);
           const html = point.key === null ? schoolMarkerHtml() : stop && stopMarkerHtml(stop.number);
           if (!html) continue;
           pins.push(
@@ -999,7 +1039,7 @@ function mountMapLibre(args: MountArgs): () => void {
         // stay visible and tappable instead of one drawing directly
         // on top of the other.
         const resolvedStops = stopsRef.current
-          .map((stop) => ({ stop, point: resolvedByKey.get(stop.waypointKey) }))
+          .map((stop) => ({ stop, point: resolvedByKey.get(stop.stepId) }))
           .filter(
             (entry): entry is { stop: StopMarker; point: { lat: number; lon: number } } =>
               entry.point != null,
@@ -1023,9 +1063,9 @@ function mountMapLibre(args: MountArgs): () => void {
         const rotatableKeys = new Set(
           turnsRef.current
             .filter((turn) => rotationKeyFor(turn.direction, turn.heading) != null)
-            .map((turn) => turn.waypointKey),
+            .map((turn) => turn.stepId),
         );
-        const bearingByKey = new Map<string, number | null>();
+        const bearingByKey = new Map<number, number | null>();
         orderedWaypointsRef.current.forEach((waypoint) => {
           if (waypoint.key == null) return;
           const distance = distanceAlongRouteByKey.get(waypoint.key);
@@ -1035,7 +1075,7 @@ function mountMapLibre(args: MountArgs): () => void {
         });
         const spreadPoints = spreadCoincidentPoints(
           resolvedStops.map((entry) => entry.point),
-          resolvedStops.map((entry) => bearingByKey.get(entry.stop.waypointKey) ?? null),
+          resolvedStops.map((entry) => bearingByKey.get(entry.stop.stepId) ?? null),
         );
         resolvedStops.forEach((entry, i) => {
           pins.push(
@@ -1048,7 +1088,7 @@ function mountMapLibre(args: MountArgs): () => void {
           );
         });
         for (const turn of turnsRef.current) {
-          const point = resolvedByKey.get(turn.waypointKey);
+          const point = resolvedByKey.get(turn.stepId);
           if (!point) continue;
           const html = turnDiamondHtml(TURN_DIAMOND_SIZE, turn.direction, turn.heading);
           if (!html) continue;
@@ -1058,7 +1098,7 @@ function mountMapLibre(args: MountArgs): () => void {
             turnArrowRotations.push({
               element,
               rotationKey,
-              bearing: bearingByKey.get(turn.waypointKey) ?? null,
+              bearing: bearingByKey.get(turn.stepId) ?? null,
             });
           }
           pins.push(
@@ -1107,10 +1147,10 @@ function mountMapLibre(args: MountArgs): () => void {
         }
 
         applyRouteProgress?.();
-        const key = activeWaypointKeyRef.current;
-        const point = key ? resolvedByKey.get(key) : undefined;
+        const stepId = activeStepIdRef.current;
+        const point = stepId != null ? resolvedByKey.get(stepId) : undefined;
         const roadLine = latestRoadGeometry.map(([lon, lat]) => ({ lat, lon }));
-        const activeDistance = key ? (distanceAlongRouteByKey.get(key) ?? null) : null;
+        const activeDistance = stepId != null ? (distanceAlongRouteByKey.get(stepId) ?? null) : null;
         const bearing = bearingAt(roadLine, cumulativeDistances(roadLine), activeDistance);
         if (!point) {
           // No coordinate to fly to yet - still rotate on its own,
@@ -1379,7 +1419,7 @@ function mountMapLibre(args: MountArgs): () => void {
               // the current step. Assigned to applyRouteProgress
               // (declared outside this whole closure) so a later step
               // advance - whose own effect lives outside this fetch's
-              // `.then`, in RouteMap's own [mode, activeWaypointKey]
+              // `.then`, in RouteMap's own [mode, activeStepId]
               // effect - can still trigger a redraw.
               function updateRouteProgress() {
                 if (modeRef.current !== "driving") {
@@ -1395,8 +1435,11 @@ function mountMapLibre(args: MountArgs): () => void {
                   // RouteListScreen's own warning for that) leaves
                   // lastRouteSplitDistance wherever it last genuinely
                   // reached instead of snapping back toward the start.
-                  const key = activeWaypointKeyRef.current;
-                  const distance = key ? distanceAlongRouteByKey.get(key) : undefined;
+                  // `!= null`, not a bare truthy check - stepId 0 (the
+                  // route's own first step) is falsy but still a real,
+                  // valid id to look up.
+                  const stepId = activeStepIdRef.current;
+                  const distance = stepId != null ? distanceAlongRouteByKey.get(stepId) : undefined;
                   if (distance != null) lastRouteSplitDistance = distance;
                 }
                 // The interpolated split point itself becomes the

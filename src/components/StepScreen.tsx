@@ -66,7 +66,7 @@ const ROSTER_CLOSE_ANIMATION_MS = 220;
 // component's own `routeGeometry` is still null, so that hook's own
 // useMemo (keyed on this reference) doesn't treat "still nothing" as a
 // change worth recomputing over.
-const EMPTY_WAYPOINT_DISTANCES = new Map<string, number>();
+const EMPTY_WAYPOINT_DISTANCES = new Map<number, number>();
 
 export function StepScreen({
   route,
@@ -165,7 +165,12 @@ export function StepScreen({
   // it as a changed prop - derived from stopSteps above rather than its
   // own separate walk over route.steps.
   const stopMarkers = useMemo<StopMarker[]>(
-    () => stopSteps.map((s) => ({ waypointKey: s.step.waypointKey, number: s.number })),
+    () =>
+      stopSteps.map((s) => ({
+        waypointKey: s.step.waypointKey,
+        stepId: s.step.id,
+        number: s.number,
+      })),
     [stopSteps],
   );
   // The stop slot "right now" actually cares about - the current step
@@ -305,18 +310,24 @@ export function StepScreen({
     () =>
       route.steps
         .filter((s) => s.kind === "turn")
-        .map((s) => ({ waypointKey: s.waypointKey, direction: s.direction, heading: s.heading })),
+        .map((s) => ({
+          waypointKey: s.waypointKey,
+          stepId: s.id,
+          direction: s.direction,
+          heading: s.heading,
+        })),
     [route],
   );
-  // Every step's own waypointKey, in the route's own order - RouteMap
-  // uses whichever of these are actually geocoded to request a real,
-  // road-following line from /api/route-geometry (its own `path` prop
-  // doc comment has the details, including where the school - passed
-  // separately below - fits into that same ordered list).
+  // Every step's own stepId/waypointKey pair, in the route's own order -
+  // RouteMap uses whichever of these are actually geocoded to request a
+  // real, road-following line from /api/route-geometry (its own `path`
+  // prop doc comment has the details, including where the school -
+  // passed separately below - fits into that same ordered list).
   const routePath = useMemo(
     () =>
       route.steps.map((s) => ({
         waypointKey: s.waypointKey,
+        stepId: s.id,
         overrideLat: s.overrideLat,
         overrideLon: s.overrideLon,
       })),
@@ -454,7 +465,7 @@ export function StepScreen({
               tripType={route.tripType}
               waypointsUrl={waypointsUrl}
               mode={phase === "depot" ? "overview" : "driving"}
-              activeWaypointKey={step.waypointKey}
+              activeStepId={step.id}
               onToggleRoster={hasRosterStops ? toggleRosterManually : undefined}
               onRouteGeometry={setRouteGeometry}
             />
