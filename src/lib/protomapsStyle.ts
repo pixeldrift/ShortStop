@@ -90,12 +90,45 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         filter: ["==", ["get", "kind"], "park"],
         paint: { "fill-color": "#d7e8d4" },
       },
+      // "water" (the source-layer) mixes real polygon water bodies
+      // (lakes, ponds, pools) with linear waterways (rivers/creeks,
+      // e.g. Stewart Creek here - a LineString, `kind: "river"`) - the
+      // *same* source-layer, distinguished only by each feature's own
+      // geometry type. A plain fill layer with no filter doesn't check
+      // that: MapLibre's fill bucket treats every geometry it's handed
+      // as a polygon ring regardless of its real type, so a river's own
+      // long, winding *line* got implicitly closed edge-to-edge and
+      // filled - a wildly wrong, self-intersecting "lake" shape cutting
+      // across whatever neighborhood the creek actually winds through,
+      // not a rendering glitch specific to this app's own style, just
+      // this fill layer never having excluded the wrong geometry type.
+      // `["geometry-type"]` filters on the real MVT type rather than
+      // guessing at every possible non-polygon `kind` value there might
+      // be, so this stays correct even for a `kind` this extract
+      // doesn't happen to carry yet.
       {
         id: "water",
         type: "fill" as const,
         source,
         "source-layer": "water",
+        filter: ["==", ["geometry-type"], "Polygon"],
         paint: { "fill-color": "#a7cbe8" },
+      },
+      // The linear half of that same source-layer, drawn as its own
+      // actual line rather than dropped - a real creek/river still
+      // matters as map context (a route that crosses one, say), it just
+      // was never safe to hand to the fill layer above.
+      {
+        id: "water-line",
+        type: "line" as const,
+        source,
+        "source-layer": "water",
+        filter: ["==", ["geometry-type"], "LineString"],
+        layout: { "line-cap": "round" as const, "line-join": "round" as const },
+        paint: {
+          "line-color": "#a7cbe8",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 4],
+        },
       },
       // Real 3D building footprints (fill-extrusion, not a flat fill) -
       // `height`/`min_height` are genuine per-building fields this
