@@ -215,18 +215,11 @@ export function StartScreen({
   );
   const routePath = useMemo(
     () =>
-      route.steps
-        // See StepScreen's own routePath doc comment - a synthetic step
-        // (a Railroad Crossing's own automatic "Continue through..."
-        // follow-up) shares its parent's exact point, so it's dropped
-        // here rather than handed to /api/route-geometry as a redundant
-        // second leg.
-        .filter((s) => s.rowIndex != null)
-        .map((s) => ({
-          waypointKey: s.waypointKey,
-          overrideLat: s.overrideLat,
-          overrideLon: s.overrideLon,
-        })),
+      route.steps.map((s) => ({
+        waypointKey: s.waypointKey,
+        overrideLat: s.overrideLat,
+        overrideLon: s.overrideLon,
+      })),
     [route],
   );
   const schoolPoint = useMemo(

@@ -130,13 +130,13 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
  * used before this existed. */
 /** Capitalizes each word of an action string, splitting on spaces and
  * hyphens ("u-turn" -> "U-Turn", "turn around" -> "Turn Around") - the
- * fixed action vocabulary (Stop/Left/Right/Continue/U-Turn/Turn Around/
- * Proceed/Pull Over/Return/Depart/Arrive/Complete) is always typed in
- * this exact casing from StepRowEditor's own Type select, but an older
- * imported row can still carry it lowercase from its source sheet -
- * every instruction/label built from a row's action reads through this
- * so it displays the same regardless of which casing the row itself
- * happens to store. */
+ * fixed action vocabulary (Stop/Stop Sign/Railroad Crossing/Left/Right/
+ * Continue/U-Turn/Turn Around/Proceed/Pull Over/Return/Depart/Arrive/
+ * Complete) is always typed in this exact casing from StepRowEditor's
+ * own Type select, but an older imported row can still carry it
+ * lowercase from its source sheet - every instruction/label built from
+ * a row's action reads through this so it displays the same regardless
+ * of which casing the row itself happens to store. */
 export function titleCaseAction(action: string): string {
   return action.replace(
     /[^\s-]+/g,
@@ -150,7 +150,7 @@ export function waypointConnectorWord(action: string): string {
   if (a === "stop" || a === "arrive" || a === "complete") return "at";
   if (a === "continue" || a === "u-turn") return "on";
   if (a === "return" || a === "proceed") return "to";
-  if (a === "railroad crossing") return "at";
+  if (a === "railroad crossing" || a === "stop sign") return "at";
   return "onto";
 }
 
@@ -223,64 +223,6 @@ function stepHeading(action: string): string {
   return a === "left" || a === "right" ? `TURN ${action.toUpperCase()}` : action.toUpperCase();
 }
 
-/** Railroad Crossing is the one action that turns a single row into
- * *two* NavigationSteps: a real, editable "stop before the tracks" step
- * (a plain "turn"-kind step under the hood, same as every other action,
- * so ActionIcon/RouteMap/StepScreen all handle it for free) plus an
- * automatic "continue through" follow-up with no row of its own at
- * all - a driver needs telling to actually proceed once stopped, not
- * just to stop, but there's nothing for a second CSV row to add here
- * (same location, same coordinate, immediately next) worth an admin
- * ever having to type or see in the Waypoints list. Shares its parent's
- * exact `waypointKey`/override coordinate rather than getting one of
- * its own - deriveWaypoints/deriveWaypoints.ts has no way to know a
- * physical track point distinct from the row's own geocoded location,
- * and in practice the row's own point (found by searching for the
- * actual crossing, or hand-placed there via Override) *is* the track,
- * so both steps read the same real-world point rather than inventing a
- * second, unverifiable one just to keep them apart. `rowIndex: undefined`
- * is what keeps this out of the Waypoints list (EditRouteScreen.tsx
- * only ever iterates `rows`, never `route.steps`) and out of Edit/Add
- * waypoint's own reach (StepScreen.tsx's own WaypointEditButtons, page.tsx's
- * onEditWaypoint) - there's no row for either to open. */
-function buildRailroadCrossingSteps(
-  row: RawRouteRow,
-  waypointKey: string,
-  rowIndex: number,
-): NavigationStep[] {
-  const { location, notes, overrideLat, overrideLon } = row;
-  const specialInstruction = notes || undefined;
-
-  const stopAnnouncement = ["Stop before railroad crossing."];
-  if (specialInstruction) stopAnnouncement.push(`${speakRoadNames(specialInstruction)}.`);
-
-  return [
-    {
-      id: 0, // reassigned below, once every row's steps are flattened
-      kind: "turn",
-      heading: "RAILROAD CROSSING",
-      subheading: location || undefined,
-      specialInstruction,
-      waypointKey,
-      overrideLat,
-      overrideLon,
-      rowIndex,
-      announcement: stopAnnouncement,
-    },
-    {
-      id: 0,
-      kind: "turn",
-      heading: "RAILROAD TRACKS",
-      subheading: location || undefined,
-      waypointKey,
-      overrideLat,
-      overrideLon,
-      rowIndex: undefined,
-      announcement: ["Continue through railroad crossing."],
-    },
-  ];
-}
-
 /** Turns a route's own RawRouteRow[] - straight from Postgres
  * (page.tsx), a saved edit (EditRouteScreen.tsx), or a parsed import
  * (parseRouteImport.ts) - into real NavigationSteps, spoken
@@ -291,13 +233,9 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
 
   const waypoints = deriveWaypoints(rows, meta.schoolAddress);
 
-  // Most rows produce exactly one step - only Railroad Crossing (see
-  // buildRailroadCrossingSteps above) ever produces two - so this
-  // flattens per-row step arrays rather than mapping 1:1, and `id`
-  // below is reassigned over the *flattened* result rather than reused
-  // from each row's own index, since a row with two steps would
-  // otherwise hand out the same id twice.
-  const stepsPerRow: NavigationStep[][] = rows.map((row, index) => {
+  // Every row produces exactly one step, in the same order, so `id`
+  // and `rowIndex` are both just this row's own index.
+  const steps: NavigationStep[] = rows.map((row, index) => {
     const { action, location, fromLocation, riderCount, side, notes, overrideLat, overrideLon } = row;
     const studentCount = riderCount ? Number(riderCount) : undefined;
     const sideOfRoad = side || undefined;
@@ -322,25 +260,19 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
         announcement.push(`${speakRoadNames(specialInstruction)}.`);
       }
 
-      return [
-        {
-          id: 0,
-          kind: "stop",
-          subheading,
-          studentCount,
-          sideOfRoad,
-          specialInstruction,
-          waypointKey,
-          overrideLat,
-          overrideLon,
-          rowIndex: index,
-          announcement,
-        },
-      ];
-    }
-
-    if (action.toLowerCase() === "railroad crossing") {
-      return buildRailroadCrossingSteps(row, waypointKey, index);
+      return {
+        id: index,
+        kind: "stop",
+        subheading,
+        studentCount,
+        sideOfRoad,
+        specialInstruction,
+        waypointKey,
+        overrideLat,
+        overrideLon,
+        rowIndex: index,
+        announcement,
+      };
     }
 
     const direction: TurnDirection | undefined =
@@ -377,24 +309,20 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
       announcement.push(`${speakRoadNames(specialInstruction)}.`);
     }
 
-    return [
-      {
-        id: 0,
-        kind: "turn",
-        direction,
-        heading: stepHeading(action),
-        subheading: location || undefined,
-        specialInstruction,
-        waypointKey,
-        overrideLat,
-        overrideLon,
-        rowIndex: index,
-        announcement,
-      },
-    ];
+    return {
+      id: index,
+      kind: "turn",
+      direction,
+      heading: stepHeading(action),
+      subheading: location || undefined,
+      specialInstruction,
+      waypointKey,
+      overrideLat,
+      overrideLon,
+      rowIndex: index,
+      announcement,
+    };
   });
-
-  const steps: NavigationStep[] = stepsPerRow.flat().map((step, id) => ({ ...step, id }));
 
   return { ...meta, steps };
 }

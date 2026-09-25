@@ -316,6 +316,7 @@ const labelClass =
 // an admin can actually pick.
 const WAYPOINT_TYPES = [
   "Stop",
+  "Stop Sign",
   "Railroad Crossing",
   "Left",
   "Right",
@@ -1616,6 +1617,7 @@ function StepRowEditor({
                 >
                   <option value="">- Select -</option>
                   <option value="Stop">Stop</option>
+                  <option value="Stop Sign">Stop Sign</option>
                   <option value="Railroad Crossing">Railroad Crossing</option>
                   <option value="Left">Turn Left</option>
                   <option value="Right">Turn Right</option>
@@ -5553,14 +5555,11 @@ export function EditRouteScreen({
     // screen's own hub - a session that only ever existed to fix one
     // waypoint has nothing to show there.
     if (quickEdit) {
-      // `quickEdit.rowIndex` is a row index, not a step index - the two
-      // only ever differ once a Railroad Crossing row earlier in the
-      // route has inserted its own extra synthetic step ahead of this
-      // one (buildRouteFromRows, parseRouteCsv.ts), shifting every
-      // later row's real position in `built.steps` past its own row
-      // index. Resolving through each step's own `rowIndex` (rather
-      // than trusting the two to still coincide) keeps this correct
-      // either way.
+      // Every row produces exactly one step in the same order
+      // (buildRouteFromRows, parseRouteCsv.ts), so `quickEdit.rowIndex`
+      // and its step's own `id` always coincide - resolved through
+      // `rowIndex` anyway rather than assumed, so this stays correct
+      // even if that ever stops being true.
       const resumeAtStepIndex =
         built.steps.find((step) => step.rowIndex === quickEdit.rowIndex)?.id ?? quickEdit.rowIndex;
       quickEdit.onSaved(built, currentRows, cache, resumeAtStepIndex);

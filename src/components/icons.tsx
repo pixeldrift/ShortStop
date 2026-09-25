@@ -128,11 +128,9 @@ export { default as ReturnIcon } from "./icons/return.svg";
 export { default as DepartIcon } from "./icons/depart.svg";
 export { default as ArriveIcon } from "./icons/arrive.svg";
 
-/** The railroad-tracks glyph itself - the second of the two signs a
- * Railroad Crossing waypoint shows (ACTION_ICONS below, keyed
- * "railroad tracks"): the automatic "Continue through..." step right
- * after the stop sign below, drawn at the crossing's own real point
- * rather than the road-approach stop. */
+/** The railroad-tracks glyph - what a Railroad Crossing waypoint shows
+ * (ACTION_ICONS below, keyed "railroad crossing"), placed on the tracks
+ * themselves. */
 export { default as RailroadCrossingIcon } from "./icons/railroad-crossing.svg";
 /** Not wired into anything yet - no route action or map marker calls
  * for a parking glyph today. */
@@ -151,8 +149,10 @@ export { default as ParkIcon } from "./icons/park.svg";
 export { default as PinRedIcon } from "./icons/pin-red.svg";
 export { default as PinBlueIcon } from "./icons/pin-blue.svg";
 /** The literal "stop the bus" sign, distinct from a Stop waypoint's own
- * red numbered pin - what a Railroad Crossing waypoint's first step
- * shows (ACTION_ICONS below, keyed "railroad crossing"). */
+ * red numbered pin - what a Stop Sign waypoint shows (ACTION_ICONS
+ * below, keyed "stop sign"), an ordinary admin-placed waypoint for any
+ * full-stop point a route needs called out on its own (most often
+ * placed a short way ahead of a Railroad Crossing waypoint). */
 export { default as StopSignIcon } from "./icons/stop-sign.svg";
 
 // Every non-Stop action (StepRowEditor's own Type select) used to fall
@@ -177,13 +177,8 @@ const ACTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
   return: ReturnSvg,
   depart: DepartSvg,
   arrive: ArriveSvg,
-  // Railroad Crossing's own two steps (buildRailroadCrossingSteps,
-  // parseRouteCsv.ts) - "railroad crossing" is this row's own heading
-  // (stepHeading's plain action.toUpperCase()), "railroad tracks" is
-  // the automatic follow-up step's, deliberately a different key so
-  // each gets its own distinct sign rather than the same one twice.
-  "railroad crossing": StopSignSvg,
-  "railroad tracks": RailroadCrossingSvg,
+  "railroad crossing": RailroadCrossingSvg,
+  "stop sign": StopSignSvg,
 };
 
 /** Looks up `ACTION_ICONS` by action name (case-insensitive) - null for
