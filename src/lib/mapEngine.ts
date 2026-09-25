@@ -310,7 +310,7 @@ export function installBuildingShadows(map: MapLibreMap): void {
       const shadowLayer = new WallShadowLayer({
         buildingsLayerId: "buildings",
         strength: 0.15,
-        shadowAlpha: 0.10,
+        shadowAlpha: 0.25,
         aoIntensity: 0.25,
         shadowBlur: 2.5,
       }) as CustomLayerInterface & {
