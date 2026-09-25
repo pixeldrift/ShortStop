@@ -30,6 +30,34 @@ import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
 // nothing in this style needs a second weight yet.
 const GLYPHS_URL = "/fonts/{fontstack}/{range}.pbf";
 const LABEL_FONT = ["Noto Sans Regular"];
+
+/** Every color this style paints with, in one place - the MapLibre
+ * equivalent of tweaking Mapbox Standard's own runtime `config.basemap`
+ * (colorBuildings/colorGreenspace/etc.), just resolved at build time
+ * instead of the browser's, since MapLibre has no such runtime config
+ * API of its own. roadsMajorLabelHalo intentionally matches roadsMajor
+ * itself - that label's own "symbol-placement": "line" (below) draws it
+ * running right along the road, so a matching halo reads as part of the
+ * road rather than a separate white patch on top of it. roadsMinorLabel
+ * has no such placement (plain point, more often beside the road than
+ * on it), so its halo stays the universal light "labelHalo" instead of
+ * pairing with roadsMinor's own line color. */
+const BASEMAP_COLORS = {
+  land: "#f4f1ea",
+  park: "#d7e8d4",
+  water: "#a7cbe8",
+  buildings: "#e3ddd0",
+  roadsMinor: "#a8a29e",
+  roadsMajor: "#f6c453",
+  rail: "#7c4a1e",
+  roadsMajorLabelText: "#5c4a1a",
+  roadsMajorLabelHalo: "#f6c453",
+  roadsMinorLabelText: "#57534e",
+  labelHalo: "#ffffff",
+  school: "#2563eb",
+  schoolLabelText: "#1d4ed8",
+  housenumberLabelText: "#78716c",
+} as const;
 // The `as unknown as StyleSpecification` cast on the return below is
 // deliberate, not a shortcut around a real type error: every literal
 // here (each layer's own "type", each filter's own operator strings)
@@ -73,14 +101,14 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
       {
         id: "background",
         type: "background" as const,
-        paint: { "background-color": "#f4f1ea" },
+        paint: { "background-color": BASEMAP_COLORS.land },
       },
       {
         id: "earth",
         type: "fill" as const,
         source,
         "source-layer": "earth",
-        paint: { "fill-color": "#f4f1ea" },
+        paint: { "fill-color": BASEMAP_COLORS.land },
       },
       {
         id: "landuse-park",
@@ -88,7 +116,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         source,
         "source-layer": "landuse",
         filter: ["==", ["get", "kind"], "park"],
-        paint: { "fill-color": "#d7e8d4" },
+        paint: { "fill-color": BASEMAP_COLORS.park },
       },
       // "water" (the source-layer) mixes real polygon water bodies
       // (lakes, ponds, pools) with linear waterways (rivers/creeks,
@@ -112,7 +140,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         source,
         "source-layer": "water",
         filter: ["==", ["geometry-type"], "Polygon"],
-        paint: { "fill-color": "#a7cbe8" },
+        paint: { "fill-color": BASEMAP_COLORS.water },
       },
       // The linear half of that same source-layer, drawn as its own
       // actual line rather than dropped - a real creek/river still
@@ -126,7 +154,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         filter: ["==", ["geometry-type"], "LineString"],
         layout: { "line-cap": "round" as const, "line-join": "round" as const },
         paint: {
-          "line-color": "#a7cbe8",
+          "line-color": BASEMAP_COLORS.water,
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 4],
         },
       },
@@ -155,7 +183,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         "source-layer": "buildings",
         minzoom: 15,
         paint: {
-          "fill-extrusion-color": "#e3ddd0",
+          "fill-extrusion-color": BASEMAP_COLORS.buildings,
           "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
           "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
           "fill-extrusion-opacity": 0.8,
@@ -172,7 +200,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         ],
         layout: { "line-cap": "round" as const, "line-join": "round" as const },
         paint: {
-          "line-color": "#ffffff",
+          "line-color": BASEMAP_COLORS.roadsMinor,
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 18, 6],
         },
       },
@@ -184,7 +212,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         filter: ["in", ["get", "kind"], ["literal", ["highway", "major_road"]]],
         layout: { "line-cap": "round" as const, "line-join": "round" as const },
         paint: {
-          "line-color": "#f6c453",
+          "line-color": BASEMAP_COLORS.roadsMajor,
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 18, 10],
         },
       },
@@ -211,7 +239,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         filter: ["==", ["get", "kind"], "rail"],
         layout: { "line-cap": "butt" as const, "line-join": "round" as const },
         paint: {
-          "line-color": "#7c4a1e",
+          "line-color": BASEMAP_COLORS.rail,
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 3],
           "line-dasharray": [2, 2],
         },
@@ -237,8 +265,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10, 18, 13],
         },
         paint: {
-          "text-color": "#5c4a1a",
-          "text-halo-color": "#f6c453",
+          "text-color": BASEMAP_COLORS.roadsMajorLabelText,
+          "text-halo-color": BASEMAP_COLORS.roadsMajorLabelHalo,
           "text-halo-width": 1,
         },
       },
@@ -260,8 +288,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-size": 11,
         },
         paint: {
-          "text-color": "#57534e",
-          "text-halo-color": "#ffffff",
+          "text-color": BASEMAP_COLORS.roadsMinorLabelText,
+          "text-halo-color": BASEMAP_COLORS.labelHalo,
           "text-halo-width": 1,
         },
       },
@@ -284,8 +312,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         minzoom: 11,
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 18, 6],
-          "circle-color": "#2563eb",
-          "circle-stroke-color": "#ffffff",
+          "circle-color": BASEMAP_COLORS.school,
+          "circle-stroke-color": BASEMAP_COLORS.labelHalo,
           "circle-stroke-width": 1.5,
         },
       },
@@ -311,8 +339,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-offset": [0, 0.6],
         },
         paint: {
-          "text-color": "#1d4ed8",
-          "text-halo-color": "#ffffff",
+          "text-color": BASEMAP_COLORS.schoolLabelText,
+          "text-halo-color": BASEMAP_COLORS.labelHalo,
           "text-halo-width": 1.5,
         },
       },
@@ -347,8 +375,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-size": 10,
         },
         paint: {
-          "text-color": "#78716c",
-          "text-halo-color": "#ffffff",
+          "text-color": BASEMAP_COLORS.housenumberLabelText,
+          "text-halo-color": BASEMAP_COLORS.labelHalo,
           "text-halo-width": 1,
         },
       },
