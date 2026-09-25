@@ -301,7 +301,19 @@ export function installBuildingShadows(map: MapLibreMap): void {
   // failing the whole module graph this function happens to live in.
   import("./vendor/wallShadowLayer.js")
     .then(({ WallShadowLayer }) => {
-      const shadowLayer = new WallShadowLayer({ buildingsLayerId: "buildings" }) as CustomLayerInterface & {
+      // Tuned down from the vendored file's own defaults (strength 0.5,
+      // shadowAlpha 0.35, aoIntensity 0.80) - at full strength the effect
+      // reads as distracting clutter on a route map drivers are glancing
+      // at, not the subtle depth cue it's meant to be. Each knob here is
+      // roughly half its default, and shadowBlur is raised so what's left
+      // reads as a soft gradient rather than a hard-edged shape.
+      const shadowLayer = new WallShadowLayer({
+        buildingsLayerId: "buildings",
+        strength: 0.22,
+        shadowAlpha: 0.15,
+        aoIntensity: 0.35,
+        shadowBlur: 3.5,
+      }) as CustomLayerInterface & {
         shadowOffset: [number, number];
       };
       map.addLayer(shadowLayer, "roads-minor");
