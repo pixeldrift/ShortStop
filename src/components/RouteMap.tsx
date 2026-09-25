@@ -82,6 +82,15 @@ const STREET_ZOOM = 17;
 // renderers animate them together as one motion, not a fast position
 // flight with an instant, separately-timed spin.
 const DRIVING_FLY_DURATION_MS = 1000;
+// A slight, deliberate 3D tilt for driving mode's own camera - enough
+// to actually read the newly-extruded buildings (protomapsStyle.ts's
+// own "buildings" layer) as real 3D shapes going by rather than flat
+// footprints, without tipping so far that the road ahead reads as a
+// thin sliver at the top of the screen the way a "real" turn-by-turn
+// app's much steeper pitch would. Never applied to overview mode (see
+// syncToModeRef's own fitBounds call below, which explicitly resets to
+// flat) - a bird's-eye stop-scanning view wants to stay top-down.
+const DRIVING_PITCH = 45;
 // Overview mode only shows numbered turn-by-turn detail (every stop's
 // own full pin, every turn's own marker) once the admin has zoomed in
 // this far past the route's own auto-fit framing - below it, the start
@@ -872,6 +881,12 @@ function mountMapLibre(args: MountArgs): () => void {
         }),
         zoom: DEFAULT_ZOOM,
         bearing: 0,
+        // Driving mode starts pitched from the very first paint, not
+        // just once the first per-step flyTo/easeTo (below) eventually
+        // applies DRIVING_PITCH - otherwise a driving-mode mount would
+        // render dead flat for one visible beat before its first camera
+        // move ever fires.
+        pitch: modeRef.current === "driving" ? DRIVING_PITCH : 0,
         // compact: true - a small "i" that expands to the full credit
         // on tap rather than the credit sitting spelled out in the
         // corner at all times. OSM's own attribution guidelines
@@ -1078,7 +1093,11 @@ function mountMapLibre(args: MountArgs): () => void {
                 [Math.min(...lons), Math.min(...lats)],
                 [Math.max(...lons), Math.max(...lats)],
               ],
-              { padding: 40, maxZoom: 16 },
+              // pitch explicitly flat - overview mode always wants a
+              // top-down read of the whole route, not whatever tilt
+              // driving mode's own DRIVING_PITCH left the camera at if
+              // this same map instance was ever in that mode before.
+              { padding: 40, maxZoom: 16, pitch: 0 },
             );
           }
           return;
@@ -1096,7 +1115,7 @@ function mountMapLibre(args: MountArgs): () => void {
           // rather than leaving bearing stuck at whatever it last
           // was until a real flyTo eventually comes along.
           if (bearing != null) {
-            mapInstance.easeTo({ bearing, duration: DRIVING_FLY_DURATION_MS });
+            mapInstance.easeTo({ bearing, pitch: DRIVING_PITCH, duration: DRIVING_FLY_DURATION_MS });
           }
           if (!drivingPinsRevealedRef.current) {
             drawDrivingPins();
@@ -1118,6 +1137,7 @@ function mountMapLibre(args: MountArgs): () => void {
         mapInstance.flyTo({
           center: toLngLat(point),
           zoom: STREET_ZOOM,
+          pitch: DRIVING_PITCH,
           ...(bearing != null ? { bearing } : {}),
           duration: DRIVING_FLY_DURATION_MS,
         });

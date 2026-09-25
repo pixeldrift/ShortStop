@@ -174,19 +174,30 @@ export function installSchoolBuildingHighlight(
       type: "geojson",
       data: { type: "FeatureCollection", features: [] },
     });
-    // beforeId "roads-minor" - directly above the base "buildings" fill,
-    // below every road/label/pin, matching the base fill's own existing
-    // stacking (protomapsStyle.ts's own layer order) rather than
-    // painting over roads that cross the building's own footprint.
+    // beforeId "roads-minor" - directly above the base "buildings"
+    // extrusion, below every road/label/pin, matching that base layer's
+    // own existing stacking (protomapsStyle.ts's own layer order) rather
+    // than painting over roads that cross the building's own footprint.
+    // fill-extrusion, not a flat fill, same reasoning as protomapsStyle's
+    // own "buildings" layer - a flat highlight would otherwise paint as a
+    // ground-level patch that ignores the extruded volume right above it
+    // once the map's pitched (RouteMap.tsx's own DRIVING_PITCH), reading
+    // as detached from the real building it's meant to be marking rather
+    // than coloring its actual walls/roof. A few meters taller than the
+    // real building itself (see refresh's own `+3`) so the highlighted
+    // school visibly pokes up above its own real rooftop, not just a
+    // same-height re-paint indistinguishable from the ordinary buildings
+    // layer already right underneath it.
     map.addLayer(
       {
         id: SCHOOL_BUILDING_HIGHLIGHT_SOURCE,
-        type: "fill",
+        type: "fill-extrusion",
         source: SCHOOL_BUILDING_HIGHLIGHT_SOURCE,
         paint: {
-          "fill-color": "#2563eb",
-          "fill-opacity": 0.55,
-          "fill-outline-color": "#1d4ed8",
+          "fill-extrusion-color": "#2563eb",
+          "fill-extrusion-height": ["+", ["coalesce", ["get", "height"], 6], 3],
+          "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
+          "fill-extrusion-opacity": 0.75,
         },
       },
       "roads-minor",
@@ -223,7 +234,20 @@ export function installSchoolBuildingHighlight(
         ? {
             type: "FeatureCollection",
             features: [
-              { type: "Feature", geometry: building.geometry, properties: {} },
+              {
+                type: "Feature",
+                geometry: building.geometry,
+                // height/min_height carried straight through from the
+                // real queried feature - dropping them (as an earlier
+                // version of this did, `properties: {}`) left the
+                // fill-extrusion paint above with nothing to read but
+                // its own coalesced default, so a school with a real
+                // recorded height would extrude to the wrong one.
+                properties: {
+                  height: building.properties?.height,
+                  min_height: building.properties?.min_height,
+                },
+              },
             ],
           }
         : { type: "FeatureCollection", features: [] },
