@@ -1,4 +1,4 @@
-#import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
+import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
 import type { CustomLayerInterface, GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 
 /**
