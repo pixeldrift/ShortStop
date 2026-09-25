@@ -740,13 +740,20 @@ function toLngLat({
 
 // StepScreen's own manual rider-box toggle - a real MapLibre IControl
 // (map.addControl), same reasoning the street-labels toggle this
-// replaced already established: it stacks automatically directly under
-// the NavigationControl's own zoom buttons the way every other control
-// sharing "top-left" does, instead of needing hand-tuned offset math to
-// sit under them. Plain, un-toggled styling (no on/off color the way
-// the old control had) - this doesn't track its own visible/hidden
-// state, it just calls back out to StepScreen's own toggleRosterManually
-// on every tap, which already knows whether the box is currently open.
+// replaced already established. Deliberately its own corner
+// ("bottom-left", below) rather than stacked under the NavigationControl's
+// zoom buttons (top-left) - it's an app-level action (open the rider
+// check-in box), not a map-navigation control, so it gets the app's own
+// round, blue, glossy button styling (.btn-glossy-blue - same recipe
+// every other primary action button in this app uses, globals.css)
+// instead of MapLibre's own flat gray control chrome, keeping the two
+// kinds of button visually distinct at a glance. No "maplibregl-ctrl-
+// group" wrapper (that's what draws MapLibre's own boxy white grouped-
+// control background) - just "maplibregl-ctrl" for corner positioning,
+// with the button itself supplying its whole look. This doesn't track
+// its own visible/hidden state, it just calls back out to StepScreen's
+// own toggleRosterManually on every tap, which already knows whether the
+// box is currently open.
 class ShowRidersControl implements IControl {
   private button?: HTMLButtonElement;
 
@@ -754,15 +761,14 @@ class ShowRidersControl implements IControl {
 
   onAdd(): HTMLElement {
     const container = document.createElement("div");
-    container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+    container.className = "maplibregl-ctrl m-2";
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("aria-label", "Show riders");
-    button.style.cssText =
-      "width:29px;height:29px;display:flex;align-items:center;" +
-      "justify-content:center;background:none;border:none;cursor:pointer;color:#333;";
+    button.className =
+      "btn-glossy-blue flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg";
     button.innerHTML = renderToStaticMarkup(
-      <PersonSolidIcon className="h-4 w-4" />,
+      <PersonSolidIcon className="h-5 w-5" />,
     );
     button.addEventListener("click", () => this.onClick());
     this.button = button;
@@ -953,16 +959,17 @@ function mountMapLibre(args: MountArgs): () => void {
         new maplibregl.NavigationControl({ showCompass: false }),
         "top-left",
       );
-      // Added right after NavigationControl, same corner - MapLibre
-      // stacks same-corner controls in call order, so this lands
-      // directly under the zoom buttons with no manual offset math.
-      // Only for callers that actually passed onToggleRoster (StepScreen,
-      // when this route has any rider-tracked stop) - StartScreen's
-      // overview map gets no button at all rather than a dead one.
+      // Its own corner (bottom-left) - see ShowRidersControl's own doc
+      // comment above for why this deliberately doesn't stack under the
+      // NavigationControl's zoom buttons the way a same-corner control
+      // would. Only for callers that actually passed onToggleRoster
+      // (StepScreen, when this route has any rider-tracked stop) -
+      // StartScreen's overview map gets no button at all rather than a
+      // dead one.
       if (onToggleRosterRef.current) {
         mapInstance.addControl(
           new ShowRidersControl(() => onToggleRosterRef.current?.()),
-          "top-left",
+          "bottom-left",
         );
       }
 
@@ -1128,9 +1135,21 @@ function mountMapLibre(args: MountArgs): () => void {
           overviewDetailed = mapInstance.getZoom() >= OVERVIEW_DETAIL_ZOOM;
           if (overviewDetailed) drawDrivingPins();
           else drawOverviewPins();
-          if (orderedWaypointsRef.current.length > 0) {
-            const lons = orderedWaypointsRef.current.map((w) => w.lon);
-            const lats = orderedWaypointsRef.current.map((w) => w.lat);
+          // Fit to every real route waypoint (stops and turns alike,
+          // key !== null) but not the school (key === null -
+          // fetchCacheAndBuildOrderedWaypoints's own doc comment above
+          // has why it's keyed that way) - a school sitting much
+          // farther out than the rest of the route otherwise forces the
+          // whole overview out to a zoom level where the stops
+          // themselves are too close together to read, for a school
+          // that isn't even part of what a driver needs to glance at
+          // here. Falls back to every waypoint, school included, on the
+          // rare route with nothing else resolved yet.
+          const withoutSchool = orderedWaypointsRef.current.filter((w) => w.key !== null);
+          const fitTargets = withoutSchool.length > 0 ? withoutSchool : orderedWaypointsRef.current;
+          if (fitTargets.length > 0) {
+            const lons = fitTargets.map((w) => w.lon);
+            const lats = fitTargets.map((w) => w.lat);
             mapInstance.fitBounds(
               [
                 [Math.min(...lons), Math.min(...lats)],
