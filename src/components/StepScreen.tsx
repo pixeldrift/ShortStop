@@ -315,11 +315,20 @@ export function StepScreen({
   // separately below - fits into that same ordered list).
   const routePath = useMemo(
     () =>
-      route.steps.map((s) => ({
-        waypointKey: s.waypointKey,
-        overrideLat: s.overrideLat,
-        overrideLon: s.overrideLon,
-      })),
+      route.steps
+        // A synthetic step (a Railroad Crossing's own automatic
+        // "Continue through..." follow-up - see buildRouteFromRows,
+        // parseRouteCsv.ts) shares its parent's exact waypointKey/
+        // coordinate rather than naming a distinct point of its own, so
+        // it's dropped here rather than handed to /api/route-geometry as
+        // a second, redundant leg back-to-back with the one its parent
+        // already contributes.
+        .filter((s) => s.rowIndex != null)
+        .map((s) => ({
+          waypointKey: s.waypointKey,
+          overrideLat: s.overrideLat,
+          overrideLon: s.overrideLon,
+        })),
     [route],
   );
   // The school's own geocoded location (School.lat/lon), straight from
@@ -581,7 +590,7 @@ export function StepScreen({
               stopPropagation keeps a tap here from also counting as the
               "tap anywhere to advance" this whole container listens
               for. */}
-          {canEditWaypoints && phase === "step" && !paused && (
+          {canEditWaypoints && phase === "step" && !paused && step.rowIndex != null && (
             <WaypointEditButtons
               onEdit={() => onEditWaypoint(false)}
               onAddAfter={() => onEditWaypoint(true)}
