@@ -73,13 +73,10 @@ export interface NavigationStep {
    * it, and the one every editing path (page.tsx's onEditWaypoint,
    * EditRouteScreen's own quickEdit) should read for "which row does
    * this step actually belong to," not `id` below (which is just this
-   * step's own position in the *final* steps array, synthetic steps
-   * included, and only ever an opaque key elsewhere - roster lookups,
-   * transition keys). Undefined only for a step with no row of its own
-   * at all - currently just a Railroad Crossing's automatic "Continue
-   * through..." follow-up (see buildRouteFromRows) - since there's
-   * nothing for an Edit tap on it to actually open. */
-  rowIndex: number | undefined;
+   * step's own position in the *final* steps array, and only ever an
+   * opaque key elsewhere - roster lookups, transition keys). Every row
+   * produces exactly one step, so this always names a real one. */
+  rowIndex: number;
   /** What the app speaks aloud when this step becomes current, as
    * separate parts spoken as separate utterances (e.g. stop number,
    * then location, then rider count) so there's an audible pause
