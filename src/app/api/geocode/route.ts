@@ -44,6 +44,13 @@ interface GeocodeRequestBody {
    * one from an earlier call this session - skips re-geocoding the
    * school address for every single "Fetch Location" click. */
   anchor?: { lat: number; lon: number };
+  /** A stand-in search anchor for an intersection query, used only when
+   * the school's own address fails to geocode - see
+   * resolveWaypoint.ts's AdminFetchContext.fallbackAnchor for why this
+   * exists (a test/placeholder route, or one anchored on a Special
+   * trip's own free-typed name). EditRouteScreen.tsx sends its route's
+   * own first already-resolved waypoint here. */
+  fallbackAnchor?: { lat: number; lon: number } | null;
   /** True only for EditRouteScreen.tsx's own single-row Fetch button -
    * opts this request into the street-type/spelling/loop-snap fallback
    * pipeline (resolveWaypoint.ts's own lookupCoordinatesWithFallback)
@@ -147,6 +154,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     locationContext,
     apiKey,
     anchor,
+    fallbackAnchor: body.fallbackAnchor ?? null,
     allowFallback: body.allowFallback,
     cache,
   });

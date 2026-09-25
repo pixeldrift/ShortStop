@@ -1224,6 +1224,109 @@ export function RouteListScreen({
             {filtered.map((route) => {
               const isPublished = isRoutePublished(route);
               const isAdminOnly = !isPublished;
+              // A Special/field-trip route's own routeNumber can be a
+              // free-typed name ("D&R Transpo to LLE"), not a short bus
+              // number - the fixed 4.5rem first column the compact grid
+              // below uses is sized for the latter, and crushed the
+              // former into an awkwardly narrow multi-line wrap. Same
+              // "give it a whole line of its own" fix the grouped view
+              // already gets for its own routeNumber heading (a plain
+              // flex row, no fixed-width column to fight).
+              const routeNumberIsShort = /^\d+$/.test(route.routeNumber.trim());
+              const tripTypeBadge = (route.tripType === "pickup" ||
+                route.tripType === "dropoff") && (
+                <IconTooltip
+                  as="span"
+                  label={tripTypeFullLabel(route.tripType)}
+                  className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                >
+                  <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
+                </IconTooltip>
+              );
+              const schoolLevelBadge = route.schoolLevel ? (
+                <IconTooltip
+                  as="span"
+                  label={schoolLevelLabel(route.schoolLevel)}
+                  className="h-4 w-4 shrink-0 text-blue-600"
+                >
+                  <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
+                </IconTooltip>
+              ) : (
+                <SchoolLevelIcon
+                  level={route.schoolLevel}
+                  className="h-4 w-4 shrink-0 text-blue-600"
+                />
+              );
+              const favoriteOrEyeButton = adminMode ? (
+                <button
+                  type="button"
+                  onClick={() => handleEyeClick(route)}
+                  disabled={!permissions.canPublishRoutes}
+                  aria-label={
+                    isPublished
+                      ? `Unpublish route ${route.routeNumber}`
+                      : `Publish route ${route.routeNumber}`
+                  }
+                  className="shrink-0 p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
+                >
+                  {isPublished ? (
+                    <EyeIcon className="h-4 w-4" />
+                  ) : (
+                    <EyeOffIcon className="h-4 w-4 text-zinc-400" />
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onToggleFavorite(route)}
+                  aria-label={
+                    route.isFavorite ? "Remove favorite" : "Add favorite"
+                  }
+                  className="shrink-0 p-1 active:opacity-70"
+                >
+                  <HeartIcon
+                    filled={route.isFavorite}
+                    className={`h-4 w-4 ${route.isFavorite ? "text-blue-600" : "text-zinc-300"}`}
+                  />
+                </button>
+              );
+
+              if (!routeNumberIsShort) {
+                return (
+                  <div
+                    key={route.id}
+                    className={`flex w-full items-start gap-1 px-2 py-3 text-left ${
+                      isAdminOnly ? "opacity-50" : ""
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        adminMode ? onEditRoute(route) : onSelect(route)
+                      }
+                      className="row-tap-gold flex min-w-0 flex-1 flex-col gap-1 text-left active:bg-amber-400"
+                    >
+                      <span className="flex items-center gap-1">
+                        {tripTypeBadge}
+                        <span className="font-heading text-xl leading-tight font-black">
+                          {route.routeNumber}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="flex min-w-0 flex-1 items-center gap-1">
+                          {schoolLevelBadge}
+                          <SchoolNameLabel name={route.schoolName} />
+                        </span>
+                        <span className="shrink-0 text-sm font-semibold text-zinc-500">
+                          {route.departureTime}
+                        </span>
+                      </span>
+                    </button>
+                    {favoriteOrEyeButton}
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={route.id}
@@ -1268,74 +1371,28 @@ export function RouteListScreen({
                           interactive-element reasoning as the grouped
                           view's own row (see its own IconTooltip
                           comment). */}
-                      {(route.tripType === "pickup" ||
-                        route.tripType === "dropoff") && (
-                        <IconTooltip
-                          as="span"
-                          label={tripTypeFullLabel(route.tripType)}
-                          className="h-[18px] w-[18px] shrink-0 text-blue-600"
-                        >
-                          <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
-                        </IconTooltip>
-                      )}
+                      {tripTypeBadge}
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
                     </div>
                     <span className="flex min-w-0 items-center gap-1">
-                      {route.schoolLevel ? (
-                        <IconTooltip
-                          as="span"
-                          label={schoolLevelLabel(route.schoolLevel)}
-                          className="h-4 w-4 shrink-0 text-blue-600"
-                        >
-                          <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
-                        </IconTooltip>
-                      ) : (
-                        <SchoolLevelIcon
-                          level={route.schoolLevel}
-                          className="h-4 w-4 shrink-0 text-blue-600"
-                        />
-                      )}
+                      {schoolLevelBadge}
                       <SchoolNameLabel name={route.schoolName} />
                     </span>
                     <span className="text-right text-sm font-semibold text-zinc-500">
                       {route.departureTime}
                     </span>
                   </button>
-                  {adminMode ? (
-                    <button
-                      type="button"
-                      onClick={() => handleEyeClick(route)}
-                      disabled={!permissions.canPublishRoutes}
-                      aria-label={
-                        isPublished
-                          ? `Unpublish route ${route.routeNumber}`
-                          : `Publish route ${route.routeNumber}`
-                      }
-                      className="justify-self-center p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
-                    >
-                      {isPublished ? (
-                        <EyeIcon className="h-4 w-4" />
-                      ) : (
-                        <EyeOffIcon className="h-4 w-4 text-zinc-400" />
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => onToggleFavorite(route)}
-                      aria-label={
-                        route.isFavorite ? "Remove favorite" : "Add favorite"
-                      }
-                      className="justify-self-center p-1 active:opacity-70"
-                    >
-                      <HeartIcon
-                        filled={route.isFavorite}
-                        className={`h-4 w-4 ${route.isFavorite ? "text-blue-600" : "text-zinc-300"}`}
-                      />
-                    </button>
-                  )}
+                  {/* justify-self-center, not baked into
+                      favoriteOrEyeButton itself - only this grid-layout
+                      branch needs it (a plain grid item otherwise
+                      stretches to fill its own column, left-aligning
+                      the icon inside instead of centering it); the
+                      long-routeNumber branch above is a flex row, where
+                      shrink-0 alone already keeps it its own natural
+                      size. */}
+                  <span className="justify-self-center">{favoriteOrEyeButton}</span>
                 </div>
               );
             })}

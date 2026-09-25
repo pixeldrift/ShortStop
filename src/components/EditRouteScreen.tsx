@@ -377,12 +377,13 @@ function rowValidationIssue(row: RawRouteRow): string | null {
 }
 
 /** Same shape as inputClass, swapped to a red border/focus ring - a
- * required field (Route #, Trip, School - see requiredFieldErrors)
- * still blank the moment a submit attempt is actually made, so it's
- * obvious *which* of the three needs attention rather than just the
- * one summary message. Never shown before that first attempt (see
- * `showRequiredErrors`) - a blank required field on first paint isn't
- * an error yet, just unfilled. */
+ * required field (Route #, Trip, and School for pickup/dropoff - see
+ * schoolNameMissing's own doc comment, handleSave) still blank the
+ * moment a submit attempt is actually made, so it's obvious *which*
+ * field needs attention rather than just the one summary message.
+ * Never shown before that first attempt (see `showRequiredErrors`) - a
+ * blank required field on first paint isn't an error yet, just
+ * unfilled. */
 const errorInputClass =
   "w-full rounded-lg border border-red-500 bg-white px-3 py-2 text-base placeholder:text-zinc-300 focus:border-red-500 focus:ring-1 focus:ring-red-500 focus:outline-none";
 
@@ -4951,6 +4952,14 @@ export function EditRouteScreen({
         query,
         schoolAddress,
         anchor: schoolAnchor ?? undefined,
+        // Lets an intersection query still resolve when schoolAddress
+        // itself isn't a real, geocodable place (a test/placeholder
+        // route, or one anchored on a Special trip's own free-typed
+        // name) - the route's own first already-resolved point, same
+        // one PlaceCoordinatesModal's own context line already draws
+        // from. Only ever used server-side as a last resort, after the
+        // school's real address has already failed to geocode.
+        fallbackAnchor: routeContextPoints[0] ?? null,
         allowFallback,
       }),
     });
@@ -5427,16 +5436,22 @@ export function EditRouteScreen({
     ],
   );
 
-  // The only three fields this screen actually requires - a route
-  // number (what gives a draft its own identity, see `id` above), a
-  // trip type, and a school - everything else (bus number, driver,
-  // start time, stops, whether they're geocoded) can genuinely be
-  // filled in later. This deliberately lets a stub with just these
-  // three get saved - readiness/publishing is the route list screen's
-  // own concern now, not Save's.
+  // A route number (what gives a draft its own identity, see `id`
+  // above) and a trip type are always required - everything else (bus
+  // number, driver, start time, stops, whether they're geocoded) can
+  // genuinely be filled in later. This deliberately lets a stub with
+  // just these two get saved - readiness/publishing is the route list
+  // screen's own concern now, not Save's. School only joins that list
+  // for pickup/dropoff - a normal AM/PM run's whole point is a specific
+  // school, but a Special/Other route can genuinely have none at all
+  // (Route.schoolLevel's own doc comment, types.ts) - a depot-to-school
+  // positioning run, say, whose own "destination" is really just
+  // wherever it ends, not a school an admin has to name to save the
+  // stub at all.
   const routeNumberMissing = !routeNumber.trim();
   const tripTypeMissing = !tripType;
-  const schoolNameMissing = !schoolName.trim();
+  const schoolNameMissing =
+    (tripType === "pickup" || tripType === "dropoff") && !schoolName.trim();
   // Not required (a blank Start is fine, same as busNumber/driver) -
   // only flagged once something's actually typed in but parseTimeInput
   // can't make sense of it, so Save doesn't silently write whatever
@@ -5459,7 +5474,17 @@ export function EditRouteScreen({
   ): Promise<boolean> {
     if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
       setShowRequiredErrors(true);
-      setMessage("Route #, Trip, and School are required.");
+      // Named individually, not a static "Route #, Trip, and School are
+      // required." - School only actually joins that list for pickup/
+      // dropoff (schoolNameMissing's own doc comment above), so a
+      // Special/Other stub missing just Route # or Trip would otherwise
+      // get told School is missing too when it never needed one at all.
+      const missing = [
+        routeNumberMissing && "Route #",
+        tripTypeMissing && "Trip",
+        schoolNameMissing && "School",
+      ].filter((label): label is string => Boolean(label));
+      setMessage(`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required.`);
       return false;
     }
     if (startTimeInvalid) {
