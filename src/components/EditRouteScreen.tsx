@@ -2052,20 +2052,35 @@ function StepRowEditor({
               )}
             />
 
-            {/* sticky bottom-0 - always reachable at the bottom of the
-                card the instant it's visible at all, not just once
-                scrolled down to (the outer card, still overflow-y-auto
-                above, is this footer's own nearest scrolling ancestor)
-                - a long status line (the coordinate override message,
-                say) pushing this further down the card used to be able
-                to leave it below the fold with no visible way back,
-                same problem ExpandableMap's own shorter clamp()'d height
-                above now also leaves less room for in the first place.
+            {/* sticky - always reachable at the bottom of the card the
+                instant it's visible at all, not just once scrolled down
+                to (the outer card, still overflow-y-auto above, is this
+                footer's own nearest scrolling ancestor) - a long status
+                line (the coordinate override message, say) pushing this
+                further down the card used to be able to leave it below
+                the fold with no visible way back, same problem
+                ExpandableMap's own shorter clamp()'d height above now
+                also leaves less room for in the first place.
                 -mx-5 -mb-5 + matching px-5 py-3 undoes this card's own
                 p-5 on this one edge so the bar reads as flush with the
                 card's own bottom/sides, not floating with the card's
-                usual padding still showing on every side around it. */}
-            <div className="sticky bottom-0 -mx-5 -mb-5 mt-3 flex items-center gap-2 border-t border-zinc-200 bg-[var(--background)] px-5 py-3">
+                usual padding still showing on every side around it -
+                but only for that trick's *own* flow position, not for
+                where `sticky` actually parks this box: a sticky
+                element's own inset (`bottom`) is resolved against its
+                scroll container's padding edge, not its border edge,
+                so a plain `bottom-0` re-adds exactly the p-5 this was
+                trying to cancel - the footer sat a whole 20px (p-5)
+                above the card's real bottom edge (a visible gap of bare
+                background below the buttons) *and*, since its own flow
+                height didn't change, 20px higher than its neighbors
+                expected too, overlapping the last bit of the map above
+                it. `-bottom-5` (rather than `bottom-0`) offsets sticky's
+                own padding-edge anchor by that same p-5 outward, landing
+                the footer flush with the card's true border edge - the
+                same place the negative-margin trick alone already gets
+                a plain (non-sticky) element to. */}
+            <div className="sticky -bottom-5 -mx-5 -mb-5 mt-3 flex items-center gap-2 border-t border-zinc-200 bg-[var(--background)] px-5 py-3">
               {/* Hidden for `isNew` too, not just `hideDelete` - a row
                   that only exists as an unsaved draft (addRow's own
                   freshly-inserted blank row) was never actually added to
