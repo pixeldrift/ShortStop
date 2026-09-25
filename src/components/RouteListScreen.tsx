@@ -54,7 +54,12 @@ type ConfirmRequest =
   | { type: "deactivate"; route: Route }
   | { type: "draft-options"; route: Route };
 
-type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
+type SortField =
+  | "routeNumber"
+  | "tripType"
+  | "schoolName"
+  | "departureTime"
+  | "isFavorite";
 
 // One comparator per sortable header - routeNumber compares with
 // localeCompare's own `numeric` option (a "natural sort": embedded
@@ -83,6 +88,12 @@ const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
   schoolName: (a, b) => a.schoolName.localeCompare(b.schoolName),
   departureTime: (a, b) =>
     parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
+  // Favorited routes first on the default ascending tap (a plain
+  // boolean subtraction would put false/0 first instead) - ties break
+  // on routeNumber, same as every other comparator here that needs one.
+  isFavorite: (a, b) =>
+    (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0) ||
+    SORT_COMPARATORS.routeNumber(a, b),
 };
 
 // Trip type's own value/label lookup, read by the single cycling icon
@@ -327,6 +338,12 @@ export function RouteListScreen({
   );
   const [activeSchoolLevel, setActiveSchoolLevel] =
     useState<SchoolLevel | null>(null);
+  // Plain on/off, not a cycle - "favorites only" has just the one real
+  // state to isolate, unlike trip type/school level's own several.
+  const [activeFavoritesOnly, setActiveFavoritesOnly] = useState(false);
+  function toggleFavoritesOnly() {
+    setActiveFavoritesOnly((v) => !v);
+  }
   // Same null-is-"view all" cycling as activeSchoolLevel, one icon
   // instead of two separate Pub/Hid buttons - null -> published only ->
   // hidden only -> null.
@@ -408,6 +425,7 @@ export function RouteListScreen({
         (activeTripType === null || route.tripType === activeTripType) &&
         (activeSchoolLevel === null ||
           route.schoolLevel === activeSchoolLevel) &&
+        (!activeFavoritesOnly || route.isFavorite) &&
         // Only admin mode ever renders this toggle row (a normal
         // driver's view already excludes hidden routes outright above),
         // but guard on adminMode here too so a stale selection can't
@@ -429,6 +447,7 @@ export function RouteListScreen({
     query,
     activeTripType,
     activeSchoolLevel,
+    activeFavoritesOnly,
     activePublishFilter,
     sortField,
     sortDir,
@@ -824,6 +843,24 @@ export function RouteListScreen({
                 <SchoolLevelIcon level={activeSchoolLevel} className="h-5 w-5" />
               )}
             </button>
+            <div className="h-5 w-px bg-zinc-300" aria-hidden="true" />
+            {/* Plain on/off, not a cycle - narrows the list to favorited
+                routes only, same gray/inactive-blue/active convention as
+                every filter icon here, just without a second "which one"
+                state to cycle through. */}
+            <button
+              type="button"
+              onClick={toggleFavoritesOnly}
+              aria-pressed={activeFavoritesOnly}
+              aria-label={
+                activeFavoritesOnly
+                  ? "Showing favorites only"
+                  : "Filter by favorites"
+              }
+              className={activeFavoritesOnly ? "text-blue-600" : "text-zinc-300"}
+            >
+              <HeartIcon filled={activeFavoritesOnly} className="h-5 w-5" />
+            </button>
             {/* Published/Hidden - admin mode only, same empty-set-shows-
                 everything convention as the two groups above (a normal
                 driver's list already excludes hidden routes outright, so
@@ -1059,7 +1096,7 @@ export function RouteListScreen({
                               // both of them, rounded-lg included, rather
                               // than stopping at whichever inner button
                               // happened to be pressed.
-                              className={`row-tap-gold flex w-full items-center gap-2 rounded-lg py-2.5 pr-2 pl-8 active:bg-amber-400 ${
+                              className={`row-tap-gold flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 pl-8 active:bg-amber-400 ${
                                 isAdminOnly ? "opacity-50" : ""
                               }`}
                             >
@@ -1281,9 +1318,16 @@ export function RouteListScreen({
                 <EyeIcon className="h-4 w-4 text-zinc-400" />
               </span>
             ) : (
-              <span className="justify-self-center p-1">
-                <HeartIcon className="h-4 w-4 text-zinc-400" />
-              </span>
+              <SortableHeader
+                label={<HeartIcon className="h-4 w-4 text-zinc-400" />}
+                field="isFavorite"
+                align="center"
+                fill
+                padded={false}
+                sortField={sortField}
+                sortDir={sortDir}
+                onSort={toggleSort}
+              />
             )}
           </div>
           <div
