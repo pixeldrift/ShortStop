@@ -36,7 +36,6 @@ import {
   PrintIcon,
   ReverseIcon,
   RightArrowIcon,
-  RouteIcon,
   RoundedTriangleIcon,
   SaveIcon,
   ScissorsIcon,
@@ -61,7 +60,6 @@ import type { WaypointQuery } from "@/lib/deriveWaypoints";
 import { downloadCsv, routeStepsToCsv } from "@/lib/exportCsv";
 import type { GeocodableQuery } from "@/lib/geocode";
 import { useDragReorder } from "@/lib/useDragReorder";
-import { useWaypointMapVisible } from "@/lib/useWaypointMapVisible";
 import {
   applyBulkUpdate,
   matchSchoolFromRows,
@@ -975,7 +973,6 @@ function StepRowEditor({
   placementGuess,
   routeContext,
   stopPins,
-  mapVisible,
   onChange,
   onLocationChange,
   onClickWaypointPin,
@@ -1087,13 +1084,6 @@ function StepRowEditor({
    * alone. `rowIndex` is what lets tapping one of those dots open that
    * row's own editor (onClickWaypointPin below). */
   stopPins: StopPin[];
-  /** The shared "show the small preview map" preference
-   * (useWaypointMapVisible.ts) - off hides the ExpandableMap/
-   * WaypointPreviewMap block below outright, giving this card's own
-   * fields more room and letting the list itself (EditRouteScreen's
-   * own scroll container, above this row) show more rows at once
-   * without scrolling. */
-  mapVisible: boolean;
   onChange: (patch: Partial<RawRouteRow>) => void;
   /** Opens a different row's own editor in place of this one - the
    * same "save this row's draft, then open the target" goToRowIndex
@@ -2033,28 +2023,32 @@ function StepRowEditor({
           second, independent full-screen instance) is the one part of
           this that isn't already visible in the small inline box -
           useful once there are enough resolved stops nearby that the
-          140px-tall preview gets crowded. Skipped outright (not just
-          collapsed) when the shared map preference is off - see
-          `mapVisible`'s own doc comment above. */}
-            {mapVisible && (
-              <ExpandableMap
-                className="mt-3 h-[clamp(6rem,18vh,10rem)] w-full"
-                renderMap={(mapClassName, isExpanded) => (
-                  <WaypointPreviewMap
-                    className={`relative z-0 ${mapClassName} ${
-                      isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
-                    }`}
-                    center={previewCenter}
-                    centerStopNumber={stopNumber}
-                    centerDirection={turnDirection ?? undefined}
-                    centerHeading={!isStop ? row.action : undefined}
-                    routeLine={routeContext}
-                    stopPins={stopPins}
-                    onClickPin={onClickWaypointPin}
-                  />
-                )}
-              />
-            )}
+          140px-tall preview gets crowded. Always shown here, unlike the
+          shared `mapVisible` preference (useWaypointMapVisible.ts)
+          StartScreen's own AllStopsModal still gates its map with -
+          that preference exists to trade the map away for more visible
+          *rows* at once in a real multi-row list; this card only ever
+          shows one row regardless, so hiding its map bought nothing but
+          an empty gap where it used to be (this screen's own toolbar
+          used to carry the same toggle for exactly that reason, and was
+          removed alongside this once it had nothing left to hide). */}
+            <ExpandableMap
+              className="mt-3 h-[clamp(6rem,18vh,10rem)] w-full"
+              renderMap={(mapClassName, isExpanded) => (
+                <WaypointPreviewMap
+                  className={`relative z-0 ${mapClassName} ${
+                    isExpanded ? "" : "overflow-hidden rounded-2xl border border-zinc-300"
+                  }`}
+                  center={previewCenter}
+                  centerStopNumber={stopNumber}
+                  centerDirection={turnDirection ?? undefined}
+                  centerHeading={!isStop ? row.action : undefined}
+                  routeLine={routeContext}
+                  stopPins={stopPins}
+                  onClickPin={onClickWaypointPin}
+                />
+              )}
+            />
 
             {/* sticky bottom-0 - always reachable at the bottom of the
                 card the instant it's visible at all, not just once
@@ -3995,9 +3989,6 @@ export function EditRouteScreen({
   // next unverified" below is the other way to reach the same rows
   // without leaving the full list.
   const [showUnverifiedOnly, setShowUnverifiedOnly] = useState(false);
-  // Shared with every other waypoint list in the app (AllStopsModal,
-  // StartScreen.tsx) - see useWaypointMapVisible's own doc comment.
-  const [mapVisible, setMapVisible] = useWaypointMapVisible();
   // The scrollable rows container - jumpToNextUnverified below scrolls
   // within this specifically, not the whole page (see subScreen
   // "stops"'s own layout: this list is its own internal scroll region).
@@ -5799,12 +5790,27 @@ export function EditRouteScreen({
     setExpandedIndex(nextIndex);
     setDraftRow({ ...rows[nextIndex] });
   }
+  // The nearest visible row on either side of `from`, whether or not
+  // `from` *itself* is currently visible - a plain visibleRowIndices
+  // .indexOf(from) lookup (this used to be exactly that) returns -1 for
+  // a row the active filter is currently hiding (e.g. opening a Turn
+  // row's own pencil icon while "Stops only" is on - unlike goToRow's
+  // own callers, which only ever reach a row the list itself is already
+  // showing, StepScreen's own Edit/Add waypoint buttons can open *any*
+  // step, filter or no), and indexing an array with -1 - 1/-1 + 1 both
+  // land on real (wrong) neighbors rather than undefined, so the old
+  // "-1 means stuck" guard silently went the *other* way instead: both
+  // arrows read as permanently disabled (canGoPrev/canGoNext below use
+  // this same lookup) even though the route plainly has more waypoints
+  // on either side to page to.
+  function nearestVisibleRowIndex(from: number, direction: "prev" | "next"): number | undefined {
+    return direction === "prev"
+      ? visibleRowIndices.filter((i) => i < from).at(-1)
+      : visibleRowIndices.find((i) => i > from);
+  }
   function goToRow(direction: "prev" | "next") {
     if (expandedIndex === null) return;
-    const currentPos = visibleRowIndices.indexOf(expandedIndex);
-    if (currentPos === -1) return;
-    const nextIndex =
-      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
+    const nextIndex = nearestVisibleRowIndex(expandedIndex, direction);
     if (nextIndex === undefined) return;
     goToRowIndex(nextIndex);
   }
@@ -6354,20 +6360,6 @@ export function EditRouteScreen({
                 {absoluteStopNumbers.size === 1 ? "" : "s"}
               </span>
               <div className="h-4 w-px shrink-0 bg-zinc-200" aria-hidden="true" />
-              {/* Shared with every other waypoint list in the app
-                  (useWaypointMapVisible.ts) - off here also hides
-                  AllStopsModal's own overview map and every row's own
-                  inline preview below, freeing more room to see list
-                  rows without scrolling. */}
-              <button
-                type="button"
-                onClick={() => setMapVisible(!mapVisible)}
-                aria-pressed={mapVisible}
-                aria-label={mapVisible ? "Hide map" : "Show map"}
-                className={`shrink-0 ${mapVisible ? "text-blue-600" : "text-zinc-300"}`}
-              >
-                <RouteIcon className="h-4 w-4" />
-              </button>
               <button
                 type="button"
                 onClick={() => setStopsOnly(!stopsOnly)}
@@ -6585,7 +6577,6 @@ export function EditRouteScreen({
                 placementGuess={nearestResolvedGuess(placementResolutionRows, index)}
                 routeContext={routeContextPoints}
                 stopPins={stopPins}
-                mapVisible={mapVisible}
                 onChange={handleDraftChange}
                 onLocationChange={handleLocationChange}
                 onClickWaypointPin={goToRowIndex}
@@ -6616,13 +6607,8 @@ export function EditRouteScreen({
                 onOverrideCoordinates={(lat, lon) =>
                   handleDraftChange({ overrideLat: lat, overrideLon: lon })
                 }
-                canGoPrev={quickEdit ? false : visibleRowIndices.indexOf(index) > 0}
-                canGoNext={
-                  quickEdit
-                    ? false
-                    : visibleRowIndices.indexOf(index) <
-                      visibleRowIndices.length - 1
-                }
+                canGoPrev={quickEdit ? false : nearestVisibleRowIndex(index, "prev") !== undefined}
+                canGoNext={quickEdit ? false : nearestVisibleRowIndex(index, "next") !== undefined}
                 onNavigate={goToRow}
                 onAddWaypointAfter={() => addRow(index + 1)}
                 onCancel={handleCancelRow}

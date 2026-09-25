@@ -13,7 +13,11 @@ import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
  * Kept intentionally plain/legible over decorative - this is a
  * from-scratch style, not a port of CARTO Voyager's own look (the
  * raster basemap this replaces), so there was nothing to match pixel
- * for pixel.
+ * for pixel. Buildings extrude into real 3D volumes (see the
+ * "buildings" layer below) and the driving map carries a default
+ * camera pitch (RouteMap.tsx's own DRIVING_PITCH) - a richer palette
+ * was tried alongside those two, but read as gross rather than better,
+ * so only the 3D shape stuck around.
  */
 // Self-hosted (public/fonts/Noto Sans Regular/*.pbf, one file per
 // 256-codepoint range) rather than Protomaps' own hosted
@@ -93,13 +97,36 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         "source-layer": "water",
         paint: { "fill-color": "#a7cbe8" },
       },
+      // Real 3D building footprints (fill-extrusion, not a flat fill) -
+      // `height`/`min_height` are genuine per-building fields this
+      // extract's own vector_layers metadata carries (meters, straight
+      // from OSM's own building:height/height tags where mapped ones
+      // exist) - coalesced to a flat, modest default for the (large
+      // majority of) buildings OSM never recorded a real height for, so
+      // every footprint still extrudes into *something* rather than
+      // only the few with real data standing out as the sole 3D shapes
+      // in an otherwise flat field. Reads identically to the plain fill
+      // this replaces at pitch 0 (WaypointPreviewMap/PlaceCoordinatesModal,
+      // and RouteMap's own overview mode - a fill-extrusion's top face is
+      // all a straight-down camera ever sees), and only actually shows
+      // real walls once pitched (RouteMap's own driving mode - see
+      // DRIVING_PITCH, RouteMap.tsx). installSchoolBuildingHighlight
+      // (mapEngine.ts) queries this same layer id and redraws whichever
+      // footprint it finds as its own matching fill-extrusion, so the
+      // highlighted school building extrudes too, not just this layer's
+      // own ordinary buildings.
       {
         id: "buildings",
-        type: "fill" as const,
+        type: "fill-extrusion" as const,
         source,
         "source-layer": "buildings",
         minzoom: 15,
-        paint: { "fill-color": "#e3ddd0", "fill-opacity": 0.8 },
+        paint: {
+          "fill-extrusion-color": "#e3ddd0",
+          "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+          "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
+          "fill-extrusion-opacity": 0.8,
+        },
       },
       {
         id: "roads-minor",
