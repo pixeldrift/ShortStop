@@ -620,6 +620,16 @@ interface AdminFetchContext {
   locationContext: string;
   apiKey: string;
   anchor: { lat: number; lon: number } | null;
+  /** A stand-in search anchor for when the school's own address isn't a
+   * real, geocodable place at all (a test/placeholder route, or one
+   * anchored on a Special trip's own free-typed name - see
+   * Route.schoolName's own doc comment) - the route's own first
+   * already-resolved waypoint, from EditRouteScreen.tsx's own
+   * routeContextPoints. Only ever used by ensureAnchor below as a last
+   * resort, after resolveSchoolAnchor itself has already failed - an
+   * intersection query still prefers the school's real address whenever
+   * that succeeds, since it's the more accurate anchor. */
+  fallbackAnchor?: { lat: number; lon: number } | null;
   /** Opts fetchOneLocation below into lookupCoordinatesWithFallback
    * instead of the plain lookupCoordinates - only ever true for
    * EditRouteScreen.tsx's own single-row Fetch button (its own
@@ -650,6 +660,12 @@ async function ensureAnchor(
   if (query.kind === "address" || ctx.anchor) return { point: ctx.anchor, entry: null };
   const { entry, point } = await resolveSchoolAnchor(ctx.schoolAddress, ctx.locationContext, ctx.apiKey);
   if (!point) {
+    // The school's own address didn't pan out - fall back to the
+    // route's own first already-resolved point (see fallbackAnchor's
+    // own doc comment) rather than failing outright, so a route
+    // anchored on a fake/placeholder school can still geocode its
+    // intersection-kind waypoints from its own real, nearby stops.
+    if (ctx.fallbackAnchor) return { point: ctx.fallbackAnchor, entry: null };
     // Same reasoning as lookupCoordinates's own anchor-failure branch -
     // only fold the underlying message in when there's no `raw` for the
     // caller to show separately.

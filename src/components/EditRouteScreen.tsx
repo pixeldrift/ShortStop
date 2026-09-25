@@ -4952,6 +4952,14 @@ export function EditRouteScreen({
         query,
         schoolAddress,
         anchor: schoolAnchor ?? undefined,
+        // Lets an intersection query still resolve when schoolAddress
+        // itself isn't a real, geocodable place (a test/placeholder
+        // route, or one anchored on a Special trip's own free-typed
+        // name) - the route's own first already-resolved point, same
+        // one PlaceCoordinatesModal's own context line already draws
+        // from. Only ever used server-side as a last resort, after the
+        // school's real address has already failed to geocode.
+        fallbackAnchor: routeContextPoints[0] ?? null,
         allowFallback,
       }),
     });
