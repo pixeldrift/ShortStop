@@ -318,6 +318,7 @@ const labelClass =
 // an admin can actually pick.
 const WAYPOINT_TYPES = [
   "Stop",
+  "Railroad Crossing",
   "Left",
   "Right",
   "Continue",
@@ -1625,6 +1626,7 @@ function StepRowEditor({
                 >
                   <option value="">- Select -</option>
                   <option value="Stop">Stop</option>
+                  <option value="Railroad Crossing">Railroad Crossing</option>
                   <option value="Left">Turn Left</option>
                   <option value="Right">Turn Right</option>
                   <option value="Continue">Continue</option>
@@ -4694,7 +4696,14 @@ export function EditRouteScreen({
     // all, just hand control straight back to the drive at the same
     // step it was on.
     if (quickEdit) {
-      quickEdit.onCancelled(quickEdit.rowIndex);
+      // Same rowIndex-vs-stepIndex translation as handleSave's own
+      // quickEdit.onSaved branch, against this route's own *original*
+      // (unedited) steps - nothing here was ever saved, so `route.steps`
+      // is exactly what StepScreen was already showing before this quick-
+      // edit session opened.
+      const resumeAtStepIndex =
+        route?.steps.find((step) => step.rowIndex === quickEdit.rowIndex)?.id ?? quickEdit.rowIndex;
+      quickEdit.onCancelled(resumeAtStepIndex);
       return;
     }
     if (newlyAddedIndex === expandedIndex) {
@@ -5553,7 +5562,17 @@ export function EditRouteScreen({
     // screen's own hub - a session that only ever existed to fix one
     // waypoint has nothing to show there.
     if (quickEdit) {
-      quickEdit.onSaved(built, currentRows, cache, quickEdit.rowIndex);
+      // `quickEdit.rowIndex` is a row index, not a step index - the two
+      // only ever differ once a Railroad Crossing row earlier in the
+      // route has inserted its own extra synthetic step ahead of this
+      // one (buildRouteFromRows, parseRouteCsv.ts), shifting every
+      // later row's real position in `built.steps` past its own row
+      // index. Resolving through each step's own `rowIndex` (rather
+      // than trusting the two to still coincide) keeps this correct
+      // either way.
+      const resumeAtStepIndex =
+        built.steps.find((step) => step.rowIndex === quickEdit.rowIndex)?.id ?? quickEdit.rowIndex;
+      quickEdit.onSaved(built, currentRows, cache, resumeAtStepIndex);
     } else {
       onSave(built, currentRows, cache, previousId);
     }

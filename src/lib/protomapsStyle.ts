@@ -108,7 +108,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         "source-layer": "roads",
         filter: [
           "!",
-          ["in", ["get", "kind"], ["literal", ["highway", "major_road"]]],
+          ["in", ["get", "kind"], ["literal", ["highway", "major_road", "rail"]]],
         ],
         layout: { "line-cap": "round" as const, "line-join": "round" as const },
         paint: {
@@ -126,6 +126,34 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         paint: {
           "line-color": "#f6c453",
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 18, 10],
+        },
+      },
+      // A real railroad track, drawn deliberately unlike any road - a
+      // brown dashed line, not this style's usual white/yellow solid
+      // fill - so a crossing reads as its own distinct kind of hazard on
+      // the map, not just another minor road (which "kind": "rail" would
+      // otherwise fall into, sharing roads-minor's own filter above,
+      // rendered in the exact same white as a driveway). Painted above
+      // both road line layers (later in this array = on top) so a track
+      // crossing a road stays visible right at the crossing rather than
+      // disappearing under the road's own fill; still below every label
+      // layer, same stacking every other line in this style already
+      // keeps. Schema/kind value per Protomaps' own basemap layer docs
+      // (docs.protomaps.com/basemaps/layers) - "roads" is the one
+      // source-layer this extract's own vector_layers metadata actually
+      // carries a rail feature in, not a separate "transit" layer some
+      // other vector-tile schemas use.
+      {
+        id: "rail",
+        type: "line" as const,
+        source,
+        "source-layer": "roads",
+        filter: ["==", ["get", "kind"], "rail"],
+        layout: { "line-cap": "butt" as const, "line-join": "round" as const },
+        paint: {
+          "line-color": "#7c4a1e",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 3],
+          "line-dasharray": [2, 2],
         },
       },
       // Street-name labels, always visible (see this file's own top
@@ -161,7 +189,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         "source-layer": "roads",
         filter: [
           "!",
-          ["in", ["get", "kind"], ["literal", ["highway", "major_road"]]],
+          ["in", ["get", "kind"], ["literal", ["highway", "major_road", "rail"]]],
         ],
         minzoom: 14,
         layout: {

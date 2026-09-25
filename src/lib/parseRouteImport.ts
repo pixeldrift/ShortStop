@@ -208,6 +208,7 @@ export function matchColumns(headerLine: string, delimiter: string): ImportColum
 // flagged as invalid.
 export const RECOGNIZED_ACTIONS = new Set([
   "stop",
+  "railroad crossing",
   "left",
   "right",
   "continue",

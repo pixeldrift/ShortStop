@@ -130,15 +130,18 @@ Vercel value).
   was designed for, not just naive shrinking. Also requires a stored split
   ratio and a double tap on the divider to reset back to the default.
 - Admin mode optimized for desktop for easier route and stop editing.
-- Bus-specific auto-instructions — automatically inserts instructions
-  a generic map app has no reason to know about (stopping before a
-  railroad crossing is the concrete example), the kind of thing a new
-  driver forgets and an experienced one does by habit. Likely needs
-  its own geodata source (e.g. an Overpass query for
-  `railway=level_crossing` along the route's own line, the same kind
-  of lookup `overpassGeocode.ts` already does for intersections) to
-  find where these apply, then auto-inserts a real "Stop" step at that
-  point the same way any other route step works.
+- Auto-detected railroad crossings. An admin can now mark one by hand
+  (the "Railroad Crossing" waypoint type - StepRowEditor's own Type
+  select) - it geocodes like any other waypoint, and turns into the
+  real "Stop before railroad crossing" / "Continue through railroad
+  crossing" pair of steps automatically (`buildRailroadCrossingSteps`,
+  `parseRouteCsv.ts`). What's still missing is finding these
+  automatically rather than an admin having to notice one on the
+  route sheet: an Overpass query for `railway=level_crossing` along
+  the route's own line (the same kind of lookup `overpassGeocode.ts`
+  already does for intersections), crawled retroactively across every
+  route to insert this waypoint type wherever a crossing turns up
+  along an existing leg with no dedicated row of its own yet.
 - Offline turn-by-turn fallback for a lost-signal driver, read-only (no
   editing offline). Not cookies - a service worker (this is already a
   PWA, `public/manifest.json`) caching the app shell, plus IndexedDB

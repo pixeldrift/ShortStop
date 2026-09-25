@@ -784,10 +784,13 @@ function RouteApp({
    * permissionsFor's own doc comment, permissions.ts). */
   canEditWaypoints: boolean;
   /** Opens the quick-edit detour for `currentStep` (StepScreen's own
-   * Edit/Add buttons) - `rowIndex` is always currentStep.id (see
-   * NavigationStep.id's own doc comment, parseRouteCsv.ts: it's the raw
-   * row's own array index, the same index quickEdit resumes driving at
-   * once the popup closes), `insertNewAfter` true for Add, false for
+   * Edit/Add buttons) - `rowIndex` is always currentStep.rowIndex (see
+   * NavigationStep.rowIndex's own doc comment, types.ts: the raw row's
+   * own array index, distinct from `id`). StepScreen only ever offers
+   * these buttons for a step that actually has one (a Railroad
+   * Crossing's automatic "Continue through..." step doesn't - see
+   * StepScreen's own WaypointEditButtons gating), so this is only ever
+   * called with a real index. `insertNewAfter` true for Add, false for
    * Edit. */
   onEditWaypoint: (rowIndex: number, insertNewAfter: boolean) => void;
 }) {
@@ -878,7 +881,9 @@ function RouteApp({
       onRiderTap={fillTo}
       onAddRider={addUnexpectedRider}
       canEditWaypoints={canEditWaypoints}
-      onEditWaypoint={(insertNewAfter) => onEditWaypoint(currentStep.id, insertNewAfter)}
+      onEditWaypoint={(insertNewAfter) => {
+        if (currentStep.rowIndex != null) onEditWaypoint(currentStep.rowIndex, insertNewAfter);
+      }}
     />
   );
 
