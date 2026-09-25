@@ -1,4 +1,4 @@
-import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
+#import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
 import type { CustomLayerInterface, GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 
 /**
@@ -309,10 +309,10 @@ export function installBuildingShadows(map: MapLibreMap): void {
       // reads as a soft gradient rather than a hard-edged shape.
       const shadowLayer = new WallShadowLayer({
         buildingsLayerId: "buildings",
-        strength: 0.22,
-        shadowAlpha: 0.15,
-        aoIntensity: 0.35,
-        shadowBlur: 3.5,
+        strength: 0.15,
+        shadowAlpha: 0.25,
+        aoIntensity: 0.25,
+        shadowBlur: 2.5,
       }) as CustomLayerInterface & {
         shadowOffset: [number, number];
       };
