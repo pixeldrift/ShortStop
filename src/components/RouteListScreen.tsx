@@ -85,22 +85,26 @@ const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
     parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
 };
 
-// Every toggle starts off (gray/"not filtering") - an empty set here
-// means "no filter in this group," so the default state (nothing
-// tapped yet) shows everything, same as the old dropdown's own "All"
-// option used to. Tapping one on narrows the list to routes matching
-// *some* active toggle within that same group; the other group (if
-// it also has something on) still applies independently.
+// Trip type's own value/label lookup, read by the single cycling icon
+// button below (aria-label) and by TRIP_TYPE_CYCLE right after this -
+// not three separate toggle buttons anymore (see cycleTripType).
+// "other" has no place of its own here for now - dropped rather than
+// grown the cycle past the three real values the mockup's own AM/PM/SP
+// group shows (same three-deep shape the school-level group right
+// beside it uses). An "other" route still shows up fine (view-all
+// still means "show everything"), it just can't be isolated by this
+// filter the way the other three trip types can yet.
 const TRIP_TYPE_TOGGLES: { value: TripType; label: string }[] = [
   { value: "pickup", label: "AM" },
   { value: "dropoff", label: "PM" },
   { value: "fieldtrip", label: "SP" },
-  // "other" has no toggle of its own for now - dropped rather than
-  // grown the column past the three rows the mockup's own AM/PM/SP
-  // group shows (see the school-level group right beside it, same
-  // three-tall shape). An "other" route still shows up fine (an empty
-  // active set means "show everything"), it just can't be isolated by
-  // this toggle group the way the other three trip types can yet.
+];
+// Same "view all -> each real value -> view all" cycle shape as
+// SCHOOL_LEVEL_CYCLE below - one icon instead of three separate
+// buttons (see cycleTripType and its own button, further down).
+const TRIP_TYPE_CYCLE: (TripType | null)[] = [
+  null,
+  ...TRIP_TYPE_TOGGLES.map((t) => t.value),
 ];
 const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
   { value: "elementary", label: "ES" },
@@ -314,12 +318,10 @@ export function RouteListScreen({
     routeId: string;
     ready: boolean;
   } | null>(null);
-  // Exclusive, not multi-select - tapping a trip type turns it on and
-  // drops whatever else was active, tapping the active one again turns
-  // it back off (null = "show everything"). Same reasoning for
-  // activeSchoolLevel, just cycled through a single icon (see
-  // SCHOOL_LEVEL_CYCLE and its own button below) instead of one button
-  // per level.
+  // null (view all) -> AM -> PM -> SP -> null - one cycling icon
+  // (cycleTripType, its own button further down) instead of three
+  // separate buttons, same shape as activeSchoolLevel/
+  // SCHOOL_LEVEL_CYCLE right below.
   const [activeTripType, setActiveTripType] = useState<TripType | null>(
     null,
   );
@@ -331,8 +333,13 @@ export function RouteListScreen({
   const [activePublishFilter, setActivePublishFilter] = useState<
     "published" | "hidden" | null
   >(null);
-  function toggleTripType(value: TripType) {
-    setActiveTripType((prev) => (prev === value ? null : value));
+  // null (view all) -> AM -> PM -> SP -> null - see TRIP_TYPE_CYCLE
+  // above for the actual ordering.
+  function cycleTripType() {
+    setActiveTripType((prev) => {
+      const index = TRIP_TYPE_CYCLE.indexOf(prev);
+      return TRIP_TYPE_CYCLE[(index + 1) % TRIP_TYPE_CYCLE.length];
+    });
   }
   // null (view all) -> elementary -> middle -> high -> null - see
   // SCHOOL_LEVEL_CYCLE below for the actual ordering.
@@ -523,6 +530,35 @@ export function RouteListScreen({
       return next;
     });
   };
+  // Master expand/collapse, grouped view only (see its own button
+  // further down) - reads "everything's expanded" only when neither
+  // collapse set has anything in it, at either level, so a partly-
+  // collapsed tree still reads as "not fully expanded" here. One tap
+  // always drives the whole tree to one of its two extremes (every
+  // routeNumber branch and every tripType branch inside it, all at
+  // once) rather than working through a part-collapsed state one
+  // triangle at a time.
+  const allGroupsExpanded =
+    collapsedRouteNumbers.size === 0 && collapsedTripTypeGroups.size === 0;
+  function toggleAllGroups() {
+    if (allGroupsExpanded) {
+      const routeNumbers = new Set<string>();
+      const tripTypeKeys = new Set<string>();
+      for (const routeNumberGroup of groupedTree) {
+        routeNumbers.add(routeNumberGroup.routeNumber);
+        for (const tripTypeGroup of routeNumberGroup.tripTypeGroups) {
+          tripTypeKeys.add(
+            tripTypeGroupKey(routeNumberGroup.routeNumber, tripTypeGroup.tripType),
+          );
+        }
+      }
+      setCollapsedRouteNumbers(routeNumbers);
+      setCollapsedTripTypeGroups(tripTypeKeys);
+    } else {
+      setCollapsedRouteNumbers(new Set());
+      setCollapsedTripTypeGroups(new Set());
+    }
+  }
 
   // The eyeball icon's own click handler - always opens the matching
   // popup immediately, published or draft, so a tap never silently
@@ -722,34 +758,40 @@ export function RouteListScreen({
             )}
           </button>
           <div className="h-5 w-px shrink-0 bg-zinc-300" aria-hidden="true" />
-          {/* Icon toggles, not text - AM/PM/SP as TripTypeIcon, school
-              level as one cycling icon, laid out inline (a row, not a
-              stacked column) so the icons themselves can be big enough
-              to actually read, kept apart from the view toggle above
-              and from each other by the same plain vertical rule.
-              Trip type is exclusive (tapping one drops whatever else
-              was active; tapping the active one again clears it) - see
-              toggleTripType - narrowing the list (in either view, see
-              `filtered`) to just that one trip type rather than
-              picking among several active at once. */}
+          {/* Icon toggles, not text - trip type and school level each as
+              one cycling icon, laid out inline (a row, not a stacked
+              column) so the icons themselves can be big enough to
+              actually read, kept apart from the view toggle above and
+              from each other by the same plain vertical rule. */}
           <div className="flex shrink-0 items-center gap-1.5">
-            <div className="flex items-center gap-1">
-              {TRIP_TYPE_TOGGLES.map((toggle) => {
-                const active = activeTripType === toggle.value;
-                return (
-                  <button
-                    key={toggle.value}
-                    type="button"
-                    onClick={() => toggleTripType(toggle.value)}
-                    aria-pressed={active}
-                    aria-label={toggle.label}
-                    className={active ? "text-blue-600" : "text-zinc-300"}
-                  >
-                    <TripTypeIcon tripType={toggle.value} className="h-5 w-5" />
-                  </button>
-                );
-              })}
-            </div>
+            {/* One icon, not three - cycles view all -> AM -> PM -> SP ->
+                view all on each tap (cycleTripType above), same shape as
+                the school-level cycle right beside it. RouteIcon (the
+                plain map-and-route glyph already used for this screen's
+                own title, above) stands in for "every trip type" here -
+                unlike school level, AM/PM/SP's own icons (sunrise, full
+                sun, star) have no obvious combined form of their own to
+                reuse instead. */}
+            <button
+              type="button"
+              onClick={cycleTripType}
+              aria-pressed={activeTripType !== null}
+              aria-label={
+                activeTripType === null
+                  ? "Filter by trip type"
+                  : TRIP_TYPE_TOGGLES.find((t) => t.value === activeTripType)
+                      ?.label
+              }
+              className={
+                activeTripType === null ? "text-zinc-300" : "text-blue-600"
+              }
+            >
+              {activeTripType === null ? (
+                <RouteIcon className="h-5 w-5" />
+              ) : (
+                <TripTypeIcon tripType={activeTripType} className="h-5 w-5" />
+              )}
+            </button>
             <div className="h-5 w-px bg-zinc-300" aria-hidden="true" />
             {/* One icon, not three - cycles view all -> elementary ->
                 middle -> high -> view all on each tap (cycleSchoolLevel
@@ -822,6 +864,34 @@ export function RouteListScreen({
               </>
             )}
           </div>
+          {/* Master expand/collapse - grouped view only (flat view has no
+              branches of its own to twirl shut), all the way at the
+              right edge of the row, its own divider away from the
+              filter icons - a view control over what's *drawn*, not
+              another filter over what's *matched*, same distinction the
+              grouped/flat toggle up at the row's other end already
+              draws against the filters between them. Same
+              RoundedTriangleIcon/rotate-90 twirl every branch's own
+              triangle already uses, just reflecting every branch's
+              state at once instead of just its own (toggleAllGroups
+              above). */}
+          {grouped && (
+            <>
+              <div className="h-5 w-px shrink-0 bg-zinc-300" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={toggleAllGroups}
+                aria-label={allGroupsExpanded ? "Collapse all groups" : "Expand all groups"}
+                className="shrink-0 text-blue-600"
+              >
+                <RoundedTriangleIcon
+                  className={`h-5 w-5 transition-transform duration-200 ${
+                    allGroupsExpanded ? "rotate-90" : ""
+                  }`}
+                />
+              </button>
+            </>
+          )}
         </div>
 
         <div
