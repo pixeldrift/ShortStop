@@ -10,16 +10,14 @@ import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
  * layers' own `visibility`, removed since a driver toggling road-name
  * labels on/off never actually proved useful.
  *
- * A from-scratch style, not a port of CARTO Voyager's own look (the
+ * Kept intentionally plain/legible over decorative - this is a
+ * from-scratch style, not a port of CARTO Voyager's own look (the
  * raster basemap this replaces), so there was nothing to match pixel
- * for pixel - legibility still comes first (every color choice here
- * keeps roads/water/labels reading clearly against each other at a
- * glance), but a vivid, varied palette (inspired by a "colorful" OSM
- * style a driver liked) reads better than a flat, muted one once real
- * buildings are extruded in 3D (see the "buildings" layer below) and
- * the driving map carries a default camera pitch (RouteMap.tsx's own
- * DRIVING_PITCH) - a flat, low-contrast map looked washed out once it
- * wasn't dead flat top-down anymore.
+ * for pixel. Buildings extrude into real 3D volumes (see the
+ * "buildings" layer below) and the driving map carries a default
+ * camera pitch (RouteMap.tsx's own DRIVING_PITCH) - a richer palette
+ * was tried alongside those two, but read as gross rather than better,
+ * so only the 3D shape stuck around.
  */
 // Self-hosted (public/fonts/Noto Sans Regular/*.pbf, one file per
 // 256-codepoint range) rather than Protomaps' own hosted
@@ -75,60 +73,29 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
       {
         id: "background",
         type: "background" as const,
-        paint: { "background-color": "#f5efe1" },
+        paint: { "background-color": "#f4f1ea" },
       },
       {
         id: "earth",
         type: "fill" as const,
         source,
         "source-layer": "earth",
-        paint: { "fill-color": "#f5efe1" },
+        paint: { "fill-color": "#f4f1ea" },
       },
-      // A handful more landuse kinds than just "park" - real color
-      // variety across a route's own surroundings (a driver passing a
-      // school ground vs. a cemetery vs. open farmland reads as visibly
-      // different terrain, not the same blank earth tint everywhere
-      // else already fell through to). Kind values per Protomaps' own
-      // basemap layer docs (docs.protomaps.com/basemaps/layers) - a
-      // "match" against every value this app's own real extract is
-      // likely to carry, left transparent (no paint at all) for
-      // anything else rather than guessing at every possible kind.
       {
-        id: "landuse",
+        id: "landuse-park",
         type: "fill" as const,
         source,
         "source-layer": "landuse",
-        filter: [
-          "in",
-          ["get", "kind"],
-          ["literal", ["park", "cemetery", "forest", "wood", "farmland", "golf_course", "military"]],
-        ],
-        paint: {
-          "fill-color": [
-            "match",
-            ["get", "kind"],
-            "forest",
-            "#9bcf8f",
-            "wood",
-            "#9bcf8f",
-            "cemetery",
-            "#bcd9bb",
-            "farmland",
-            "#e8e2a8",
-            "golf_course",
-            "#b5dba0",
-            "military",
-            "#e3c6c6",
-            /* park (and any other match) */ "#a9dba1",
-          ],
-        },
+        filter: ["==", ["get", "kind"], "park"],
+        paint: { "fill-color": "#d7e8d4" },
       },
       {
         id: "water",
         type: "fill" as const,
         source,
         "source-layer": "water",
-        paint: { "fill-color": "#5fb6e0" },
+        paint: { "fill-color": "#a7cbe8" },
       },
       // Real 3D building footprints (fill-extrusion, not a flat fill) -
       // `height`/`min_height` are genuine per-building fields this
@@ -155,10 +122,10 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         "source-layer": "buildings",
         minzoom: 15,
         paint: {
-          "fill-extrusion-color": "#dba36b",
+          "fill-extrusion-color": "#e3ddd0",
           "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
           "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
-          "fill-extrusion-opacity": 0.85,
+          "fill-extrusion-opacity": 0.8,
         },
       },
       {
@@ -184,7 +151,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         filter: ["in", ["get", "kind"], ["literal", ["highway", "major_road"]]],
         layout: { "line-cap": "round" as const, "line-join": "round" as const },
         paint: {
-          "line-color": "#f2703c",
+          "line-color": "#f6c453",
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 18, 10],
         },
       },
@@ -237,8 +204,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10, 18, 13],
         },
         paint: {
-          "text-color": "#7a2e0e",
-          "text-halo-color": "#f2703c",
+          "text-color": "#5c4a1a",
+          "text-halo-color": "#f6c453",
           "text-halo-width": 1,
         },
       },

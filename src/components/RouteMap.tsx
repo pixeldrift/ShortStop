@@ -13,6 +13,7 @@ import { PersonSolidIcon } from "./icons";
 import { rotationKeyFor, setTurnDiamondRotation, turnDiamondHtml } from "./mapMarkerIcons";
 import {
   collapseAttribution,
+  installBuildingShadows,
   installSchoolBuildingHighlight,
   PMTILES_ATTRIBUTION,
   PMTILES_URL,
@@ -901,7 +902,9 @@ function mountMapLibre(args: MountArgs): () => void {
       // schoolRef already stays current on its own (this component's
       // own sync effect, above) - the highlight just needs to be told
       // where to look once, self-maintains from there (see its own doc
-      // comment, mapEngine.ts).
+      // comment, mapEngine.ts). Safe to install before "load" - it never
+      // reads the style itself, only queries already-rendered features
+      // lazily inside its own "idle" listener.
       installSchoolBuildingHighlight(mapInstance, schoolRef);
       // showCompass: false - bearing here is driven programmatically
       // (direction of travel in driving mode), not something a driver
@@ -1457,6 +1460,12 @@ function mountMapLibre(args: MountArgs): () => void {
       // draw order: fetch the cache, then draw everything at once.
       mapInstance.once("load", () => {
         if (cancelledRef()) return;
+        // Needs the style's own "buildings"/"roads-minor" layers to
+        // already exist (installBuildingShadows's own doc comment,
+        // mapEngine.ts) - unlike installSchoolBuildingHighlight above,
+        // which only ever touches its own separate layer/source, so it
+        // doesn't need to wait for this same event.
+        installBuildingShadows(mapInstance);
         void resolveAndRedraw();
         // Only assigned here, once there's a real map this can
         // safely act on (mirrors syncToModeRef's own "no-op until
