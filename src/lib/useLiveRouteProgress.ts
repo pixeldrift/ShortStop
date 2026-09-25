@@ -67,10 +67,13 @@ export interface LiveRouteProgress {
    * along a fixed route never moves). */
   waypointDistances: WaypointProgress[];
   /** Live distance from the current position to one specific
-   * waypoint, measured along the route (not straight-line) - negative
-   * once that waypoint is already behind the live fix. Null whenever
-   * distanceAlongRoute itself is null (no fix yet, or off-route). */
-  distanceToWaypoint: (key: string) => number | null;
+   * waypoint (its own NavigationStep.id - WaypointProgress's own doc
+   * comment, routeProgress.ts, has why this is a stepId and not the
+   * shared waypointKey cache text), measured along the route (not
+   * straight-line) - negative once that waypoint is already behind the
+   * live fix. Null whenever distanceAlongRoute itself is null (no fix
+   * yet, or off-route). */
+  distanceToWaypoint: (stepId: number) => number | null;
 }
 
 /**
@@ -112,7 +115,7 @@ export interface LiveRouteProgress {
  */
 export function useLiveRouteProgress(
   routeLine: LatLon[],
-  waypointDistanceByKey: Map<string, number>,
+  waypointDistanceByKey: Map<number, number>,
 ): LiveRouteProgress {
   const cumulative = useMemo(() => cumulativeDistances(routeLine), [routeLine]);
   const waypointDistances = useMemo<WaypointProgress[]>(
@@ -245,9 +248,9 @@ export function useLiveRouteProgress(
   }, []);
 
   const distanceToWaypoint = useCallback(
-    (key: string): number | null => {
+    (stepId: number): number | null => {
       if (distanceAlongRoute == null) return null;
-      const waypoint = waypointDistances.find((w) => w.key === key);
+      const waypoint = waypointDistances.find((w) => w.key === stepId);
       return waypoint ? waypoint.distanceAlongRoute - distanceAlongRoute : null;
     },
     [distanceAlongRoute, waypointDistances],

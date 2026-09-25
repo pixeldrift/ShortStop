@@ -120,12 +120,18 @@ export function useNavigationPrompts(
   progress: LiveRouteProgress,
 ): void {
   // Which upcoming step's stages have already been spoken - reset the
-  // moment the upcoming step itself changes (a different
-  // waypointKey), so advancing past one always starts the next fresh
-  // rather than carrying over stale "already spoken" state from
-  // whatever used to be next.
-  const spokenRef = useRef<{ key: string; advance: boolean; turn: boolean }>({
-    key: "",
+  // moment the upcoming step itself changes (a different stepId), so
+  // advancing past one always starts the next fresh rather than
+  // carrying over stale "already spoken" state from whatever used to be
+  // next. Keyed by stepId (NavigationStep.id), not waypointKey - the
+  // shared cache-key text can repeat for two different real steps (a
+  // loop road crossing the same other road twice - RouteMap.tsx's own
+  // StopMarker doc comment has the full story), which would otherwise
+  // make this treat the *second* one as already spoken the moment it
+  // became upcoming, and skip its own turn warning entirely. -1 is the
+  // "nothing spoken yet" sentinel - a real stepId is always >= 0.
+  const spokenRef = useRef<{ key: number; advance: boolean; turn: boolean }>({
+    key: -1,
     advance: false,
     turn: false,
   });
@@ -141,13 +147,13 @@ export function useNavigationPrompts(
     const upcoming = route.steps[currentIndex + 1];
     if (!upcoming || upcoming.kind !== "turn") return;
 
-    if (spokenRef.current.key !== upcoming.waypointKey) {
-      spokenRef.current = { key: upcoming.waypointKey, advance: false, turn: false };
+    if (spokenRef.current.key !== upcoming.id) {
+      spokenRef.current = { key: upcoming.id, advance: false, turn: false };
     }
     const spoken = spokenRef.current;
     if (spoken.advance && spoken.turn) return;
 
-    const distanceMeters = distanceToWaypoint(upcoming.waypointKey);
+    const distanceMeters = distanceToWaypoint(upcoming.id);
     if (distanceMeters == null || distanceMeters <= 0) return;
 
     const timeToManeuverSeconds = distanceMeters / speedMps;
