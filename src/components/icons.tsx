@@ -269,6 +269,15 @@ export { default as SchoolLevelsIcon } from "./icons/school-level.svg";
 export { default as SchoolLevelEsIcon } from "./icons/school-level-es.svg";
 export { default as SchoolLevelMsIcon } from "./icons/school-level-ms.svg";
 export { default as SchoolLevelHsIcon } from "./icons/school-level-hs.svg";
+/** Alternate, more literal elementary/high-school glyphs (a schoolhouse
+ * with a flag, a windowed campus building) - fill="#fff" baked into the
+ * SVGs themselves, not currentColor like the trio above, so these don't
+ * recolor blue/gray the way the school-level-*.svg set does; only their
+ * thin outline strokes pick up currentColor. Exported for
+ * SchoolLevelIcon.tsx's own experimental swap - no middle-school
+ * equivalent exists yet, so that level keeps SchoolLevelMsIcon above. */
+export { default as ElementarySchoolIcon } from "./icons/elementary-school.svg";
+export { default as HighSchoolIcon } from "./icons/high-school.svg";
 
 /** A folded paper map with a dotted route line crossing it - used for
  * the Routes heading (RouteListScreen). */
