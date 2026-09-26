@@ -10,7 +10,7 @@ import type {
   Map as MapLibreMap,
   Marker as MapLibreMarker,
 } from "maplibre-gl";
-import { PersonSolidIcon } from "./icons";
+import { CompassIcon, PersonSolidIcon } from "./icons";
 import { rotationKeyFor, setTurnDiamondRotation, turnDiamondHtml } from "./mapMarkerIcons";
 import {
   collapseAttribution,
@@ -824,6 +824,47 @@ class ShowRidersControl implements IControl {
   }
 }
 
+// Recenters the camera on the driver's own live GPS position (the same
+// "you are here" dot the geolocation watchPosition below maintains),
+// for whenever a driver has panned/zoomed the map away from their own
+// position (e.g. scouting ahead) and wants back. Its own corner
+// ("bottom-right") rather than stacking with either NavigationControl
+// (top-left) or ShowRidersControl (bottom-left) - same one-control-per-
+// concern reasoning ShowRidersControl's own doc comment above gives.
+// Present on every mount (StartScreen's overview map included, not just
+// driving) since "where am I right now" is just as useful while
+// reviewing a route beforehand as it is mid-drive - unlike
+// ShowRidersControl, there's no caller-supplied prop this could be
+// gated on, and mode itself changes live within one mount so it isn't
+// a usable gate either. A tap before the first GPS fix ever arrives is
+// simply a no-op (getOwnLocation, below, has nothing to fly to yet).
+class RecenterControl implements IControl {
+  private button?: HTMLButtonElement;
+
+  constructor(private readonly onClick: () => void) {}
+
+  onAdd(): HTMLElement {
+    const container = document.createElement("div");
+    container.className = "maplibregl-ctrl m-2";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("aria-label", "Jump to current location");
+    button.className =
+      "btn-glossy-blue flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg";
+    button.innerHTML = renderToStaticMarkup(
+      <CompassIcon className="h-5 w-5" />,
+    );
+    button.addEventListener("click", () => this.onClick());
+    this.button = button;
+    container.appendChild(button);
+    return container;
+  }
+
+  onRemove(): void {
+    this.button?.parentElement?.remove();
+  }
+}
+
 function mountMapLibre(args: MountArgs): () => void {
   const {
     container,
@@ -987,6 +1028,12 @@ function mountMapLibre(args: MountArgs): () => void {
       });
       const mapInstance = map;
       collapseAttribution(container);
+      // Declared up here (rather than right beside the watchPosition
+      // call that actually populates it, further down) so RecenterControl's
+      // own click handler, wired below, can close over the same binding -
+      // both are just two different readers/writers of "where's the blue
+      // dot right now."
+      let locationMarker: MapLibreMarker | undefined;
       mapInstance.on("rotate", applyTurnRotations);
       // schoolRef already stays current on its own (this component's
       // own sync effect, above) - the highlight just needs to be told
@@ -1015,6 +1062,24 @@ function mountMapLibre(args: MountArgs): () => void {
           "bottom-left",
         );
       }
+      // See RecenterControl's own doc comment (above) for why this is
+      // unconditional (every mount, not just callers with a roster
+      // toggle) and its own corner. No bearing/pitch here - just pan/
+      // zoom back to the live fix, so this doesn't fight whatever
+      // camera orientation driving mode's own per-step flyTo/easeTo
+      // already has going.
+      mapInstance.addControl(
+        new RecenterControl(() => {
+          const lngLat = locationMarker?.getLngLat();
+          if (!lngLat) return;
+          mapInstance.flyTo({
+            center: lngLat,
+            zoom: STREET_ZOOM,
+            duration: DRIVING_FLY_DURATION_MS,
+          });
+        }),
+        "bottom-right",
+      );
 
       // drawOverviewPins/drawDrivingPins/syncToModeRef, defined once
       // here rather than inside resolveAndRedraw below (which can run
@@ -1620,7 +1685,6 @@ function mountMapLibre(args: MountArgs): () => void {
       if (typeof navigator === "undefined" || !("geolocation" in navigator))
         return;
 
-      let locationMarker: MapLibreMarker | undefined;
       watchId = navigator.geolocation.watchPosition(
         (position) => {
           if (cancelledRef()) return;
