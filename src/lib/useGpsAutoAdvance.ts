@@ -83,16 +83,15 @@ const STOP_HOLD_MS = 3000;
  *    some arbitrary distance past it" - a bus can legitimately sit at a
  *    stop for a long time with a live fix parked well behind the stop's
  *    own waypoint the whole while, and distance alone can't tell "still
- *    loading" from "just hasn't started rolling yet." Bypasses
- *    `holdForRoster` entirely (see its own param doc below) rather than
- *    waiting on it - firing `onStopAndGoDetected` first is what clears
- *    that hold, not something this hook waits on separately. Falls back
- *    to the same distance check every other step uses (below) if the
- *    bus never actually comes to a real stop at all - still gated by
- *    `holdForRoster` in that fallback case, unlike the stop-and-go path
- *    itself, so a stop with real expected riders that the bus simply
- *    cruises through still waits on a manual dismiss rather than
- *    silently skipping past ungathered riders.
+ *    loading" from "just hasn't started rolling yet." Falls back to the
+ *    same distance check every other step uses (below) if the bus never
+ *    actually comes to a real stop at all - riders expected or not, a
+ *    stop the bus simply drives through fires `onStopSkipped` instead of
+ *    `onStopAndGoDetected` and still advances, rather than leaving the
+ *    trip stuck on a stop GPS shows the bus is already well past. A
+ *    driver who genuinely blew through a stop needs to be told that
+ *    loudly, not have the app silently freeze waiting for a dismiss that
+ *    was never coming.
  *  - Every other step (turn/depart/arrive) advances purely on distance:
  *    once the live fix's own distanceToWaypoint reads far enough past
  *    it (PAST_WAYPOINT_METERS, or PAST_FINAL_WAYPOINT_METERS for the
@@ -106,32 +105,28 @@ const STOP_HOLD_MS = 3000;
  * already treats as "nothing to act on" - no GPS permission, testing a
  * route at a desk, or off-route.
  *
- * `holdForRoster` - true while the current step's own rider check-in box
- * still needs a look (a stop with expected riders whose box hasn't been
- * opened, then dismissed, yet). Computed by StepScreen itself, not here -
- * only it tracks the box's own autoOfferedStepId/viewedStepIndex state -
- * so this hook stays a plain "GPS says go" signal that StepScreen can
- * veto for its own reasons. Only gates the plain distance-based path
- * above: a stop-and-go firing `onStopAndGoDetected` dismisses that same
- * box itself (StepScreen's own implementation of that callback), so
- * there's nothing left for `holdForRoster` to still be protecting by
- * the time this hook would otherwise act on it.
- *
  * `onStopAndGoDetected` - called the instant a stop-and-go completes,
  * right before `onAdvance` itself - StepScreen's own implementation
  * closes that step's rider check-in box (if it's the one currently
  * showing) so the box is never still sitting open across the step
  * transition that follows immediately after.
+ *
+ * `onStopSkipped` - called instead, right before that same `onAdvance`,
+ * whenever a *stop* step is the one that actually clears via the plain
+ * distance fallback rather than a real stop-and-go - the one case that
+ * really is "skipped" (a turn/depart/arrive step clearing via distance
+ * is just its own normal, only way to clear, not a skip of anything).
+ * StepScreen's own implementation is what actually tells the driver.
  */
 export function useGpsAutoAdvance(
   route: Route,
   currentIndex: number,
   phase: StepPhase,
   paused: boolean,
-  holdForRoster: boolean,
   progress: LiveRouteProgress,
   onAdvance: () => void,
   onStopAndGoDetected: (stepId: number) => void,
+  onStopSkipped: (stepId: number) => void,
 ): void {
   const { onRoute, speedMps, distanceToWaypoint } = progress;
 
@@ -160,8 +155,9 @@ export function useGpsAutoAdvance(
 
     const step = route.steps[currentIndex];
     if (!step || advancedForStepIdRef.current === step.id) return;
+    const isStop = step.kind === "stop";
 
-    if (step.kind === "stop") {
+    if (isStop) {
       const tracker = stopTrackerRef.current;
       if (tracker.stepId !== step.id) {
         stopTrackerRef.current = { stepId: step.id, stoppedSinceMs: null };
@@ -206,7 +202,7 @@ export function useGpsAutoAdvance(
       // block, so this ambiguous zone doesn't itself trigger anything.
     }
 
-    if (holdForRoster || speedMps < MOVING_THRESHOLD_MPS) return;
+    if (speedMps < MOVING_THRESHOLD_MPS) return;
 
     const distanceMeters = distanceToWaypoint(step.id);
     const threshold =
@@ -214,17 +210,18 @@ export function useGpsAutoAdvance(
     if (distanceMeters == null || distanceMeters > threshold) return;
 
     advancedForStepIdRef.current = step.id;
+    if (isStop) onStopSkipped(step.id);
     onAdvance();
   }, [
     route,
     currentIndex,
     phase,
     paused,
-    holdForRoster,
     onRoute,
     speedMps,
     distanceToWaypoint,
     onAdvance,
     onStopAndGoDetected,
+    onStopSkipped,
   ]);
 }

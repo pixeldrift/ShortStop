@@ -24,12 +24,14 @@ import {
 } from "./icons";
 import type { LatLon } from "@/lib/routeProgress";
 import { addressWithoutZip } from "@/lib/schoolAddress";
+import { speak } from "@/lib/speech";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import { useGpsAutoAdvance } from "@/lib/useGpsAutoAdvance";
 import { useLiveRouteProgress } from "@/lib/useLiveRouteProgress";
 import { useNavigationPrompts } from "@/lib/useNavigationPrompts";
+import { useOffRouteAlert } from "@/lib/useOffRouteAlert";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
 import { useSwipeBack } from "@/lib/useSwipeBack";
 import type { NavigationStep, Route, TripType } from "@/lib/types";
@@ -59,6 +61,12 @@ const ROSTER_TAP_CONFIRM_MS = 550;
 // rather than being cut short by the DOM node disappearing out from
 // under it.
 const ROSTER_CLOSE_ANIMATION_MS = 220;
+
+// How long a transient driving alert (missed-stop, off-route) stays on
+// screen before auto-dismissing - long enough to actually read at a
+// glance while driving, short enough not to keep covering the map/step
+// content past whatever it was warning about.
+const ALERT_DISPLAY_MS = 6000;
 
 // The "nothing to report yet" value for useLiveRouteProgress's own
 // waypointDistanceByKey param, before RouteMap's own onRouteGeometry
@@ -387,31 +395,20 @@ export function StepScreen({
   // true (StartScreen shows instead while it's false) - so there's no
   // separate prop for it to read.
   useNavigationPrompts(route, currentIndex, phase, true, paused, liveProgress);
-  // Whether the current step's own rider check-in box still needs a
-  // look before GPS is allowed to advance past it - true for any stop
-  // with expected riders whose box hasn't been offered-then-dismissed
-  // yet (autoOfferedStepId only ever gets set to this exact step once
-  // the box has opened for it - see that state's own doc comment
-  // above), so a fast approach that reaches the stop before the box
-  // even opens still waits for it rather than skipping it outright.
-  const holdAdvanceForRoster =
-    isStop &&
-    currentExpectedCount > 0 &&
-    !(autoOfferedStepId === step.id && viewedStepIndex !== currentIndex);
-  // A real stop-and-go (useGpsAutoAdvance's own doc comment) is itself
-  // the "done with this stop" signal - closes the box the same instant
-  // GPS detects the bus pulling away again, rather than making the
-  // driver also tap it closed by hand. Only closes *this* step's own
-  // box, and only while it's the one actually showing - a driver who's
-  // deliberately navigated the box to review a different stop (goToStopSlot/
-  // jumpToCurrentStop) has that box left alone.
-  const handleStopAndGoDetected = useCallback(
+  // Closes step `stepId`'s own rider check-in box, but only while it's
+  // the one actually showing right now - a driver who's deliberately
+  // navigated the box to review a different stop (goToStopSlot/
+  // jumpToCurrentStop) has that box left alone. Shared by both
+  // useGpsAutoAdvance callbacks below (stop-and-go and skipped-stop
+  // alike): either way the step is about to advance out from under
+  // this box, so it can't be left sitting open across that transition.
+  // Same body as closeRoster() above, inlined rather than called
+  // directly - closeRoster is a plain function that closes over `step`
+  // fresh every render, so listing it as one of these callbacks' own
+  // dependencies would make them just as unstable, defeating the point
+  // of memoizing them at all.
+  const closeRosterForStep = useCallback(
     (stepId: number) => {
-      // Same body as closeRoster() above, inlined rather than called
-      // directly - closeRoster is a plain function that closes over
-      // `step` fresh every render, so listing it as this callback's own
-      // dependency would make it just as unstable, defeating the point
-      // of memoizing this one at all.
       if (viewedStepIndex === currentIndex && step.id === stepId) {
         setViewedStepIndex(null);
         setAutoOfferedStepId(step.id);
@@ -419,16 +416,82 @@ export function StepScreen({
     },
     [viewedStepIndex, currentIndex, step.id],
   );
+  // A transient driving alert (missed-stop, off-route) - both spoken
+  // (speak, @/lib/speech) and shown as a brief on-screen banner
+  // (rendered near this component's own return below), since a driver's
+  // eyes are on the road, not this screen. A single slot, not a queue -
+  // showAlert always clears whatever's currently pending and starts a
+  // fresh ALERT_DISPLAY_MS window, so two alerts close together show
+  // the newer one for its own full duration rather than the first
+  // simply cutting the second's timer short.
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const alertTimeoutRef = useRef<number | null>(null);
+  const showAlert = useCallback((message: string) => {
+    if (alertTimeoutRef.current != null) window.clearTimeout(alertTimeoutRef.current);
+    setAlertMessage(message);
+    speak(message);
+    alertTimeoutRef.current = window.setTimeout(() => {
+      alertTimeoutRef.current = null;
+      setAlertMessage(null);
+    }, ALERT_DISPLAY_MS);
+  }, []);
+  const dismissAlert = useCallback(() => {
+    if (alertTimeoutRef.current != null) window.clearTimeout(alertTimeoutRef.current);
+    alertTimeoutRef.current = null;
+    setAlertMessage(null);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (alertTimeoutRef.current != null) window.clearTimeout(alertTimeoutRef.current);
+    };
+  }, []);
+
+  // A real stop-and-go (useGpsAutoAdvance's own doc comment) is itself
+  // the "done with this stop" signal - closes the box the same instant
+  // GPS detects the bus pulling away again, rather than making the
+  // driver also tap it closed by hand.
+  const handleStopAndGoDetected = useCallback(
+    (stepId: number) => closeRosterForStep(stepId),
+    [closeRosterForStep],
+  );
+  // useGpsAutoAdvance's own onStopSkipped - fires instead of a stop-and-
+  // go whenever a stop step clears via the plain distance fallback (the
+  // bus rolled through without ever actually halting, riders checked in
+  // or not) - closes that box the same as a real stop-and-go would
+  // (there's no leaving it open across the step transition that follows
+  // right after), and names the stop's own cross-streets the same way
+  // its own on-screen subheading already does (RoadNames below), so the
+  // alert reads the same "Main St & Oak Ave" a driver already
+  // associates with that stop.
+  const handleStopSkipped = useCallback(
+    (stepId: number) => {
+      closeRosterForStep(stepId);
+      const skipped = route.steps.find((s) => s.id === stepId);
+      const location = skipped?.subheading ? ` at ${skipped.subheading}` : "";
+      showAlert(`You skipped the stop${location}.`);
+    },
+    [route, showAlert, closeRosterForStep],
+  );
   useGpsAutoAdvance(
     route,
     currentIndex,
     phase,
     paused,
-    holdAdvanceForRoster,
     liveProgress,
     onAdvance,
     handleStopAndGoDetected,
+    handleStopSkipped,
   );
+  // useOffRouteAlert's own reaction: pause the trip (same togglePause
+  // the footer's own pause button uses) and tell the driver why, the
+  // instant live GPS shows the bus has genuinely left the route - see
+  // that hook's own doc comment for why this only ever fires once per
+  // real departure from the route, not on every later off-route tick.
+  const handleOffRoute = useCallback(() => {
+    onTogglePause();
+    showAlert("You are no longer on the route. Pausing navigation.");
+  }, [onTogglePause, showAlert]);
+  useOffRouteAlert(phase, true, paused, liveProgress.onRoute, handleOffRoute);
   // Guards the logo's exit-to-home tap, not the footer "End" button -
   // "End" only ever appears once the route is already finished
   // (arrived phase), so there's nothing left to lose by confirming it.
@@ -464,6 +527,27 @@ export function StepScreen({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden select-none landscape:flex-row">
+      {/* Missed-stop/off-route alert - a driver's eyes are on the road,
+          not this screen, so this is spoken (showAlert's own speak call)
+          as well as shown here: a brief, high-contrast banner pinned to
+          the very top of the whole screen (z-30, above the roster box's
+          own z-10/z-20 and the confirm modal's z-20) so it's never
+          buried under either. Auto-dismisses on its own
+          (ALERT_DISPLAY_MS), or immediately on tapping it/its own close
+          button. */}
+      {alertMessage && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex justify-center p-2">
+          <button
+            type="button"
+            onClick={dismissAlert}
+            className="animate-popup-pop pointer-events-auto flex max-w-[90%] items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-left text-sm font-semibold text-white shadow-lg"
+          >
+            <span className="min-w-0">{alertMessage}</span>
+            <CloseIcon className="h-4 w-4 shrink-0" />
+          </button>
+        </div>
+      )}
+
       {/* Top third of the screen in portrait / left column in landscape -
           always reserved at the same, fixed size (~30% of the viewport
           height) so nothing else ever shifts and the map never gets
