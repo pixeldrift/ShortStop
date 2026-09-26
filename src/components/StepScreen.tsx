@@ -29,7 +29,7 @@ import { parseTimeToMinutes } from "@/lib/time";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
 import { useGpsAutoAdvance } from "@/lib/useGpsAutoAdvance";
-import { useLiveRouteProgress } from "@/lib/useLiveRouteProgress";
+import { MOVING_THRESHOLD_MPS, useLiveRouteProgress } from "@/lib/useLiveRouteProgress";
 import { useNavigationPrompts } from "@/lib/useNavigationPrompts";
 import { useOffRouteAlert } from "@/lib/useOffRouteAlert";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
@@ -394,7 +394,7 @@ export function StepScreen({
   // mounts StepScreen once useRouteStepper's own `started` flag is
   // true (StartScreen shows instead while it's false) - so there's no
   // separate prop for it to read.
-  useNavigationPrompts(route, currentIndex, phase, true, paused, liveProgress);
+  useNavigationPrompts(route, currentIndex, phase, true, paused, announcementDone, liveProgress);
   // Closes step `stepId`'s own rider check-in box, but only while it's
   // the one actually showing right now - a driver who's deliberately
   // navigated the box to review a different stop (goToStopSlot/
@@ -492,6 +492,21 @@ export function StepScreen({
     showAlert("You are no longer on the route. Pausing navigation.");
   }, [onTogglePause, showAlert]);
   useOffRouteAlert(phase, true, paused, liveProgress.onRoute, handleOffRoute);
+  // Safety gate for the rider check-in box below: it must never sit on
+  // top of the map while the bus is actually moving, full stop - a
+  // driver glancing at the map while driving needs to see the road, not
+  // a check-in card blocking it, whether that box opened automatically
+  // for the live current stop or the driver opened it manually to
+  // review a different one. Never mind preserving exactly which stop
+  // was being viewed or resuming it later - this is a plain "did GPS
+  // just say we're moving," not persisted or reconciled with any of the
+  // roster box's own open/closed state above. `speedMps == null` (no
+  // GPS fix yet, or GPS unavailable entirely) reads as "not confirmed
+  // moving" here, same permissive default the rest of this file already
+  // gives a missing live fix - it only ever hides the box on a real,
+  // positive speed reading, never on the mere absence of one.
+  const hideRosterForSafety =
+    liveProgress.speedMps != null && liveProgress.speedMps >= MOVING_THRESHOLD_MPS;
   // Guards the logo's exit-to-home tap, not the footer "End" button -
   // "End" only ever appears once the route is already finished
   // (arrived phase), so there's nothing left to lose by confirming it.
@@ -603,8 +618,12 @@ export function StepScreen({
             stays set, so it's right back once resumed) same as pausing
             already hides everything else mid-step; PausedContent's own
             full-screen "Route Paused" text is a poor backdrop for a
-            still-tappable roster underneath it. */}
-        {!paused && viewedEntry && (
+            still-tappable roster underneath it. !hideRosterForSafety is
+            the same idea for a different reason - live GPS speed, not a
+            deliberate pause - and just as deliberately doesn't touch
+            viewedStepIndex either: the box comes right back the instant
+            the bus actually stops again, exactly as it left off. */}
+        {!paused && !hideRosterForSafety && viewedEntry && (
           <>
             {/* Dim the map rather than hiding it - the check-in card
                 floats above it as its own smaller, opaque, shadowed

@@ -2,15 +2,9 @@
 
 import { useEffect, useRef } from "react";
 import type { Route } from "./types";
+import { MOVING_THRESHOLD_MPS } from "./useLiveRouteProgress";
 import type { LiveRouteProgress } from "./useLiveRouteProgress";
 import type { StepPhase } from "./useRouteStepper";
-
-/** Same "bus is genuinely moving toward it" gate useNavigationPrompts.ts
- * uses for its own heads-up warnings - a stationary or GPS-denied bus
- * should never auto-advance out from under a driver reviewing the route
- * at a desk. Also this hook's own "has the stop-and-go sequence below
- * resumed moving" threshold. */
-const MOVING_THRESHOLD_MPS = 0.9;
 
 /** How far past a step's own waypoint (route meters, negative once
  * behind the live fix - see LiveRouteProgress's own distanceToWaypoint
