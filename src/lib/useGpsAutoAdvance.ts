@@ -111,6 +111,24 @@ const STOP_HOLD_MS = 3000;
  * really is "skipped" (a turn/depart/arrive step clearing via distance
  * is just its own normal, only way to clear, not a skip of anything).
  * StepScreen's own implementation is what actually tells the driver.
+ *
+ * `onCatchUp` - the resync path: the plain distance fallback (below)
+ * doesn't just check the current step any more, it scans forward from
+ * it looking for the *furthest* step the live fix already reads past.
+ * Ordinarily that's still just the current step itself (one tick, one
+ * step, same as ever - onAdvance handles that, unchanged), but a fix
+ * that already clears one or more *later* steps too - after a spell
+ * paused/off-route, a stop-and-go tracker whose window came and went
+ * unnoticed, or simply a live fix arriving in bursts - means the trip
+ * has fallen behind where the bus actually is, not that each of those
+ * intermediate steps individually needs its own satisfied trigger. This
+ * fires instead of onAdvance for that case, naming the last index the
+ * live fix has already cleared, so the caller can jump straight there
+ * (RouteApp's own jumpTo/onSeek, the same thing a manual progress-bar
+ * scrub already uses) rather than being stuck re-checking a step GPS
+ * shows the bus has already left behind. Every stop step folded into
+ * that jump still gets its own onStopSkipped first, in route order,
+ * exactly as if each had cleared on its own.
  */
 export function useGpsAutoAdvance(
   route: Route,
@@ -121,6 +139,7 @@ export function useGpsAutoAdvance(
   onAdvance: () => void,
   onStopAndGoDetected: (stepId: number) => void,
   onStopSkipped: (stepId: number) => void,
+  onCatchUp: (targetIndex: number) => void,
 ): void {
   const { onRoute, speedMps, distanceToWaypoint } = progress;
 
@@ -198,14 +217,30 @@ export function useGpsAutoAdvance(
 
     if (speedMps < MOVING_THRESHOLD_MPS) return;
 
-    const distanceMeters = distanceToWaypoint(step.id);
-    const threshold =
-      currentIndex === route.steps.length - 1 ? PAST_FINAL_WAYPOINT_METERS : PAST_WAYPOINT_METERS;
-    if (distanceMeters == null || distanceMeters > threshold) return;
+    // Scans forward from the current step (inclusive) rather than only
+    // ever checking it alone - see onCatchUp's own doc comment above for
+    // why. Stops at the first step the live fix *doesn't* clear yet, so
+    // this always finds the furthest contiguous run starting right here,
+    // never a later step past some gap the fix hasn't actually reached.
+    let clearedThroughIndex = -1;
+    for (let i = currentIndex; i < route.steps.length; i++) {
+      const distanceMeters = distanceToWaypoint(route.steps[i].id);
+      const threshold =
+        i === route.steps.length - 1 ? PAST_FINAL_WAYPOINT_METERS : PAST_WAYPOINT_METERS;
+      if (distanceMeters == null || distanceMeters > threshold) break;
+      clearedThroughIndex = i;
+    }
+    if (clearedThroughIndex === -1) return;
 
-    advancedForStepIdRef.current = step.id;
-    if (isStop) onStopSkipped(step.id);
-    onAdvance();
+    advancedForStepIdRef.current = route.steps[clearedThroughIndex].id;
+    for (let i = currentIndex; i <= clearedThroughIndex; i++) {
+      if (route.steps[i].kind === "stop") onStopSkipped(route.steps[i].id);
+    }
+    if (clearedThroughIndex === currentIndex) {
+      onAdvance();
+    } else {
+      onCatchUp(clearedThroughIndex);
+    }
   }, [
     route,
     currentIndex,
@@ -217,5 +252,6 @@ export function useGpsAutoAdvance(
     onAdvance,
     onStopAndGoDetected,
     onStopSkipped,
+    onCatchUp,
   ]);
 }

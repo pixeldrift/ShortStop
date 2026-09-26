@@ -472,6 +472,23 @@ export function StepScreen({
     },
     [route, showAlert, closeRosterForStep],
   );
+  // useGpsAutoAdvance's own onCatchUp - live GPS already clears one or
+  // more steps *past* the current one (see that hook's own doc comment),
+  // so this jumps straight to the right step (onSeek, the same jumpTo
+  // RouteProgressBar's own manual scrub already uses) instead of relying
+  // on onAdvance's single-step-at-a-time semantics, which would either
+  // leave the trip one step short or (past the route's own last step)
+  // walk its stale-closure index straight past totalSteps.
+  const handleCatchUp = useCallback(
+    (targetIndex: number) => {
+      if (targetIndex >= route.steps.length - 1) {
+        onSeek({ phase: "arrived" });
+      } else {
+        onSeek({ phase: "step", index: targetIndex + 1 });
+      }
+    },
+    [route, onSeek],
+  );
   useGpsAutoAdvance(
     route,
     currentIndex,
@@ -481,17 +498,53 @@ export function StepScreen({
     onAdvance,
     handleStopAndGoDetected,
     handleStopSkipped,
+    handleCatchUp,
   );
+  // Tracks whether the *current* pause was this file's own automatic
+  // reaction to going off-route (below), not the driver's own tap on the
+  // footer's pause button - so coming back on-route can safely resume
+  // automatically too (see the effect right after this one) without ever
+  // overriding a pause the driver actually wanted for their own reason.
+  // Cleared the instant the driver touches the button themselves
+  // (handleManualTogglePause below), whether that tap is what paused it
+  // or what resumed it - either way the *next* pause/resume is manual
+  // again by default, not still carrying this flag from before.
+  const autoPausedRef = useRef(false);
   // useOffRouteAlert's own reaction: pause the trip (same togglePause
   // the footer's own pause button uses) and tell the driver why, the
   // instant live GPS shows the bus has genuinely left the route - see
   // that hook's own doc comment for why this only ever fires once per
   // real departure from the route, not on every later off-route tick.
   const handleOffRoute = useCallback(() => {
+    autoPausedRef.current = true;
     onTogglePause();
     showAlert("You are no longer on the route. Pausing navigation.");
   }, [onTogglePause, showAlert]);
   useOffRouteAlert(phase, true, paused, liveProgress.onRoute, handleOffRoute);
+  // The other half of handleOffRoute, above: once GPS shows the bus back
+  // on the route, a pause *this file* triggered is this file's own to
+  // clear too, rather than leaving the driver to notice and tap the
+  // footer button themselves - the whole point of resyncing
+  // automatically (this component's own general "don't get stuck"
+  // mandate, same reasoning useGpsAutoAdvance's own onCatchUp above
+  // follows) is that the drive can just keep going. A pause the driver
+  // set manually (autoPausedRef already false by the time this runs -
+  // see handleManualTogglePause below) is never touched by this.
+  useEffect(() => {
+    if (paused && autoPausedRef.current && liveProgress.onRoute) {
+      autoPausedRef.current = false;
+      onTogglePause();
+      showAlert("Back on route. Resuming navigation.");
+    }
+  }, [paused, liveProgress.onRoute, onTogglePause, showAlert]);
+  // The footer's own pause/resume button (below) always goes through
+  // this, never onTogglePause directly - a manual tap, whichever
+  // direction it moves paused in, means the driver is now the one
+  // deciding, not autoPausedRef's own auto-resume effect just above.
+  const handleManualTogglePause = useCallback(() => {
+    autoPausedRef.current = false;
+    onTogglePause();
+  }, [onTogglePause]);
   // Safety gate for the rider check-in box below: it must never sit on
   // top of the map while the bus is actually moving, full stop - a
   // driver glancing at the map while driving needs to see the road, not
@@ -778,7 +831,7 @@ export function StepScreen({
 
           <button
             type="button"
-            onClick={onTogglePause}
+            onClick={handleManualTogglePause}
             aria-label={paused ? "Resume route" : "Pause route"}
             className="btn-glossy-light flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-300 text-zinc-900"
           >
