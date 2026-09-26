@@ -6679,7 +6679,11 @@ export function EditRouteScreen({
               onClick={handleStopsBack}
               className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
             >
-              Cancel
+              {/* Nothing to discard once Save itself is disabled for having
+                  no changes - "Cancel" there reads as if leaving might lose
+                  something, when it can't. Same "dirty" flag Save's own
+                  disabled prop below already keys off. */}
+              {dirty ? "Cancel" : "Done"}
             </button>
             <button
               type="button"
@@ -6892,7 +6896,9 @@ export function EditRouteScreen({
           onClick={onCancel}
           className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
         >
-          Cancel
+          {/* Same "nothing to discard" reasoning as the Stops subScreen's
+              own identical Cancel/Save pair above. */}
+          {dirty ? "Cancel" : "Done"}
         </button>
         <button
           type="button"
