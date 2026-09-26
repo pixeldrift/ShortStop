@@ -13,6 +13,14 @@ import type { LatLon, WaypointProgress } from "./routeProgress";
  * mean anything. */
 const MAX_ON_ROUTE_METERS = 60;
 
+/** Shared "the bus is genuinely moving, not just reading GPS jitter"
+ * line - every consumer of a live speed reading (useGpsAutoAdvance's
+ * own stop-and-go/distance triggers, useNavigationPrompts' own approach
+ * warnings, StepScreen's own "hide the rider box while driving" safety
+ * gate) wants the exact same answer to "is this speed real movement,"
+ * not each drawing its own slightly different line. ~2 mph. */
+export const MOVING_THRESHOLD_MPS = 0.9;
+
 /** How far (route meters, not as the crow flies) a live GPS fix's own
  * projection is allowed to move from the *previous* fix's own known
  * position in one tick - see projectOntoRoute's own
