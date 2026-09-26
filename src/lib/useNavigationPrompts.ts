@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { titleCaseAction } from "./parseRouteCsv";
+import { speak } from "./speech";
 import type { NavigationStep, Route } from "./types";
 import type { LiveRouteProgress } from "./useLiveRouteProgress";
 import type { StepPhase } from "./useRouteStepper";
@@ -66,11 +67,6 @@ function advanceStagePhrase(step: NavigationStep, distanceMeters: number): strin
   if (feet < 50) return turnStagePhrase(step);
   const maneuver = (step.announcement[0] ?? turnStagePhrase(step)).replace(/\.\s*$/, "");
   return `In ${feet} feet, ${maneuver}.`;
-}
-
-function speak(text: string): void {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
 }
 
 /**
