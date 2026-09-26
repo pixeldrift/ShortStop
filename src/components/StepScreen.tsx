@@ -27,6 +27,7 @@ import { addressWithoutZip } from "@/lib/schoolAddress";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
+import { useGpsAutoAdvance } from "@/lib/useGpsAutoAdvance";
 import { useLiveRouteProgress } from "@/lib/useLiveRouteProgress";
 import { useNavigationPrompts } from "@/lib/useNavigationPrompts";
 import type { SeekTarget, StepPhase } from "@/lib/useRouteStepper";
@@ -386,6 +387,18 @@ export function StepScreen({
   // true (StartScreen shows instead while it's false) - so there's no
   // separate prop for it to read.
   useNavigationPrompts(route, currentIndex, phase, true, paused, liveProgress);
+  // Whether the current step's own rider check-in box still needs a
+  // look before GPS is allowed to advance past it - true for any stop
+  // with expected riders whose box hasn't been offered-then-dismissed
+  // yet (autoOfferedStepId only ever gets set to this exact step once
+  // the box has opened for it - see that state's own doc comment
+  // above), so a fast approach that reaches the stop before the box
+  // even opens still waits for it rather than skipping it outright.
+  const holdAdvanceForRoster =
+    isStop &&
+    currentExpectedCount > 0 &&
+    !(autoOfferedStepId === step.id && viewedStepIndex !== currentIndex);
+  useGpsAutoAdvance(route, currentIndex, phase, paused, holdAdvanceForRoster, liveProgress, onAdvance);
   // Guards the logo's exit-to-home tap, not the footer "End" button -
   // "End" only ever appears once the route is already finished
   // (arrived phase), so there's nothing left to lose by confirming it.
