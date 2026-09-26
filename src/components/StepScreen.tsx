@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ExpandableMap } from "./ExpandableMap";
 import { RouteMap } from "./RouteMap";
 import type { RouteGeometryResult, StopMarker, TurnMarker } from "./RouteMap";
@@ -398,7 +398,37 @@ export function StepScreen({
     isStop &&
     currentExpectedCount > 0 &&
     !(autoOfferedStepId === step.id && viewedStepIndex !== currentIndex);
-  useGpsAutoAdvance(route, currentIndex, phase, paused, holdAdvanceForRoster, liveProgress, onAdvance);
+  // A real stop-and-go (useGpsAutoAdvance's own doc comment) is itself
+  // the "done with this stop" signal - closes the box the same instant
+  // GPS detects the bus pulling away again, rather than making the
+  // driver also tap it closed by hand. Only closes *this* step's own
+  // box, and only while it's the one actually showing - a driver who's
+  // deliberately navigated the box to review a different stop (goToStopSlot/
+  // jumpToCurrentStop) has that box left alone.
+  const handleStopAndGoDetected = useCallback(
+    (stepId: number) => {
+      // Same body as closeRoster() above, inlined rather than called
+      // directly - closeRoster is a plain function that closes over
+      // `step` fresh every render, so listing it as this callback's own
+      // dependency would make it just as unstable, defeating the point
+      // of memoizing this one at all.
+      if (viewedStepIndex === currentIndex && step.id === stepId) {
+        setViewedStepIndex(null);
+        setAutoOfferedStepId(step.id);
+      }
+    },
+    [viewedStepIndex, currentIndex, step.id],
+  );
+  useGpsAutoAdvance(
+    route,
+    currentIndex,
+    phase,
+    paused,
+    holdAdvanceForRoster,
+    liveProgress,
+    onAdvance,
+    handleStopAndGoDetected,
+  );
   // Guards the logo's exit-to-home tap, not the footer "End" button -
   // "End" only ever appears once the route is already finished
   // (arrived phase), so there's nothing left to lose by confirming it.
