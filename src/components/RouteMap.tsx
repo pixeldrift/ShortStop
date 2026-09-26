@@ -30,7 +30,7 @@ import {
 } from "@/lib/routeProgress";
 import type { LatLon } from "@/lib/routeProgress";
 import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
-import { spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
+import { destinationPoint, spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
 import type { TripType, TurnDirection } from "@/lib/types";
 import { resolveRouteCoordinates } from "@/lib/waypointCache";
 import type { WaypointCache } from "@/lib/waypointCache";
@@ -125,57 +125,70 @@ const OVERVIEW_DETAIL_ZOOM = 15;
 // from the school/stop pins' own blue (#2563eb, schoolMarkerHtml/
 // stopMarkerHtml below) so the line never reads as though it were just
 // another pin, especially where one sits right on top of it. Both the
-// traveled and remaining layers now share this one color (traveled:
-// solid; remaining: round dots, ROUTE_LINE_DASHARRAY below), rather
-// than each having its own shade the way light-ahead/dark-behind used
-// to - a driver's actual "how far have I gone" cue is the dot pattern
-// itself now, not a separate color to read as well.
+// traveled line and the remaining dots (below) share this one color,
+// rather than each having its own shade the way light-ahead/dark-behind
+// used to - a driver's actual "how far have I gone" cue is the dot
+// pattern itself now, not a separate color to read as well.
 const ROUTE_LINE_COLOR_TRAVELED = "#1d4ed8";
-// [0, N] - a zero-length dash with the round line-cap already set on
-// both route layers below draws perfect circles instead of dashes,
-// spaced N line-widths apart (MapLibre's own dasharray units scale
-// with line-width, not screen pixels). Revives this route's own
-// original dotted remaining-line look; solid-with-a-lighter-shade
-// replaced it for a while specifically because a dashed/dotted
-// pattern's phase resets from the new line's own start vertex on every
-// setData call (a step advance, a live GPS fix, MapLibre's own
-// internal re-tessellation as the driving camera's bearing animates) -
-// visible as the dots appearing to shift rather than the line smoothly
-// extending. Still true here; reinstated anyway since a driver
-// glancing at a mostly-static remaining line far more often than
-// watching it redraw mid-motion reads as a worthwhile trade for the
-// dotted look back.
-const ROUTE_LINE_DASHARRAY: [number, number] = [0, 2];
-// The white halo drawn behind the remaining line's own dots
-// (route-remaining-outline below) - a wider copy of ROUTE_LINE_WIDTH
-// (mapEngine.ts) scaled by this same constant, so its own gap value
-// (ROUTE_LINE_OUTLINE_DASHARRAY, right below) can compensate and keep
-// every outline ring centered on its inner dot at every zoom level,
-// not just wherever the line happens to start. Two *independently*
-// zoom-interpolated widths - inner 2px-6px, outline naively 4px-12px -
-// would only agree on that ratio at the exact zoom their two
-// interpolations happen to cross, drifting apart everywhere else;
-// scaling the same expression by one constant factor keeps the ratio
-// exactly 1:OUTLINE_SCALE at every zoom instead.
-const ROUTE_LINE_OUTLINE_SCALE = 2;
-const ROUTE_LINE_OUTLINE_WIDTH: ExpressionSpecification = [
+// The remaining path used to be a real "line" layer with a [0, N]
+// dasharray - a zero-length dash with a round line-cap draws perfect
+// circles instead of dashes, spaced N line-widths apart. That worked
+// at rest, but MapLibre renders a dasharray as a texture mapped along
+// the line's own direction, which visibly warps under camera transforms
+// (a pitch/bearing/zoom animation mid-flight - exactly what driving
+// mode's own per-step flyTo does on every advance) into ovals for the
+// duration of the animation, only snapping back to round once the
+// camera settles. A "circle" layer has no such texture to warp - it's
+// drawn as an actual round primitive in screen space (MapLibre's own
+// default circle-pitch-alignment: "viewport"), immune to the same
+// distortion - so the remaining path is now a plain point source (one
+// feature per dot, spaced along the road below) under a circle layer
+// instead. ROUTE_REMAINING_DOT_SPACING_METERS is that spacing, in real-
+// world meters rather than screen pixels - driving mode's own camera
+// sits at STREET_ZOOM for effectively this feature's entire visible
+// lifetime (every per-step flyTo above returns it there), so a fixed
+// real-world spacing calibrated for that one zoom reads the same as the
+// old dasharray's screen-pixel spacing did in practice, without needing
+// to regenerate this source on every zoom change the way matching it
+// exactly at every zoom would.
+const ROUTE_REMAINING_DOT_SPACING_METERS = 10;
+// Circle radius halved from ROUTE_LINE_WIDTH (mapEngine.ts) - a round-
+// capped zero-length dash's own diameter was exactly its line-width, so
+// halving both of that same interpolation's endpoints reproduces the
+// old inner dot's radius at every zoom (linear interpolation commutes
+// with a constant scalar). circle-stroke-width reuses this same
+// expression as its own value - MapLibre draws a circle's stroke
+// *outside* circle-radius, so radius+stroke (the dot's total visible
+// size, halo included) comes out to exactly ROUTE_LINE_WIDTH itself,
+// the same outer size the old two-line-layer version (route-remaining-
+// outline sitting under route-remaining) drew as two independently
+// zoom-interpolated widths instead - one circle layer now, not two line
+// layers needing their own dasharrays kept in sync.
+const ROUTE_REMAINING_DOT_RADIUS: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   ["zoom"],
   12,
-  2 * ROUTE_LINE_OUTLINE_SCALE,
+  1,
   18,
-  6 * ROUTE_LINE_OUTLINE_SCALE,
+  3,
 ];
-// Physical gap length (line-width units × actual width) has to match
-// the inner dotted layer's own for their dots to stay concentric -
-// since this layer's own width is ROUTE_LINE_OUTLINE_SCALE times
-// wider, its own gap *count* needs to be that many times smaller to
-// cover the same real distance.
-const ROUTE_LINE_OUTLINE_DASHARRAY: [number, number] = [
-  0,
-  ROUTE_LINE_DASHARRAY[1] / ROUTE_LINE_OUTLINE_SCALE,
-];
+// A small perpendicular nudge baked straight into each dot's own
+// coordinate, echoing what ROUTE_LINE_OFFSET (mapEngine.ts) does for
+// the solid traveled line - a real "line" layer gets that for free from
+// MapLibre's own line-offset paint property (still applied to route-
+// traveled, unaffected by the dasharray distortion above since it's
+// never dashed), but a circle layer has no "circle-offset" of its own
+// to lean on, so remainingDotsFeatureCollection (below) computes the
+// same rightward nudge manually (destinationPoint,
+// spreadCoincidentPoints.ts) instead - without it, a route that doubles
+// back over a street it already drove would draw its remaining dots
+// directly on top of the solid traveled line from the earlier pass
+// rather than beside it. A fixed real-world distance, not an exact
+// screen-pixel match to ROUTE_LINE_OFFSET at every zoom - same "close
+// enough at driving mode's own fixed STREET_ZOOM" reasoning
+// ROUTE_REMAINING_DOT_SPACING_METERS above already leans on.
+const ROUTE_REMAINING_DOT_OFFSET_METERS = 2;
 
 /** A plain GeoJSON LineString Feature wrapping `coordinates` - the
  * shape mountMapLibre's own route-line sources need, built fresh on
@@ -191,6 +204,60 @@ function lineFeature(coordinates: RouteCoordinate[]) {
     properties: {},
     geometry: { type: "LineString" as const, coordinates },
   };
+}
+
+/** The remaining path's own dots (see ROUTE_REMAINING_DOT_SPACING_METERS'
+ * own doc comment above for why this is a point source under a circle
+ * layer, not a dashed line) - one Point feature every
+ * ROUTE_REMAINING_DOT_SPACING_METERS from `startDistance` (the live
+ * traveled/remaining split point) to `totalDistance` (the road's own
+ * end), each nudged ROUTE_REMAINING_DOT_OFFSET_METERS to the right of
+ * the road's own local bearing there - manually reproducing what
+ * line-offset (mapEngine.ts) gives the solid traveled line for free, a
+ * circle layer having no such paint property of its own to lean on
+ * (both constants' own doc comments above have the full reasoning).
+ * `coords`/`cumulative` are the *un-offset* road geometry/its own
+ * cumulative distances (roadLine/roadCumulative, this file's own
+ * resolveAndRedraw) - the same two updateRouteProgress already threads
+ * through pointAtDistance for the split point itself, so this reuses
+ * them rather than re-deriving anything. A road with no real bearing at
+ * some point along it (roadBearingAt's own null case - the very end of
+ * the line, most often) leaves that one dot unoffset rather than
+ * skipping it outright; a single dot sitting exactly on the line
+ * instead of just beside it is not worth losing over. */
+function remainingDotsFeatureCollection(
+  coords: LatLon[],
+  cumulative: number[],
+  startDistance: number,
+  totalDistance: number,
+) {
+  const features: {
+    type: "Feature";
+    properties: Record<string, never>;
+    geometry: { type: "Point"; coordinates: RouteCoordinate };
+  }[] = [];
+  // Nothing left to show remaining (overview mode's own "the whole line
+  // already reads as traveled" case, updateRouteProgress below) rather
+  // than one stray dot landing exactly on the route's own end point.
+  if (startDistance >= totalDistance) return { type: "FeatureCollection" as const, features };
+  for (
+    let distance = startDistance;
+    distance <= totalDistance;
+    distance += ROUTE_REMAINING_DOT_SPACING_METERS
+  ) {
+    const point = pointAtDistance(coords, cumulative, distance);
+    const bearing = roadBearingAt(coords, cumulative, distance, "outgoing");
+    const { lat, lon } =
+      bearing == null
+        ? point
+        : destinationPoint(point, bearing + 90, ROUTE_REMAINING_DOT_OFFSET_METERS);
+    features.push({
+      type: "Feature",
+      properties: {},
+      geometry: { type: "Point", coordinates: [lon, lat] },
+    });
+  }
+  return { type: "FeatureCollection" as const, features };
 }
 
 // A standard "you are here" dot - Tailwind classes work here same as
@@ -1441,31 +1508,31 @@ function mountMapLibre(args: MountArgs): () => void {
                 waypointDistances: new Map(distanceAlongRouteByKey),
               });
 
-              // Three layers over two sources - a dotted remaining line
-              // plus its own white outline (both reading the
-              // "route-remaining" source), and a solid traveled line
-              // (its own "route-traveled" source) on top of both, every
-              // layer sharing ROUTE_LINE_COLOR_TRAVELED - so the line
-              // itself shows how far the route has actually been
-              // driven, not just that it exists. Both sources start
-              // empty; updateRouteProgress below (called once
-              // immediately, and again on every step advance) is what
-              // actually splits roadLngLats between them. beforeId
-              // (every layer) places them directly under the road-name
-              // labels (added earlier, in protomapsStyle.ts's own
-              // layer list) so street names stay legible over the
-              // route instead of the line painting over them -
-              // addLayer with no beforeId would otherwise stack this
-              // on top of literally everything already in the style,
-              // labels included. Guarded by routeLayersAdded (above)
-              // since a second resolveAndRedraw finds both sources
-              // already there - only the traveled/remaining split
-              // itself (updateRouteProgress, below) needs to run
+              // A circle layer over a point source ("route-remaining-
+              // dots" - see ROUTE_REMAINING_DOT_SPACING_METERS' own doc
+              // comment above for why a circle layer rather than a
+              // dashed line), plus a solid traveled line (its own
+              // "route-traveled" source) on top of it, both sharing
+              // ROUTE_LINE_COLOR_TRAVELED - so the line itself shows how
+              // far the route has actually been driven, not just that
+              // it exists. Both sources start empty; updateRouteProgress
+              // below (called once immediately, and again on every step
+              // advance) is what actually splits roadLngLats between
+              // them. beforeId (every layer) places them directly under
+              // the road-name labels (added earlier, in
+              // protomapsStyle.ts's own layer list) so street names stay
+              // legible over the route instead of the line painting
+              // over them - addLayer with no beforeId would otherwise
+              // stack this on top of literally everything already in
+              // the style, labels included. Guarded by routeLayersAdded
+              // (above) since a second resolveAndRedraw finds both
+              // sources already there - only the traveled/remaining
+              // split itself (updateRouteProgress, below) needs to run
               // again, not this one-time setup.
               if (!routeLayersAdded) {
-                mapInstance.addSource("route-remaining", {
+                mapInstance.addSource("route-remaining-dots", {
                   type: "geojson",
-                  data: lineFeature([]),
+                  data: remainingDotsFeatureCollection([], [], 0, 0),
                 });
                 mapInstance.addSource("route-traveled", {
                   type: "geojson",
@@ -1473,32 +1540,16 @@ function mountMapLibre(args: MountArgs): () => void {
                 });
                 mapInstance.addLayer(
                   {
-                    id: "route-remaining-outline",
-                    type: "line",
-                    source: "route-remaining",
-                    layout: { "line-cap": "round", "line-join": "round" },
+                    id: "route-remaining-dots",
+                    type: "circle",
+                    source: "route-remaining-dots",
                     paint: {
-                      "line-color": "#ffffff",
-                      "line-width": ROUTE_LINE_OUTLINE_WIDTH,
-                      "line-offset": ROUTE_LINE_OFFSET,
-                      "line-dasharray": ROUTE_LINE_OUTLINE_DASHARRAY,
-                      "line-opacity": 0.85,
-                    },
-                  },
-                  "roads-major-label",
-                );
-                mapInstance.addLayer(
-                  {
-                    id: "route-remaining",
-                    type: "line",
-                    source: "route-remaining",
-                    layout: { "line-cap": "round", "line-join": "round" },
-                    paint: {
-                      "line-color": ROUTE_LINE_COLOR_TRAVELED,
-                      "line-width": ROUTE_LINE_WIDTH,
-                      "line-offset": ROUTE_LINE_OFFSET,
-                      "line-dasharray": ROUTE_LINE_DASHARRAY,
-                      "line-opacity": 0.85,
+                      "circle-color": ROUTE_LINE_COLOR_TRAVELED,
+                      "circle-radius": ROUTE_REMAINING_DOT_RADIUS,
+                      "circle-stroke-color": "#ffffff",
+                      "circle-stroke-width": ROUTE_REMAINING_DOT_RADIUS,
+                      "circle-opacity": 0.85,
+                      "circle-stroke-opacity": 0.85,
                     },
                   },
                   "roads-major-label",
@@ -1607,8 +1658,13 @@ function mountMapLibre(args: MountArgs): () => void {
                 (mapInstance.getSource("route-traveled") as GeoJSONSource)?.setData(
                   lineFeature([...roadLngLats.slice(0, splitVertexIndex), splitLngLat]),
                 );
-                (mapInstance.getSource("route-remaining") as GeoJSONSource)?.setData(
-                  lineFeature([splitLngLat, ...roadLngLats.slice(splitVertexIndex)]),
+                (mapInstance.getSource("route-remaining-dots") as GeoJSONSource)?.setData(
+                  remainingDotsFeatureCollection(
+                    roadLine,
+                    roadCumulative,
+                    lastRouteSplitDistance,
+                    roadTotalDistance,
+                  ),
                 );
               }
               applyRouteProgress = updateRouteProgress;
