@@ -188,3 +188,18 @@ Vercel value).
   more a value-add for the rare new-route case (and a good demo) than
   something any client has actually asked for - low priority relative
   to work with a clearer real payoff.
+- A map-centric alternate layout for the turn-by-turn screen
+  (`StepScreen.tsx`), toggleable mid-drive rather than replacing the
+  current audio-first design outright. The app was originally scoped
+  for a tablet mounted in landscape (map ~42% of the width); the
+  initial prototype pivoted to phone-first, where portrait mode only
+  gives the map a fixed `30vh` strip up top. Real-world test driving
+  found that frustrating - wanting to glance at the map more than the
+  current split allows, even with audio doing most of the work. A
+  toggle would swap which pane gets the dominant share (map ~65%,
+  turn-by-turn content collapsed to a bottom strip) using the same two
+  components already rendered side by side, rather than a second
+  screen to maintain - the open questions are just whether the choice
+  persists per-driver/session and how it interacts with the existing
+  draggable-divider idea above (same underlying split, this toggle
+  would just change its default before a driver drags it further).
