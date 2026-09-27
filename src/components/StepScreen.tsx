@@ -737,6 +737,11 @@ export function StepScreen({
               onRouteGeometry={setRouteGeometry}
             />
           )}
+          expandedOverlay={
+            phase === "step" && !paused ? (
+              <CompactStepOverlay step={step} stopNumber={stopNumber} />
+            ) : undefined
+          }
         />
 
         {/* !paused hides the box (without closing it - viewedStepIndex
@@ -1011,6 +1016,75 @@ function RoadNames({ subheading }: { subheading: string }) {
       {" & "}
       <span className="whitespace-nowrap">{roadB}</span>
     </>
+  );
+}
+
+/** The compact "what's happening right now" readout ExpandableMap's own
+ * full-screen instance overlays across its bottom (StepScreen's own
+ * expandedOverlay prop, ExpandableMap.tsx) while actually navigating a
+ * real step - expanding the map mid-drive to see more of it shouldn't
+ * mean losing the current step's own directions entirely. Deliberately
+ * not a smaller copy of StopContent/TurnContent above: those are built
+ * for the normal step-content pane's own shape (icon stacked above the
+ * street name, a progress bar above that, room to spare) - this is a
+ * single row along the bottom of a map that now fills the whole
+ * screen, icon beside the text rather than above it, no progress bar
+ * at all (nothing in this portal renders one - see ExpandableMap's own
+ * doc comment on expandedOverlay), and no special-instruction line
+ * once there's nothing to say (StopContent/TurnContent always reserve
+ * that line's height so nothing else shifts; this one-row strip has no
+ * such neighbor to keep steady, so it just doesn't render an empty
+ * second line at all). */
+function CompactStepOverlay({
+  step,
+  stopNumber,
+}: {
+  step: NavigationStep;
+  stopNumber: number | null;
+}) {
+  const isStopStep = step.kind === "stop";
+  return (
+    // left-16 (not inset-x-0's own even padding) - RouteMap's own
+    // ShowRidersControl, when this route has any rider-tracked stop,
+    // sits in this exact same bottom-left corner as a plain MapLibre
+    // control, entirely outside this overlay's own layout (two
+    // unrelated absolutely-positioned things sharing one corner by
+    // coincidence, not something either side can coordinate around on
+    // its own) - the extra left clearance is this overlay's own way of
+    // staying out of that corner rather than covering the button
+    // sitting there.
+    <div className="pointer-events-none absolute right-3 bottom-3 left-16 z-20 flex justify-center">
+      <div className="pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-xl bg-black/55 px-4 py-3 text-white shadow-lg backdrop-blur-sm">
+        {isStopStep ? (
+          <div className="relative h-10 w-[1.75rem] shrink-0">
+            <img src="/assets/pin.svg" alt="" className="h-full w-full" />
+            {stopNumber && (
+              <span className="font-heading absolute top-[34%] left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-black text-red-700">
+                {stopNumber}
+              </span>
+            )}
+          </div>
+        ) : (
+          <ActionIcon action={step.direction ?? step.heading ?? ""} className="h-9 w-9 shrink-0" />
+        )}
+        <div className="min-w-0 flex-1 text-left">
+          {step.subheading ? (
+            <p className="font-heading truncate text-base leading-tight font-black tracking-tight">
+              <RoadNames subheading={step.subheading} />
+            </p>
+          ) : (
+            step.heading && (
+              <p className="font-heading truncate text-base leading-tight font-black tracking-tight">
+                {step.heading}
+              </p>
+            )
+          )}
+          {step.specialInstruction && (
+            <p className="truncate text-xs text-white/75">{step.specialInstruction}</p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

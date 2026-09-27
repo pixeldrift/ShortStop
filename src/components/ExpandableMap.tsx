@@ -34,6 +34,7 @@ export function ExpandableMap({
   renderMap,
   className,
   onExpandedChange,
+  expandedOverlay,
 }: {
   /** Renders one map instance, sized to fill whatever `className` this
    * is handed - called once for the normal inline box, and again for a
@@ -54,6 +55,18 @@ export function ExpandableMap({
    * this component's own doc comment above for why), so nothing keeps
    * them in sync on its own. */
   onExpandedChange?: (expanded: boolean) => void;
+  /** Optional content overlaid across the bottom of the *full-screen*
+   * instance only, absolutely positioned above the map so this
+   * component doesn't need to know anything about its shape - StepScreen's
+   * own compact "current step" readout while actually navigating, so
+   * expanding the map mid-drive doesn't lose the directions entirely.
+   * Never shown on the small inline box (that one already sits right
+   * next to the real step-content pane, which needs no duplicate) -
+   * omit this prop entirely for every other caller (a plain read-only
+   * preview, an admin picking coordinates), which have no such content
+   * to show and keep today's plain full-screen map with nothing but
+   * the close button. */
+  expandedOverlay?: React.ReactNode;
 }) {
   const [expanded, setExpandedState] = useState(false);
   function setExpanded(next: boolean) {
@@ -113,6 +126,7 @@ export function ExpandableMap({
             >
               <CloseIcon className="h-4 w-4" />
             </button>
+            {expandedOverlay}
           </div>,
           document.body,
         )}
