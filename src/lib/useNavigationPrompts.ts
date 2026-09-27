@@ -52,9 +52,9 @@ const MILES_THRESHOLD_METERS = 400;
 
 /** Lowercases just the first character - for splicing a step's own
  * announcement[0] (which starts capitalized, being the start of its
- * *own* sentence normally - "Turn left onto Weakley Street.") into the
- * middle of a different sentence ("Next up, turn left onto Weakley
- * Street.") without the mid-sentence capital reading like a typo. Not
+ * *own* sentence normally - "Turn around.") into the middle of a
+ * different sentence ("After that, you will turn around.") without the
+ * mid-sentence capital reading like a typo. Not
  * spoken-aloud significant (TTS doesn't care about case), purely for
  * whatever also reads the on-screen alert/log text this feeds. */
 function lowerFirst(text: string): string {
@@ -130,22 +130,27 @@ function advanceStagePhrase(step: NavigationStep, distanceMeters: number): strin
  * announcement (the instant it finishes), not gated on GPS movement or
  * a rider-roster dismissal the way nextActionPreviewPhrase's own stop
  * case is below: there's no real travel between the two to wait
- * through, so there's nothing to gain by waiting. "Next up, " prefixed
- * onto the *exact same* wording that step's own arrival announcement
- * will use once it's actually current (its own announcement[0]) rather
- * than a separate hand-written preview template, so a driver who
- * remembers hearing this a few seconds ago recognizes the real
- * instruction as the same thing they were just told to expect. */
+ * through, so there's nothing to gain by waiting. Deliberately never
+ * "Next up" or "Next stop" - both start with the same word and read as
+ * near-identical fragments in a synthesized voice, easy to mistake one
+ * for the other in the half-second before the rest of the sentence
+ * lands. "After that, you will be turning..."/"After that, you will
+ * stop at..." reads unambiguously distinct even at a glance, let alone
+ * spoken. */
 function immediateNextActionPhrase(nextStep: NavigationStep): string {
   if (nextStep.kind === "stop") {
     return nextStep.subheading
-      ? `Next up, stop at ${speakRoadNames(nextStep.subheading)}.`
-      : "Next up, another stop.";
+      ? `After that, you will stop at ${speakRoadNames(nextStep.subheading)}.`
+      : "After that, you will make another stop.";
+  }
+  if (nextStep.direction) {
+    const street = nextStep.subheading ? ` onto ${speakRoadNames(nextStep.subheading)}` : "";
+    return `After that, you will be turning ${nextStep.direction}${street}.`;
   }
   const detail = lowerFirst(
     (nextStep.announcement[0] ?? terseStagePhrase(nextStep)).replace(/\.\s*$/, ""),
   );
-  return `Next up, ${detail}.`;
+  return `After that, you will ${detail}.`;
 }
 
 /** The forward-looking preview of whatever's coming up *after* the step

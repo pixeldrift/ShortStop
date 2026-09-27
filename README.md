@@ -203,6 +203,22 @@ Vercel value).
   persists per-driver/session and how it interacts with the existing
   draggable-divider idea above (same underlying split, this toggle
   would just change its default before a driver drags it further).
+- Full-screen map navigation mode, invoked by the driving map's own
+  expand button (`ExpandableMap`'s own top-right corner button, already
+  wired into `StepScreen.tsx`'s map strip). Today that button just
+  opens a second, full-screen copy of the same map with nothing else
+  on screen - while actually navigating, it should instead overlay the
+  current step's own directions across the bottom of the screen, in a
+  semi-transparent box rather than a second full copy of the normal
+  split-screen content pane. That overlay should hide the extra chrome
+  the normal layout carries (the progress bar, specifically) and show
+  each waypoint's own icon smaller and to the left of the street/
+  instruction text, not stacked above it - a compact readout meant to
+  sit on top of the map, not compete with it for space. Distinct from
+  the map-centric alternate layout idea above: that one is a
+  persistent mid-drive toggle between two panes sized differently;
+  this is what the already-built full-screen expand view itself should
+  show once a driver actually taps it while under way.
 - Per-stop ahead/behind-schedule narration, continuously through the
   drive - not just the one-time "right on time"/"N minutes behind
   schedule" callout the depot announcement now gives at departure

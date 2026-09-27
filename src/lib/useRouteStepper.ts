@@ -46,6 +46,12 @@ function schedulePhrase(departureTime: string, actualStartMs: number): string | 
   return rounded > 0 ? `${minutes} ${unit} behind schedule.` : `${minutes} ${unit} ahead of schedule.`;
 }
 
+/** How long a stop's own full arrival announcement waits on real GPS
+ * confirmation (arrivedStopId, below) before speaking anyway - see that
+ * state's own doc comment for the full reasoning on why this is so much
+ * longer than this file's other timeouts. */
+const STOP_ARRIVAL_FALLBACK_MS = 60000;
+
 /**
  * The bus's position in the route is one of three phases:
  *  - "depot": before the first real step - the bus sits on the start
@@ -148,6 +154,51 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
 
   const currentStep = route.steps[currentIndex];
   const totalSteps = route.steps.length;
+
+  // Which stop's own full arrival announcement is actually clear to
+  // speak - StepScreen's own onStopArrived prop (below) sets this the
+  // instant live GPS confirms the bus has physically stopped there
+  // (useGpsAutoAdvance's own onStopArrived - see its own doc comment).
+  // A stop step becoming *current* only ever means the *previous* step
+  // cleared, not that the bus has actually reached this one yet (a
+  // stop several minutes' drive past the last turn shouldn't have its
+  // own rider count read out the instant it becomes the on-screen
+  // step) - so the announcement effect below holds a stop's own speech
+  // back until this matches its id, unlike every other step kind,
+  // which still speaks the moment it's current exactly as before this
+  // existed. On-screen content is entirely unaffected either way - the
+  // step itself, its map pin, its heading/subheading text, all still
+  // update immediately on becoming current; only the *spoken* arrival
+  // announcement waits.
+  const [arrivedStopId, setArrivedStopId] = useState<number | null>(null);
+  // The one exception: forced through anyway once STOP_ARRIVAL_FALLBACK_MS
+  // has passed with no real GPS confirmation - reviewing a route at a
+  // desk via the footer's own Next button (no GPS at all, so
+  // arrivedStopId can never update on its own) would otherwise leave
+  // every stop permanently silent. Deliberately much longer than any
+  // of this file's other timeouts: the common case for a stop that's
+  // simply a normal multi-minute leg away from wherever the *previous*
+  // step cleared is exactly the same "still waiting, not stuck" state
+  // as the "GPS never confirms" case this actually exists to protect
+  // against, so a short timeout would speak the arrival announcement
+  // early on a perfectly ordinary route far more often than it would
+  // ever rescue a genuinely broken one.
+  const [forcedStopId, setForcedStopId] = useState<number | null>(null);
+  useEffect(() => {
+    if (phase !== "step" || currentStep.kind !== "stop" || arrivedStopId === currentStep.id) {
+      return;
+    }
+    const id = window.setTimeout(() => setForcedStopId(currentStep.id), STOP_ARRIVAL_FALLBACK_MS);
+    return () => window.clearTimeout(id);
+  }, [phase, currentStep, arrivedStopId]);
+  // A stop step is waiting on GPS (or the fallback above) before its own
+  // announcement can speak - see arrivedStopId's own doc comment. Every
+  // other phase/step kind is never pending at all.
+  const stopArrivalPending =
+    phase === "step" &&
+    currentStep.kind === "stop" &&
+    arrivedStopId !== currentStep.id &&
+    forcedStopId !== currentStep.id;
 
   const stopSteps = useMemo(
     () => route.steps.filter((s) => s.kind === "stop"),
@@ -278,6 +329,14 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
 
   useEffect(() => {
     if (!started || paused) return;
+    // Genuinely nothing to speak or mark done yet - not the same as the
+    // "no parts" fallback just below (an arrived phase with nothing to
+    // say, say), which always marks the attempt done immediately.
+    // completedKey must stay stale here so announcementDone stays false
+    // for as long as this stop is still waiting - see arrivedStopId's
+    // own doc comment for what that gates (the roster box's own auto-
+    // open, useNavigationPrompts' own preview).
+    if (stopArrivalPending) return;
 
     const parts =
       phase === "depot"
@@ -327,6 +386,7 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     currentStep,
     started,
     paused,
+    stopArrivalPending,
     attemptKey,
     route.routeNumber,
     route.departureTime,
@@ -468,6 +528,14 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     setPhase("depot");
     setCurrentIndex(0);
     setStarted(false);
+    // Stop ids are just this route's own row indexes (parseRouteCsv.ts),
+    // not unique per real-world trip - a fresh run of the *same* route
+    // after this reset reuses every one of them, so a stale
+    // arrivedStopId/forcedStopId surviving from the run just ended would
+    // wrongly read as "already arrived" the instant that same stop
+    // becomes current again.
+    setArrivedStopId(null);
+    setForcedStopId(null);
   }, []);
 
   // Tapping "End Route" in the confirmation modal from the "arrived"
@@ -510,5 +578,6 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     endRoute,
     exitTrip,
     announcementDone,
+    setArrivedStopId,
   };
 }
