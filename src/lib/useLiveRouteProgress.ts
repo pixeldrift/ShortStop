@@ -13,6 +13,14 @@ import type { LatLon, WaypointProgress } from "./routeProgress";
  * mean anything. */
 const MAX_ON_ROUTE_METERS = 60;
 
+/** Shared "the bus is genuinely moving, not just reading GPS jitter"
+ * line - every consumer of a live speed reading (useGpsAutoAdvance's
+ * own stop-and-go/distance triggers, useNavigationPrompts' own approach
+ * warnings, StepScreen's own "hide the rider box while driving" safety
+ * gate) wants the exact same answer to "is this speed real movement,"
+ * not each drawing its own slightly different line. ~2 mph. */
+export const MOVING_THRESHOLD_MPS = 0.9;
+
 /** How far (route meters, not as the crow flies) a live GPS fix's own
  * projection is allowed to move from the *previous* fix's own known
  * position in one tick - see projectOntoRoute's own
@@ -67,10 +75,13 @@ export interface LiveRouteProgress {
    * along a fixed route never moves). */
   waypointDistances: WaypointProgress[];
   /** Live distance from the current position to one specific
-   * waypoint, measured along the route (not straight-line) - negative
-   * once that waypoint is already behind the live fix. Null whenever
-   * distanceAlongRoute itself is null (no fix yet, or off-route). */
-  distanceToWaypoint: (key: string) => number | null;
+   * waypoint (its own NavigationStep.id - WaypointProgress's own doc
+   * comment, routeProgress.ts, has why this is a stepId and not the
+   * shared waypointKey cache text), measured along the route (not
+   * straight-line) - negative once that waypoint is already behind the
+   * live fix. Null whenever distanceAlongRoute itself is null (no fix
+   * yet, or off-route). */
+  distanceToWaypoint: (stepId: number) => number | null;
 }
 
 /**
@@ -112,7 +123,7 @@ export interface LiveRouteProgress {
  */
 export function useLiveRouteProgress(
   routeLine: LatLon[],
-  waypointDistanceByKey: Map<string, number>,
+  waypointDistanceByKey: Map<number, number>,
 ): LiveRouteProgress {
   const cumulative = useMemo(() => cumulativeDistances(routeLine), [routeLine]);
   const waypointDistances = useMemo<WaypointProgress[]>(
@@ -245,9 +256,9 @@ export function useLiveRouteProgress(
   }, []);
 
   const distanceToWaypoint = useCallback(
-    (key: string): number | null => {
+    (stepId: number): number | null => {
       if (distanceAlongRoute == null) return null;
-      const waypoint = waypointDistances.find((w) => w.key === key);
+      const waypoint = waypointDistances.find((w) => w.key === stepId);
       return waypoint ? waypoint.distanceAlongRoute - distanceAlongRoute : null;
     },
     [distanceAlongRoute, waypointDistances],

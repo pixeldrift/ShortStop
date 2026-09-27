@@ -1,4 +1,5 @@
 import type { ExpressionSpecification } from "@maplibre/maplibre-gl-style-spec";
+import type { CustomLayerInterface, GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 
 /**
  * Shared MapLibre GL setup for every map in this app (RouteMap.tsx,
@@ -123,3 +124,205 @@ export const ROUTE_LINE_WIDTH: ExpressionSpecification = [
  * other - the same way real traffic lanes read as separate rather than
  * as one road. */
 export const ROUTE_LINE_OFFSET = 3;
+
+const SCHOOL_BUILDING_HIGHLIGHT_SOURCE = "school-building-highlight";
+
+/** Fills the school's own real building footprint the same blue every
+ * school pin already uses (schoolMarkerHtml, RouteMap.tsx), so it stands
+ * out against every other building nearby's plain tan fill
+ * (protomapsStyle.ts's own "buildings" layer) - the one building on the
+ * map that's actually this route's destination, not just another
+ * rooftop. Can't be a plain style filter the way pois-school is
+ * (protomapsStyle.ts): the basemap's own "buildings" source-layer
+ * carries no amenity=school tag on the polygon itself - kind_detail is
+ * empty for every real building in the current extract (checked
+ * directly against the pmtiles file's own vector-tile bytes, not just
+ * the schema docs) - so there's nothing a declarative filter could ever
+ * match on. Finds the right polygon at runtime instead: queries
+ * whatever the basemap's own "buildings" fill layer has actually
+ * rendered right under the school's own point, and redraws that one
+ * feature's real geometry into its own source/layer, painted directly
+ * above the base fill (and below roads/labels/pins, same stacking the
+ * base fill itself already has) so the school's building reads as
+ * highlighted, not just present.
+ *
+ * Self-maintaining rather than a one-shot call: attaches its own "idle"
+ * listener (fires once the map has actually finished rendering every
+ * tile in view - a query run any earlier could hit a tile still in
+ * flight and find nothing) and re-queries/redraws on every one of those,
+ * so a caller only ever needs to keep `schoolRef.current` up to date
+ * (RouteMap.tsx already does, for its own `school` prop) - no separate
+ * "the school changed, please redraw" call of its own to remember. A
+ * school whose point isn't on-screen yet (still zoomed out in overview
+ * mode, or below the base fill's own minzoom 15) simply queries empty
+ * until the map actually gets there, the same "nothing to show until
+ * you're close enough" behavior the base fill already has.
+ */
+export function installSchoolBuildingHighlight(
+  map: MapLibreMap,
+  // A plain `{ current }` shape, not React.RefObject - this file has no
+  // other React dependency, and every caller already has a real
+  // useRef-backed ref (schoolRef, RouteMap.tsx) that satisfies this
+  // structurally with no cast needed.
+  schoolRef: { current: { lat: number; lon: number } | null | undefined },
+): void {
+  let layerAdded = false;
+
+  function ensureLayer() {
+    if (layerAdded) return;
+    map.addSource(SCHOOL_BUILDING_HIGHLIGHT_SOURCE, {
+      type: "geojson",
+      data: { type: "FeatureCollection", features: [] },
+    });
+    // beforeId "roads-minor" - directly above the base "buildings"
+    // extrusion, below every road/label/pin, matching that base layer's
+    // own existing stacking (protomapsStyle.ts's own layer order) rather
+    // than painting over roads that cross the building's own footprint.
+    // fill-extrusion, not a flat fill, same reasoning as protomapsStyle's
+    // own "buildings" layer - a flat highlight would otherwise paint as a
+    // ground-level patch that ignores the extruded volume right above it
+    // once the map's pitched (RouteMap.tsx's own DRIVING_PITCH), reading
+    // as detached from the real building it's meant to be marking rather
+    // than coloring its actual walls/roof. A few meters taller than the
+    // real building itself (see refresh's own `+3`) so the highlighted
+    // school visibly pokes up above its own real rooftop, not just a
+    // same-height re-paint indistinguishable from the ordinary buildings
+    // layer already right underneath it.
+    map.addLayer(
+      {
+        id: SCHOOL_BUILDING_HIGHLIGHT_SOURCE,
+        type: "fill-extrusion",
+        source: SCHOOL_BUILDING_HIGHLIGHT_SOURCE,
+        paint: {
+          "fill-extrusion-color": "#2563eb",
+          "fill-extrusion-height": ["+", ["coalesce", ["get", "height"], 6], 3],
+          "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
+          "fill-extrusion-opacity": 0.75,
+        },
+      },
+      "roads-minor",
+    );
+    layerAdded = true;
+  }
+
+  function refresh() {
+    const school = schoolRef.current;
+    ensureLayer();
+    const source = map.getSource(SCHOOL_BUILDING_HIGHLIGHT_SOURCE) as
+      | GeoJSONSource
+      | undefined;
+    if (!source) return;
+    if (!school) {
+      source.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+    const point = map.project([school.lon, school.lat]);
+    // A small box, not a single point - queryRenderedFeatures needs
+    // real screen-pixel area to hit-test against, and the school pin's
+    // own anchor ("bottom", schoolMarkerHtml) doesn't necessarily land
+    // exactly on the building's own rendered fill pixel-for-pixel.
+    const features = map.queryRenderedFeatures(
+      [
+        [point.x - 4, point.y - 4],
+        [point.x + 4, point.y + 4],
+      ],
+      { layers: ["buildings"] },
+    );
+    const building = features.find((f) => f.properties?.kind === "building");
+    source.setData(
+      building
+        ? {
+            type: "FeatureCollection",
+            features: [
+              {
+                type: "Feature",
+                geometry: building.geometry,
+                // height/min_height carried straight through from the
+                // real queried feature - dropping them (as an earlier
+                // version of this did, `properties: {}`) left the
+                // fill-extrusion paint above with nothing to read but
+                // its own coalesced default, so a school with a real
+                // recorded height would extrude to the wrong one.
+                properties: {
+                  height: building.properties?.height,
+                  min_height: building.properties?.min_height,
+                },
+              },
+            ],
+          }
+        : { type: "FeatureCollection", features: [] },
+    );
+  }
+
+  map.on("idle", refresh);
+}
+
+/** Soft ground-contact shadows + ambient occlusion under every extruded
+ * building (protomapsStyle.ts's own "buildings" fill-extrusion layer) -
+ * WallShadowLayer (src/lib/vendor/wallShadowLayer.js, see that file's own
+ * attribution/doc comment for provenance) reuses MapLibre's already-
+ * uploaded building geometry to draw both in four cheap GPU passes, no
+ * shadow maps or extra cameras. Inserted directly after "buildings" in
+ * paint order (protomapsStyle.ts's own layer order has "roads-minor"
+ * immediately following it, same beforeId installSchoolBuildingHighlight
+ * above already anchors to) so the shadow/AO overlay sits under buildings
+ * but over every earlier fill (earth, landuse, water) and below every
+ * road/label/pin. Only ever called for RouteMap.tsx's own full-screen map
+ * - the GPU/VRAM cost (~40MB, a handful of extra draw calls - see that
+ * file's own README) isn't worth paying on WaypointPreviewMap's or
+ * PlaceCoordinatesModal's much smaller preview boxes.
+ *
+ * `map.setLight` drives MapLibre's own built-in fill-extrusion shading
+ * too (used by the school highlight layer above, which WallShadowLayer
+ * doesn't touch - a separate geojson source, not part of the vector
+ * "buildings" bucket it walks) - syncing its direction to the shadow's
+ * own default `shadowOffset` keeps every extruded building's lighting
+ * reading as one consistent scene rather than two independently-lit
+ * effects layered on top of each other.
+ *
+ * Best-effort, not a hard requirement: wrapped in try/catch so a real
+ * failure (an unexpectedly different MapLibre internal shape - this
+ * reaches into style.sourceCaches/bucket.programConfigurations, neither
+ * a documented public API - see wallShadowLayer.js's own doc comment)
+ * leaves the map exactly as it already was (buildings still extruded,
+ * just flat-shaded) rather than a broken or blank map. Only suppresses
+ * the ordinary "buildings" layer's own flat draw
+ * (fill-extrusion-opacity: 0) once the replacement has actually been
+ * added successfully - never the other way around, which would leave
+ * every building invisible if this failed.
+ */
+export function installBuildingShadows(map: MapLibreMap): void {
+  if (!map.getLayer("buildings")) return;
+  // Dynamic import, not a static one - this vendored file (see its own
+  // doc comment) is plain JS with no type declarations of its own, and
+  // deferring the import into this try/catch means a real load/parse
+  // failure degrades the same way every other failure path here already
+  // does (buildings stay flat-shaded, nothing else breaks) rather than
+  // failing the whole module graph this function happens to live in.
+  import("./vendor/wallShadowLayer.js")
+    .then(({ WallShadowLayer }) => {
+      // Tuned down from the vendored file's own defaults (strength 0.5,
+      // shadowAlpha 0.35, aoIntensity 0.80) - at full strength the effect
+      // reads as distracting clutter on a route map drivers are glancing
+      // at, not the subtle depth cue it's meant to be. Each knob here is
+      // roughly half its default, and shadowBlur is raised so what's left
+      // reads as a soft gradient rather than a hard-edged shape.
+      const shadowLayer = new WallShadowLayer({
+        buildingsLayerId: "buildings",
+        strength: 0.15,
+        shadowAlpha: 0.25,
+        aoIntensity: 0.25,
+        shadowBlur: 2.5,
+      }) as CustomLayerInterface & {
+        shadowOffset: [number, number];
+      };
+      map.addLayer(shadowLayer, "roads-minor");
+      map.setPaintProperty("buildings", "fill-extrusion-opacity", 0);
+      const [sx, sy] = shadowLayer.shadowOffset;
+      const azimuthal = ((Math.atan2(-sx, -sy) * 180) / Math.PI + 360) % 360;
+      map.setLight({ anchor: "map", position: [1.2, azimuthal, 30], intensity: 0.5 });
+    })
+    .catch((err: unknown) => {
+      console.warn("Couldn't install building shadows:", err);
+    });
+}

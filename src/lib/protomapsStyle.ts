@@ -13,7 +13,11 @@ import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
  * Kept intentionally plain/legible over decorative - this is a
  * from-scratch style, not a port of CARTO Voyager's own look (the
  * raster basemap this replaces), so there was nothing to match pixel
- * for pixel.
+ * for pixel. Buildings extrude into real 3D volumes (see the
+ * "buildings" layer below) and the driving map carries a default
+ * camera pitch (RouteMap.tsx's own DRIVING_PITCH) - a richer palette
+ * was tried alongside those two, but read as gross rather than better,
+ * so only the 3D shape stuck around.
  */
 // Self-hosted (public/fonts/Noto Sans Regular/*.pbf, one file per
 // 256-codepoint range) rather than Protomaps' own hosted
@@ -26,6 +30,34 @@ import type { StyleSpecification } from "@maplibre/maplibre-gl-style-spec";
 // nothing in this style needs a second weight yet.
 const GLYPHS_URL = "/fonts/{fontstack}/{range}.pbf";
 const LABEL_FONT = ["Noto Sans Regular"];
+
+/** Every color this style paints with, in one place - the MapLibre
+ * equivalent of tweaking Mapbox Standard's own runtime `config.basemap`
+ * (colorBuildings/colorGreenspace/etc.), just resolved at build time
+ * instead of the browser's, since MapLibre has no such runtime config
+ * API of its own. roadsMajorLabelHalo intentionally matches roadsMajor
+ * itself - that label's own "symbol-placement": "line" (below) draws it
+ * running right along the road, so a matching halo reads as part of the
+ * road rather than a separate white patch on top of it. roadsMinorLabel
+ * has no such placement (plain point, more often beside the road than
+ * on it), so its halo stays the universal light "labelHalo" instead of
+ * pairing with roadsMinor's own line color. */
+const BASEMAP_COLORS = {
+  land: "#f4f1ea",
+  park: "#d7e8d4",
+  water: "#a7cbe8",
+  buildings: "#e3ddd0",
+  roadsMinor: "#a8a29e",
+  roadsMajor: "#f6c453",
+  rail: "#7c4a1e",
+  roadsMajorLabelText: "#5c4a1a",
+  roadsMajorLabelHalo: "#f6c453",
+  roadsMinorLabelText: "#57534e",
+  labelHalo: "#ffffff",
+  school: "#2563eb",
+  schoolLabelText: "#1d4ed8",
+  housenumberLabelText: "#78716c",
+} as const;
 // The `as unknown as StyleSpecification` cast on the return below is
 // deliberate, not a shortcut around a real type error: every literal
 // here (each layer's own "type", each filter's own operator strings)
@@ -44,20 +76,39 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
       [source]: {
         type: "vector" as const,
         url: `pmtiles://${pmtilesUrl}`,
+        // The real extract (public/maps/middle-tennessee.pmtiles) only
+        // ever has tiles through z15 (PMTiles' own v3 header, byte 101 -
+        // checked directly against the file, not assumed from the
+        // schema docs) - Protomaps' basemap builder stops generalizing
+        // new detail past that and expects the *renderer* to overzoom
+        // the z15 tile for anything deeper, not the archive to carry
+        // real z16+ tiles of its own. Declaring that here is what
+        // actually makes that overzoom happen: MapLibre only stretches
+        // a source's own deepest tile past `maxzoom` when the source
+        // says where that deepest tile is - left unset, it defaults to
+        // requesting genuinely deeper zooms straight from the pmtiles://
+        // protocol handler instead, which simply has nothing to hand
+        // back for a zoom the archive never wrote (confirmed directly -
+        // a raw z18 PMTiles.getZxy() call over this exact file returns
+        // undefined), so every layer below gated to open only past z15
+        // (buildings-housenumber-label, currently the only one) never
+        // painted anything at all, at any zoom, regardless of its own
+        // minzoom.
+        maxzoom: 15,
       },
     },
     layers: [
       {
         id: "background",
         type: "background" as const,
-        paint: { "background-color": "#f4f1ea" },
+        paint: { "background-color": BASEMAP_COLORS.land },
       },
       {
         id: "earth",
         type: "fill" as const,
         source,
         "source-layer": "earth",
-        paint: { "fill-color": "#f4f1ea" },
+        paint: { "fill-color": BASEMAP_COLORS.land },
       },
       {
         id: "landuse-park",
@@ -65,22 +116,78 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         source,
         "source-layer": "landuse",
         filter: ["==", ["get", "kind"], "park"],
-        paint: { "fill-color": "#d7e8d4" },
+        paint: { "fill-color": BASEMAP_COLORS.park },
       },
+      // "water" (the source-layer) mixes real polygon water bodies
+      // (lakes, ponds, pools) with linear waterways (rivers/creeks,
+      // e.g. Stewart Creek here - a LineString, `kind: "river"`) - the
+      // *same* source-layer, distinguished only by each feature's own
+      // geometry type. A plain fill layer with no filter doesn't check
+      // that: MapLibre's fill bucket treats every geometry it's handed
+      // as a polygon ring regardless of its real type, so a river's own
+      // long, winding *line* got implicitly closed edge-to-edge and
+      // filled - a wildly wrong, self-intersecting "lake" shape cutting
+      // across whatever neighborhood the creek actually winds through,
+      // not a rendering glitch specific to this app's own style, just
+      // this fill layer never having excluded the wrong geometry type.
+      // `["geometry-type"]` filters on the real MVT type rather than
+      // guessing at every possible non-polygon `kind` value there might
+      // be, so this stays correct even for a `kind` this extract
+      // doesn't happen to carry yet.
       {
         id: "water",
         type: "fill" as const,
         source,
         "source-layer": "water",
-        paint: { "fill-color": "#a7cbe8" },
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: { "fill-color": BASEMAP_COLORS.water },
       },
+      // The linear half of that same source-layer, drawn as its own
+      // actual line rather than dropped - a real creek/river still
+      // matters as map context (a route that crosses one, say), it just
+      // was never safe to hand to the fill layer above.
+      {
+        id: "water-line",
+        type: "line" as const,
+        source,
+        "source-layer": "water",
+        filter: ["==", ["geometry-type"], "LineString"],
+        layout: { "line-cap": "round" as const, "line-join": "round" as const },
+        paint: {
+          "line-color": BASEMAP_COLORS.water,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 4],
+        },
+      },
+      // Real 3D building footprints (fill-extrusion, not a flat fill) -
+      // `height`/`min_height` are genuine per-building fields this
+      // extract's own vector_layers metadata carries (meters, straight
+      // from OSM's own building:height/height tags where mapped ones
+      // exist) - coalesced to a flat, modest default for the (large
+      // majority of) buildings OSM never recorded a real height for, so
+      // every footprint still extrudes into *something* rather than
+      // only the few with real data standing out as the sole 3D shapes
+      // in an otherwise flat field. Reads identically to the plain fill
+      // this replaces at pitch 0 (WaypointPreviewMap/PlaceCoordinatesModal,
+      // and RouteMap's own overview mode - a fill-extrusion's top face is
+      // all a straight-down camera ever sees), and only actually shows
+      // real walls once pitched (RouteMap's own driving mode - see
+      // DRIVING_PITCH, RouteMap.tsx). installSchoolBuildingHighlight
+      // (mapEngine.ts) queries this same layer id and redraws whichever
+      // footprint it finds as its own matching fill-extrusion, so the
+      // highlighted school building extrudes too, not just this layer's
+      // own ordinary buildings.
       {
         id: "buildings",
-        type: "fill" as const,
+        type: "fill-extrusion" as const,
         source,
         "source-layer": "buildings",
         minzoom: 15,
-        paint: { "fill-color": "#e3ddd0", "fill-opacity": 0.8 },
+        paint: {
+          "fill-extrusion-color": BASEMAP_COLORS.buildings,
+          "fill-extrusion-height": ["coalesce", ["get", "height"], 6],
+          "fill-extrusion-base": ["coalesce", ["get", "min_height"], 0],
+          "fill-extrusion-opacity": 0.8,
+        },
       },
       {
         id: "roads-minor",
@@ -89,11 +196,11 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         "source-layer": "roads",
         filter: [
           "!",
-          ["in", ["get", "kind"], ["literal", ["highway", "major_road"]]],
+          ["in", ["get", "kind"], ["literal", ["highway", "major_road", "rail"]]],
         ],
         layout: { "line-cap": "round" as const, "line-join": "round" as const },
         paint: {
-          "line-color": "#ffffff",
+          "line-color": BASEMAP_COLORS.roadsMinor,
           "line-width": ["interpolate", ["linear"], ["zoom"], 10, 0.5, 18, 6],
         },
       },
@@ -105,8 +212,36 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         filter: ["in", ["get", "kind"], ["literal", ["highway", "major_road"]]],
         layout: { "line-cap": "round" as const, "line-join": "round" as const },
         paint: {
-          "line-color": "#f6c453",
+          "line-color": BASEMAP_COLORS.roadsMajor,
           "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 18, 10],
+        },
+      },
+      // A real railroad track, drawn deliberately unlike any road - a
+      // brown dashed line, not this style's usual white/yellow solid
+      // fill - so a crossing reads as its own distinct kind of hazard on
+      // the map, not just another minor road (which "kind": "rail" would
+      // otherwise fall into, sharing roads-minor's own filter above,
+      // rendered in the exact same white as a driveway). Painted above
+      // both road line layers (later in this array = on top) so a track
+      // crossing a road stays visible right at the crossing rather than
+      // disappearing under the road's own fill; still below every label
+      // layer, same stacking every other line in this style already
+      // keeps. Schema/kind value per Protomaps' own basemap layer docs
+      // (docs.protomaps.com/basemaps/layers) - "roads" is the one
+      // source-layer this extract's own vector_layers metadata actually
+      // carries a rail feature in, not a separate "transit" layer some
+      // other vector-tile schemas use.
+      {
+        id: "rail",
+        type: "line" as const,
+        source,
+        "source-layer": "roads",
+        filter: ["==", ["get", "kind"], "rail"],
+        layout: { "line-cap": "butt" as const, "line-join": "round" as const },
+        paint: {
+          "line-color": BASEMAP_COLORS.rail,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 18, 3],
+          "line-dasharray": [2, 2],
         },
       },
       // Street-name labels, always visible (see this file's own top
@@ -130,8 +265,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10, 18, 13],
         },
         paint: {
-          "text-color": "#5c4a1a",
-          "text-halo-color": "#f6c453",
+          "text-color": BASEMAP_COLORS.roadsMajorLabelText,
+          "text-halo-color": BASEMAP_COLORS.roadsMajorLabelHalo,
           "text-halo-width": 1,
         },
       },
@@ -142,7 +277,7 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         "source-layer": "roads",
         filter: [
           "!",
-          ["in", ["get", "kind"], ["literal", ["highway", "major_road"]]],
+          ["in", ["get", "kind"], ["literal", ["highway", "major_road", "rail"]]],
         ],
         minzoom: 14,
         layout: {
@@ -153,8 +288,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-size": 11,
         },
         paint: {
-          "text-color": "#57534e",
-          "text-halo-color": "#ffffff",
+          "text-color": BASEMAP_COLORS.roadsMinorLabelText,
+          "text-halo-color": BASEMAP_COLORS.labelHalo,
           "text-halo-width": 1,
         },
       },
@@ -177,8 +312,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
         minzoom: 11,
         paint: {
           "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 3, 18, 6],
-          "circle-color": "#2563eb",
-          "circle-stroke-color": "#ffffff",
+          "circle-color": BASEMAP_COLORS.school,
+          "circle-stroke-color": BASEMAP_COLORS.labelHalo,
           "circle-stroke-width": 1.5,
         },
       },
@@ -204,8 +339,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-offset": [0, 0.6],
         },
         paint: {
-          "text-color": "#1d4ed8",
-          "text-halo-color": "#ffffff",
+          "text-color": BASEMAP_COLORS.schoolLabelText,
+          "text-halo-color": BASEMAP_COLORS.labelHalo,
           "text-halo-width": 1.5,
         },
       },
@@ -219,14 +354,20 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
       // above, itself only from minzoom 15) - a symbol layer only ever
       // draws the point geometries here regardless, but the explicit
       // filter keeps this from ever matching a stray polygon feature
-      // that happened to carry the same field.
+      // that happened to carry the same field. minzoom 17, not some
+      // deeper zoom - matches RouteMap.tsx's own STREET_ZOOM, the
+      // camera zoom driving mode already flies to for every step, so a
+      // driver already at street level sees these without a further
+      // manual pinch. (The source's own maxzoom above, not this value,
+      // is what previously kept these from ever painting at all - see
+      // its own doc comment.)
       {
         id: "buildings-housenumber-label",
         type: "symbol" as const,
         source,
         "source-layer": "buildings",
         filter: ["==", ["get", "kind"], "address"],
-        minzoom: 18,
+        minzoom: 17,
         layout: {
           visibility: "visible" as const,
           "text-field": ["get", "addr_housenumber"],
@@ -234,8 +375,8 @@ export function protomapsStyle(pmtilesUrl: string): StyleSpecification {
           "text-size": 10,
         },
         paint: {
-          "text-color": "#78716c",
-          "text-halo-color": "#ffffff",
+          "text-color": BASEMAP_COLORS.housenumberLabelText,
+          "text-halo-color": BASEMAP_COLORS.labelHalo,
           "text-halo-width": 1,
         },
       },

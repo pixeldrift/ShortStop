@@ -289,10 +289,35 @@ export function RouteProgressBar({
             (i.e. right at the final stop), squeezing the bus to nothing
             right as it should be pulling into the end cul-de-sac.
             width: max-content sizes to the image's own content instead,
-            ignoring that (nonexistent) available space. */}
+            ignoring that (nonexistent) available space.
+
+            Its own `left` transition is skipped while `dragging`, same
+            as the track's own `transform` above - without that, a fast
+            scrub kept the bus's `left` mid-flight on its own 300ms lerp
+            toward whatever step a prior pointermove had already landed
+            on, while the track's offset (no transition while dragging)
+            had already jumped straight to the new, correct compensating
+            value for the *latest* step. Those two no longer summed to a
+            constant on-screen position for the whole 300ms the way they
+            do outside a drag (see the offset useMemo above: offset =
+            containerWidth/2 - busPx means their deltas are equal and
+            opposite, so an *identical* duration/easing transition on
+            both cancels out to a visually stationary, centered bus while
+            only the road/markers slide - correct, and only true when both
+            actually move together). Mid-drag, that mismatch showed up as
+            the bus visibly jumping around relative to center on every
+            fast swipe. Instant-follow during a drag keeps both terms of
+            that same sum instant instead, so the identity holds every
+            frame: the bus stays pinned dead center, the track slides
+            live under the finger, exactly like every other step change -
+            just without a transition animating something that's already
+            arriving in real time. */}
         {(phase !== "depot" || entering) && (
           <div
-            className="absolute bottom-2 z-10 w-max -translate-x-1/2 translate-y-1/2 transition-[left] duration-300 ease-out"
+            className={
+              "absolute bottom-2 z-10 w-max -translate-x-1/2 translate-y-1/2 ease-out " +
+              (dragging ? "" : "transition-[left] duration-300")
+            }
             style={{ left: busPx }}
           >
             <Image

@@ -130,13 +130,13 @@ export function parseRouteCsvRows(csvText: string): RawRouteRow[] {
  * used before this existed. */
 /** Capitalizes each word of an action string, splitting on spaces and
  * hyphens ("u-turn" -> "U-Turn", "turn around" -> "Turn Around") - the
- * fixed action vocabulary (Stop/Left/Right/Continue/U-Turn/Turn Around/
- * Proceed/Pull Over/Return/Depart/Arrive/Complete) is always typed in
- * this exact casing from StepRowEditor's own Type select, but an older
- * imported row can still carry it lowercase from its source sheet -
- * every instruction/label built from a row's action reads through this
- * so it displays the same regardless of which casing the row itself
- * happens to store. */
+ * fixed action vocabulary (Stop/Stop Sign/Railroad Crossing/Left/Right/
+ * Continue/U-Turn/Turn Around/Proceed/Pull Over/Return/Depart/Arrive/
+ * Complete) is always typed in this exact casing from StepRowEditor's
+ * own Type select, but an older imported row can still carry it
+ * lowercase from its source sheet - every instruction/label built from
+ * a row's action reads through this so it displays the same regardless
+ * of which casing the row itself happens to store. */
 export function titleCaseAction(action: string): string {
   return action.replace(
     /[^\s-]+/g,
@@ -150,6 +150,7 @@ export function waypointConnectorWord(action: string): string {
   if (a === "stop" || a === "arrive" || a === "complete") return "at";
   if (a === "continue" || a === "u-turn") return "on";
   if (a === "return" || a === "proceed") return "to";
+  if (a === "railroad crossing" || a === "stop sign") return "at";
   return "onto";
 }
 
@@ -232,6 +233,8 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
 
   const waypoints = deriveWaypoints(rows, meta.schoolAddress);
 
+  // Every row produces exactly one step, in the same order, so `id`
+  // and `rowIndex` are both just this row's own index.
   const steps: NavigationStep[] = rows.map((row, index) => {
     const { action, location, fromLocation, riderCount, side, notes, overrideLat, overrideLon } = row;
     const studentCount = riderCount ? Number(riderCount) : undefined;
@@ -267,6 +270,7 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
         waypointKey,
         overrideLat,
         overrideLon,
+        rowIndex: index,
         announcement,
       };
     }
@@ -315,6 +319,7 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
       waypointKey,
       overrideLat,
       overrideLon,
+      rowIndex: index,
       announcement,
     };
   });

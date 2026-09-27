@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { MutableRefObject } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { ExpandableMap } from "./ExpandableMap";
-import { MapPinIcon } from "./icons";
+import { PinRedIcon } from "./icons";
 import {
   collapseAttribution,
   PMTILES_ATTRIBUTION,
@@ -210,9 +210,16 @@ function MapPane({
           coordinate of its own. Tip anchored exactly at the
           container's visual center via the -100% vertical translate,
           same as any other teardrop-pin anchor elsewhere in this app
-          (RouteMap.tsx's own marker icons). */}
+          (RouteMap.tsx's own marker icons). PinRedIcon, not the plain
+          MapPinIcon glyph - that one's reserved for UI-only uses (a
+          label next to an address, never something actually drawn on a
+          map surface); this is the real mini pin marker for that,
+          already carrying its own white ring + black outline for
+          contrast against the tiles behind it, same as pin.svg/
+          pin-blue.svg's own bigger pins never needed anything added
+          either. */}
       <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full">
-        <MapPinIcon className="h-8 w-8 text-red-500 drop-shadow-md" />
+        <PinRedIcon className="h-8 w-8 drop-shadow-md" />
       </div>
     </div>
   );

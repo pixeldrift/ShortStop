@@ -68,6 +68,15 @@ export interface NavigationStep {
    * directly, so an override always wins consistently everywhere. */
   overrideLat: number | null;
   overrideLon: number | null;
+  /** This step's own row in the route's RawRouteRow[]/`rows` list - the
+   * same index buildRouteFromRows (parseRouteCsv.ts) walked to produce
+   * it, and the one every editing path (page.tsx's onEditWaypoint,
+   * EditRouteScreen's own quickEdit) should read for "which row does
+   * this step actually belong to," not `id` below (which is just this
+   * step's own position in the *final* steps array, and only ever an
+   * opaque key elsewhere - roster lookups, transition keys). Every row
+   * produces exactly one step, so this always names a real one. */
+  rowIndex: number;
   /** What the app speaks aloud when this step becomes current, as
    * separate parts spoken as separate utterances (e.g. stop number,
    * then location, then rider count) so there's an audible pause

@@ -9,7 +9,6 @@ import type {
 import { ExpandableMap } from "./ExpandableMap";
 import { IconTooltip } from "./IconTooltip";
 import { ScreenTransition } from "./ScreenTransition";
-import { ToggleSwitch } from "./ToggleSwitch";
 import { TripTypeIcon } from "./TripTypeIcon";
 import { PlaceCoordinatesModal } from "./PlaceCoordinatesModal";
 import { PrintRouteSheet } from "./PrintRouteSheet";
@@ -317,6 +316,8 @@ const labelClass =
 // an admin can actually pick.
 const WAYPOINT_TYPES = [
   "Stop",
+  "Stop Sign",
+  "Railroad Crossing",
   "Left",
   "Right",
   "Continue",
@@ -376,12 +377,13 @@ function rowValidationIssue(row: RawRouteRow): string | null {
 }
 
 /** Same shape as inputClass, swapped to a red border/focus ring - a
- * required field (Route #, Trip, School - see requiredFieldErrors)
- * still blank the moment a submit attempt is actually made, so it's
- * obvious *which* of the three needs attention rather than just the
- * one summary message. Never shown before that first attempt (see
- * `showRequiredErrors`) - a blank required field on first paint isn't
- * an error yet, just unfilled. */
+ * required field (Route #, Trip, and School for pickup/dropoff - see
+ * schoolNameMissing's own doc comment, handleSave) still blank the
+ * moment a submit attempt is actually made, so it's obvious *which*
+ * field needs attention rather than just the one summary message.
+ * Never shown before that first attempt (see `showRequiredErrors`) - a
+ * blank required field on first paint isn't an error yet, just
+ * unfilled. */
 const errorInputClass =
   "w-full rounded-lg border border-red-500 bg-white px-3 py-2 text-base placeholder:text-zinc-300 focus:border-red-500 focus:ring-1 focus:ring-red-500 focus:outline-none";
 
@@ -495,6 +497,7 @@ function LocationAutocompleteInput({
   placeholder,
   clearLabel,
   className,
+  onFocusedChange,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -502,8 +505,21 @@ function LocationAutocompleteInput({
   placeholder?: string;
   clearLabel: string;
   className: string;
+  /** Reports this field's own focused state outward - optional, only
+   * StepRowEditor's own From field uses it (to expand its own grid
+   * cell over its siblings while active, since it's otherwise too
+   * narrow to read what's typed or see the full suggestion list
+   * without clipping). Fires alongside every `setFocused` call below,
+   * suggestion-pick included - picking one is as much "done editing"
+   * as a real blur is, so the caller's own expanded layout collapses
+   * right back at the same moment. */
+  onFocusedChange?: (focused: boolean) => void;
 }) {
   const [focused, setFocused] = useState(false);
+  function updateFocused(next: boolean) {
+    setFocused(next);
+    onFocusedChange?.(next);
+  }
   const matches = useMemo(() => {
     const query = value.trim().toLowerCase();
     if (!query) return [];
@@ -521,8 +537,8 @@ function LocationAutocompleteInput({
         className={`w-full ${className} ${value ? "pr-9" : ""}`}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onFocus={() => updateFocused(true)}
+        onBlur={() => updateFocused(false)}
         placeholder={placeholder}
         autoComplete="off"
       />
@@ -547,7 +563,7 @@ function LocationAutocompleteInput({
                 type="button"
                 onClick={() => {
                   onChange(name);
-                  setFocused(false);
+                  updateFocused(false);
                 }}
                 className="block w-full truncate px-3 py-2 text-left text-sm text-zinc-900 active:bg-blue-50"
               >
@@ -1274,6 +1290,20 @@ function StepRowEditor({
   // showPlaceModal above.
   const [showRowErrorDetail, setShowRowErrorDetail] = useState(false);
 
+  // Whether the From field is currently focused - the Type/Side/From
+  // row below is too narrow for From to show much of what's typed, or
+  // more than a couple of its own suggestion-list rows before they're
+  // clipped by the row's own height. While this is true, that row
+  // expands From's own grid cell leftward to cover Type/Side entirely
+  // (LocationAutocompleteInput's own onFocusedChange below) rather than
+  // giving From a wider *permanent* share of the row and squeezing an
+  // already-tight Type dropdown - most of the time nobody's typing in
+  // From at all, so the width is only ever borrowed while it's actually
+  // in use, then handed back the moment focus leaves (a real blur, or
+  // picking a suggestion - LocationAutocompleteInput's own doc comment
+  // on why the two read the same to it).
+  const [fromExpanded, setFromExpanded] = useState(false);
+
   // Re-syncs the box the moment a Fetch actually lands - `status` is
   // derived from the shared cache (EditRouteScreen's own `cache` state),
   // which fetchLocation already updates as soon as the response comes
@@ -1564,7 +1594,11 @@ function StepRowEditor({
           />
         ) : (
           <>
-            <div className="mt-3 grid grid-cols-[3fr_2fr_3fr] gap-2">
+            {/* relative - the anchor fromExpanded's own overlay
+                (below) positions itself against, so it covers exactly
+                this row's own Type/Side/From cells and nothing else in
+                the card around it. */}
+            <div className="relative mt-3 grid grid-cols-[3fr_2fr_3fr] gap-2">
               <Field label="Type" required>
                 <select
                   className={inputClass}
@@ -1583,6 +1617,8 @@ function StepRowEditor({
                 >
                   <option value="">- Select -</option>
                   <option value="Stop">Stop</option>
+                  <option value="Stop Sign">Stop Sign</option>
+                  <option value="Railroad Crossing">Railroad Crossing</option>
                   <option value="Left">Turn Left</option>
                   <option value="Right">Turn Right</option>
                   <option value="Continue">Continue</option>
@@ -1620,16 +1656,33 @@ function StepRowEditor({
               above) - neither is part of an intersection, so there's no
               "from" road to name. */}
               {!isPlainLocation ? (
-                <Field label="From">
-                  <LocationAutocompleteInput
-                    className={inputClass}
-                    value={row.fromLocation}
-                    onChange={(value) => onChange({ fromLocation: value })}
-                    options={locationSuggestionOptions}
-                    placeholder={previousRoad || "start of route"}
-                    clearLabel="Clear From"
-                  />
-                </Field>
+                // fromExpanded - this cell alone breaks out of the grid
+                // (absolute, spanning left-0 to right-0 against the
+                // grid's own relative positioning above) to cover
+                // Type/Side entirely while From is focused, rather than
+                // giving it a wider permanent share of the row - see
+                // fromExpanded's own doc comment above for why. Collapses
+                // right back into its ordinary grid cell (no special
+                // className at all) the moment focus leaves.
+                <div
+                  className={
+                    fromExpanded
+                      ? "absolute inset-y-0 left-0 right-0 z-20 rounded-lg border border-blue-400 bg-[var(--background)] p-1.5 shadow-lg"
+                      : undefined
+                  }
+                >
+                  <Field label="From">
+                    <LocationAutocompleteInput
+                      className={inputClass}
+                      value={row.fromLocation}
+                      onChange={(value) => onChange({ fromLocation: value })}
+                      onFocusedChange={setFromExpanded}
+                      options={locationSuggestionOptions}
+                      placeholder={previousRoad || "start of route"}
+                      clearLabel="Clear From"
+                    />
+                  </Field>
+                </div>
               ) : (
                 <span />
               )}
@@ -1972,7 +2025,15 @@ function StepRowEditor({
           second, independent full-screen instance) is the one part of
           this that isn't already visible in the small inline box -
           useful once there are enough resolved stops nearby that the
-          140px-tall preview gets crowded. */}
+          140px-tall preview gets crowded. Always shown here, unlike the
+          shared `mapVisible` preference (useWaypointMapVisible.ts)
+          StartScreen's own AllStopsModal still gates its map with -
+          that preference exists to trade the map away for more visible
+          *rows* at once in a real multi-row list; this card only ever
+          shows one row regardless, so hiding its map bought nothing but
+          an empty gap where it used to be (this screen's own toolbar
+          used to carry the same toggle for exactly that reason, and was
+          removed alongside this once it had nothing left to hide). */}
             <ExpandableMap
               className="mt-3 h-[clamp(6rem,18vh,10rem)] w-full"
               renderMap={(mapClassName, isExpanded) => (
@@ -1991,20 +2052,35 @@ function StepRowEditor({
               )}
             />
 
-            {/* sticky bottom-0 - always reachable at the bottom of the
-                card the instant it's visible at all, not just once
-                scrolled down to (the outer card, still overflow-y-auto
-                above, is this footer's own nearest scrolling ancestor)
-                - a long status line (the coordinate override message,
-                say) pushing this further down the card used to be able
-                to leave it below the fold with no visible way back,
-                same problem ExpandableMap's own shorter clamp()'d height
-                above now also leaves less room for in the first place.
+            {/* sticky - always reachable at the bottom of the card the
+                instant it's visible at all, not just once scrolled down
+                to (the outer card, still overflow-y-auto above, is this
+                footer's own nearest scrolling ancestor) - a long status
+                line (the coordinate override message, say) pushing this
+                further down the card used to be able to leave it below
+                the fold with no visible way back, same problem
+                ExpandableMap's own shorter clamp()'d height above now
+                also leaves less room for in the first place.
                 -mx-5 -mb-5 + matching px-5 py-3 undoes this card's own
                 p-5 on this one edge so the bar reads as flush with the
                 card's own bottom/sides, not floating with the card's
-                usual padding still showing on every side around it. */}
-            <div className="sticky bottom-0 -mx-5 -mb-5 mt-3 flex items-center gap-2 border-t border-zinc-200 bg-[var(--background)] px-5 py-3">
+                usual padding still showing on every side around it -
+                but only for that trick's *own* flow position, not for
+                where `sticky` actually parks this box: a sticky
+                element's own inset (`bottom`) is resolved against its
+                scroll container's padding edge, not its border edge,
+                so a plain `bottom-0` re-adds exactly the p-5 this was
+                trying to cancel - the footer sat a whole 20px (p-5)
+                above the card's real bottom edge (a visible gap of bare
+                background below the buttons) *and*, since its own flow
+                height didn't change, 20px higher than its neighbors
+                expected too, overlapping the last bit of the map above
+                it. `-bottom-5` (rather than `bottom-0`) offsets sticky's
+                own padding-edge anchor by that same p-5 outward, landing
+                the footer flush with the card's true border edge - the
+                same place the negative-margin trick alone already gets
+                a plain (non-sticky) element to. */}
+            <div className="sticky -bottom-5 -mx-5 -mb-5 mt-3 flex items-center gap-2 border-t border-zinc-200 bg-[var(--background)] px-5 py-3">
               {/* Hidden for `isNew` too, not just `hideDelete` - a row
                   that only exists as an unsaved draft (addRow's own
                   freshly-inserted blank row) was never actually added to
@@ -4628,7 +4704,14 @@ export function EditRouteScreen({
     // all, just hand control straight back to the drive at the same
     // step it was on.
     if (quickEdit) {
-      quickEdit.onCancelled(quickEdit.rowIndex);
+      // Same rowIndex-vs-stepIndex translation as handleSave's own
+      // quickEdit.onSaved branch, against this route's own *original*
+      // (unedited) steps - nothing here was ever saved, so `route.steps`
+      // is exactly what StepScreen was already showing before this quick-
+      // edit session opened.
+      const resumeAtStepIndex =
+        route?.steps.find((step) => step.rowIndex === quickEdit.rowIndex)?.id ?? quickEdit.rowIndex;
+      quickEdit.onCancelled(resumeAtStepIndex);
       return;
     }
     if (newlyAddedIndex === expandedIndex) {
@@ -4886,6 +4969,14 @@ export function EditRouteScreen({
         query,
         schoolAddress,
         anchor: schoolAnchor ?? undefined,
+        // Lets an intersection query still resolve when schoolAddress
+        // itself isn't a real, geocodable place (a test/placeholder
+        // route, or one anchored on a Special trip's own free-typed
+        // name) - the route's own first already-resolved point, same
+        // one PlaceCoordinatesModal's own context line already draws
+        // from. Only ever used server-side as a last resort, after the
+        // school's real address has already failed to geocode.
+        fallbackAnchor: routeContextPoints[0] ?? null,
         allowFallback,
       }),
     });
@@ -5362,16 +5453,22 @@ export function EditRouteScreen({
     ],
   );
 
-  // The only three fields this screen actually requires - a route
-  // number (what gives a draft its own identity, see `id` above), a
-  // trip type, and a school - everything else (bus number, driver,
-  // start time, stops, whether they're geocoded) can genuinely be
-  // filled in later. This deliberately lets a stub with just these
-  // three get saved - readiness/publishing is the route list screen's
-  // own concern now, not Save's.
+  // A route number (what gives a draft its own identity, see `id`
+  // above) and a trip type are always required - everything else (bus
+  // number, driver, start time, stops, whether they're geocoded) can
+  // genuinely be filled in later. This deliberately lets a stub with
+  // just these two get saved - readiness/publishing is the route list
+  // screen's own concern now, not Save's. School only joins that list
+  // for pickup/dropoff - a normal AM/PM run's whole point is a specific
+  // school, but a Special/Other route can genuinely have none at all
+  // (Route.schoolLevel's own doc comment, types.ts) - a depot-to-school
+  // positioning run, say, whose own "destination" is really just
+  // wherever it ends, not a school an admin has to name to save the
+  // stub at all.
   const routeNumberMissing = !routeNumber.trim();
   const tripTypeMissing = !tripType;
-  const schoolNameMissing = !schoolName.trim();
+  const schoolNameMissing =
+    (tripType === "pickup" || tripType === "dropoff") && !schoolName.trim();
   // Not required (a blank Start is fine, same as busNumber/driver) -
   // only flagged once something's actually typed in but parseTimeInput
   // can't make sense of it, so Save doesn't silently write whatever
@@ -5394,7 +5491,17 @@ export function EditRouteScreen({
   ): Promise<boolean> {
     if (routeNumberMissing || tripTypeMissing || schoolNameMissing) {
       setShowRequiredErrors(true);
-      setMessage("Route #, Trip, and School are required.");
+      // Named individually, not a static "Route #, Trip, and School are
+      // required." - School only actually joins that list for pickup/
+      // dropoff (schoolNameMissing's own doc comment above), so a
+      // Special/Other stub missing just Route # or Trip would otherwise
+      // get told School is missing too when it never needed one at all.
+      const missing = [
+        routeNumberMissing && "Route #",
+        tripTypeMissing && "Trip",
+        schoolNameMissing && "School",
+      ].filter((label): label is string => Boolean(label));
+      setMessage(`${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} required.`);
       return false;
     }
     if (startTimeInvalid) {
@@ -5463,7 +5570,14 @@ export function EditRouteScreen({
     // screen's own hub - a session that only ever existed to fix one
     // waypoint has nothing to show there.
     if (quickEdit) {
-      quickEdit.onSaved(built, currentRows, cache, quickEdit.rowIndex);
+      // Every row produces exactly one step in the same order
+      // (buildRouteFromRows, parseRouteCsv.ts), so `quickEdit.rowIndex`
+      // and its step's own `id` always coincide - resolved through
+      // `rowIndex` anyway rather than assumed, so this stays correct
+      // even if that ever stops being true.
+      const resumeAtStepIndex =
+        built.steps.find((step) => step.rowIndex === quickEdit.rowIndex)?.id ?? quickEdit.rowIndex;
+      quickEdit.onSaved(built, currentRows, cache, resumeAtStepIndex);
     } else {
       onSave(built, currentRows, cache, previousId);
     }
@@ -5690,12 +5804,27 @@ export function EditRouteScreen({
     setExpandedIndex(nextIndex);
     setDraftRow({ ...rows[nextIndex] });
   }
+  // The nearest visible row on either side of `from`, whether or not
+  // `from` *itself* is currently visible - a plain visibleRowIndices
+  // .indexOf(from) lookup (this used to be exactly that) returns -1 for
+  // a row the active filter is currently hiding (e.g. opening a Turn
+  // row's own pencil icon while "Stops only" is on - unlike goToRow's
+  // own callers, which only ever reach a row the list itself is already
+  // showing, StepScreen's own Edit/Add waypoint buttons can open *any*
+  // step, filter or no), and indexing an array with -1 - 1/-1 + 1 both
+  // land on real (wrong) neighbors rather than undefined, so the old
+  // "-1 means stuck" guard silently went the *other* way instead: both
+  // arrows read as permanently disabled (canGoPrev/canGoNext below use
+  // this same lookup) even though the route plainly has more waypoints
+  // on either side to page to.
+  function nearestVisibleRowIndex(from: number, direction: "prev" | "next"): number | undefined {
+    return direction === "prev"
+      ? visibleRowIndices.filter((i) => i < from).at(-1)
+      : visibleRowIndices.find((i) => i > from);
+  }
   function goToRow(direction: "prev" | "next") {
     if (expandedIndex === null) return;
-    const currentPos = visibleRowIndices.indexOf(expandedIndex);
-    if (currentPos === -1) return;
-    const nextIndex =
-      visibleRowIndices[direction === "next" ? currentPos + 1 : currentPos - 1];
+    const nextIndex = nearestVisibleRowIndex(expandedIndex, direction);
     if (nextIndex === undefined) return;
     goToRowIndex(nextIndex);
   }
@@ -6229,35 +6358,64 @@ export function EditRouteScreen({
           {/* Blue outline in edit mode, matching RouteListScreen's own
               admin-mode box border - this screen is always mid-edit. */}
           <div className="flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden rounded-2xl border-2 border-blue-400 text-left">
-            {/* Both toggles live at the top of the list box itself now,
-                next to each other, rather than each with its own
-                full-width row above it - they're both view filters on
-                the exact list directly below them, not route-level
-                settings like Fetch Coordinates. */}
-            <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-zinc-200 px-4 py-2.5">
-              <ToggleSwitch
-                checked={stopsOnly}
-                onChange={setStopsOnly}
-                label="Stops only"
-              />
-              <ToggleSwitch
-                checked={showUnverifiedOnly}
-                onChange={setShowUnverifiedOnly}
-                label="Unverified only"
-              />
-              {/* Only offered from the full list - "Unverified only"
-                  above already narrows to exactly these rows, so a
-                  shortcut to find one among them would be redundant. */}
+            {/* Every waypoint-viewing option in one compact, never-
+                wrapping row - icon toggles (RouteListScreen's own
+                filter-row pattern: blue/active, zinc-300/inactive,
+                aria-pressed + a real label for anyone not reading the
+                icon) rather than each getting its own full labeled
+                ToggleSwitch, which wrapped onto a second line the
+                moment more than two of these lived here together.
+                overflow-x-auto is a last-resort safety net, not the
+                intended layout - this app's own max-w-md screens never
+                actually get narrow enough to need it. */}
+            <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-200 px-4 py-2.5">
+              <span className="shrink-0 text-xs font-semibold text-zinc-500">
+                {absoluteStopNumbers.size} stop
+                {absoluteStopNumbers.size === 1 ? "" : "s"}
+              </span>
+              <div className="h-4 w-px shrink-0 bg-zinc-200" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={() => setStopsOnly(!stopsOnly)}
+                aria-pressed={stopsOnly}
+                aria-label={
+                  stopsOnly
+                    ? "Showing stops only"
+                    : "Showing stops and directions"
+                }
+                className={`shrink-0 ${stopsOnly ? "text-blue-600" : "text-zinc-300"}`}
+              >
+                <MapPinIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUnverifiedOnly(!showUnverifiedOnly)}
+                aria-pressed={showUnverifiedOnly}
+                aria-label={
+                  showUnverifiedOnly
+                    ? "Showing errors only"
+                    : "Show errors only"
+                }
+                className={`shrink-0 ${showUnverifiedOnly ? "text-blue-600" : "text-zinc-300"}`}
+              >
+                <XCircleIcon className="h-4 w-4" />
+              </button>
+              {/* Only offered from the full list - "errors only" above
+                  already narrows to exactly these rows, so a shortcut
+                  to find one among them would be redundant. */}
               {!showUnverifiedOnly && unverifiedRowIndices.length > 0 && (
-                <button
-                  type="button"
-                  onClick={jumpToNextUnverified}
-                  className="ml-auto flex shrink-0 items-center gap-1 text-xs font-semibold text-zinc-900"
-                >
-                  <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
-                  Next
-                  <ArrowDownToLineIcon className="h-3.5 w-3.5" />
-                </button>
+                <>
+                  <div className="h-4 w-px shrink-0 bg-zinc-200" aria-hidden="true" />
+                  <button
+                    type="button"
+                    onClick={jumpToNextUnverified}
+                    className="ml-auto flex shrink-0 items-center gap-1 text-xs font-semibold text-zinc-900"
+                  >
+                    <XCircleIcon className="h-3.5 w-3.5 text-red-500" />
+                    Next
+                    <ArrowDownToLineIcon className="h-3.5 w-3.5" />
+                  </button>
+                </>
               )}
             </div>
             {/* The last Autoroute attempt's own outcome, when it wasn't
@@ -6463,13 +6621,8 @@ export function EditRouteScreen({
                 onOverrideCoordinates={(lat, lon) =>
                   handleDraftChange({ overrideLat: lat, overrideLon: lon })
                 }
-                canGoPrev={quickEdit ? false : visibleRowIndices.indexOf(index) > 0}
-                canGoNext={
-                  quickEdit
-                    ? false
-                    : visibleRowIndices.indexOf(index) <
-                      visibleRowIndices.length - 1
-                }
+                canGoPrev={quickEdit ? false : nearestVisibleRowIndex(index, "prev") !== undefined}
+                canGoNext={quickEdit ? false : nearestVisibleRowIndex(index, "next") !== undefined}
                 onNavigate={goToRow}
                 onAddWaypointAfter={() => addRow(index + 1)}
                 onCancel={handleCancelRow}
@@ -6526,7 +6679,11 @@ export function EditRouteScreen({
               onClick={handleStopsBack}
               className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
             >
-              Cancel
+              {/* Nothing to discard once Save itself is disabled for having
+                  no changes - "Cancel" there reads as if leaving might lose
+                  something, when it can't. Same "dirty" flag Save's own
+                  disabled prop below already keys off. */}
+              {dirty ? "Cancel" : "Done"}
             </button>
             <button
               type="button"
@@ -6739,7 +6896,9 @@ export function EditRouteScreen({
           onClick={onCancel}
           className="btn-glossy-light font-heading flex flex-1 items-center justify-center gap-2 rounded-xl bg-zinc-300 py-3 text-lg font-semibold text-zinc-900"
         >
-          Cancel
+          {/* Same "nothing to discard" reasoning as the Stops subScreen's
+              own identical Cancel/Save pair above. */}
+          {dirty ? "Cancel" : "Done"}
         </button>
         <button
           type="button"

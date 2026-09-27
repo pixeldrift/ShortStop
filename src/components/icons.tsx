@@ -8,8 +8,10 @@ import HeartOutlineSvg from "./icons/heart-outline.svg";
 import LeftSvg from "./icons/left.svg";
 import ProceedSvg from "./icons/proceed.svg";
 import PullOverSvg from "./icons/pull-over.svg";
+import RailroadCrossingSvg from "./icons/railroad-crossing.svg";
 import ReturnSvg from "./icons/return.svg";
 import RightSvg from "./icons/right.svg";
+import StopSignSvg from "./icons/stop-sign.svg";
 import TriangleRoundedSvg from "./icons/triangle-rounded.svg";
 import TriangleSvg from "./icons/triangle.svg";
 import TurnAroundSvg from "./icons/turn-around.svg";
@@ -126,22 +128,32 @@ export { default as ReturnIcon } from "./icons/return.svg";
 export { default as DepartIcon } from "./icons/depart.svg";
 export { default as ArriveIcon } from "./icons/arrive.svg";
 
-/** Not a rider Stop - the literal "stop the bus" sign (a railroad
- * crossing, say), distinct from a Stop waypoint's own red pin. Not
- * wired into any Type/action yet - there's no waypoint action for this
- * kind of stop in the data model today - ready for whenever one exists. */
+/** The railroad-tracks glyph - what a Railroad Crossing waypoint shows
+ * (ACTION_ICONS below, keyed "railroad crossing"), placed on the tracks
+ * themselves. */
 export { default as RailroadCrossingIcon } from "./icons/railroad-crossing.svg";
 /** Not wired into anything yet - no route action or map marker calls
  * for a parking glyph today. */
 export { default as ParkIcon } from "./icons/park.svg";
-/** Not wired into anything yet. Part of the same uploaded icon set as
- * the diamonds above; kept for a future saved-location/pin distinction
- * (MapPinIcon already covers a plain address elsewhere). A same-batch
- * file also named for a *blue* pin renders as a red octagon instead
- * (unrelated shape and color to its own name) and was left out
- * entirely rather than exported under a name that doesn't match what
- * it actually looks like. */
+/** The mini pin markers this app's maps actually draw for "this is the
+ * point being placed/edited right now" - PinRedIcon for an ordinary
+ * stop (PlaceCoordinatesModal's own fixed placement pin), PinBlueIcon
+ * wherever the plain MapPinIcon glyph would otherwise have to stand in
+ * for a real map marker (MapPinIcon itself stays UI-only - a label
+ * next to an address, never something drawn on a map surface). The
+ * file that used to export here under the name "pin-blue" was actually
+ * a red octagon (unrelated shape and color to its own name) and got
+ * left out entirely rather than exported under a mismatched name - it's
+ * since been correctly renamed to StopSignIcon below, and this is now
+ * the *real* blue pin. */
 export { default as PinRedIcon } from "./icons/pin-red.svg";
+export { default as PinBlueIcon } from "./icons/pin-blue.svg";
+/** The literal "stop the bus" sign, distinct from a Stop waypoint's own
+ * red numbered pin - what a Stop Sign waypoint shows (ACTION_ICONS
+ * below, keyed "stop sign"), an ordinary admin-placed waypoint for any
+ * full-stop point a route needs called out on its own (most often
+ * placed a short way ahead of a Railroad Crossing waypoint). */
+export { default as StopSignIcon } from "./icons/stop-sign.svg";
 
 // Every non-Stop action (StepRowEditor's own Type select) used to fall
 // through to plain text with no icon at all in both the admin row list
@@ -165,6 +177,8 @@ const ACTION_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
   return: ReturnSvg,
   depart: DepartSvg,
   arrive: ArriveSvg,
+  "railroad crossing": RailroadCrossingSvg,
+  "stop sign": StopSignSvg,
 };
 
 /** Looks up `ACTION_ICONS` by action name (case-insensitive) - null for
@@ -255,6 +269,15 @@ export { default as SchoolLevelsIcon } from "./icons/school-level.svg";
 export { default as SchoolLevelEsIcon } from "./icons/school-level-es.svg";
 export { default as SchoolLevelMsIcon } from "./icons/school-level-ms.svg";
 export { default as SchoolLevelHsIcon } from "./icons/school-level-hs.svg";
+/** Alternate, more literal elementary/high-school glyphs (a schoolhouse
+ * with a flag, a windowed campus building) - fill="#fff" baked into the
+ * SVGs themselves, not currentColor like the trio above, so these don't
+ * recolor blue/gray the way the school-level-*.svg set does; only their
+ * thin outline strokes pick up currentColor. Exported for
+ * SchoolLevelIcon.tsx's own experimental swap - no middle-school
+ * equivalent exists yet, so that level keeps SchoolLevelMsIcon above. */
+export { default as ElementarySchoolIcon } from "./icons/elementary-school.svg";
+export { default as HighSchoolIcon } from "./icons/high-school.svg";
 
 /** A folded paper map with a dotted route line crossing it - used for
  * the Routes heading (RouteListScreen). */

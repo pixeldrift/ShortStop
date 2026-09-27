@@ -40,6 +40,18 @@ const ROAD_ABBREVIATIONS: Record<string, string> = {
   wlk: "Walk",
 };
 
+/** Queues one utterance on the browser's own speechSynthesis - a no-op
+ * anywhere that API isn't available (SSR, a browser without it) rather
+ * than throwing. The one real caller used to be useNavigationPrompts.ts
+ * alone (its own private copy), useRouteStepper.ts's own announcements
+ * queue several utterances by hand instead since it cares about the
+ * pause between them - now shared with every other caller that just
+ * wants one line spoken as-is. */
+export function speak(text: string): void {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+}
+
 /** Expands road-suffix abbreviations and "&" for text that will be spoken
  * aloud, e.g. "Bill Stewart Rd & Hidden Forest" -> "Bill Stewart Road and
  * Hidden Forest". */

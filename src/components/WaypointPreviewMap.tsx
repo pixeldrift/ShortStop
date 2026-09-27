@@ -79,20 +79,22 @@ function dotHtml(size: number, color: string, text: number): string {
 }
 
 // pin.svg's own intrinsic aspect ratio (public/assets/pin.svg's own
-// viewBox) - what lets pinHtml below derive a matching width from just
-// the one height a caller actually cares about, the same way
+// viewBox - pin-blue.svg shares the exact same one) - what lets
+// pinHtml below derive a matching width from just the one height a
+// caller actually cares about, the same way
 // `w-auto`/an explicit height alone already sizes it correctly
 // everywhere else this same file draws it (StepScreen.tsx,
 // RouteProgressBar.tsx, RouteMap.tsx's own stopMarkerHtml).
 const PIN_ASPECT_RATIO = 350 / 548;
 
 /** The real numbered pin's own HTML (not a plain colored dot) - the
- * same pin.svg/number-inside-the-pin's-own-circle look StepScreen.tsx's
- * live driving header, RouteProgressBar.tsx's own strip, and
- * RouteMap.tsx's stopMarkerHtml all already draw, reimplemented here as
- * a raw HTML string since this file builds MapLibre marker elements the
- * same way those other map builders do, not JSX. `height` is the pin's
- * own full height; `stopNumber` null draws a plain unnumbered pin
+ * same number-inside-the-pin's-own-circle look StepScreen.tsx's live
+ * driving header, RouteProgressBar.tsx's own strip, and RouteMap.tsx's
+ * stopMarkerHtml all already draw (pin.svg there, pin-blue.svg here -
+ * this file's own top doc comment on why this one's blue), reimplemented
+ * here as a raw HTML string since this file builds MapLibre marker
+ * elements the same way those other map builders do, not JSX. `height`
+ * is the pin's own full height; `stopNumber` null draws a plain unnumbered pin
  * (GeocodeConfirmModal's own read-only instance, which never threads a
  * real Stop number through).
  *
@@ -113,23 +115,28 @@ const PIN_ASPECT_RATIO = 350 / 548;
  * pin's own visual tip - right there instead. */
 function pinHtml(height: number, stopNumber: number | null): string {
   const width = Math.round(height * PIN_ASPECT_RATIO);
-  // top:34% - pin.svg's own circular head sits centered at 34.0% of
-  // its own height (y=186.18 of a 548-tall viewBox), not 31%.
+  // top:34% - pin-blue.svg shares pin.svg's own viewBox, so its
+  // circular head sits at the same 34.0% of its own height (y=186.18
+  // of a 548-tall viewBox), not 31%.
   // font-size:height*0.3 - RouteMap.tsx's own stopMarkerHtml and
   // StepScreen.tsx's own StopContent both land in the same ~0.27-0.31-
   // of-height range for this same number; 0.42 read noticeably larger
   // than either, tight enough inside the circle to crowd a two-digit
   // stop number.
+  // #1d4ed8 (blue-700) - same "700 shade of the pin's own color"
+  // convention stopMarkerHtml's own red-700 number uses, just blue -
+  // pin-blue.svg, not pin.svg, per this file's own top doc comment
+  // ("this row's own point highlighted bigger - blue for a Stop").
   const number =
     stopNumber != null
       ? `<span style="position:absolute;top:34%;left:50%;transform:translate(-50%,-50%);` +
-        `color:#b91c1c;font-weight:800;font-family:inherit;line-height:1;` +
+        `color:#1d4ed8;font-weight:800;font-family:inherit;line-height:1;` +
         `font-size:${Math.round(height * 0.3)}px;">${stopNumber}</span>`
       : "";
   return (
     `<div style="position:absolute;bottom:0;left:50%;width:${width}px;height:${height}px;` +
     `transform:translateX(-50%);">` +
-    `<img src="/assets/pin.svg" alt="" style="width:100%;height:100%;` +
+    `<img src="/assets/pin-blue.svg" alt="" style="width:100%;height:100%;` +
     `filter:drop-shadow(0 1px 2px rgba(0,0,0,.35));" />${number}</div>`
   );
 }

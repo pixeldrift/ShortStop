@@ -54,7 +54,12 @@ type ConfirmRequest =
   | { type: "deactivate"; route: Route }
   | { type: "draft-options"; route: Route };
 
-type SortField = "routeNumber" | "tripType" | "schoolName" | "departureTime";
+type SortField =
+  | "routeNumber"
+  | "tripType"
+  | "schoolName"
+  | "departureTime"
+  | "isFavorite";
 
 // One comparator per sortable header - routeNumber compares with
 // localeCompare's own `numeric` option (a "natural sort": embedded
@@ -83,24 +88,34 @@ const SORT_COMPARATORS: Record<SortField, (a: Route, b: Route) => number> = {
   schoolName: (a, b) => a.schoolName.localeCompare(b.schoolName),
   departureTime: (a, b) =>
     parseTimeToMinutes(a.departureTime) - parseTimeToMinutes(b.departureTime),
+  // Favorited routes first on the default ascending tap (a plain
+  // boolean subtraction would put false/0 first instead) - ties break
+  // on routeNumber, same as every other comparator here that needs one.
+  isFavorite: (a, b) =>
+    (b.isFavorite ? 1 : 0) - (a.isFavorite ? 1 : 0) ||
+    SORT_COMPARATORS.routeNumber(a, b),
 };
 
-// Every toggle starts off (gray/"not filtering") - an empty set here
-// means "no filter in this group," so the default state (nothing
-// tapped yet) shows everything, same as the old dropdown's own "All"
-// option used to. Tapping one on narrows the list to routes matching
-// *some* active toggle within that same group; the other group (if
-// it also has something on) still applies independently.
+// Trip type's own value/label lookup, read by the single cycling icon
+// button below (aria-label) and by TRIP_TYPE_CYCLE right after this -
+// not three separate toggle buttons anymore (see cycleTripType).
+// "other" has no place of its own here for now - dropped rather than
+// grown the cycle past the three real values the mockup's own AM/PM/SP
+// group shows (same three-deep shape the school-level group right
+// beside it uses). An "other" route still shows up fine (view-all
+// still means "show everything"), it just can't be isolated by this
+// filter the way the other three trip types can yet.
 const TRIP_TYPE_TOGGLES: { value: TripType; label: string }[] = [
   { value: "pickup", label: "AM" },
   { value: "dropoff", label: "PM" },
   { value: "fieldtrip", label: "SP" },
-  // "other" has no toggle of its own for now - dropped rather than
-  // grown the column past the three rows the mockup's own AM/PM/SP
-  // group shows (see the school-level group right beside it, same
-  // three-tall shape). An "other" route still shows up fine (an empty
-  // active set means "show everything"), it just can't be isolated by
-  // this toggle group the way the other three trip types can yet.
+];
+// Same "view all -> each real value -> view all" cycle shape as
+// SCHOOL_LEVEL_CYCLE below - one icon instead of three separate
+// buttons (see cycleTripType and its own button, further down).
+const TRIP_TYPE_CYCLE: (TripType | null)[] = [
+  null,
+  ...TRIP_TYPE_TOGGLES.map((t) => t.value),
 ];
 const SCHOOL_LEVEL_TOGGLES: { value: SchoolLevel; label: string }[] = [
   { value: "elementary", label: "ES" },
@@ -314,25 +329,34 @@ export function RouteListScreen({
     routeId: string;
     ready: boolean;
   } | null>(null);
-  // Exclusive, not multi-select - tapping a trip type turns it on and
-  // drops whatever else was active, tapping the active one again turns
-  // it back off (null = "show everything"). Same reasoning for
-  // activeSchoolLevel, just cycled through a single icon (see
-  // SCHOOL_LEVEL_CYCLE and its own button below) instead of one button
-  // per level.
+  // null (view all) -> AM -> PM -> SP -> null - one cycling icon
+  // (cycleTripType, its own button further down) instead of three
+  // separate buttons, same shape as activeSchoolLevel/
+  // SCHOOL_LEVEL_CYCLE right below.
   const [activeTripType, setActiveTripType] = useState<TripType | null>(
     null,
   );
   const [activeSchoolLevel, setActiveSchoolLevel] =
     useState<SchoolLevel | null>(null);
+  // Plain on/off, not a cycle - "favorites only" has just the one real
+  // state to isolate, unlike trip type/school level's own several.
+  const [activeFavoritesOnly, setActiveFavoritesOnly] = useState(false);
+  function toggleFavoritesOnly() {
+    setActiveFavoritesOnly((v) => !v);
+  }
   // Same null-is-"view all" cycling as activeSchoolLevel, one icon
   // instead of two separate Pub/Hid buttons - null -> published only ->
   // hidden only -> null.
   const [activePublishFilter, setActivePublishFilter] = useState<
     "published" | "hidden" | null
   >(null);
-  function toggleTripType(value: TripType) {
-    setActiveTripType((prev) => (prev === value ? null : value));
+  // null (view all) -> AM -> PM -> SP -> null - see TRIP_TYPE_CYCLE
+  // above for the actual ordering.
+  function cycleTripType() {
+    setActiveTripType((prev) => {
+      const index = TRIP_TYPE_CYCLE.indexOf(prev);
+      return TRIP_TYPE_CYCLE[(index + 1) % TRIP_TYPE_CYCLE.length];
+    });
   }
   // null (view all) -> elementary -> middle -> high -> null - see
   // SCHOOL_LEVEL_CYCLE below for the actual ordering.
@@ -401,6 +425,7 @@ export function RouteListScreen({
         (activeTripType === null || route.tripType === activeTripType) &&
         (activeSchoolLevel === null ||
           route.schoolLevel === activeSchoolLevel) &&
+        (!activeFavoritesOnly || route.isFavorite) &&
         // Only admin mode ever renders this toggle row (a normal
         // driver's view already excludes hidden routes outright above),
         // but guard on adminMode here too so a stale selection can't
@@ -422,6 +447,7 @@ export function RouteListScreen({
     query,
     activeTripType,
     activeSchoolLevel,
+    activeFavoritesOnly,
     activePublishFilter,
     sortField,
     sortDir,
@@ -523,6 +549,35 @@ export function RouteListScreen({
       return next;
     });
   };
+  // Master expand/collapse, grouped view only (see its own button
+  // further down) - reads "everything's expanded" only when neither
+  // collapse set has anything in it, at either level, so a partly-
+  // collapsed tree still reads as "not fully expanded" here. One tap
+  // always drives the whole tree to one of its two extremes (every
+  // routeNumber branch and every tripType branch inside it, all at
+  // once) rather than working through a part-collapsed state one
+  // triangle at a time.
+  const allGroupsExpanded =
+    collapsedRouteNumbers.size === 0 && collapsedTripTypeGroups.size === 0;
+  function toggleAllGroups() {
+    if (allGroupsExpanded) {
+      const routeNumbers = new Set<string>();
+      const tripTypeKeys = new Set<string>();
+      for (const routeNumberGroup of groupedTree) {
+        routeNumbers.add(routeNumberGroup.routeNumber);
+        for (const tripTypeGroup of routeNumberGroup.tripTypeGroups) {
+          tripTypeKeys.add(
+            tripTypeGroupKey(routeNumberGroup.routeNumber, tripTypeGroup.tripType),
+          );
+        }
+      }
+      setCollapsedRouteNumbers(routeNumbers);
+      setCollapsedTripTypeGroups(tripTypeKeys);
+    } else {
+      setCollapsedRouteNumbers(new Set());
+      setCollapsedTripTypeGroups(new Set());
+    }
+  }
 
   // The eyeball icon's own click handler - always opens the matching
   // popup immediately, published or draft, so a tap never silently
@@ -722,34 +777,40 @@ export function RouteListScreen({
             )}
           </button>
           <div className="h-5 w-px shrink-0 bg-zinc-300" aria-hidden="true" />
-          {/* Icon toggles, not text - AM/PM/SP as TripTypeIcon, school
-              level as one cycling icon, laid out inline (a row, not a
-              stacked column) so the icons themselves can be big enough
-              to actually read, kept apart from the view toggle above
-              and from each other by the same plain vertical rule.
-              Trip type is exclusive (tapping one drops whatever else
-              was active; tapping the active one again clears it) - see
-              toggleTripType - narrowing the list (in either view, see
-              `filtered`) to just that one trip type rather than
-              picking among several active at once. */}
+          {/* Icon toggles, not text - trip type and school level each as
+              one cycling icon, laid out inline (a row, not a stacked
+              column) so the icons themselves can be big enough to
+              actually read, kept apart from the view toggle above and
+              from each other by the same plain vertical rule. */}
           <div className="flex shrink-0 items-center gap-1.5">
-            <div className="flex items-center gap-1">
-              {TRIP_TYPE_TOGGLES.map((toggle) => {
-                const active = activeTripType === toggle.value;
-                return (
-                  <button
-                    key={toggle.value}
-                    type="button"
-                    onClick={() => toggleTripType(toggle.value)}
-                    aria-pressed={active}
-                    aria-label={toggle.label}
-                    className={active ? "text-blue-600" : "text-zinc-300"}
-                  >
-                    <TripTypeIcon tripType={toggle.value} className="h-5 w-5" />
-                  </button>
-                );
-              })}
-            </div>
+            {/* One icon, not three - cycles view all -> AM -> PM -> SP ->
+                view all on each tap (cycleTripType above), same shape as
+                the school-level cycle right beside it. RouteIcon (the
+                plain map-and-route glyph already used for this screen's
+                own title, above) stands in for "every trip type" here -
+                unlike school level, AM/PM/SP's own icons (sunrise, full
+                sun, star) have no obvious combined form of their own to
+                reuse instead. */}
+            <button
+              type="button"
+              onClick={cycleTripType}
+              aria-pressed={activeTripType !== null}
+              aria-label={
+                activeTripType === null
+                  ? "Filter by trip type"
+                  : TRIP_TYPE_TOGGLES.find((t) => t.value === activeTripType)
+                      ?.label
+              }
+              className={
+                activeTripType === null ? "text-zinc-300" : "text-blue-600"
+              }
+            >
+              {activeTripType === null ? (
+                <RouteIcon className="h-5 w-5" />
+              ) : (
+                <TripTypeIcon tripType={activeTripType} className="h-5 w-5" />
+              )}
+            </button>
             <div className="h-5 w-px bg-zinc-300" aria-hidden="true" />
             {/* One icon, not three - cycles view all -> elementary ->
                 middle -> high -> view all on each tap (cycleSchoolLevel
@@ -781,6 +842,24 @@ export function RouteListScreen({
               ) : (
                 <SchoolLevelIcon level={activeSchoolLevel} className="h-5 w-5" />
               )}
+            </button>
+            <div className="h-5 w-px bg-zinc-300" aria-hidden="true" />
+            {/* Plain on/off, not a cycle - narrows the list to favorited
+                routes only, same gray/inactive-blue/active convention as
+                every filter icon here, just without a second "which one"
+                state to cycle through. */}
+            <button
+              type="button"
+              onClick={toggleFavoritesOnly}
+              aria-pressed={activeFavoritesOnly}
+              aria-label={
+                activeFavoritesOnly
+                  ? "Showing favorites only"
+                  : "Filter by favorites"
+              }
+              className={activeFavoritesOnly ? "text-blue-600" : "text-zinc-300"}
+            >
+              <HeartIcon filled={activeFavoritesOnly} className="h-5 w-5" />
             </button>
             {/* Published/Hidden - admin mode only, same empty-set-shows-
                 everything convention as the two groups above (a normal
@@ -822,6 +901,34 @@ export function RouteListScreen({
               </>
             )}
           </div>
+          {/* Master expand/collapse - grouped view only (flat view has no
+              branches of its own to twirl shut), all the way at the
+              right edge of the row, its own divider away from the
+              filter icons - a view control over what's *drawn*, not
+              another filter over what's *matched*, same distinction the
+              grouped/flat toggle up at the row's other end already
+              draws against the filters between them. Same
+              RoundedTriangleIcon/rotate-90 twirl every branch's own
+              triangle already uses, just reflecting every branch's
+              state at once instead of just its own (toggleAllGroups
+              above). */}
+          {grouped && (
+            <>
+              <div className="h-5 w-px shrink-0 bg-zinc-300" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={toggleAllGroups}
+                aria-label={allGroupsExpanded ? "Collapse all groups" : "Expand all groups"}
+                className="shrink-0 text-blue-600"
+              >
+                <RoundedTriangleIcon
+                  className={`h-5 w-5 transition-transform duration-200 ${
+                    allGroupsExpanded ? "rotate-90" : ""
+                  }`}
+                />
+              </button>
+            </>
+          )}
         </div>
 
         <div
@@ -989,7 +1096,7 @@ export function RouteListScreen({
                               // both of them, rounded-lg included, rather
                               // than stopping at whichever inner button
                               // happened to be pressed.
-                              className={`row-tap-gold flex w-full items-center gap-2 rounded-lg py-2.5 pr-2 pl-8 active:bg-amber-400 ${
+                              className={`row-tap-gold flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 pl-8 active:bg-amber-400 ${
                                 isAdminOnly ? "opacity-50" : ""
                               }`}
                             >
@@ -1211,9 +1318,16 @@ export function RouteListScreen({
                 <EyeIcon className="h-4 w-4 text-zinc-400" />
               </span>
             ) : (
-              <span className="justify-self-center p-1">
-                <HeartIcon className="h-4 w-4 text-zinc-400" />
-              </span>
+              <SortableHeader
+                label={<HeartIcon className="h-4 w-4 text-zinc-400" />}
+                field="isFavorite"
+                align="center"
+                fill
+                padded={false}
+                sortField={sortField}
+                sortDir={sortDir}
+                onSort={toggleSort}
+              />
             )}
           </div>
           <div
@@ -1224,6 +1338,109 @@ export function RouteListScreen({
             {filtered.map((route) => {
               const isPublished = isRoutePublished(route);
               const isAdminOnly = !isPublished;
+              // A Special/field-trip route's own routeNumber can be a
+              // free-typed name ("D&R Transpo to LLE"), not a short bus
+              // number - the fixed 4.5rem first column the compact grid
+              // below uses is sized for the latter, and crushed the
+              // former into an awkwardly narrow multi-line wrap. Same
+              // "give it a whole line of its own" fix the grouped view
+              // already gets for its own routeNumber heading (a plain
+              // flex row, no fixed-width column to fight).
+              const routeNumberIsShort = /^\d+$/.test(route.routeNumber.trim());
+              const tripTypeBadge = (route.tripType === "pickup" ||
+                route.tripType === "dropoff") && (
+                <IconTooltip
+                  as="span"
+                  label={tripTypeFullLabel(route.tripType)}
+                  className="h-[18px] w-[18px] shrink-0 text-blue-600"
+                >
+                  <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
+                </IconTooltip>
+              );
+              const schoolLevelBadge = route.schoolLevel ? (
+                <IconTooltip
+                  as="span"
+                  label={schoolLevelLabel(route.schoolLevel)}
+                  className="h-4 w-4 shrink-0 text-blue-600"
+                >
+                  <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
+                </IconTooltip>
+              ) : (
+                <SchoolLevelIcon
+                  level={route.schoolLevel}
+                  className="h-4 w-4 shrink-0 text-blue-600"
+                />
+              );
+              const favoriteOrEyeButton = adminMode ? (
+                <button
+                  type="button"
+                  onClick={() => handleEyeClick(route)}
+                  disabled={!permissions.canPublishRoutes}
+                  aria-label={
+                    isPublished
+                      ? `Unpublish route ${route.routeNumber}`
+                      : `Publish route ${route.routeNumber}`
+                  }
+                  className="shrink-0 p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
+                >
+                  {isPublished ? (
+                    <EyeIcon className="h-4 w-4" />
+                  ) : (
+                    <EyeOffIcon className="h-4 w-4 text-zinc-400" />
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onToggleFavorite(route)}
+                  aria-label={
+                    route.isFavorite ? "Remove favorite" : "Add favorite"
+                  }
+                  className="shrink-0 p-1 active:opacity-70"
+                >
+                  <HeartIcon
+                    filled={route.isFavorite}
+                    className={`h-4 w-4 ${route.isFavorite ? "text-blue-600" : "text-zinc-300"}`}
+                  />
+                </button>
+              );
+
+              if (!routeNumberIsShort) {
+                return (
+                  <div
+                    key={route.id}
+                    className={`flex w-full items-start gap-1 px-2 py-3 text-left ${
+                      isAdminOnly ? "opacity-50" : ""
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        adminMode ? onEditRoute(route) : onSelect(route)
+                      }
+                      className="row-tap-gold flex min-w-0 flex-1 flex-col gap-1 text-left active:bg-amber-400"
+                    >
+                      <span className="flex items-center gap-1">
+                        {tripTypeBadge}
+                        <span className="font-heading text-xl leading-tight font-black">
+                          {route.routeNumber}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="flex min-w-0 flex-1 items-center gap-1">
+                          {schoolLevelBadge}
+                          <SchoolNameLabel name={route.schoolName} />
+                        </span>
+                        <span className="shrink-0 text-sm font-semibold text-zinc-500">
+                          {route.departureTime}
+                        </span>
+                      </span>
+                    </button>
+                    {favoriteOrEyeButton}
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={route.id}
@@ -1268,74 +1485,28 @@ export function RouteListScreen({
                           interactive-element reasoning as the grouped
                           view's own row (see its own IconTooltip
                           comment). */}
-                      {(route.tripType === "pickup" ||
-                        route.tripType === "dropoff") && (
-                        <IconTooltip
-                          as="span"
-                          label={tripTypeFullLabel(route.tripType)}
-                          className="h-[18px] w-[18px] shrink-0 text-blue-600"
-                        >
-                          <TripTypeIcon tripType={route.tripType} className="h-full w-full" />
-                        </IconTooltip>
-                      )}
+                      {tripTypeBadge}
                       <span className="font-heading text-2xl leading-[0.7083] font-black">
                         {route.routeNumber}
                       </span>
                     </div>
                     <span className="flex min-w-0 items-center gap-1">
-                      {route.schoolLevel ? (
-                        <IconTooltip
-                          as="span"
-                          label={schoolLevelLabel(route.schoolLevel)}
-                          className="h-4 w-4 shrink-0 text-blue-600"
-                        >
-                          <SchoolLevelIcon level={route.schoolLevel} className="h-full w-full" />
-                        </IconTooltip>
-                      ) : (
-                        <SchoolLevelIcon
-                          level={route.schoolLevel}
-                          className="h-4 w-4 shrink-0 text-blue-600"
-                        />
-                      )}
+                      {schoolLevelBadge}
                       <SchoolNameLabel name={route.schoolName} />
                     </span>
                     <span className="text-right text-sm font-semibold text-zinc-500">
                       {route.departureTime}
                     </span>
                   </button>
-                  {adminMode ? (
-                    <button
-                      type="button"
-                      onClick={() => handleEyeClick(route)}
-                      disabled={!permissions.canPublishRoutes}
-                      aria-label={
-                        isPublished
-                          ? `Unpublish route ${route.routeNumber}`
-                          : `Publish route ${route.routeNumber}`
-                      }
-                      className="justify-self-center p-1 text-blue-600 active:opacity-70 disabled:opacity-30"
-                    >
-                      {isPublished ? (
-                        <EyeIcon className="h-4 w-4" />
-                      ) : (
-                        <EyeOffIcon className="h-4 w-4 text-zinc-400" />
-                      )}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => onToggleFavorite(route)}
-                      aria-label={
-                        route.isFavorite ? "Remove favorite" : "Add favorite"
-                      }
-                      className="justify-self-center p-1 active:opacity-70"
-                    >
-                      <HeartIcon
-                        filled={route.isFavorite}
-                        className={`h-4 w-4 ${route.isFavorite ? "text-blue-600" : "text-zinc-300"}`}
-                      />
-                    </button>
-                  )}
+                  {/* justify-self-center, not baked into
+                      favoriteOrEyeButton itself - only this grid-layout
+                      branch needs it (a plain grid item otherwise
+                      stretches to fill its own column, left-aligning
+                      the icon inside instead of centering it); the
+                      long-routeNumber branch above is a flex row, where
+                      shrink-0 alone already keeps it its own natural
+                      size. */}
+                  <span className="justify-self-center">{favoriteOrEyeButton}</span>
                 </div>
               );
             })}

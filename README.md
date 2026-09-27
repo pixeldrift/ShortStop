@@ -130,12 +130,61 @@ Vercel value).
   was designed for, not just naive shrinking. Also requires a stored split
   ratio and a double tap on the divider to reset back to the default.
 - Admin mode optimized for desktop for easier route and stop editing.
-- Bus-specific auto-instructions — automatically inserts instructions
-  a generic map app has no reason to know about (stopping before a
-  railroad crossing is the concrete example), the kind of thing a new
-  driver forgets and an experienced one does by habit. Likely needs
-  its own geodata source (e.g. an Overpass query for
-  `railway=level_crossing` along the route's own line, the same kind
-  of lookup `overpassGeocode.ts` already does for intersections) to
-  find where these apply, then auto-inserts a real "Stop" step at that
-  point the same way any other route step works.
+- Auto-detected railroad crossings. An admin can now mark one by hand
+  (the "Railroad Crossing" waypoint type - StepRowEditor's own Type
+  select) - it geocodes like any other waypoint, and turns into the
+  real "Stop before railroad crossing" / "Continue through railroad
+  crossing" pair of steps automatically (`buildRailroadCrossingSteps`,
+  `parseRouteCsv.ts`). What's still missing is finding these
+  automatically rather than an admin having to notice one on the
+  route sheet: an Overpass query for `railway=level_crossing` along
+  the route's own line (the same kind of lookup `overpassGeocode.ts`
+  already does for intersections), crawled retroactively across every
+  route to insert this waypoint type wherever a crossing turns up
+  along an existing leg with no dedicated row of its own yet.
+- Offline turn-by-turn fallback for a lost-signal driver, read-only (no
+  editing offline). Not cookies - a service worker (this is already a
+  PWA, `public/manifest.json`) caching the app shell, plus IndexedDB
+  caching a route's own resolved data (its road geometry from
+  `/api/route-geometry`, its waypoint cache entries) the moment a
+  driver opens it, so `StepScreen` can fall back to that cached copy
+  when a fresh fetch fails instead of just erroring. The self-hosted
+  PMTiles basemap (`public/maps/middle-tennessee.pmtiles`,
+  `mapEngine.ts`) and live GPS position (`navigator.geolocation`,
+  already used as-is) need no extra work either way - both already
+  work with no network once the tile file's been loaded once, the
+  browser's own HTTP cache holds onto it.
+- Retroactively crawl every existing route's own waypoint cache
+  (`waypointCache.ts`) for double road crossings that predate the
+  cardinal-disambiguation feature (`resolveStepCoordinate`,
+  `cardinalLabel.ts`) and were instead hand-fixed with a manual
+  coordinate override at the time (`overrideLat`/`overrideLon`,
+  `RawRouteRow`) - Chyntara, Lou Gehrig, Cedar Park Circle, and the
+  Holland Ridge Dr/Holland Road corner are the known examples. A script
+  (in the shape of `scripts/geocodeSchools.ts` or similar) that finds
+  every cache entry with more than one real candidate at the same
+  waypoint key, cross-references it against routes that instead carry
+  an override for that same step, and retrofits the newer keyed-variant
+  scheme (`waypointCacheKey`) onto it - turning a one-off manual pin
+  placement into the same self-documenting disambiguation every newly
+  geocoded intersection already gets.
+- A map control (a button opening a dropdown of layer toggles: schools,
+  stops, start/end, directions) for hiding/showing each of `RouteMap`'s
+  own pin categories independently, rather than the current all-or-
+  nothing overview/driving mode split.
+- Driver-focused fleet tooling beyond routing - mileage tracking,
+  vehicle status logging, fuel expense logging. Needs real input from
+  how drivers currently track this before designing anything (a
+  QuickBooks integration or a plain export into whatever their
+  accounting software already reads might matter more than the UI
+  itself) - not scoped yet, and deliberately not vehicle maintenance
+  records, which is a much bigger, more safety-critical surface than
+  this app is ready for.
+- A separate "record a route while driving" tool - a big map that
+  follows GPS as you drive, with a button to drop a stop at your
+  current position (resolved to the nearest intersection/address, then
+  draggable to correct), optional turn instructions/notes. Most of this
+  app's real routes are long-established and rarely change, so this is
+  more a value-add for the rare new-route case (and a good demo) than
+  something any client has actually asked for - low priority relative
+  to work with a clearer real payoff.

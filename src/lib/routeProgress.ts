@@ -230,7 +230,12 @@ export function roadBearingAt(
 }
 
 export interface WaypointProgress {
-  key: string;
+  /** NavigationStep.id, not the shared waypointKey cache-lookup text -
+   * see RouteMap.tsx's own StopMarker doc comment for why: a loop road
+   * crossing the same other road at two different real corners produces
+   * the exact same "roadA & roadB" text for two genuinely different
+   * steps, and this needs to tell them apart. */
+  key: number;
   /** This waypoint's own distance-along-route, meters from the
    * route's start - the same units/origin projectOntoRoute reports a
    * live fix's own position in, so the two are directly comparable
