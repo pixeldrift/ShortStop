@@ -188,3 +188,45 @@ Vercel value).
   more a value-add for the rare new-route case (and a good demo) than
   something any client has actually asked for - low priority relative
   to work with a clearer real payoff.
+- A map-centric alternate layout for the turn-by-turn screen
+  (`StepScreen.tsx`), toggleable mid-drive rather than replacing the
+  current audio-first design outright. The app was originally scoped
+  for a tablet mounted in landscape (map ~42% of the width); the
+  initial prototype pivoted to phone-first, where portrait mode only
+  gives the map a fixed `30vh` strip up top. Real-world test driving
+  found that frustrating - wanting to glance at the map more than the
+  current split allows, even with audio doing most of the work. A
+  toggle would swap which pane gets the dominant share (map ~65%,
+  turn-by-turn content collapsed to a bottom strip) using the same two
+  components already rendered side by side, rather than a second
+  screen to maintain - the open questions are just whether the choice
+  persists per-driver/session and how it interacts with the existing
+  draggable-divider idea above (same underlying split, this toggle
+  would just change its default before a driver drags it further).
+- Per-stop ahead/behind-schedule narration, continuously through the
+  drive - not just the one-time "right on time"/"N minutes behind
+  schedule" callout the depot announcement now gives at departure
+  (`schedulePhrase`, `useRouteStepper.ts`), which only ever compares
+  the moment Start was tapped against `Route.departureTime`. A real
+  per-stop version needs actual scheduled times to compare against at
+  each one, which don't exist yet: the route-sheet CSV already has its
+  own `time` column, but nothing parses it into anything today
+  (`parseRouteCsv.ts`'s own doc comment - "NavigationStep has no
+  per-step time field (yet)"). Getting there means wiring that column
+  into `NavigationStep`, the database schema (a real migration -
+  `RouteStep` has no per-step time column either), and the waypoint
+  editor (`StepRowEditor`) so an admin can actually see and correct
+  it per stop, not just trust whatever the sheet said - a bigger,
+  three-layer undertaking than the depot-only version, deliberately
+  deferred rather than half-built.
+- A "you are on [road]" orientation callout, naming the road the bus
+  is currently traveling, alongside the existing next-stop/next-turn
+  previews (`useNavigationPrompts.ts`). Floated during the same
+  narration-redesign conversation that produced `schedulePhrase`
+  above, but deliberately not built yet - it's not obvious which real
+  driving moments actually want it independent of what those existing
+  previews and turn-completion acks already say, and there's no clean
+  "current road name" already sitting on a depart-kind step the way a
+  turn's own `subheading` already names the road it turns onto. Worth
+  revisiting once there's a clearer sense of the specific gaps it
+  would fill.

@@ -390,11 +390,40 @@ export function StepScreen({
     routeLine,
     routeGeometry?.waypointDistances ?? EMPTY_WAYPOINT_DISTANCES,
   );
+  // useNavigationPrompts/useGpsAutoAdvance's own dismissedStopId - see
+  // either hook's own doc comment for what it unlocks (an immediate
+  // next-step preview, and same-corner pairings advancing right away
+  // instead of waiting on GPS). Set only when the box the *driver*
+  // themselves just closed or fully checked in was the live current
+  // stop's own - not a GPS-triggered close (handleStopAndGoDetected/
+  // handleStopSkipped below already advance on their own, independent
+  // of this), and not a stop the driver was merely reviewing via
+  // goToStopSlot. Never explicitly cleared back to null - a later
+  // stop's own real dismissal always carries a different stepId, and
+  // both hooks already guard against re-firing for the same one twice.
+  const [dismissedStopId, setDismissedStopId] = useState<number | null>(null);
+  const markStopDismissedIfCurrent = useCallback(
+    (stepId: number) => {
+      if (viewedStepIndex === currentIndex && step.id === stepId) {
+        setDismissedStopId(stepId);
+      }
+    },
+    [viewedStepIndex, currentIndex, step.id],
+  );
   // Started is always true here - RouteApp (page.tsx) only ever
   // mounts StepScreen once useRouteStepper's own `started` flag is
   // true (StartScreen shows instead while it's false) - so there's no
   // separate prop for it to read.
-  useNavigationPrompts(route, currentIndex, phase, true, paused, announcementDone, liveProgress);
+  useNavigationPrompts(
+    route,
+    currentIndex,
+    phase,
+    true,
+    paused,
+    announcementDone,
+    liveProgress,
+    dismissedStopId,
+  );
   // Closes step `stepId`'s own rider check-in box, but only while it's
   // the one actually showing right now - a driver who's deliberately
   // navigated the box to review a different stop (goToStopSlot/
@@ -489,6 +518,16 @@ export function StepScreen({
     },
     [route, onSeek],
   );
+  // useGpsAutoAdvance's own onTurnCompleted - a short reassurance the
+  // instant GPS confirms a real left/right turn is behind the bus,
+  // distinct from whatever gets announced for the step that becomes
+  // current next (that's useRouteStepper's own per-step announcement,
+  // unaffected) - see that hook's own doc comment for why this matters:
+  // GPS confirming a turn used to be entirely silent on its own.
+  const handleTurnCompleted = useCallback((completed: NavigationStep) => {
+    const street = completed.subheading ? ` onto ${completed.subheading}` : "";
+    speak(`Turned ${completed.direction}${street}.`);
+  }, []);
   useGpsAutoAdvance(
     route,
     currentIndex,
@@ -499,6 +538,8 @@ export function StepScreen({
     handleStopAndGoDetected,
     handleStopSkipped,
     handleCatchUp,
+    handleTurnCompleted,
+    dismissedStopId,
   );
   // Tracks whether the *current* pause was this file's own automatic
   // reaction to going off-route (below), not the driver's own tap on the
@@ -699,11 +740,15 @@ export function StepScreen({
                   // closeRoster() - see closeRosterWithBounce's own doc
                   // comment for why.
                   if (rosterOrigin === "auto" && viewedStepIndex === currentIndex) {
+                    markStopDismissedIfCurrent(viewedEntry.step.id);
                     closeRosterWithBounce();
                   }
                 }}
                 onAddRider={() => onAddRider(viewedEntry.step.id, viewedExpectedCount)}
-                onClose={closeRoster}
+                onClose={() => {
+                  markStopDismissedIfCurrent(viewedEntry.step.id);
+                  closeRoster();
+                }}
                 canGoPrev={viewedSlot > 0}
                 canGoNext={viewedSlot >= 0 && viewedSlot < stopSteps.length - 1}
                 onPrev={() => goToStopSlot(viewedSlot - 1)}

@@ -28,7 +28,17 @@ const METERS_PER_DEGREE_LAT = 111_320;
 // coordinate.
 const ROUTE_SIDE_OFFSET_METERS = 6;
 
-function destinationPoint(
+/** A point `distanceMeters` from `from`, in direction `bearingDeg` (0 =
+ * north, clockwise) - plain flat-earth trig, same "small enough
+ * distance that the real-world curvature doesn't matter" reasoning
+ * `roadBearingAt`'s own lookback (routeProgress.ts) already leans on.
+ * Exported for any other caller that needs the same small, real-world
+ * nudge this file's own spreadInCircle/spreadCoincidentPoints already
+ * use it for internally (RouteMap.tsx's own remaining-path dots, for
+ * one - baking a line-offset-style perpendicular nudge straight into
+ * each dot's own coordinate, since a circle layer has no "circle-
+ * offset" paint property of its own to lean on the GPU for instead). */
+export function destinationPoint(
   from: { lat: number; lon: number },
   bearingDeg: number,
   distanceMeters: number,
