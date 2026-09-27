@@ -24,13 +24,15 @@ import {
 import { protomapsStyle } from "@/lib/protomapsStyle";
 import {
   cumulativeDistances,
+  haversineMeters,
   nearestSegmentBearings,
   pointAtDistance,
   roadBearingAt,
 } from "@/lib/routeProgress";
 import type { LatLon } from "@/lib/routeProgress";
+import { MOVING_THRESHOLD_MPS } from "@/lib/useLiveRouteProgress";
 import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
-import { destinationPoint, spreadCoincidentPoints } from "@/lib/spreadCoincidentPoints";
+import { destinationPoint, isSameLocation } from "@/lib/spreadCoincidentPoints";
 import type { TripType, TurnDirection } from "@/lib/types";
 import { resolveRouteCoordinates } from "@/lib/waypointCache";
 import type { WaypointCache } from "@/lib/waypointCache";
@@ -112,6 +114,12 @@ const DRIVING_FLY_DURATION_MS = 1000;
 // syncToModeRef's own fitBounds call below, which explicitly resets to
 // flat) - a bird's-eye stop-scanning view wants to stay top-down.
 const DRIVING_PITCH = 45;
+// Mirrors useLiveRouteProgress's own SPEED_SMOOTHING_FIXES window -
+// driving mode's own camera-follow (watchPosition below) needs the
+// same "is this real movement" answer other GPS-driven features
+// (stop-and-go detection, nav prompts) already agree on, not a second,
+// slightly different one from a differently-sized window.
+const SPEED_SMOOTHING_FIXES = 4;
 // Overview mode only shows numbered turn-by-turn detail (every stop's
 // own full pin, every turn's own marker) once the admin has zoomed in
 // this far past the route's own auto-fit framing - below it, the start
@@ -124,12 +132,14 @@ const OVERVIEW_DETAIL_ZOOM = 15;
 // The road-following route line's own color - deliberately distinct
 // from the school/stop pins' own blue (#2563eb, schoolMarkerHtml/
 // stopMarkerHtml below) so the line never reads as though it were just
-// another pin, especially where one sits right on top of it. Both the
-// traveled line and the remaining dots (below) share this one color,
-// rather than each having its own shade the way light-ahead/dark-behind
-// used to - a driver's actual "how far have I gone" cue is the dot
-// pattern itself now, not a separate color to read as well.
+// another pin, especially where one sits right on top of it.
 const ROUTE_LINE_COLOR_TRAVELED = "#1d4ed8";
+// The remaining dots' own color - a lighter blue than the solid
+// traveled line above, not the same shade reused - so the dotted
+// ahead-of-us path and the solid behind-us one read as two visibly
+// different things at a glance, not just "dashed vs solid" of the
+// same color.
+const ROUTE_REMAINING_DOT_COLOR = "#60a5fa";
 // The remaining path used to be a real "line" layer with a [0, N]
 // dasharray - a zero-length dash with a round line-cap draws perfect
 // circles instead of dashes, spaced N line-widths apart. That worked
@@ -151,27 +161,35 @@ const ROUTE_LINE_COLOR_TRAVELED = "#1d4ed8";
 // old dasharray's screen-pixel spacing did in practice, without needing
 // to regenerate this source on every zoom change the way matching it
 // exactly at every zoom would.
-const ROUTE_REMAINING_DOT_SPACING_METERS = 10;
-// Circle radius halved from ROUTE_LINE_WIDTH (mapEngine.ts) - a round-
-// capped zero-length dash's own diameter was exactly its line-width, so
-// halving both of that same interpolation's endpoints reproduces the
-// old inner dot's radius at every zoom (linear interpolation commutes
-// with a constant scalar). circle-stroke-width reuses this same
-// expression as its own value - MapLibre draws a circle's stroke
-// *outside* circle-radius, so radius+stroke (the dot's total visible
-// size, halo included) comes out to exactly ROUTE_LINE_WIDTH itself,
-// the same outer size the old two-line-layer version (route-remaining-
-// outline sitting under route-remaining) drew as two independently
-// zoom-interpolated widths instead - one circle layer now, not two line
-// layers needing their own dasharrays kept in sync.
+const ROUTE_REMAINING_DOT_SPACING_METERS = 6;
+// Bumped up from a plain ROUTE_LINE_WIDTH/2 halving (this component's
+// own earlier version) so the dots themselves read as a clearly
+// bigger, more deliberate dotted line, not just a thinner echo of the
+// solid traveled line's own width.
 const ROUTE_REMAINING_DOT_RADIUS: ExpressionSpecification = [
   "interpolate",
   ["linear"],
   ["zoom"],
   12,
-  1,
+  1.5,
   18,
-  3,
+  4,
+];
+// A visibly thinner halo than the dot's own radius (unlike the old
+// version, which reused ROUTE_REMAINING_DOT_RADIUS itself as the
+// stroke width too, making the white outline as thick as the dot's
+// own colored center) - the outline should still read as "there's a
+// dot here" against a light road surface, not compete with the dot's
+// own now-larger, lighter-blue fill for how much of it is actually
+// blue.
+const ROUTE_REMAINING_DOT_STROKE_WIDTH: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  12,
+  0.5,
+  18,
+  1.25,
 ];
 // A small perpendicular nudge baked straight into each dot's own
 // coordinate, echoing what ROUTE_LINE_OFFSET (mapEngine.ts) does for
@@ -272,14 +290,21 @@ const LOCATION_DOT_HTML =
   '<span class="relative inline-flex h-4 w-4 rounded-full border-2 border-white bg-blue-600 shadow-md"></span>' +
   "</span>";
 
-function stopMarkerHtml(stopNumber: number): string {
+function stopMarkerHtml(stopNumber: number, checkedOff = false): string {
   // pin.svg's own circular head sits centered at 34.0% of its own
-  // height (y=186.18 of a 548-tall viewBox), not 31%.
+  // height (y=186.18 of a 548-tall viewBox), not 31%. checkedOff
+  // (drawDrivingPins, once every real visit to this stop's own corner
+  // is behind us - see its own doc comment) swaps in pin-blue.svg -
+  // the same shape schoolMarkerHtml already draws from, just still
+  // carrying this stop's own number - so a driver can tell "already
+  // been there" apart from "still coming up" at a glance, the same
+  // red-vs-blue split the rest of the map already uses for stop vs.
+  // school.
   return (
     '<div class="relative h-11 w-7">' +
-    '<img src="/assets/pin.svg" class="h-full w-full" alt="" />' +
+    `<img src="/assets/${checkedOff ? "pin-blue" : "pin"}.svg" class="h-full w-full" alt="" />` +
     '<span class="font-heading absolute top-[34%] left-1/2 -translate-x-1/2 -translate-y-1/2 ' +
-    'text-xs font-black text-red-700">' +
+    `text-xs font-black ${checkedOff ? "text-blue-700" : "text-red-700"}">` +
     stopNumber +
     "</span>" +
     "</div>"
@@ -894,12 +919,22 @@ class ShowRidersControl implements IControl {
 // Recenters the camera on the driver's own live GPS position (the same
 // "you are here" dot the geolocation watchPosition below maintains),
 // for whenever a driver has panned/zoomed the map away from their own
-// position (e.g. scouting ahead) and wants back. Its own corner
-// ("bottom-right") rather than stacking with either NavigationControl
-// (top-left) or ShowRidersControl (bottom-left) - same one-control-per-
-// concern reasoning ShowRidersControl's own doc comment above gives.
-// Present on every mount (StartScreen's overview map included, not just
-// driving) since "where am I right now" is just as useful while
+// position (e.g. scouting ahead) and wants back. Top-right, styled to
+// match ExpandableMap's own expand button (btn-glossy-light, the same
+// h-8 w-8 rounded-lg bg-white/90 square, not a round blue glossy one) -
+// a plain map-navigation control, same footing as MapLibre's own
+// NavigationControl, not an app-level action button the way
+// ShowRidersControl's own round blue glossy style deliberately reads
+// (that control's own doc comment above has why) - keeping the two
+// visually distinct is the point. mt-12 (rather than the usual m-2
+// every other corner's own first control uses) leaves room below
+// ExpandableMap's own expand button, which sits in this exact same
+// physical corner as a plain absolutely-positioned sibling of this
+// map, entirely outside MapLibre's own control-corner layout - the two
+// have no way to coordinate with each other automatically, so this
+// control's own margin is what actually keeps them from overlapping.
+// Present on every mount (StartScreen's overview map included, not
+// just driving) since "where am I right now" is just as useful while
 // reviewing a route beforehand as it is mid-drive - unlike
 // ShowRidersControl, there's no caller-supplied prop this could be
 // gated on, and mode itself changes live within one mount so it isn't
@@ -912,14 +947,14 @@ class RecenterControl implements IControl {
 
   onAdd(): HTMLElement {
     const container = document.createElement("div");
-    container.className = "maplibregl-ctrl m-2";
+    container.className = "maplibregl-ctrl mt-12 mr-2";
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("aria-label", "Jump to current location");
     button.className =
-      "btn-glossy-blue flex h-11 w-11 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg";
+      "btn-glossy-light flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-zinc-900";
     button.innerHTML = renderToStaticMarkup(
-      <CompassIcon className="h-5 w-5" />,
+      <CompassIcon className="h-4 w-4" />,
     );
     button.addEventListener("click", () => this.onClick());
     this.button = button;
@@ -1101,6 +1136,18 @@ function mountMapLibre(args: MountArgs): () => void {
       // both are just two different readers/writers of "where's the blue
       // dot right now."
       let locationMarker: MapLibreMarker | undefined;
+      // Whether the live GPS fix (watchPosition below) currently reads
+      // as real movement, not just noise while parked - read by
+      // syncToModeRef's own driving-mode branch (below) to decide
+      // whether *it* or the continuous GPS-follow camera (also below)
+      // owns the camera for this update. Declared here, alongside
+      // locationMarker, since both are written by the same
+      // watchPosition callback and read by syncToModeRef - one
+      // long-lived closure's worth of "what's the live fix doing right
+      // now."
+      let isMoving = false;
+      let smoothedSpeedMps: number | null = null;
+      const recentFixes: { point: LatLon; atMs: number }[] = [];
       mapInstance.on("rotate", applyTurnRotations);
       // schoolRef already stays current on its own (this component's
       // own sync effect, above) - the highlight just needs to be told
@@ -1145,7 +1192,7 @@ function mountMapLibre(args: MountArgs): () => void {
             duration: DRIVING_FLY_DURATION_MS,
           });
         }),
-        "bottom-right",
+        "top-right",
       );
 
       // drawOverviewPins/drawDrivingPins/syncToModeRef, defined once
@@ -1211,21 +1258,19 @@ function mountMapLibre(args: MountArgs): () => void {
 
       function drawDrivingPins() {
         clearPins();
-        // A route that genuinely stops twice at one real
-        // intersection (different directions of approach, at
-        // different times) resolves both stops to the same point -
-        // spread apart (same helper/threshold WaypointPreviewMap.tsx's
-        // own StopPin drawing uses) onto whichever real side of the
-        // road latestRoadGeometry (this route's own already-fetched
-        // road geometry) draws that stop's own pass on, so both
-        // stay visible and tappable instead of one drawing directly
-        // on top of the other.
-        const resolvedStops = stopsRef.current
-          .map((stop) => ({ stop, point: resolvedByKey.get(stop.stepId) }))
-          .filter(
-            (entry): entry is { stop: StopMarker; point: { lat: number; lon: number } } =>
-              entry.point != null,
-          );
+        // Every real waypoint's own position in the route's actual
+        // trip order - orderedWaypointsRef.current is already built in
+        // that order (fetchCacheAndBuildOrderedWaypoints's own doc
+        // comment above), so its array index doubles as "how far
+        // along the trip is this stepId" for the passed/upcoming split
+        // below.
+        const orderByStepId = new Map<number, number>();
+        orderedWaypointsRef.current.forEach((waypoint, i) => {
+          if (waypoint.key != null) orderByStepId.set(waypoint.key, i);
+        });
+        const currentStepId = activeStepIdRef.current;
+        const currentOrder = currentStepId != null ? (orderByStepId.get(currentStepId) ?? -1) : -1;
+
         const roadLine = latestRoadGeometry.map(([lon, lat]) => ({ lat, lon }));
         const roadCumulative = cumulativeDistances(roadLine);
         // Every real bearing read straight off distanceAlongRouteByKey
@@ -1255,42 +1300,104 @@ function mountMapLibre(args: MountArgs): () => void {
           const direction = rotatableKeys.has(waypoint.key) ? "outgoing" : "incoming";
           bearingByKey.set(waypoint.key, roadBearingAt(roadLine, roadCumulative, distance, direction));
         });
-        const spreadPoints = spreadCoincidentPoints(
-          resolvedStops.map((entry) => entry.point),
-          resolvedStops.map((entry) => bearingByKey.get(entry.stop.stepId) ?? null),
-        );
-        resolvedStops.forEach((entry, i) => {
-          pins.push(
-            new maplibregl.Marker({
-              element: elementFromHtml(stopMarkerHtml(entry.stop.number)),
-              anchor: "bottom",
-            })
-              .setLngLat(toLngLat(spreadPoints[i]))
-              .addTo(mapInstance),
-          );
-        });
+
+        // One shared pool of every real (resolved) stop and turn -
+        // deliberately mixed, not each kind grouped separately, since
+        // a stop and a turn can themselves share one real corner (a
+        // route that stops right where it also turns), and the
+        // dedup below needs to see every real visit to a corner
+        // together to pick just one of them, whichever kind it is.
+        type Entry =
+          | { kind: "stop"; stop: StopMarker; point: { lat: number; lon: number }; order: number }
+          | { kind: "turn"; turn: TurnMarker; point: { lat: number; lon: number }; order: number };
+        const entries: Entry[] = [];
+        for (const stop of stopsRef.current) {
+          const point = resolvedByKey.get(stop.stepId);
+          if (!point) continue;
+          entries.push({ kind: "stop", stop, point, order: orderByStepId.get(stop.stepId) ?? -1 });
+        }
         for (const turn of turnsRef.current) {
           const point = resolvedByKey.get(turn.stepId);
           if (!point) continue;
-          const html = turnDiamondHtml(TURN_DIAMOND_SIZE, turn.direction, turn.heading);
-          if (!html) continue;
-          const element = elementFromHtml(html);
-          const rotationKey = rotationKeyFor(turn.direction, turn.heading);
-          if (rotationKey != null) {
-            turnArrowRotations.push({
-              element,
-              rotationKey,
-              bearing: bearingByKey.get(turn.stepId) ?? null,
-            });
+          entries.push({ kind: "turn", turn, point, order: orderByStepId.get(turn.stepId) ?? -1 });
+        }
+
+        // Greedy same-corner clustering (isSameLocation's own ~30m
+        // box check - spreadCoincidentPoints.ts) - a route revisiting
+        // one real intersection at two different points in its own
+        // trip (a double-back, or a stop and a turn that happen to
+        // share a corner) resolves both to (nearly) the same point,
+        // and only one of them should ever draw here at once (see the
+        // per-group pick below) - stacking every real visit in route
+        // order, the old behavior, just buried everything under
+        // whichever one happened to draw last.
+        const groupOf = new Array<number>(entries.length).fill(-1);
+        const groups: number[][] = [];
+        for (let i = 0; i < entries.length; i++) {
+          if (groupOf[i] !== -1) continue;
+          const group = [i];
+          groupOf[i] = groups.length;
+          for (let j = i + 1; j < entries.length; j++) {
+            if (groupOf[j] === -1 && isSameLocation(entries[i].point, entries[j].point)) {
+              group.push(j);
+              groupOf[j] = groups.length;
+            }
           }
-          pins.push(
-            new maplibregl.Marker({
-              element,
-              anchor: "center",
-            })
-              .setLngLat(toLngLat(point))
-              .addTo(mapInstance),
-          );
+          groups.push(group);
+        }
+
+        for (const group of groups) {
+          const sorted = [...group].sort((a, b) => entries[a].order - entries[b].order);
+          // Whichever real visit to this corner is current or still
+          // ahead of us, earliest first - "stop one" the first time
+          // through, then "stop five" once we're back for a second
+          // pass, never both stacked at once (see this function's own
+          // doc comment above).
+          const upcoming = sorted.find((i) => entries[i].order >= currentOrder);
+          let entry: Entry;
+          let checkedOff = false;
+          if (upcoming != null) {
+            entry = entries[upcoming];
+          } else {
+            // Every real visit to this corner is already behind us -
+            // the most recent one, if it was a stop, still gets its
+            // own blue "already been here" pin (stopMarkerHtml's own
+            // checkedOff styling); a turn has nothing left to say once
+            // passed (see the turn branch below), so a corner whose
+            // last visit was a turn draws nothing at all here.
+            const lastStop = [...sorted].reverse().find((i) => entries[i].kind === "stop");
+            if (lastStop == null) continue;
+            entry = entries[lastStop];
+            checkedOff = true;
+          }
+          if (entry.kind === "turn") {
+            const { turn } = entry;
+            const html = turnDiamondHtml(TURN_DIAMOND_SIZE, turn.direction, turn.heading);
+            if (!html) continue;
+            const element = elementFromHtml(html);
+            const rotationKey = rotationKeyFor(turn.direction, turn.heading);
+            if (rotationKey != null) {
+              turnArrowRotations.push({
+                element,
+                rotationKey,
+                bearing: bearingByKey.get(turn.stepId) ?? null,
+              });
+            }
+            pins.push(
+              new maplibregl.Marker({ element, anchor: "center" })
+                .setLngLat(toLngLat(entry.point))
+                .addTo(mapInstance),
+            );
+          } else {
+            pins.push(
+              new maplibregl.Marker({
+                element: elementFromHtml(stopMarkerHtml(entry.stop.number, checkedOff)),
+                anchor: "bottom",
+              })
+                .setLngLat(toLngLat(entry.point))
+                .addTo(mapInstance),
+            );
+          }
         }
         applyTurnRotations();
         if (schoolRef.current) {
@@ -1346,6 +1453,40 @@ function mountMapLibre(args: MountArgs): () => void {
         const roadLine = latestRoadGeometry.map(([lon, lat]) => ({ lat, lon }));
         const activeDistance = stepId != null ? (distanceAlongRouteByKey.get(stepId) ?? null) : null;
         const bearing = bearingAt(roadLine, cumulativeDistances(roadLine), activeDistance);
+        if (!drivingPinsRevealedRef.current) {
+          if (isMoving || !point) {
+            // While actually moving, the continuous GPS-follow camera
+            // (watchPosition below) already keeps up in real time -
+            // there's no flyTo here to wait a moveend on, so reveal
+            // right away instead of waiting on a motion this step is
+            // skipping (see the isMoving return, just below).
+            drawDrivingPins();
+            drivingPinsRevealedRef.current = true;
+          } else {
+            mapInstance.once("moveend", () => {
+              drawDrivingPins();
+              drivingPinsRevealedRef.current = true;
+            });
+          }
+        } else {
+          // Pins are already showing - still redraw on every step
+          // advance now (not just this first reveal), since
+          // drawDrivingPins's own dedup (its own doc comment) reads
+          // activeStepIdRef to decide which real visit to a shared
+          // corner is current, which one's already behind us and
+          // gets checked off blue, and which passed turn to drop -
+          // an advance no-op here would leave all three stuck at
+          // whatever they were the moment the pins first appeared.
+          drawDrivingPins();
+        }
+        if (isMoving) {
+          // The live GPS fix already owns the camera while moving (see
+          // watchPosition below) - flying to this step's own static
+          // waypoint here on every GPS-driven advance would just fight
+          // it. Only a stationary review (manual step taps at a stop,
+          // or no GPS fix at all) wants this flyTo.
+          return;
+        }
         if (!point) {
           // No coordinate to fly to yet - still rotate on its own,
           // animated the same 1s as every other camera move here,
@@ -1354,17 +1495,7 @@ function mountMapLibre(args: MountArgs): () => void {
           if (bearing != null) {
             mapInstance.easeTo({ bearing, pitch: DRIVING_PITCH, duration: DRIVING_FLY_DURATION_MS });
           }
-          if (!drivingPinsRevealedRef.current) {
-            drawDrivingPins();
-            drivingPinsRevealedRef.current = true;
-          }
           return;
-        }
-        if (!drivingPinsRevealedRef.current) {
-          mapInstance.once("moveend", () => {
-            drawDrivingPins();
-            drivingPinsRevealedRef.current = true;
-          });
         }
         // bearing folded straight into this flyTo (MapLibre
         // interpolates position and bearing together over one
@@ -1416,25 +1547,13 @@ function mountMapLibre(args: MountArgs): () => void {
         if (cancelledRef() || !result) return;
         resolvedByKey = result.resolvedByKey;
 
-        // drawDrivingPins itself only ever gets called from
-        // syncToModeRef's own two "reveal them for the first time"
-        // branches below, each already guarded by
-        // drivingPinsRevealedRef so a step advance never redraws (and
-        // re-flashes) pins that are already showing - correct for that
-        // case, but it means syncToModeRef's own call at the bottom of
-        // this function, on a *second* resolveAndRedraw, does nothing
-        // for the pins themselves once they've already been revealed
-        // once: resolvedByKey just above is fresh, but every pin
-        // already on the map was placed by whichever drawDrivingPins
-        // call revealed them, at whatever resolvedByKey held back
-        // then, and nothing about that placement was ever going to
-        // change on its own just because the Map behind it did. Call
-        // it directly here instead, once immediately (this route's own
-        // pins - including this one - update to their real position
-        // right away) and again once fresh road geometry lands below
-        // (so a moved stop's own spreadCoincidentPoints offset and
-        // turn-sign bearings, both read off latestRoadGeometry, aren't
-        // left stale a beat behind resolvedByKey itself).
+        // syncToModeRef's own driving branch already redraws pins on
+        // every step advance now (not just their first reveal - see
+        // its own doc comment), but a genuine `path` change lands here
+        // independently of any step advance, so this route's own pins
+        // - including one whose coordinate just moved - still need
+        // their own explicit redraw right away, not a wait for
+        // whatever step advance happens to come next.
         if (modeRef.current === "driving" && drivingPinsRevealedRef.current) {
           drawDrivingPins();
         }
@@ -1544,10 +1663,10 @@ function mountMapLibre(args: MountArgs): () => void {
                     type: "circle",
                     source: "route-remaining-dots",
                     paint: {
-                      "circle-color": ROUTE_LINE_COLOR_TRAVELED,
+                      "circle-color": ROUTE_REMAINING_DOT_COLOR,
                       "circle-radius": ROUTE_REMAINING_DOT_RADIUS,
                       "circle-stroke-color": "#ffffff",
-                      "circle-stroke-width": ROUTE_REMAINING_DOT_RADIUS,
+                      "circle-stroke-width": ROUTE_REMAINING_DOT_STROKE_WIDTH,
                       "circle-opacity": 0.85,
                       "circle-stroke-opacity": 0.85,
                     },
@@ -1669,12 +1788,11 @@ function mountMapLibre(args: MountArgs): () => void {
               }
               applyRouteProgress = updateRouteProgress;
               updateRouteProgress();
-              // Second call, same guard as the one right after
-              // resolvedByKey itself updates above - this route's own
-              // fresh road geometry just landed, so any pin whose own
-              // spreadCoincidentPoints offset or turn-sign bearing
-              // reads off latestRoadGeometry gets a chance to correct
-              // itself too, not just its raw lat/lon.
+              // Second call, same as the one right after resolvedByKey
+              // itself updates above - this route's own fresh road
+              // geometry just landed, so any pin whose own turn-sign
+              // bearing reads off latestRoadGeometry gets a chance to
+              // correct itself too, not just its raw lat/lon.
               if (modeRef.current === "driving" && drivingPinsRevealedRef.current) {
                 drawDrivingPins();
               }
@@ -1756,6 +1874,63 @@ function mountMapLibre(args: MountArgs): () => void {
               .addTo(mapInstance);
           } else {
             locationMarker.setLngLat(lngLat);
+          }
+
+          // Same coords.speed-or-distance/time blend useLiveRouteProgress's
+          // own speedMps uses (see its own doc comment) - driving mode's
+          // camera-follow below needs the same "is this real movement"
+          // answer every other GPS-driven feature in the app already
+          // agrees on, not a second, slightly different one computed here.
+          const fixPoint: LatLon = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude,
+          };
+          recentFixes.push({ point: fixPoint, atMs: position.timestamp });
+          while (recentFixes.length > SPEED_SMOOTHING_FIXES) recentFixes.shift();
+          const instantSpeed =
+            typeof position.coords.speed === "number" && position.coords.speed >= 0
+              ? position.coords.speed
+              : recentFixes.length >= 2
+                ? (() => {
+                    const first = recentFixes[0];
+                    const last = recentFixes[recentFixes.length - 1];
+                    const elapsedSec = (last.atMs - first.atMs) / 1000;
+                    return elapsedSec > 0
+                      ? haversineMeters(first.point, last.point) / elapsedSec
+                      : null;
+                  })()
+                : null;
+          if (instantSpeed != null) {
+            smoothedSpeedMps =
+              smoothedSpeedMps == null ? instantSpeed : smoothedSpeedMps * 0.5 + instantSpeed * 0.5;
+            isMoving = smoothedSpeedMps >= MOVING_THRESHOLD_MPS;
+          }
+
+          // Continuous GPS-follow: while actually moving in driving
+          // mode, the live fix itself owns the camera every update
+          // (syncToModeRef's own driving branch, above, stands down and
+          // leaves this alone whenever isMoving is true) - manually
+          // stepping through stops, or reviewing with no GPS at all,
+          // still gets that per-step flyTo instead. offset positions
+          // the live fix toward the lower quarter of the screen (a
+          // positive y offset shifts the tracked point down from
+          // center - MapLibre's own handleEaseTo places `center` at
+          // `containerCenter + offset` on screen, not at `center`
+          // itself) rather than dead center, so more of the road ahead
+          // stays visible than behind. Real device heading (not the
+          // route-geometry bearing driving mode's own per-step flyTo
+          // uses) while actually moving - that's the whole point of
+          // "follow the live GPS."
+          if (modeRef.current === "driving" && isMoving) {
+            const heading = position.coords.heading;
+            mapInstance.easeTo({
+              center: lngLat,
+              zoom: STREET_ZOOM,
+              pitch: DRIVING_PITCH,
+              offset: [0, mapInstance.getContainer().clientHeight / 4],
+              ...(typeof heading === "number" && !Number.isNaN(heading) ? { bearing: heading } : {}),
+              duration: DRIVING_FLY_DURATION_MS,
+            });
           }
         },
         (error) => {

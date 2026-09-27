@@ -247,14 +247,23 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
       const subheading = fromLocation ? `${fromLocation} & ${location}` : location;
 
       // Spoken as separate parts - stop number, then location, then
-      // side of the road, then rider count, then any note - so there's
-      // a clear pause between each rather than one long sentence.
+      // rider count/side, then any note - so there's a clear pause
+      // between each rather than one long sentence. Rider count and
+      // side are one combined part, not two separate ones ("Expecting
+      // 1 rider, waiting on the left.") - "On the left. 1 rider
+      // expected." used to read as two short, similarly-shaped
+      // fragments back to back, easy to mistake for two different
+      // pieces of information instead of the one same fact (where this
+      // rider actually is) it always was.
       const announcement = [`Stop ${stopCounter}.`, `${speakRoadNames(subheading)}.`];
-      if (sideOfRoad) {
-        announcement.push(`On the ${sideOfRoad.toLowerCase()}.`);
-      }
-      if (studentCount != null) {
-        announcement.push(`${studentCount} rider${studentCount === 1 ? "" : "s"} expected.`);
+      if (studentCount != null && sideOfRoad) {
+        announcement.push(
+          `Expecting ${studentCount} rider${studentCount === 1 ? "" : "s"}, waiting on the ${sideOfRoad.toLowerCase()}.`,
+        );
+      } else if (studentCount != null) {
+        announcement.push(`Expecting ${studentCount} rider${studentCount === 1 ? "" : "s"}.`);
+      } else if (sideOfRoad) {
+        announcement.push(`Waiting on the ${sideOfRoad.toLowerCase()}.`);
       }
       if (specialInstruction) {
         announcement.push(`${speakRoadNames(specialInstruction)}.`);

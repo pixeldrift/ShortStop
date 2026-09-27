@@ -169,6 +169,18 @@ export function useGpsAutoAdvance(
   onCatchUp: (targetIndex: number) => void,
   onTurnCompleted: (step: NavigationStep) => void,
   dismissedStopId: number | null,
+  /** Fired the instant live speed first reads below STOPPED_SPEED_MPS
+   * for the *current* stop step - the same moment stopTrackerRef
+   * (below) starts timing a real stop-and-go, just also reported
+   * outward. This is "the bus has physically stopped here," not "the
+   * stop is done" (onStopAndGoDetected's own job, once it's held long
+   * enough and moving again) - StepScreen's own implementation uses it
+   * to finally let that stop's own full arrival announcement speak,
+   * which it otherwise holds back the instant this step becomes
+   * current (see useRouteStepper.ts's own arrivedStopId doc comment for
+   * why: becoming "current" only ever means the *previous* step
+   * cleared, not that the bus has actually reached this one yet). */
+  onStopArrived: (stepId: number) => void,
 ): void {
   const { onRoute, speedMps, distanceToWaypoint, waypointDistances } = progress;
 
@@ -224,6 +236,7 @@ export function useGpsAutoAdvance(
       if (speedMps < STOPPED_SPEED_MPS) {
         if (stopTrackerRef.current.stoppedSinceMs == null) {
           stopTrackerRef.current = { stepId: step.id, stoppedSinceMs: Date.now() };
+          onStopArrived(step.id);
         }
         // Actually stopped right now - no speed to fall through and
         // check the plain distance path with either.
@@ -306,5 +319,6 @@ export function useGpsAutoAdvance(
     onStopAndGoDetected,
     onStopSkipped,
     onCatchUp,
+    onStopArrived,
   ]);
 }

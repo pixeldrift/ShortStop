@@ -93,6 +93,7 @@ export function StepScreen({
   onEndRoute,
   onLogoClick,
   announcementDone,
+  onStopArrived,
   getRoster,
   totalOnboard,
   onRiderTap,
@@ -115,6 +116,16 @@ export function StepScreen({
   onEndRoute: () => void;
   onLogoClick: () => void;
   announcementDone: boolean;
+  /** useRouteStepper's own arrivedStopId setter (page.tsx) - reports
+   * the instant live GPS confirms the bus has physically stopped at a
+   * stop step (useGpsAutoAdvance's own onStopArrived, wired below),
+   * which is what actually lets that stop's own full arrival
+   * announcement speak - see useRouteStepper.ts's own arrivedStopId doc
+   * comment for the full reasoning. Owned one level up, not locally
+   * here, since the announcement itself is useRouteStepper's own to
+   * speak (or hold back), and that hook lives in page.tsx, not this
+   * component. */
+  onStopArrived: (stepId: number) => void;
   /** useRiderRoster's own getRoster, passed straight through rather
    * than pre-bound to `step` the way this (and onRiderTap/onAddRider
    * below) used to be - the check-in box's own prev/next arrows let a
@@ -479,9 +490,28 @@ export function StepScreen({
   // the "done with this stop" signal - closes the box the same instant
   // GPS detects the bus pulling away again, rather than making the
   // driver also tap it closed by hand.
+  // A real stop-and-go is also the earliest honest moment to say
+  // anything about the turn that (often) immediately follows a stop -
+  // GPS has only confirmed the bus is moving again, not yet that it's
+  // actually completed the turn (handleTurnCompleted's own "Turned
+  // left onto..." ack, below, is what confirms that once distance
+  // actually clears it) - so this speaks the tentative present tense
+  // ("Turning onto...", no direction named yet) rather than claiming
+  // more certainty than GPS actually has at this instant. A no-op
+  // whenever the step right after this stop isn't a real turn (another
+  // stop, a plain "Proceed," the route's own end) - there's nothing
+  // to say yet in those cases.
   const handleStopAndGoDetected = useCallback(
-    (stepId: number) => closeRosterForStep(stepId),
-    [closeRosterForStep],
+    (stepId: number) => {
+      closeRosterForStep(stepId);
+      const stopIndex = route.steps.findIndex((s) => s.id === stepId);
+      const next = stopIndex >= 0 ? route.steps[stopIndex + 1] : undefined;
+      if (next?.direction) {
+        const street = next.subheading ? ` onto ${next.subheading}` : "";
+        speak(`Turning${street}.`);
+      }
+    },
+    [route, closeRosterForStep],
   );
   // useGpsAutoAdvance's own onStopSkipped - fires instead of a stop-and-
   // go whenever a stop step clears via the plain distance fallback (the
@@ -540,6 +570,7 @@ export function StepScreen({
     handleCatchUp,
     handleTurnCompleted,
     dismissedStopId,
+    onStopArrived,
   );
   // Tracks whether the *current* pause was this file's own automatic
   // reaction to going off-route (below), not the driver's own tap on the
