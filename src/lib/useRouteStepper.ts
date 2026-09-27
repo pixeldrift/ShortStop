@@ -3,7 +3,48 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { speakRouteNumber } from "./speech";
 import { SILENT_LOOP_DATA_URI } from "./silence";
+import { parse24HourTimeToMinutes } from "./time";
 import type { Route } from "./types";
+
+/** Within this many minutes either way of route.departureTime, the
+ * depot announcement's own schedule callout just says "Right on time" -
+ * a driver who left within a couple minutes of the scheduled departure
+ * hasn't meaningfully deviated from it, and reporting "1 minute behind
+ * schedule" as though it mattered would read as needless precision, not
+ * useful information. */
+const ON_TIME_THRESHOLD_MINUTES = 2;
+
+/** The depot announcement's own schedule callout - "Right on time,"
+ * "3 minutes behind schedule," "2 minutes ahead of schedule" - comparing
+ * `actualStartMs` (real wall-clock time, captured the instant start()
+ * below actually ran) against route.departureTime (the route's own
+ * scheduled start, "HH:MM:SS" 24-hour - EditRouteScreen's own Start
+ * Time field, standardized to this shape on save). Null whenever
+ * departureTime doesn't parse (parse24HourTimeToMinutes's own Infinity
+ * sentinel) - nothing to compare against, so nothing gets said, same
+ * graceful "no data, no callout" fallback the rest of this app already
+ * gives missing schedule/GPS data. The ±720-minute correction below
+ * handles a route scheduled right around midnight, where a literal
+ * subtraction could otherwise read a few real minutes late as nearly a
+ * full day early (or the reverse) - a bus is never actually that far
+ * off its own scheduled start, so whichever wrap reads closer to zero
+ * is always the right one. */
+function schedulePhrase(departureTime: string, actualStartMs: number): string | null {
+  const scheduledMinutes = parse24HourTimeToMinutes(departureTime);
+  if (scheduledMinutes === Infinity) return null;
+
+  const actual = new Date(actualStartMs);
+  const actualMinutes = actual.getHours() * 60 + actual.getMinutes() + actual.getSeconds() / 60;
+  let diff = actualMinutes - scheduledMinutes;
+  if (diff > 720) diff -= 1440;
+  else if (diff < -720) diff += 1440;
+
+  const rounded = Math.round(diff);
+  if (Math.abs(rounded) <= ON_TIME_THRESHOLD_MINUTES) return "Right on time.";
+  const minutes = Math.abs(rounded);
+  const unit = minutes === 1 ? "minute" : "minutes";
+  return rounded > 0 ? `${minutes} ${unit} behind schedule.` : `${minutes} ${unit} ahead of schedule.`;
+}
 
 /**
  * The bus's position in the route is one of three phases:
@@ -78,6 +119,18 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
   const [paused, setPaused] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const pausedRef = useRef(false);
+  // The real wall-clock moment start() (below) actually ran - the depot
+  // announcement's own schedulePhrase reads this, not Date.now() at
+  // whatever later moment the announcement effect happens to run, so a
+  // driver who taps Start and then pauses to check the roster before
+  // ever hearing the depot announcement still gets an accurate "how
+  // close to on-time did we actually leave," not one that keeps
+  // drifting later the longer that announcement is delayed. Stays null
+  // for a resumed session (resumeAtStepIndex - start() is never called
+  // for one, see its own doc comment above), where the depot phase
+  // itself is skipped entirely, so there's no announcement this would
+  // ever feed anyway.
+  const actualStartMsRef = useRef<number | null>(null);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -234,6 +287,15 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
               // there); only dropoff actually starts "from" the school.
               route.tripType === "dropoff" ? "from" : "to"
             } ${route.schoolName}.`,
+            // schedulePhrase's own doc comment above has the full
+            // reasoning - null whenever there's nothing to report
+            // (departureTime doesn't parse, or this is a resumed
+            // session with no real actualStartMsRef to read).
+            ...(actualStartMsRef.current != null
+              ? [schedulePhrase(route.departureTime, actualStartMsRef.current)].filter(
+                  (p): p is string => p != null,
+                )
+              : []),
           ]
         : phase === "arrived"
           ? ["All stops completed."]
@@ -267,6 +329,7 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     paused,
     attemptKey,
     route.routeNumber,
+    route.departureTime,
     route.schoolName,
     route.tripType,
   ]);
@@ -351,6 +414,7 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
   const start = useCallback(() => {
     if (started) return;
     setStarted(true);
+    actualStartMsRef.current = Date.now();
     const audio = new Audio(SILENT_LOOP_DATA_URI);
     audio.loop = true;
     audio.volume = 0.02;
