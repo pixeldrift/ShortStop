@@ -2,31 +2,17 @@
 
 import { useEffect, useRef } from "react";
 import { titleCaseAction } from "./parseRouteCsv";
-import { speak, speakRoadNames } from "./speech";
+import { speakRoadNames } from "./speech";
+import { speak } from "./speechQueue";
 import type { NavigationStep, Route } from "./types";
 import { MOVING_THRESHOLD_MPS } from "./useLiveRouteProgress";
 import type { LiveRouteProgress } from "./useLiveRouteProgress";
 import type { StepPhase } from "./useRouteStepper";
-
-/** ~15 seconds before a turn/depart/arrive maneuver - a real navigation
- * system's own "advance notice" window (5-10s for a passenger car),
- * lengthened for a school bus: it takes longer to stop, and the driver
- * is more likely to be mid-conversation with the riders than a solo
- * driver would be. */
-const ADVANCE_LEAD_SECONDS = 15;
-/** Longer than ADVANCE_LEAD_SECONDS above - a stop means actually
- * coming to a full halt, not just a turn of the wheel, and a bus needs
- * real extra distance to do that safely once loaded. */
-const STOP_ADVANCE_LEAD_SECONDS = 20;
-/** ~4 seconds before a turn/depart/arrive maneuver - the short,
- * immediate confirmation right as it arrives, same reasoning as
- * ADVANCE_LEAD_SECONDS above for why this runs a little longer than a
- * typical passenger-car app's own close-range cue. */
-const TERSE_LEAD_SECONDS = 4;
-/** Same idea as STOP_ADVANCE_LEAD_SECONDS above, for the close-range
- * cue - a bus committing to a full stop needs a little more of this
- * final window too, not just the earlier advance notice. */
-const STOP_TERSE_LEAD_SECONDS = 6;
+import {
+  advanceStepPhase,
+  initialStepPhaseState,
+  type StepPhaseState,
+} from "./gpsStepPhase";
 
 /** How close together (route meters) two consecutive waypoints have to
  * be before this treats them as "the same intersection" - a stop
@@ -225,9 +211,11 @@ export function distanceBetweenWaypoints(
  *    ahead.") - timed off live GPS speed and distance
  *    (useLiveRouteProgress), not a fixed distance: a bus covers very
  *    different ground in the same lead time on a 25 mph neighborhood
- *    street versus a 45 mph county road. See ADVANCE_LEAD_SECONDS/
- *    TERSE_LEAD_SECONDS (and their own longer STOP_* counterparts)
- *    above for the actual lead times. Never spoken at all for a step
+ *    street versus a 45 mph county road. Timing itself lives in
+ *    gpsStepPhase.ts's shared reducer (ADVANCE_LEAD_SECONDS/
+ *    TERSE_LEAD_SECONDS and their own longer STOP_* counterparts) -
+ *    this hook only reacts to the enteredApproachFar/enteredApproachNear
+ *    events it emits for the upcoming step. Never spoken at all for a step
  *    within SAME_INTERSECTION_METERS of the current one - nothing to
  *    count down across a gap that short.
  *  - A forward-looking preview of that same upcoming step, naming
@@ -278,21 +266,20 @@ export function useNavigationPrompts(
    * real stepId of its own. */
   dismissedStopId: number | null,
 ): void {
-  // Which upcoming step's stages have already been spoken - reset the
-  // moment the upcoming step itself changes (a different stepId), so
+  // The upcoming step's own live phase state (gpsStepPhase.ts) - reset
+  // the moment the upcoming step itself changes (a different stepId), so
   // advancing past one always starts the next fresh rather than
-  // carrying over stale "already spoken" state from whatever used to be
+  // carrying over stale approach-stage state from whatever used to be
   // next. Keyed by stepId (NavigationStep.id), not waypointKey - the
   // shared cache-key text can repeat for two different real steps (a
   // loop road crossing the same other road twice - RouteMap.tsx's own
   // StopMarker doc comment has the full story), which would otherwise
   // make this treat the *second* one as already spoken the moment it
   // became upcoming, and skip its own warning entirely. -1 is the
-  // "nothing spoken yet" sentinel - a real stepId is always >= 0.
-  const spokenRef = useRef<{ key: number; advance: boolean; terse: boolean }>({
-    key: -1,
-    advance: false,
-    terse: false,
+  // "nothing tracked yet" sentinel - a real stepId is always >= 0.
+  const approachStateRef = useRef<{ stepId: number; state: StepPhaseState }>({
+    stepId: -1,
+    state: initialStepPhaseState,
   });
   // Which *current* step's own next-action preview has already been
   // spoken - same -1 sentinel/reset story as spokenRef above, keyed on
@@ -318,31 +305,33 @@ export function useNavigationPrompts(
     const gapMeters = distanceBetweenWaypoints(waypointDistances, current.id, upcoming.id);
     if (gapMeters != null && gapMeters < SAME_INTERSECTION_METERS) return;
 
-    if (spokenRef.current.key !== upcoming.id) {
-      spokenRef.current = { key: upcoming.id, advance: false, terse: false };
+    if (approachStateRef.current.stepId !== upcoming.id) {
+      approachStateRef.current = { stepId: upcoming.id, state: initialStepPhaseState };
     }
-    const spoken = spokenRef.current;
-    if (spoken.advance && spoken.terse) return;
 
     const distanceMeters = distanceToWaypoint(upcoming.id);
-    if (distanceMeters == null || distanceMeters <= 0) return;
+    const isFinalStep = currentIndex + 1 === route.steps.length - 1;
+    const { next, events } = advanceStepPhase(approachStateRef.current.state, {
+      distanceMeters,
+      speedMps,
+      onRoute,
+      sameCorner: false,
+      isStop: upcoming.kind === "stop",
+      isFinalStep,
+      nowMs: Date.now(),
+    });
+    approachStateRef.current = { stepId: upcoming.id, state: next };
 
-    const timeToManeuverSeconds = distanceMeters / speedMps;
-    const terseLead = upcoming.kind === "stop" ? STOP_TERSE_LEAD_SECONDS : TERSE_LEAD_SECONDS;
-    const advanceLead = upcoming.kind === "stop" ? STOP_ADVANCE_LEAD_SECONDS : ADVANCE_LEAD_SECONDS;
-
-    // Checked closest-stage-first, not in lead-time order - a fix that
-    // lands the bus already inside the terse-stage window (a GPS gap,
-    // or a maneuver too close to have ever crossed the advance
-    // threshold on its own) should go straight to the terse phrase
-    // rather than an "In 50 feet, turn right" advance warning a half-
-    // second before the maneuver itself.
-    if (!spoken.terse && timeToManeuverSeconds <= terseLead) {
-      spoken.advance = true;
-      spoken.terse = true;
+    // Checked closest-stage-first, not in lead-time order - see
+    // gpsStepPhase.ts's own doc comment: a fix that lands the bus
+    // already inside the terse-stage window (a GPS gap, or a maneuver
+    // too close to have ever crossed the advance threshold on its own)
+    // goes straight to the terse phrase rather than an "In 50 feet,
+    // turn right" advance warning a half-second before the maneuver
+    // itself - the reducer only ever emits one of these two per tick.
+    if (events.includes("enteredApproachNear")) {
       speak(terseStagePhrase(upcoming));
-    } else if (!spoken.advance && timeToManeuverSeconds <= advanceLead) {
-      spoken.advance = true;
+    } else if (events.includes("enteredApproachFar") && distanceMeters != null) {
       speak(advanceStagePhrase(upcoming, distanceMeters));
     }
   }, [

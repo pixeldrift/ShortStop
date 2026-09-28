@@ -3,60 +3,14 @@
 import { useEffect, useRef } from "react";
 import type { NavigationStep, Route } from "./types";
 import { distanceBetweenWaypoints, SAME_INTERSECTION_METERS } from "./useNavigationPrompts";
-import { MOVING_THRESHOLD_MPS } from "./useLiveRouteProgress";
 import type { LiveRouteProgress } from "./useLiveRouteProgress";
 import type { StepPhase } from "./useRouteStepper";
-
-/** How far past a step's own waypoint (route meters, negative once
- * behind the live fix - see LiveRouteProgress's own distanceToWaypoint
- * doc comment) the live fix has to read before this actually advances -
- * a small buffer past the exact crossing point, not the instant it
- * reads negative at all, so one noisy fix that barely dips past zero
- * then immediately reads positive again doesn't fire a premature
- * advance a moment before the bus has actually cleared it. Every
- * turn/depart/arrive step's own real trigger; a "stop" step only ever
- * falls back to this (see the stop-and-go detection below for its own,
- * more direct primary signal) - a stop the bus simply rolls through
- * without ever fully halting (no expected riders, say) still eventually
- * clears this way instead of waiting forever for a real stop-and-go
- * that isn't coming. */
-const PAST_WAYPOINT_METERS = -15;
-
-/** The route's own last step is a special case: the road-geometry line
- * itself always ends exactly at that final waypoint (a real routing
- * provider's own route terminates at the destination it was asked for,
- * same as this app's mocked-geometry test fixture), so a live fix's
- * own nearest-point-on-line projection (projectOntoRoute,
- * routeProgress.ts) clamps to that same endpoint the moment the bus
- * reaches or passes it - there's no further segment for the fix to
- * project past. distanceToWaypoint for that one step can genuinely
- * never read more negative than 0 as a result, so PAST_WAYPOINT_METERS'
- * own buffer above (which every *other* step reaches because the line
- * keeps going past it) would leave this one waiting forever. Zero
- * buffer here instead - "at or past the endpoint" is already as far
- * "past" as this step's own distance value can ever show. */
-const PAST_FINAL_WAYPOINT_METERS = 0;
-
-/** Below this, live GPS speed reads as "actually stopped," not just
- * "slow" - deliberately below MOVING_THRESHOLD_MPS above rather than
- * sharing one threshold, so a speed reading that hovers right around
- * either value on its own (ordinary GPS jitter at a near-stop crawl)
- * can't flap between "stopped" and "moving" tick to tick: it has to
- * actually cross this lower line to count as freshly stopped, and
- * actually cross MOVING_THRESHOLD_MPS to count as freshly moving again,
- * with a dead zone in between where this hook simply doesn't change its
- * mind either way. ~1 mph. */
-const STOPPED_SPEED_MPS = 0.5;
-
-/** How long live speed has to read continuously below STOPPED_SPEED_MPS
- * before this counts as a real stop for boarding/dropoff, not just a
- * momentary near-stop crawl (a tight turn, easing up to a stop sign
- * short of the actual stop). A few seconds is long enough that an
- * ordinary rolling slowdown never reads as "stopped" at all, but short
- * enough that it's already satisfied well before a driver's actually
- * finished waiting on riders - it's resuming *speed*, not this delay,
- * that actually gates the advance below. */
-const STOP_HOLD_MS = 3000;
+import {
+  advanceStepPhase,
+  initialStepPhaseState,
+  isPastWaypoint,
+  type StepPhaseState,
+} from "./gpsStepPhase";
 
 /**
  * Advances the current step automatically once live GPS shows the bus
@@ -65,34 +19,36 @@ const STOP_HOLD_MS = 3000;
  * speaks an early heads-up but never itself calls onAdvance - see its
  * own doc comment for why that was left for later).
  *
- * Two different signals, depending on the step's own kind:
+ * The *current* step's own phase (Upcoming/Approaching/Action/Completed)
+ * is tracked with gpsStepPhase.ts's shared reducer, one persistent
+ * StepPhaseState per step (phaseStateRef below, reset the moment
+ * `route.steps[currentIndex].id` changes underneath it) - see that
+ * file's own doc comment for the full Upcoming->Approaching->Action->
+ * Completed model and why a stop now needs both low speed *and* GPS
+ * proximity (STOP_ARRIVAL_RADIUS_METERS) before it can ever fire
+ * `arrived` or complete via `stopAndGo`.
  *
- *  - A "stop" step's own primary signal is a real stop-and-go: live
- *    speed reads below STOPPED_SPEED_MPS continuously for at least
- *    STOP_HOLD_MS (the bus actually halted, long enough to be
- *    boarding/dropping off riders - not just slowing for the turn into
- *    it), then climbs back above MOVING_THRESHOLD_MPS (pulling away
- *    again). That's a real school bus's own actual physical behavior at
- *    every stop it ever makes, and a far more direct signal that this
- *    stop is genuinely done than "the live fix's projection now reads
- *    some arbitrary distance past it" - a bus can legitimately sit at a
- *    stop for a long time with a live fix parked well behind the stop's
- *    own waypoint the whole while, and distance alone can't tell "still
- *    loading" from "just hasn't started rolling yet." Falls back to the
- *    same distance check every other step uses (below) if the bus never
- *    actually comes to a real stop at all - riders expected or not, a
- *    stop the bus simply drives through fires `onStopSkipped` instead of
- *    `onStopAndGoDetected` and still advances, rather than leaving the
- *    trip stuck on a stop GPS shows the bus is already well past. A
- *    driver who genuinely blew through a stop needs to be told that
- *    loudly, not have the app silently freeze waiting for a dismiss that
- *    was never coming.
- *  - Every other step (turn/depart/arrive) advances purely on distance:
- *    once the live fix's own distanceToWaypoint reads far enough past
- *    it (PAST_WAYPOINT_METERS, or PAST_FINAL_WAYPOINT_METERS for the
- *    route's own last step) - a turn doesn't necessarily involve a real
- *    stop at all (a wide, rolling turn), so there's no stop-and-go to
- *    key off for one.
+ * Two different completion signals fall out of that reducer, depending
+ * on the step's own kind:
+ *
+ *  - A "stop" step's own primary signal is a real, radius-gated stop-
+ *    and-go (`stopAndGo`) - the bus actually halted at the real stop
+ *    long enough to be boarding/dropping off riders, then pulled away
+ *    again. That's a far more direct signal this stop is genuinely done
+ *    than "the live fix's projection now reads some arbitrary distance
+ *    past it," and advances immediately, one step at a time - never
+ *    folded into the multi-step catch-up scan below, since a stop-and-go
+ *    is only ever tracked for the step that's actually current right
+ *    now. Falls back to the same plain-distance clear every other step
+ *    uses (the reducer's own `skipped` event) if the bus never actually
+ *    comes to a real, radius-gated stop at all - riders expected or not,
+ *    a stop the bus simply drives through fires `onStopSkipped` instead
+ *    of `onStopAndGoDetected` and still advances, rather than leaving
+ *    the trip stuck on a stop GPS shows the bus is already well past.
+ *  - Every other step (turn/depart/arrive) advances purely on distance
+ *    (the reducer's own `cleared` event) - a turn doesn't necessarily
+ *    involve a real stop at all (a wide, rolling turn), so there's no
+ *    stop-and-go to key off for one.
  *
  * Purely additive: every manual input (footer Next/Back, tap-to-advance,
  * Bluetooth remote, keyboard) keeps working exactly as before, and this
@@ -106,30 +62,35 @@ const STOP_HOLD_MS = 3000;
  * showing) so the box is never still sitting open across the step
  * transition that follows immediately after.
  *
- * `onStopSkipped` - called instead, right before that same `onAdvance`,
- * whenever a *stop* step is the one that actually clears via the plain
- * distance fallback rather than a real stop-and-go - the one case that
- * really is "skipped" (a turn/depart/arrive step clearing via distance
- * is just its own normal, only way to clear, not a skip of anything).
- * StepScreen's own implementation is what actually tells the driver.
+ * `onStopSkipped` - called instead, right before that same
+ * `onAdvance`/`onCatchUp`, whenever a *stop* step is the one that
+ * actually clears via the plain distance fallback rather than a real
+ * stop-and-go - the one case that really is "skipped" (a turn/depart/
+ * arrive step clearing via distance is just its own normal, only way to
+ * clear, not a skip of anything). StepScreen's own implementation is
+ * what actually tells the driver.
  *
- * `onCatchUp` - the resync path: the plain distance fallback (below)
- * doesn't just check the current step any more, it scans forward from
- * it looking for the *furthest* step the live fix already reads past.
- * Ordinarily that's still just the current step itself (one tick, one
+ * `onCatchUp` - the resync path: once the *current* step itself clears
+ * (`skipped`/`cleared`, never a `stopAndGo` - see above), this also
+ * scans forward from the step right after it, looking for the *furthest*
+ * step the live fix already reads past too - a stateless check
+ * (gpsStepPhase.ts's own `isPastWaypoint`, no stop-and-go semantics: a
+ * stop folded into a catch-up jump is a real skip, not something to
+ * retroactively credit with a stop-and-go it was never tracked for).
+ * Ordinarily that's still just the current step alone (one tick, one
  * step, same as ever - onAdvance handles that, unchanged), but a fix
  * that already clears one or more *later* steps too - after a spell
- * paused/off-route, a stop-and-go tracker whose window came and went
- * unnoticed, or simply a live fix arriving in bursts - means the trip
- * has fallen behind where the bus actually is, not that each of those
- * intermediate steps individually needs its own satisfied trigger. This
- * fires instead of onAdvance for that case, naming the last index the
- * live fix has already cleared, so the caller can jump straight there
- * (RouteApp's own jumpTo/onSeek, the same thing a manual progress-bar
- * scrub already uses) rather than being stuck re-checking a step GPS
- * shows the bus has already left behind. Every stop step folded into
- * that jump still gets its own onStopSkipped first, in route order,
- * exactly as if each had cleared on its own.
+ * paused/off-route, a stop-and-go window that came and went unnoticed,
+ * or simply a live fix arriving in bursts - means the trip has fallen
+ * behind where the bus actually is, not that each of those intermediate
+ * steps individually needs its own satisfied trigger. This fires instead
+ * of onAdvance for that case, naming the last index the live fix has
+ * already cleared, so the caller can jump straight there (RouteApp's own
+ * jumpTo/onSeek, the same thing a manual progress-bar scrub already
+ * uses) rather than being stuck re-checking a step GPS shows the bus has
+ * already left behind. Every stop step folded into that jump still gets
+ * its own onStopSkipped first, in route order, exactly as if each had
+ * cleared on its own.
  *
  * `onTurnCompleted` - called for every real left/right turn step
  * (`direction` set - a depart/arrive/proceed/etc. step never gets this,
@@ -149,13 +110,13 @@ const STOP_HOLD_MS = 3000;
  * own next-action preview. When that stop's *very next* step sits
  * within SAME_INTERSECTION_METERS of it (a turn right at the same
  * corner, say), this advances straight to it the instant the box
- * closes rather than waiting on the stop-and-go tracker or distance
- * fallback below to notice - there's no real distance between the two
- * to wait through, and a driver who's already dealt with the riders
- * has no reason to sit listening to a stop's own instruction repeat
- * while GPS eventually catches up. Every other stop (no next step this
- * close) is entirely unaffected - still cleared the ordinary way, by a
- * real stop-and-go or the distance fallback below.
+ * closes rather than waiting on the phase reducer or catch-up scan
+ * below to notice - there's no real distance between the two to wait
+ * through, and a driver who's already dealt with the riders has no
+ * reason to sit listening to a stop's own instruction repeat while GPS
+ * eventually catches up. Every other stop (no next step this close) is
+ * entirely unaffected - still cleared the ordinary way, by a real
+ * stop-and-go or the distance fallback.
  */
 export function useGpsAutoAdvance(
   route: Route,
@@ -169,17 +130,17 @@ export function useGpsAutoAdvance(
   onCatchUp: (targetIndex: number) => void,
   onTurnCompleted: (step: NavigationStep) => void,
   dismissedStopId: number | null,
-  /** Fired the instant live speed first reads below STOPPED_SPEED_MPS
-   * for the *current* stop step - the same moment stopTrackerRef
-   * (below) starts timing a real stop-and-go, just also reported
-   * outward. This is "the bus has physically stopped here," not "the
-   * stop is done" (onStopAndGoDetected's own job, once it's held long
-   * enough and moving again) - StepScreen's own implementation uses it
-   * to finally let that stop's own full arrival announcement speak,
-   * which it otherwise holds back the instant this step becomes
-   * current (see useRouteStepper.ts's own arrivedStopId doc comment for
-   * why: becoming "current" only ever means the *previous* step
-   * cleared, not that the bus has actually reached this one yet). */
+  /** Fired the instant gpsStepPhase.ts's reducer reports `arrived` for
+   * the *current* stop step - the moment it's both within
+   * STOP_ARRIVAL_RADIUS_METERS and reads a fresh below-STOPPED_SPEED_MPS
+   * speed. This is "the bus has physically stopped here," not "the stop
+   * is done" (onStopAndGoDetected's own job, once it's held long enough
+   * and moving again) - StepScreen's own implementation uses it to
+   * finally let that stop's own full arrival announcement speak, which
+   * it otherwise holds back the instant this step becomes current (see
+   * useRouteStepper.ts's own arrivedStopId doc comment for why:
+   * becoming "current" only ever means the *previous* step cleared, not
+   * that the bus has actually reached this one yet). */
   onStopArrived: (stepId: number) => void,
 ): void {
   const { onRoute, speedMps, distanceToWaypoint, waypointDistances } = progress;
@@ -192,15 +153,13 @@ export function useGpsAutoAdvance(
   // sentinel - a real stepId is always >= 0.
   const advancedForStepIdRef = useRef(-1);
 
-  // The stop-and-go tracker's own state: which step it's currently
-  // timing a stop for, and when that stop last freshly began (null
-  // while not currently reading as stopped at all). Reset implicitly
-  // the moment `stepId` no longer matches the current step - a new
-  // step always starts this fresh rather than inheriting a previous
-  // stop's own timing.
-  const stopTrackerRef = useRef<{ stepId: number; stoppedSinceMs: number | null }>({
+  // The current step's own live phase state (gpsStepPhase.ts) - reset
+  // implicitly the moment `stepId` no longer matches the current step,
+  // so a new step always starts fresh rather than inheriting whatever
+  // the previous step's own tracker last read.
+  const phaseStateRef = useRef<{ stepId: number; state: StepPhaseState }>({
     stepId: -1,
-    stoppedSinceMs: null,
+    state: initialStepPhaseState,
   });
 
   useEffect(() => {
@@ -211,99 +170,81 @@ export function useGpsAutoAdvance(
     if (!step || advancedForStepIdRef.current === step.id) return;
     const isStop = step.kind === "stop";
 
-    if (isStop) {
-      // The dismissed-stop shortcut - see dismissedStopId's own doc
-      // comment above. Checked before the stop-and-go tracker below so
-      // a same-corner pairing never waits on it at all, stopped or
-      // rolling either way.
-      if (dismissedStopId === step.id) {
-        const next = route.steps[currentIndex + 1];
-        const gapMeters = next
-          ? distanceBetweenWaypoints(waypointDistances, step.id, next.id)
-          : null;
-        if (next && gapMeters != null && gapMeters < SAME_INTERSECTION_METERS) {
-          advancedForStepIdRef.current = step.id;
-          onAdvance();
-          return;
-        }
-      }
-
-      const tracker = stopTrackerRef.current;
-      if (tracker.stepId !== step.id) {
-        stopTrackerRef.current = { stepId: step.id, stoppedSinceMs: null };
-      }
-
-      if (speedMps < STOPPED_SPEED_MPS) {
-        if (stopTrackerRef.current.stoppedSinceMs == null) {
-          stopTrackerRef.current = { stepId: step.id, stoppedSinceMs: Date.now() };
-          onStopArrived(step.id);
-        }
-        // Actually stopped right now - no speed to fall through and
-        // check the plain distance path with either.
+    // The dismissed-stop shortcut - see dismissedStopId's own doc
+    // comment above. Checked before the phase reducer below so a
+    // same-corner pairing never waits on it at all, stopped or rolling
+    // either way.
+    if (isStop && dismissedStopId === step.id) {
+      const next = route.steps[currentIndex + 1];
+      const gapMeters = next
+        ? distanceBetweenWaypoints(waypointDistances, step.id, next.id)
+        : null;
+      if (next && gapMeters != null && gapMeters < SAME_INTERSECTION_METERS) {
+        advancedForStepIdRef.current = step.id;
+        onAdvance();
         return;
       }
-
-      if (speedMps >= MOVING_THRESHOLD_MPS) {
-        const { stoppedSinceMs } = stopTrackerRef.current;
-        const stoppedLongEnough =
-          stoppedSinceMs != null && Date.now() - stoppedSinceMs >= STOP_HOLD_MS;
-        // Moving again either way - a resumed-but-too-brief stop starts
-        // timing fresh from here rather than keeping a stale
-        // stoppedSinceMs that would let a *later*, shorter pause falsely
-        // inherit however long ago the first one started.
-        stopTrackerRef.current = { stepId: step.id, stoppedSinceMs: null };
-        if (stoppedLongEnough) {
-          advancedForStepIdRef.current = step.id;
-          onStopAndGoDetected(step.id);
-          onAdvance();
-          return;
-        }
-        // Moving, but never actually came to a real stop first (or
-        // didn't hold it long enough) - falls through to the same
-        // distance fallback every other step uses below, so a "stop"
-        // step the bus simply rolls through without ever fully halting
-        // (no expected riders, say, or just a rolling stop) still
-        // eventually advances instead of waiting forever for a real
-        // stop-and-go that isn't coming.
-      }
-      // Between the two thresholds is genuinely ambiguous (easing off a
-      // stop, or easing back up to speed) - leave the tracker as-is and
-      // fall through to the same distance check below too, gated by
-      // its own speedMps < MOVING_THRESHOLD_MPS bail-out just past this
-      // block, so this ambiguous zone doesn't itself trigger anything.
     }
 
-    if (speedMps < MOVING_THRESHOLD_MPS) return;
+    if (phaseStateRef.current.stepId !== step.id) {
+      phaseStateRef.current = { stepId: step.id, state: initialStepPhaseState };
+    }
 
-    // Scans forward from the current step (inclusive) rather than only
-    // ever checking it alone - see onCatchUp's own doc comment above for
-    // why. Stops at the first step the live fix *doesn't* clear yet, so
-    // this always finds the furthest contiguous run starting right here,
-    // never a later step past some gap the fix hasn't actually reached.
-    let clearedThroughIndex = -1;
-    for (let i = currentIndex; i < route.steps.length; i++) {
+    const isFinalStep = currentIndex === route.steps.length - 1;
+    const { next: nextPhaseState, events } = advanceStepPhase(phaseStateRef.current.state, {
+      distanceMeters: distanceToWaypoint(step.id),
+      speedMps,
+      onRoute,
+      // Approach-warning staging is useNavigationPrompts.ts's own job
+      // for the *upcoming* step - this hook only cares about the
+      // current step's Action/Completed transitions, so sameCorner:
+      // true skips that branch entirely rather than tracking an
+      // approachStage nothing here ever reads.
+      sameCorner: true,
+      isStop,
+      isFinalStep,
+      nowMs: Date.now(),
+    });
+    phaseStateRef.current = { stepId: step.id, state: nextPhaseState };
+
+    if (events.includes("arrived")) onStopArrived(step.id);
+
+    if (events.includes("stopAndGo")) {
+      advancedForStepIdRef.current = step.id;
+      onStopAndGoDetected(step.id);
+      onAdvance();
+      return;
+    }
+
+    if (!events.includes("skipped") && !events.includes("cleared")) return;
+
+    if (isStop) onStopSkipped(step.id);
+    else if (step.direction) onTurnCompleted(step);
+
+    // Scans forward from the step right after the current one (already
+    // accounted for above) rather than only ever stopping there - see
+    // onCatchUp's own doc comment above for why. Stateless: none of
+    // these later steps have been "current" long enough to have their
+    // own live stop-and-go tracked, so a stop among them just checks
+    // plain distance, same as any other step.
+    let clearedThroughIndex = currentIndex;
+    for (let i = currentIndex + 1; i < route.steps.length; i++) {
       const distanceMeters = distanceToWaypoint(route.steps[i].id);
-      const threshold =
-        i === route.steps.length - 1 ? PAST_FINAL_WAYPOINT_METERS : PAST_WAYPOINT_METERS;
-      if (distanceMeters == null || distanceMeters > threshold) break;
+      if (!isPastWaypoint(distanceMeters, i === route.steps.length - 1)) break;
       clearedThroughIndex = i;
     }
-    if (clearedThroughIndex === -1) return;
 
     advancedForStepIdRef.current = route.steps[clearedThroughIndex].id;
-    for (let i = currentIndex; i <= clearedThroughIndex; i++) {
-      const cleared = route.steps[i];
-      if (cleared.kind === "stop") onStopSkipped(cleared.id);
-      // A real left/right turn (direction set) - see onTurnCompleted's
-      // own doc comment above for why only this subset, and why it
-      // fires before onAdvance/onCatchUp below rather than after.
-      else if (cleared.direction) onTurnCompleted(cleared);
-    }
     if (clearedThroughIndex === currentIndex) {
       onAdvance();
-    } else {
-      onCatchUp(clearedThroughIndex);
+      return;
     }
+    for (let i = currentIndex + 1; i <= clearedThroughIndex; i++) {
+      const cleared = route.steps[i];
+      if (cleared.kind === "stop") onStopSkipped(cleared.id);
+      else if (cleared.direction) onTurnCompleted(cleared);
+    }
+    onCatchUp(clearedThroughIndex);
   }, [
     route,
     currentIndex,
