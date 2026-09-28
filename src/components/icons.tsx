@@ -109,6 +109,7 @@ export function SortIcon({
 
 export { default as PersonIcon } from "./icons/person-outline.svg";
 export { default as PersonSolidIcon } from "./icons/person-solid.svg";
+export { default as SpeechBalloonIcon } from "./icons/speech-balloon.svg";
 export { default as MapPinIcon } from "./icons/map-pin.svg";
 /** A planted flag, marking the school specifically wherever it shows up
  * among a route's ordinary stops (StartScreen's own View Stops popup) -

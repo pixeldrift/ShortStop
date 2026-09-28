@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { CheckboxIcon, CloseIcon, PersonSolidIcon } from "./icons";
+import { CheckboxIcon, CloseIcon, PersonSolidIcon, SpeechBalloonIcon } from "./icons";
 import type { CurrentUser } from "@/lib/currentUser";
 import { ADMIN_PERMISSIONS } from "@/lib/permissions";
 import type { Permissions } from "@/lib/permissions";
+import SpeechLab from "./SpeechLab";
 
 /** Every Permissions field off (permissions.ts's own NO_PERMISSIONS
  * equivalent, inlined here rather than exported there since this is the
@@ -60,6 +61,7 @@ export function UserMenu({
   onChange: (user: CurrentUser) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [speechLabOpen, setSpeechLabOpen] = useState(false);
 
   // Every permission field lives or dies together for now - see
   // NO_PERMISSIONS/ADMIN_PERMISSIONS's own doc comments. "On" means
@@ -114,14 +116,30 @@ export function UserMenu({
               <h2 className="font-heading text-xl font-black tracking-tight">
                 Account
               </h2>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                aria-label="Close"
-                className="text-zinc-400 active:text-zinc-600"
-              >
-                <CloseIcon className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-1">
+                {/* Testing-only shortcut into SpeechLab.tsx - lets
+                    whoever's poking at this account popup preview every
+                    voice this device's speechSynthesis reports, without
+                    needing to be mid-route to hear anything speak. Not
+                    gated by `canEdit` below - it doesn't touch app data,
+                    just plays sound. */}
+                <button
+                  type="button"
+                  onClick={() => setSpeechLabOpen(true)}
+                  aria-label="Open Speech Lab"
+                  className="p-1 text-zinc-400 active:text-zinc-600"
+                >
+                  <SpeechBalloonIcon className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close"
+                  className="text-zinc-400 active:text-zinc-600"
+                >
+                  <CloseIcon className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 flex flex-col gap-3">
@@ -183,6 +201,11 @@ export function UserMenu({
           </div>
         </div>
       )}
+
+      {/* Its own overlay (speech-balloon button above), independent of
+          the Account popup's own `open` state - closing SpeechLab
+          always lands back on Account, still open underneath. */}
+      <SpeechLab open={speechLabOpen} onClose={() => setSpeechLabOpen(false)} />
     </>
   );
 }
