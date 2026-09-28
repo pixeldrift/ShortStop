@@ -10,8 +10,10 @@ import type { LatLon, WaypointProgress } from "./routeProgress";
  * against real driving data yet. Every consumer of this hook (auto-
  * advance, the time-based prompt scheduler) should no-op while
  * `onRoute` is false instead of acting on a projection that doesn't
- * mean anything. */
-const MAX_ON_ROUTE_METERS = 60;
+ * mean anything. Exported for RouteMap.tsx's own live GPS-driven
+ * traveled/remaining split (updateRouteProgress) - the same "is this
+ * fix even worth trusting" line, not a second, differently-tuned one. */
+export const MAX_ON_ROUTE_METERS = 60;
 
 /** Shared "the bus is genuinely moving, not just reading GPS jitter"
  * line - every consumer of a live speed reading (useGpsAutoAdvance's
@@ -35,8 +37,10 @@ export const MOVING_THRESHOLD_MPS = 0.9;
  * between fixes - nowhere near enough to reach a route's own later re-
  * crossing of the same real corner, which is real additional driving
  * distance away, not another couple hundred meters of the same
- * stretch. */
-const MAX_LIVE_FIX_JUMP_METERS = 250;
+ * stretch. Exported for RouteMap.tsx's own live GPS-driven traveled/
+ * remaining split - the same locality-search bound, not a second,
+ * differently-tuned one. */
+export const MAX_LIVE_FIX_JUMP_METERS = 250;
 
 /** How many recent fixes the speed estimate averages over - smooths a
  * single noisy fix rather than letting it swing a speed-derived time-
