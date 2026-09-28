@@ -27,10 +27,15 @@ import {
   haversineMeters,
   nearestSegmentBearings,
   pointAtDistance,
+  projectOntoRoute,
   roadBearingAt,
 } from "@/lib/routeProgress";
 import type { LatLon } from "@/lib/routeProgress";
-import { MOVING_THRESHOLD_MPS } from "@/lib/useLiveRouteProgress";
+import {
+  MAX_LIVE_FIX_JUMP_METERS,
+  MAX_ON_ROUTE_METERS,
+  MOVING_THRESHOLD_MPS,
+} from "@/lib/useLiveRouteProgress";
 import type { RouteCoordinate, RoutingResult } from "@/lib/routing/types";
 import { destinationPoint, isSameLocation } from "@/lib/spreadCoincidentPoints";
 import type { TripType, TurnDirection } from "@/lib/types";
@@ -947,7 +952,25 @@ class RecenterControl implements IControl {
 
   onAdd(): HTMLElement {
     const container = document.createElement("div");
-    container.className = "maplibregl-ctrl mt-12 mr-2";
+    container.className = "maplibregl-ctrl";
+    // Set as an inline style, not Tailwind classes (mt-12/mr-2 used to
+    // sit here instead) - MapLibre's own stylesheet targets this same
+    // "maplibregl-ctrl" class with a two-class selector
+    // (.maplibregl-ctrl-top-right .maplibregl-ctrl { margin: 10px 10px
+    // 0 0 }), which beats a single-class Tailwind utility on plain CSS
+    // specificity regardless of stylesheet order - the margin classes
+    // were silently never winning, leaving this control glued to
+    // MapLibre's own default 10px offset, almost exactly underneath
+    // ExpandableMap's own expand button (top-2 right-2, z-20) in that
+    // same corner - which then painted over it, hiding it completely
+    // rather than sitting below it. An inline style always wins over
+    // any non-!important stylesheet rule no matter its selector
+    // specificity, so this is the one reliable way to override it.
+    // 48px clears that button's own 8px top offset + 32px height (40px
+    // total) with a small gap; the 10px right margin MapLibre already
+    // applies is left alone - close enough to that button's own 8px
+    // that the two already line up.
+    container.style.marginTop = "48px";
     const button = document.createElement("button");
     button.type = "button";
     button.setAttribute("aria-label", "Jump to current location");
@@ -1004,6 +1027,27 @@ function mountMapLibre(args: MountArgs): () => void {
   // (updateRouteProgress's point lookup coming up empty) leaves the
   // split exactly where it was rather than snapping back to 0.
   let lastRouteSplitDistance = 0;
+  // The most recent live GPS fix's own distance-along-route (meters,
+  // watchPosition below) - null until driving mode's first trustworthy
+  // fix lands. updateRouteProgress blends this in with the active
+  // step's own distance (whichever is further along wins - see its own
+  // doc comment), so the traveled/remaining split moves continuously
+  // with the live location dot between waypoints instead of only ever
+  // jumping the instant a new step becomes current.
+  let lastGpsDistanceAlongRoute: number | null = null;
+  // roadLine/roadCumulative (below) mirrored out here for the same
+  // reason latestRoadGeometry is - watchPosition's own callback is
+  // defined once, well outside the route-geometry fetch's `.then`, but
+  // needs this route's own current line and distance table on every
+  // live fix to project against (projectOntoRoute), not just whichever
+  // `.then` last happened to run inside. latestRoadLine duplicates
+  // latestRoadGeometry's own points in {lat,lon} shape rather than
+  // re-mapping it per fix, and latestRoadCumulative is cached rather
+  // than recomputed from it per fix - a watchPosition tick is far more
+  // frequent than a route-geometry refetch, so this avoids re-walking
+  // the whole line's own cumulative distances on every single one.
+  let latestRoadLine: LatLon[] = [];
+  let latestRoadCumulative: number[] = [];
   // Every waypoint's own real distance-along-route (meters) - populated
   // once, eagerly, the moment the route-geometry fetch itself resolves
   // (search "distanceAlongRouteByKey.set" below), straight from that
@@ -1701,43 +1745,64 @@ function mountMapLibre(args: MountArgs): () => void {
               const roadLine: LatLon[] = roadLngLats.map(([lon, lat]) => ({ lat, lon }));
               const roadCumulative = cumulativeDistances(roadLine);
               const roadTotalDistance = roadCumulative[roadCumulative.length - 1] ?? 0;
+              // Mirrored into the outer mutables watchPosition's own
+              // callback reads (see their own doc comment) - that
+              // callback is declared once, outside this whole `.then`,
+              // and needs this route's current line and distance table
+              // on every live fix, not just whichever `.then` last
+              // happened to run.
+              latestRoadLine = roadLine;
+              latestRoadCumulative = roadCumulative;
 
               // Splits roadLngLats at how far the bus has actually
-              // gotten - always the *active step's* own real distance-
-              // along-route (distanceAlongRouteByKey, populated above,
-              // trip-order-safe), for every waypoint kind (turn or
-              // stop alike - the active step's own resolved coordinate,
-              // not just a stop's), never a live GPS fix. A GPS
-              // projection used to be blended in (taking whichever of
-              // the two candidates was further along), but a single
-              // coarse/inaccurate fix - the common case testing from a
-              // desk, or just weak signal - could project onto a
-              // wildly wrong point on the route (nearest a *later* stop
-              // the bus hasn't actually reached yet, say) and that
-              // reading could never be un-taken once it landed, since
-              // the whole point of taking the max was to never regress
-              // the split backward - the traveled portion would jump
-              // far ahead of the real position and stay stuck there for
-              // the rest of the drive, no matter how many turns still
-              // lay between. The step the driver has actually advanced
-              // to (via Next, same as every other piece of driving
-              // mode's own state) is the one source of truth this app
-              // already trusts for "where are we now" - GPS still drives
-              // the separate blue location dot (watchPosition below),
-              // just not this split. Splits at the real interpolated
-              // point that distance falls on (pointAtDistance), not
-              // just whichever geometry vertex happens to be nearest it
-              // (that used to be nearestCoordIndex's own job) - a
-              // route-geometry provider can space its own vertices
-              // anywhere from a few meters to tens of meters apart, and
-              // snapping to one instead of the real point is exactly
-              // what made the traveled/remaining boundary look like it
-              // landed somewhere arbitrary instead of lining up with
-              // the current step. Assigned to applyRouteProgress
-              // (declared outside this whole closure) so a later step
-              // advance - whose own effect lives outside this fetch's
-              // `.then`, in RouteMap's own [mode, activeStepId]
-              // effect - can still trigger a redraw.
+              // gotten - the *further along* of two candidates: the
+              // active step's own real distance-along-route
+              // (distanceAlongRouteByKey, populated above, trip-order-
+              // safe, every waypoint kind alike) and the most recent
+              // trustworthy live GPS fix's own projected distance
+              // (lastGpsDistanceAlongRoute, watchPosition below). A step
+              // advance moves the split immediately even with no GPS at
+              // all (reviewing at a desk, weak signal); real-time GPS
+              // fixes between waypoints move it continuously the rest of
+              // the way there, so the solid traveled line keeps pace
+              // with the live location dot instead of only ever jumping
+              // the instant a new step becomes current.
+              //
+              // This blend used to be dropped entirely, after a single
+              // coarse/inaccurate GPS fix could project onto a wildly
+              // wrong point on the route (nearest a *later* stop the bus
+              // hadn't actually reached yet) and get stuck there for the
+              // rest of the drive, since taking the max never regresses
+              // the split backward on its own. The real fix is bounding
+              // *where* a fix is allowed to project, not abandoning live
+              // GPS altogether: watchPosition's own projectOntoRoute
+              // call below is locality-constrained to near wherever the
+              // previous trustworthy fix (or the active step, before the
+              // first one) actually landed (MAX_LIVE_FIX_JUMP_METERS,
+              // same bound useLiveRouteProgress.ts's own live projection
+              // uses) - a fix that can't find a segment inside that
+              // window, or that lands too far off the road entirely
+              // (MAX_ON_ROUTE_METERS), is simply ignored for that tick
+              // rather than accepted onto whichever point on the *whole*
+              // route happens to be nearest, so a genuinely wrong
+              // reading can no longer bulldoze the split forward and
+              // strand it there.
+              //
+              // Splits at the real interpolated point that distance
+              // falls on (pointAtDistance), not just whichever geometry
+              // vertex happens to be nearest it (that used to be
+              // nearestCoordIndex's own job) - a route-geometry provider
+              // can space its own vertices anywhere from a few meters to
+              // tens of meters apart, and snapping to one instead of the
+              // real point is exactly what made the traveled/remaining
+              // boundary look like it landed somewhere arbitrary instead
+              // of lining up with the current step (or the live dot).
+              // Assigned to applyRouteProgress (declared outside this
+              // whole closure) so a later step advance - whose own
+              // effect lives outside this fetch's `.then`, in RouteMap's
+              // own [mode, activeStepId] effect - or a later live GPS
+              // fix - whose own callback lives outside this fetch too,
+              // in watchPosition below - can still trigger a redraw.
               function updateRouteProgress() {
                 if (modeRef.current !== "driving") {
                   // No live progress to show outside actual turn-by-
@@ -1749,15 +1814,20 @@ function mountMapLibre(args: MountArgs): () => void {
                 } else {
                   // A step with no resolved key/distance yet (an
                   // unverified stop an admin still activated - see
-                  // RouteListScreen's own warning for that) leaves
-                  // lastRouteSplitDistance wherever it last genuinely
-                  // reached instead of snapping back toward the start.
-                  // `!= null`, not a bare truthy check - stepId 0 (the
-                  // route's own first step) is falsy but still a real,
-                  // valid id to look up.
+                  // RouteListScreen's own warning for that) leaves this
+                  // candidate at lastRouteSplitDistance itself (no
+                  // change), rather than snapping back toward the
+                  // start. `!= null`, not a bare truthy check - stepId 0
+                  // (the route's own first step) is falsy but still a
+                  // real, valid id to look up.
                   const stepId = activeStepIdRef.current;
-                  const distance = stepId != null ? distanceAlongRouteByKey.get(stepId) : undefined;
-                  if (distance != null) lastRouteSplitDistance = distance;
+                  const stepDistance =
+                    stepId != null ? distanceAlongRouteByKey.get(stepId) : undefined;
+                  let nextDistance = stepDistance ?? lastRouteSplitDistance;
+                  if (lastGpsDistanceAlongRoute != null) {
+                    nextDistance = Math.max(nextDistance, lastGpsDistanceAlongRoute);
+                  }
+                  lastRouteSplitDistance = nextDistance;
                 }
                 // The interpolated split point itself becomes the
                 // shared last coordinate of the traveled slice and
@@ -1904,6 +1974,33 @@ function mountMapLibre(args: MountArgs): () => void {
             smoothedSpeedMps =
               smoothedSpeedMps == null ? instantSpeed : smoothedSpeedMps * 0.5 + instantSpeed * 0.5;
             isMoving = smoothedSpeedMps >= MOVING_THRESHOLD_MPS;
+          }
+
+          // Feeds the traveled/remaining route-line split (applyRouteProgress
+          // / updateRouteProgress, above) a fresh live-GPS distance-along-
+          // route on every fix, so it moves continuously with this same
+          // fix rather than only at a step advance - see that function's
+          // own doc comment for the full reasoning and the locality-bound
+          // this leans on to stay safe against one bad reading. Searches
+          // near wherever the *previous* trustworthy fix landed
+          // (lastGpsDistanceAlongRoute), or the split's own current
+          // position before the first one - a real vehicle can only have
+          // moved a bounded distance since either. A fix that can't
+          // project inside that window, or lands too far off the route
+          // to trust at all, is simply skipped for this tick rather than
+          // forced onto the nearest point on the whole line.
+          if (modeRef.current === "driving" && latestRoadCumulative.length > 1) {
+            const projection = projectOntoRoute(
+              latestRoadLine,
+              latestRoadCumulative,
+              fixPoint,
+              lastGpsDistanceAlongRoute ?? lastRouteSplitDistance,
+              MAX_LIVE_FIX_JUMP_METERS,
+            );
+            if (projection && projection.distanceFromRoute <= MAX_ON_ROUTE_METERS) {
+              lastGpsDistanceAlongRoute = projection.distanceAlongRoute;
+              applyRouteProgress?.();
+            }
           }
 
           // Continuous GPS-follow: while actually moving in driving
