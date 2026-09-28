@@ -63,15 +63,22 @@ export default function SpeechLab({ open, onClose }: SpeechLabProps) {
   useEffect(() => {
     if (!open || !supported) return;
 
-    loadVoices();
-
     const synth = window.speechSynthesis;
     synth.addEventListener("voiceschanged", loadVoices);
 
-    const timer = window.setTimeout(loadVoices, 250);
+    // Deferred, not a direct call - some browsers report an empty voice
+    // list until just after this effect runs, so an immediate call is
+    // never enough on its own; the fallback timer below covers that.
+    // Also sidesteps this repo's own react-hooks/set-state-in-effect
+    // rule, which flags setState calls made synchronously in an effect
+    // body (loadVoices sets state) - see useRouteStepper.ts's own doc
+    // comments for the same reasoning elsewhere in this app.
+    const initialTimer = window.setTimeout(loadVoices, 0);
+    const fallbackTimer = window.setTimeout(loadVoices, 250);
 
     return () => {
-      window.clearTimeout(timer);
+      window.clearTimeout(initialTimer);
+      window.clearTimeout(fallbackTimer);
       synth.removeEventListener("voiceschanged", loadVoices);
     };
   }, [open, supported, loadVoices]);
