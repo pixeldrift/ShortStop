@@ -201,19 +201,6 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     arrivedStopId !== currentStep.id &&
     forcedStopId !== currentStep.id;
 
-  // A GPS-completion phrase (StepScreen's own "Turned left onto..."/
-  // "Turning onto...") that belongs with whichever step transition is
-  // *about* to happen, not yet spoken - a ref, not state, since nothing
-  // ever renders off it, only the announcement effect below, which
-  // drains it exactly once per fresh attempt (see queuePendingAnnouncement's
-  // own doc comment for the full reasoning: this is what keeps that
-  // phrase from being a separate, independently-timed speechQueue call
-  // for this same step-change's own cancel to steamroll).
-  const pendingAnnouncementRef = useRef<string | null>(null);
-  const queuePendingAnnouncement = useCallback((text: string) => {
-    pendingAnnouncementRef.current = text;
-  }, []);
-
   const stopSteps = useMemo(
     () => route.steps.filter((s) => s.kind === "stop"),
     [route.steps],
@@ -344,16 +331,6 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
   useEffect(() => {
     if (!started || paused) return;
 
-    // Drained exactly once per fresh attempt - see
-    // pendingAnnouncementRef's own doc comment above. Read before the
-    // stopArrivalPending check just below: a GPS-completion phrase can
-    // arrive right as a *stop* becomes current too (a same-corner
-    // pairing, say), and it deserves to be heard immediately either
-    // way, not held hostage behind that stop's own arrival, which may
-    // still be minutes away.
-    const pendingText = pendingAnnouncementRef.current;
-    pendingAnnouncementRef.current = null;
-
     // Genuinely nothing else to speak or mark done yet - not the same
     // as the "no parts" fallback further below (an arrived phase with
     // nothing to say, say), which always marks the attempt done
@@ -361,12 +338,8 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     // announcementDone stays false for as long as this stop is still
     // waiting - see arrivedStopId's own doc comment for what that gates
     // (the roster box's own auto-open, useNavigationPrompts' own
-    // preview). The pending phrase itself still speaks - just alone,
-    // with no onDone, since it isn't this stop's own announcement.
-    if (stopArrivalPending) {
-      if (pendingText) speechQueue.speak(pendingText);
-      return;
-    }
+    // preview).
+    if (stopArrivalPending) return;
 
     const parts =
       phase === "depot"
@@ -390,20 +363,15 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
           ? ["All stops completed."]
           : [...currentStep.announcement];
 
-    const allParts = pendingText ? [pendingText, ...parts] : parts;
-
-    if (allParts.length === 0) {
+    if (parts.length === 0) {
       const id = setTimeout(() => setCompletedKey(attemptKey), 0);
       return () => clearTimeout(id);
     }
 
     // The one place in this app that deliberately replaces whatever's
     // still queued/speaking - see announceStep's own doc comment
-    // (speechQueue.ts). Any GPS-completion phrase for *this* transition
-    // rides along inside `allParts` above, ahead of the step's own
-    // announcement, precisely so it's never a separate call for this
-    // same cancel to steamroll.
-    speechQueue.announceStep(allParts, () => setCompletedKey(attemptKey));
+    // (speechQueue.ts).
+    speechQueue.announceStep(parts, () => setCompletedKey(attemptKey));
   }, [
     phase,
     currentStep,
@@ -596,6 +564,5 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     exitTrip,
     announcementDone,
     setArrivedStopId,
-    queuePendingAnnouncement,
   };
 }
