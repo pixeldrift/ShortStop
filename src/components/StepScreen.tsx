@@ -24,7 +24,7 @@ import {
 } from "./icons";
 import type { LatLon } from "@/lib/routeProgress";
 import { addressWithoutZip } from "@/lib/schoolAddress";
-import { speak } from "@/lib/speech";
+import { speak } from "@/lib/speechQueue";
 import { parseTimeToMinutes } from "@/lib/time";
 import { useFitGrid } from "@/lib/useFitGrid";
 import { useFitLines } from "@/lib/useFitLines";
@@ -94,6 +94,7 @@ export function StepScreen({
   onLogoClick,
   announcementDone,
   onStopArrived,
+  onQueuePendingAnnouncement,
   getRoster,
   totalOnboard,
   onRiderTap,
@@ -126,6 +127,16 @@ export function StepScreen({
    * speak (or hold back), and that hook lives in page.tsx, not this
    * component. */
   onStopArrived: (stepId: number) => void;
+  /** useRouteStepper's own queuePendingAnnouncement (page.tsx) - a GPS-
+   * completion phrase (a turn just confirmed cleared, a stop-and-go
+   * just detected, a stop just skipped) that belongs with whichever
+   * step transition is about to happen right alongside it, not a
+   * separate, independently-timed speech call the transition's own
+   * announcement effect would otherwise cancel out from under it - see
+   * useRouteStepper.ts's own pendingAnnouncementRef doc comment for the
+   * full reasoning. Every GPS-completion handler below calls this
+   * instead of speaking directly. */
+  onQueuePendingAnnouncement: (text: string) => void;
   /** useRiderRoster's own getRoster, passed straight through rather
    * than pre-bound to `step` the way this (and onRiderTap/onAddRider
    * below) used to be - the check-in box's own prev/next arrows let a
@@ -495,12 +506,18 @@ export function StepScreen({
   // GPS has only confirmed the bus is moving again, not yet that it's
   // actually completed the turn (handleTurnCompleted's own "Turned
   // left onto..." ack, below, is what confirms that once distance
-  // actually clears it) - so this speaks the tentative present tense
+  // actually clears it) - so this queues the tentative present tense
   // ("Turning onto...", no direction named yet) rather than claiming
   // more certainty than GPS actually has at this instant. A no-op
   // whenever the step right after this stop isn't a real turn (another
   // stop, a plain "Proceed," the route's own end) - there's nothing
-  // to say yet in those cases.
+  // to say yet in those cases. Queued (onQueuePendingAnnouncement),
+  // not spoken directly - a stop-and-go fires in the same breath as
+  // the step advance that follows it, and useRouteStepper's own per-
+  // step announcement effect is what actually speaks this phrase,
+  // folded in ahead of whatever that next step has to say, so the two
+  // play back-to-back rather than this one getting cancelled out from
+  // under it by that very same transition.
   const handleStopAndGoDetected = useCallback(
     (stepId: number) => {
       closeRosterForStep(stepId);
@@ -508,10 +525,10 @@ export function StepScreen({
       const next = stopIndex >= 0 ? route.steps[stopIndex + 1] : undefined;
       if (next?.direction) {
         const street = next.subheading ? ` onto ${next.subheading}` : "";
-        speak(`Turning${street}.`);
+        onQueuePendingAnnouncement(`Turning${street}.`);
       }
     },
-    [route, closeRosterForStep],
+    [route, closeRosterForStep, onQueuePendingAnnouncement],
   );
   // useGpsAutoAdvance's own onStopSkipped - fires instead of a stop-and-
   // go whenever a stop step clears via the plain distance fallback (the
@@ -551,13 +568,20 @@ export function StepScreen({
   // useGpsAutoAdvance's own onTurnCompleted - a short reassurance the
   // instant GPS confirms a real left/right turn is behind the bus,
   // distinct from whatever gets announced for the step that becomes
-  // current next (that's useRouteStepper's own per-step announcement,
-  // unaffected) - see that hook's own doc comment for why this matters:
-  // GPS confirming a turn used to be entirely silent on its own.
-  const handleTurnCompleted = useCallback((completed: NavigationStep) => {
-    const street = completed.subheading ? ` onto ${completed.subheading}` : "";
-    speak(`Turned ${completed.direction}${street}.`);
-  }, []);
+  // current next - see that hook's own doc comment for why this
+  // matters: GPS confirming a turn used to be entirely silent on its
+  // own. Queued, not spoken directly - same reasoning
+  // handleStopAndGoDetected's own doc comment gives: this fires right
+  // alongside the very step advance whose own announcement effect
+  // would otherwise cancel it out mid-utterance, so useRouteStepper.ts
+  // folds it into that same announcement instead of racing it.
+  const handleTurnCompleted = useCallback(
+    (completed: NavigationStep) => {
+      const street = completed.subheading ? ` onto ${completed.subheading}` : "";
+      onQueuePendingAnnouncement(`Turned ${completed.direction}${street}.`);
+    },
+    [onQueuePendingAnnouncement],
+  );
   useGpsAutoAdvance(
     route,
     currentIndex,

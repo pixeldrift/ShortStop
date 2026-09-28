@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { speakRouteNumber } from "./speech";
+import * as speechQueue from "./speechQueue";
 import { SILENT_LOOP_DATA_URI } from "./silence";
 import { parse24HourTimeToMinutes } from "./time";
 import type { Route } from "./types";
@@ -200,6 +201,19 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     arrivedStopId !== currentStep.id &&
     forcedStopId !== currentStep.id;
 
+  // A GPS-completion phrase (StepScreen's own "Turned left onto..."/
+  // "Turning onto...") that belongs with whichever step transition is
+  // *about* to happen, not yet spoken - a ref, not state, since nothing
+  // ever renders off it, only the announcement effect below, which
+  // drains it exactly once per fresh attempt (see queuePendingAnnouncement's
+  // own doc comment for the full reasoning: this is what keeps that
+  // phrase from being a separate, independently-timed speechQueue call
+  // for this same step-change's own cancel to steamroll).
+  const pendingAnnouncementRef = useRef<string | null>(null);
+  const queuePendingAnnouncement = useCallback((text: string) => {
+    pendingAnnouncementRef.current = text;
+  }, []);
+
   const stopSteps = useMemo(
     () => route.steps.filter((s) => s.kind === "stop"),
     [route.steps],
@@ -329,14 +343,30 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
 
   useEffect(() => {
     if (!started || paused) return;
-    // Genuinely nothing to speak or mark done yet - not the same as the
-    // "no parts" fallback just below (an arrived phase with nothing to
-    // say, say), which always marks the attempt done immediately.
-    // completedKey must stay stale here so announcementDone stays false
-    // for as long as this stop is still waiting - see arrivedStopId's
-    // own doc comment for what that gates (the roster box's own auto-
-    // open, useNavigationPrompts' own preview).
-    if (stopArrivalPending) return;
+
+    // Drained exactly once per fresh attempt - see
+    // pendingAnnouncementRef's own doc comment above. Read before the
+    // stopArrivalPending check just below: a GPS-completion phrase can
+    // arrive right as a *stop* becomes current too (a same-corner
+    // pairing, say), and it deserves to be heard immediately either
+    // way, not held hostage behind that stop's own arrival, which may
+    // still be minutes away.
+    const pendingText = pendingAnnouncementRef.current;
+    pendingAnnouncementRef.current = null;
+
+    // Genuinely nothing else to speak or mark done yet - not the same
+    // as the "no parts" fallback further below (an arrived phase with
+    // nothing to say, say), which always marks the attempt done
+    // immediately. completedKey must stay stale here so
+    // announcementDone stays false for as long as this stop is still
+    // waiting - see arrivedStopId's own doc comment for what that gates
+    // (the roster box's own auto-open, useNavigationPrompts' own
+    // preview). The pending phrase itself still speaks - just alone,
+    // with no onDone, since it isn't this stop's own announcement.
+    if (stopArrivalPending) {
+      if (pendingText) speechQueue.speak(pendingText);
+      return;
+    }
 
     const parts =
       phase === "depot"
@@ -360,27 +390,20 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
           ? ["All stops completed."]
           : [...currentStep.announcement];
 
-    if (parts.length === 0 || typeof window === "undefined" || !("speechSynthesis" in window)) {
+    const allParts = pendingText ? [pendingText, ...parts] : parts;
+
+    if (allParts.length === 0) {
       const id = setTimeout(() => setCompletedKey(attemptKey), 0);
       return () => clearTimeout(id);
     }
 
-    window.speechSynthesis.cancel();
-    const utterances = parts.map((part) => new SpeechSynthesisUtterance(part));
-    const last = utterances[utterances.length - 1];
-    const markDone = () => setCompletedKey(attemptKey);
-    last.addEventListener("end", markDone);
-    last.addEventListener("error", markDone);
-    const fallback = window.setTimeout(markDone, 8000);
-    for (const utterance of utterances) {
-      window.speechSynthesis.speak(utterance);
-    }
-
-    return () => {
-      last.removeEventListener("end", markDone);
-      last.removeEventListener("error", markDone);
-      window.clearTimeout(fallback);
-    };
+    // The one place in this app that deliberately replaces whatever's
+    // still queued/speaking - see announceStep's own doc comment
+    // (speechQueue.ts). Any GPS-completion phrase for *this* transition
+    // rides along inside `allParts` above, ahead of the step's own
+    // announcement, precisely so it's never a separate call for this
+    // same cancel to steamroll.
+    speechQueue.announceStep(allParts, () => setCompletedKey(attemptKey));
   }, [
     phase,
     currentStep,
@@ -396,9 +419,7 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
 
   // Cancel any in-progress announcement the moment the route is paused.
   useEffect(() => {
-    if (paused && typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    if (paused) speechQueue.interrupt();
   }, [paused]);
 
   // Bluetooth media-remote handling via the Media Session API. Most of
@@ -541,10 +562,8 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
   // Tapping "End Route" in the confirmation modal from the "arrived"
   // phase: announce that the route ended, then reset.
   const endRoute = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance("Route ended."));
-    }
+    speechQueue.interrupt();
+    speechQueue.speak("Route ended.");
     resetTrip();
   }, [resetTrip]);
 
@@ -554,9 +573,7 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
   // stays quiet (still cancels whatever announcement was mid-speech,
   // same as pausing does, just without speaking a new one over it).
   const exitTrip = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
+    speechQueue.interrupt();
     resetTrip();
   }, [resetTrip]);
 
@@ -579,5 +596,6 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     exitTrip,
     announcementDone,
     setArrivedStopId,
+    queuePendingAnnouncement,
   };
 }

@@ -808,6 +808,7 @@ function RouteApp({
     exitTrip,
     announcementDone,
     setArrivedStopId,
+    queuePendingAnnouncement,
   } = useRouteStepper(route, resumeAtStepIndex);
 
   useEffect(() => {
@@ -874,6 +875,7 @@ function RouteApp({
       }}
       announcementDone={announcementDone}
       onStopArrived={setArrivedStopId}
+      onQueuePendingAnnouncement={queuePendingAnnouncement}
       getRoster={getRoster}
       totalOnboard={totalOnboard}
       onRiderTap={fillTo}
