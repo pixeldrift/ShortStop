@@ -294,9 +294,16 @@ export function useNavigationPrompts(
   // The approach warning - see this hook's own doc comment above.
   useEffect(() => {
     if (!started || paused || phase !== "step") return;
-    // The graceful-fallback gate - see MOVING_THRESHOLD_MPS's own doc
-    // comment, useLiveRouteProgress.ts.
-    if (!onRoute || speedMps == null || speedMps < MOVING_THRESHOLD_MPS) return;
+    // No real GPS trust yet at all (never a fix, or off-route) - still
+    // nothing to warn against. Deliberately NOT also requiring
+    // speedMps >= MOVING_THRESHOLD_MPS here any more: a bus creeping
+    // toward an address-only stop well under that threshold the whole
+    // way used to get no approach warning at all (this effect bailed
+    // out before ever calling advanceStepPhase), silence right up
+    // until arrival - see gpsStepPhase.ts's own doc comment for the
+    // distance-based fallback that now covers exactly that case
+    // instead.
+    if (!onRoute || speedMps == null) return;
 
     const current = route.steps[currentIndex];
     const upcoming = route.steps[currentIndex + 1];

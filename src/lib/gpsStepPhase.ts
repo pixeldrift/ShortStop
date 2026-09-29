@@ -15,9 +15,14 @@
  * driver yet, and nothing to advance. "Approaching" is the pre-arrival
  * warning window (`enteredApproachFar`/`enteredApproachNear` events -
  * useNavigationPrompts.ts's own "In 700 feet, stop at..."/"Stop ahead."
- * pair), timed off live speed and distance, not a fixed distance - a
- * bus covers very different ground in the same lead time at 25 mph
- * versus 45 mph. "Action" is the real-world moment a stop step is
+ * pair), timed off live speed and distance where there's real speed to
+ * time against (a bus covers very different ground in the same lead
+ * time at 25 mph versus 45 mph), falling back to a plain distance floor
+ * (ADVANCE_DISTANCE_METERS/TERSE_DISTANCE_METERS and their own STOP_*
+ * counterparts) whenever there isn't - a bus creeping toward an
+ * address-only stop below MOVING_THRESHOLD_MPS the whole way still
+ * gets both cues on approach, not silence until it's already arrived.
+ * "Action" is the real-world moment a stop step is
  * physically being dealt with - GPS confirms both close enough
  * (STOP_ARRIVAL_RADIUS_METERS) and actually stopped
  * (STOPPED_SPEED_MPS), the `arrived` event (useGpsAutoAdvance.ts's own
@@ -71,6 +76,29 @@ export const TERSE_LEAD_SECONDS = 4;
  * cue - a bus committing to a full stop needs a little more of this
  * final window too, not just the earlier advance notice. */
 export const STOP_TERSE_LEAD_SECONDS = 6;
+
+/** A plain-distance floor for the advance-warning stage, independent of
+ * current speed - see the approach-stage classification's own doc
+ * comment below for why a lead time alone isn't enough. ~500 ft -
+ * roughly what ADVANCE_LEAD_SECONDS covers at a typical residential
+ * driving speed, so this rarely changes anything for a bus actually
+ * moving at speed (the lead-time check already fires first); it only
+ * matters once speed drops too low to trust the time math at all. */
+export const ADVANCE_DISTANCE_METERS = 150;
+/** Same idea as ADVANCE_DISTANCE_METERS, for the close-range stage.
+ * ~80 ft - close enough that "the turn is right here" is true
+ * regardless of why the bus is going slowly. */
+export const TERSE_DISTANCE_METERS = 25;
+/** ADVANCE_DISTANCE_METERS' own stop counterpart - longer, matching
+ * STOP_ADVANCE_LEAD_SECONDS' own longer lead. ~700 ft - deliberately
+ * the same distance the very first design pass for this feature used
+ * as its own worked example ("In 700 feet, stop at..."). */
+export const STOP_ADVANCE_DISTANCE_METERS = 215;
+/** TERSE_DISTANCE_METERS' own stop counterpart. ~100 ft - inside the
+ * "GPS within ~50-75 ft" window STOP_ARRIVAL_RADIUS_METERS itself is
+ * already tuned around, so "Stop ahead" always has a moment to land
+ * before arrival actually gates the stop's own full announcement. */
+export const STOP_TERSE_DISTANCE_METERS = 30;
 
 /** Below this, live GPS speed reads as "actually stopped," not just
  * "slow" - deliberately below MOVING_THRESHOLD_MPS rather than sharing
@@ -207,10 +235,27 @@ export function advanceStepPhase(
   // across - and never once this step has already moved past
   // Approaching into Action/Completed (checked again just below, but
   // cheap to gate here too since there's nothing left to classify).
-  if (!sameCorner && phase !== "action" && onRoute && moving && distanceMeters != null && distanceMeters > 0) {
-    const timeToManeuverSeconds = distanceMeters / (speedMps as number);
+  // Deliberately NOT gated on `moving`: a lead time is only meaningful
+  // while there's real speed to divide by, but a bus can - and
+  // routinely does - approach an address-only stop well under
+  // MOVING_THRESHOLD_MPS the whole way (creeping along scanning house
+  // numbers for a stop that isn't at an obvious intersection, easing
+  // off well before a stop sign). Gating this whole block on `moving`
+  // used to mean that a bus never fast enough to cross the time-based
+  // threshold got no warning at all - silence right up until arrival
+  // itself, which is exactly "I could drive right by it because
+  // nothing told me when to stop." The ADVANCE_DISTANCE_METERS/
+  // TERSE_DISTANCE_METERS floors below exist for exactly that case:
+  // once close enough in plain distance, the cue fires regardless of
+  // speed, while a bus actually moving at speed still gets the same
+  // lead-time-based warning it always did (time-to-maneuver crosses
+  // its own threshold well before the distance floor would).
+  if (!sameCorner && phase !== "action" && onRoute && distanceMeters != null && distanceMeters > 0) {
+    const timeToManeuverSeconds = moving ? distanceMeters / (speedMps as number) : Infinity;
     const terseLead = isStop ? STOP_TERSE_LEAD_SECONDS : TERSE_LEAD_SECONDS;
     const advanceLead = isStop ? STOP_ADVANCE_LEAD_SECONDS : ADVANCE_LEAD_SECONDS;
+    const terseDistance = isStop ? STOP_TERSE_DISTANCE_METERS : TERSE_DISTANCE_METERS;
+    const advanceDistance = isStop ? STOP_ADVANCE_DISTANCE_METERS : ADVANCE_DISTANCE_METERS;
 
     // Closest-stage-first, not lead-time order - a fix that lands the
     // bus already inside the terse-stage window (a GPS gap, or a
@@ -218,7 +263,7 @@ export function advanceStepPhase(
     // its own) should go straight to the terse phrase rather than an
     // "In 50 feet, turn right" advance warning a half-second before the
     // maneuver itself.
-    if (approachStage !== "near" && timeToManeuverSeconds <= terseLead) {
+    if (approachStage !== "near" && (timeToManeuverSeconds <= terseLead || distanceMeters <= terseDistance)) {
       // Closest-stage-first means a fix that lands here straight from
       // null (never having crossed the advance-lead threshold on its
       // own - a GPS gap, or a maneuver too close to ever reach it)
@@ -228,7 +273,10 @@ export function advanceStepPhase(
       approachStage = "near";
       phase = "approaching";
       events.push("enteredApproachNear");
-    } else if (approachStage == null && timeToManeuverSeconds <= advanceLead) {
+    } else if (
+      approachStage == null &&
+      (timeToManeuverSeconds <= advanceLead || distanceMeters <= advanceDistance)
+    ) {
       approachStage = "far";
       phase = "approaching";
       events.push("enteredApproachFar");

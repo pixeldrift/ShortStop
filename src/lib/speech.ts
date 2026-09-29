@@ -40,17 +40,28 @@ const ROAD_ABBREVIATIONS: Record<string, string> = {
   wlk: "Walk",
 };
 
-/** Expands road-suffix abbreviations and "&" for text that will be spoken
- * aloud, e.g. "Bill Stewart Rd & Hidden Forest" -> "Bill Stewart Road and
- * Hidden Forest". */
+/** Phonetic respellings for proper nouns (road/place names) a TTS engine
+ * reads wrong as spelled - each value is ordinary English text chosen
+ * only for how it sounds out loud, not for correct spelling, same
+ * "substitute before speaking, leave the on-screen text alone"
+ * convention as ROAD_ABBREVIATIONS above, just for one specific name
+ * instead of a general suffix. There's no way to predict these ahead of
+ * time - add an entry once a real drive turns one up. */
+const PHONETIC_OVERRIDES: Record<string, string> = {
+  enon: "Ee-non",
+};
+
+/** Expands road-suffix abbreviations, known-mispronounced proper nouns,
+ * and "&" for text that will be spoken aloud, e.g. "Bill Stewart Rd &
+ * Hidden Forest" -> "Bill Stewart Road and Hidden Forest". */
 export function speakRoadNames(text: string): string {
   return text
     .replace(/&/g, " and ")
     .split(/\s+/)
     .filter(Boolean)
     .map((word) => {
-      const bare = word.replace(/\.$/, "");
-      return ROAD_ABBREVIATIONS[bare.toLowerCase()] ?? word;
+      const bare = word.replace(/\.$/, "").toLowerCase();
+      return PHONETIC_OVERRIDES[bare] ?? ROAD_ABBREVIATIONS[bare] ?? word;
     })
     .join(" ");
 }

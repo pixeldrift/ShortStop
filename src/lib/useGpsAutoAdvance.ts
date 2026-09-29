@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { NavigationStep, Route } from "./types";
+import type { Route } from "./types";
 import { distanceBetweenWaypoints, SAME_INTERSECTION_METERS } from "./useNavigationPrompts";
 import type { LiveRouteProgress } from "./useLiveRouteProgress";
 import type { StepPhase } from "./useRouteStepper";
@@ -92,18 +92,6 @@ import {
  * its own onStopSkipped first, in route order, exactly as if each had
  * cleared on its own.
  *
- * `onTurnCompleted` - called for every real left/right turn step
- * (`direction` set - a depart/arrive/proceed/etc. step never gets this,
- * only a genuine compass turn) the instant live GPS confirms it's been
- * cleared, right alongside (before) `onAdvance`/`onCatchUp`/
- * `onStopSkipped`'s own calls for it - StepScreen's own implementation
- * speaks a short "Turned left onto Weakly Street" reassurance, distinct
- * from whatever gets announced for the step that becomes current next.
- * Without this, GPS confirming a turn was silent by itself - only ever
- * audible secondhand, through whatever instruction *followed* it -
- * which is exactly the "does it actually know where I am" doubt a
- * driver has no way to resolve mid-turn.
- *
  * `dismissedStopId` - StepScreen's own signal that a stop's rider
  * check-in box was just checked in (every rider tapped) or dismissed
  * (its own X) - the same signal useNavigationPrompts.ts takes for its
@@ -128,7 +116,6 @@ export function useGpsAutoAdvance(
   onStopAndGoDetected: (stepId: number) => void,
   onStopSkipped: (stepId: number) => void,
   onCatchUp: (targetIndex: number) => void,
-  onTurnCompleted: (step: NavigationStep) => void,
   dismissedStopId: number | null,
   /** Fired the instant gpsStepPhase.ts's reducer reports `arrived` for
    * the *current* stop step - the moment it's both within
@@ -219,7 +206,6 @@ export function useGpsAutoAdvance(
     if (!events.includes("skipped") && !events.includes("cleared")) return;
 
     if (isStop) onStopSkipped(step.id);
-    else if (step.direction) onTurnCompleted(step);
 
     // Scans forward from the step right after the current one (already
     // accounted for above) rather than only ever stopping there - see
@@ -242,7 +228,6 @@ export function useGpsAutoAdvance(
     for (let i = currentIndex + 1; i <= clearedThroughIndex; i++) {
       const cleared = route.steps[i];
       if (cleared.kind === "stop") onStopSkipped(cleared.id);
-      else if (cleared.direction) onTurnCompleted(cleared);
     }
     onCatchUp(clearedThroughIndex);
   }, [
@@ -256,7 +241,6 @@ export function useGpsAutoAdvance(
     waypointDistances,
     dismissedStopId,
     onAdvance,
-    onTurnCompleted,
     onStopAndGoDetected,
     onStopSkipped,
     onCatchUp,
