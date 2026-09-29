@@ -19,7 +19,6 @@ import {
   PersonSolidIcon,
   PlusIcon,
   RightArrowIcon,
-  RoundedTriangleIcon,
   TriangleIcon,
 } from "./icons";
 import type { LatLon } from "@/lib/routeProgress";
@@ -1181,14 +1180,18 @@ function StopContent({
             {stopNumber}
           </span>
         )}
-        {step.sideOfRoad && (
-          <RoundedTriangleIcon
-            direction={step.sideOfRoad.toLowerCase() === "left" ? "left" : "right"}
-            className={
-              "absolute top-[34%] h-[clamp(2.1rem,6.5vh,4rem)] w-[clamp(1.05rem,3.25vh,2rem)] -translate-y-1/2 text-[#d54e48] " +
-              (step.sideOfRoad.toLowerCase() === "left" ? "right-full mr-1.5" : "left-full ml-1.5")
-            }
-          />
+        {/* Student count, not the side-of-road arrow this used to show -
+            that triangle read too easily as a turn-direction arrow next
+            to a screen that's otherwise all turn arrows. Side of road is
+            still spoken aloud (buildRouteFromRows, parseRouteCsv.ts); it
+            just isn't duplicated here on screen any more. */}
+        {step.studentCount != null && step.studentCount > 0 && (
+          <div className="absolute top-[34%] left-full ml-1.5 flex -translate-y-1/2 flex-col items-center gap-0.5">
+            <PersonSolidIcon className="h-[clamp(1.5rem,4.5vh,2.75rem)] w-[clamp(1.5rem,4.5vh,2.75rem)] text-zinc-600" />
+            <span className="font-heading text-[clamp(1rem,3vh,1.75rem)] leading-none font-black text-zinc-700">
+              {step.studentCount}
+            </span>
+          </div>
         )}
       </div>
 
