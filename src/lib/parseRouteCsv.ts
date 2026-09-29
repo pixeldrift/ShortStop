@@ -249,19 +249,21 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
       // Spoken as separate parts - stop number, then location, then
       // rider count/side, then any note - so there's a clear pause
       // between each rather than one long sentence. Rider count and
-      // side are one combined part, not two separate ones ("Expecting
-      // 1 rider, waiting on the left.") - "On the left. 1 rider
-      // expected." used to read as two short, similarly-shaped
-      // fragments back to back, easy to mistake for two different
-      // pieces of information instead of the one same fact (where this
-      // rider actually is) it always was.
+      // side are one combined part, not two separate ones ("On the
+      // left. 1 rider expected." used to read as two short, similarly-
+      // shaped fragments back to back, easy to mistake for two
+      // different pieces of information instead of the one same fact
+      // (where this rider actually is) it always was) - and written
+      // with no internal comma ("Pick up 2 students waiting on the
+      // left.", not "Expecting 2 riders, waiting on the left.") since
+      // the comma itself was landing as an odd extra pause mid-phrase.
       const announcement = [`Stop ${stopCounter}.`, `${speakRoadNames(subheading)}.`];
       if (studentCount != null && sideOfRoad) {
         announcement.push(
-          `Expecting ${studentCount} rider${studentCount === 1 ? "" : "s"}, waiting on the ${sideOfRoad.toLowerCase()}.`,
+          `Pick up ${studentCount} student${studentCount === 1 ? "" : "s"} waiting on the ${sideOfRoad.toLowerCase()}.`,
         );
       } else if (studentCount != null) {
-        announcement.push(`Expecting ${studentCount} rider${studentCount === 1 ? "" : "s"}.`);
+        announcement.push(`Pick up ${studentCount} student${studentCount === 1 ? "" : "s"}.`);
       } else if (sideOfRoad) {
         announcement.push(`Waiting on the ${sideOfRoad.toLowerCase()}.`);
       }
