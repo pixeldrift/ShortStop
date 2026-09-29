@@ -229,7 +229,14 @@ function stepHeading(action: string): string {
  * announcements included. The one place any of those three sources
  * ever needs to become a Route. */
 export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route {
-  let stopCounter = 0;
+  // Which verb a stop's own announcement uses for its riders - a
+  // dropoff route's stops let riders off, every other trip type
+  // (pickup, or the no-real-signal fieldtrip/other catch-alls, which
+  // default to the same wording pickup already uses) picks them up.
+  // Route-level, not per-stop: NavigationStep's own pickupOrDropoff
+  // field (types.ts) is declared but nothing populates it yet, so
+  // there's no real per-stop signal to read instead.
+  const riderVerb = meta.tripType === "dropoff" ? "Drop off" : "Pick up";
 
   const waypoints = deriveWaypoints(rows, meta.schoolAddress);
 
@@ -243,27 +250,30 @@ export function buildRouteFromRows(rows: RawRouteRow[], meta: RouteMeta): Route 
     const waypointKey = waypointCacheKey(waypoints[index]);
 
     if (action.toLowerCase() === "stop") {
-      stopCounter += 1;
       const subheading = fromLocation ? `${fromLocation} & ${location}` : location;
 
-      // Spoken as separate parts - stop number, then location, then
-      // rider count/side, then any note - so there's a clear pause
-      // between each rather than one long sentence. Rider count and
-      // side are one combined part, not two separate ones ("On the
-      // left. 1 rider expected." used to read as two short, similarly-
-      // shaped fragments back to back, easy to mistake for two
-      // different pieces of information instead of the one same fact
-      // (where this rider actually is) it always was) - and written
-      // with no internal comma ("Pick up 2 students waiting on the
-      // left.", not "Expecting 2 riders, waiting on the left.") since
-      // the comma itself was landing as an odd extra pause mid-phrase.
-      const announcement = [`Stop ${stopCounter}.`, `${speakRoadNames(subheading)}.`];
+      // Spoken as separate parts - location, then rider count/side,
+      // then any note - so there's a clear pause between each rather
+      // than one long sentence. "Stop here at X." reads as the actual
+      // instruction ("this is where you stop"), not a numbered
+      // waypoint callout - the stop's own number still shows on
+      // screen (the large pin), it just isn't spoken redundantly.
+      // Rider count and side are one combined part, not two separate
+      // ones ("On the left. 1 rider expected." used to read as two
+      // short, similarly-shaped fragments back to back, easy to
+      // mistake for two different pieces of information instead of
+      // the one same fact - where this rider actually is - it always
+      // was) - and written with no internal comma ("Pick up 2 students
+      // on the left.", not "Expecting 2 riders, waiting on the left.")
+      // since the comma itself was landing as an odd extra pause
+      // mid-phrase.
+      const announcement = [`Stop here at ${speakRoadNames(subheading)}.`];
       if (studentCount != null && sideOfRoad) {
         announcement.push(
-          `Pick up ${studentCount} student${studentCount === 1 ? "" : "s"} waiting on the ${sideOfRoad.toLowerCase()}.`,
+          `${riderVerb} ${studentCount} student${studentCount === 1 ? "" : "s"} on the ${sideOfRoad.toLowerCase()}.`,
         );
       } else if (studentCount != null) {
-        announcement.push(`Pick up ${studentCount} student${studentCount === 1 ? "" : "s"}.`);
+        announcement.push(`${riderVerb} ${studentCount} student${studentCount === 1 ? "" : "s"}.`);
       } else if (sideOfRoad) {
         announcement.push(`Waiting on the ${sideOfRoad.toLowerCase()}.`);
       }
