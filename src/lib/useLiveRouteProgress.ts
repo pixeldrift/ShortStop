@@ -96,8 +96,28 @@ export interface LiveRouteProgress {
   /** Smoothed current speed in meters/second - averaged over the last
    * few fixes (SPEED_SMOOTHING_FIXES), not the possibly-null/jumpy
    * instantaneous GPS reading alone. Null until enough fixes have
-   * arrived to estimate one. Never negative. */
+   * arrived to estimate one. Never negative. Good for anything that
+   * does math with it (time-to-maneuver lead-time estimates) - bad for
+   * "has the bus stopped yet," where the exponential blend itself is
+   * the problem: coming to a real stop from any real speed takes
+   * several ticks to decay this value down under a low threshold like
+   * gpsStepPhase.ts's own STOPPED_SPEED_MPS, even though the bus
+   * itself stopped on the very first of those ticks - see
+   * `instantSpeedMps` below for the one consumer (that same "are we
+   * actually stopped" check) that needs the un-blended reading
+   * instead. */
   speedMps: number | null;
+  /** The same speed estimate `speedMps` is built from, for the same
+   * tick, but *without* that value's own exponential blend against the
+   * previous tick - GPS-reported `coords.speed` outright when the
+   * device provides one, otherwise the same route-distance-delta/
+   * straight-line fallback `speedMps` itself falls back to. Exists
+   * solely for gpsStepPhase.ts's own STOPPED_SPEED_MPS check (has the
+   * bus actually stopped at this stop yet) - see `speedMps`'s own doc
+   * comment above for why that one check specifically needs this
+   * instead of the smoothed value everything else here still wants.
+   * Null under the exact same conditions `speedMps` is. */
+  instantSpeedMps: number | null;
   /** Every tracked waypoint's own distance along the route (meters
    * from the start) - recomputed only when routeLine or the waypoint
    * list itself changes, never per GPS fix (a waypoint's own position
@@ -175,6 +195,7 @@ export function useLiveRouteProgress(
   const [distanceAlongRoute, setDistanceAlongRoute] = useState<number | null>(null);
   const [onRoute, setOnRoute] = useState(false);
   const [speedMps, setSpeedMps] = useState<number | null>(null);
+  const [instantSpeedMps, setInstantSpeedMps] = useState<number | null>(null);
 
   // Recent fixes for the speed rolling average, once a real route to
   // project onto exists - route-distance, the same basis
@@ -348,6 +369,7 @@ export function useLiveRouteProgress(
             : (routeSpeed ?? rawSpeed);
 
         if (instantSpeed != null) {
+          setInstantSpeedMps(instantSpeed);
           setSpeedMps((previous) =>
             previous == null ? instantSpeed : previous * 0.5 + instantSpeed * 0.5,
           );
@@ -381,6 +403,7 @@ export function useLiveRouteProgress(
     distanceAlongRoute,
     onRoute,
     speedMps,
+    instantSpeedMps,
     waypointDistances,
     distanceToWaypoint,
   };

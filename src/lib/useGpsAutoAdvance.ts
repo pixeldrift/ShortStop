@@ -130,7 +130,7 @@ export function useGpsAutoAdvance(
    * that the bus has actually reached this one yet). */
   onStopArrived: (stepId: number) => void,
 ): void {
-  const { onRoute, speedMps, distanceToWaypoint, waypointDistances } = progress;
+  const { onRoute, speedMps, instantSpeedMps, distanceToWaypoint, waypointDistances } = progress;
 
   // Which step's own waypoint this has already advanced past - guards
   // against firing again on every later GPS tick while the live fix
@@ -181,6 +181,7 @@ export function useGpsAutoAdvance(
     const { next: nextPhaseState, events } = advanceStepPhase(phaseStateRef.current.state, {
       distanceMeters: distanceToWaypoint(step.id),
       speedMps,
+      instantSpeedMps,
       onRoute,
       // Approach-warning staging is useNavigationPrompts.ts's own job
       // for the *upcoming* step - this hook only cares about the
@@ -237,6 +238,7 @@ export function useGpsAutoAdvance(
     paused,
     onRoute,
     speedMps,
+    instantSpeedMps,
     distanceToWaypoint,
     waypointDistances,
     dismissedStopId,
