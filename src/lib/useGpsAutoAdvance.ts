@@ -117,17 +117,22 @@ export function useGpsAutoAdvance(
   onStopSkipped: (stepId: number) => void,
   onCatchUp: (targetIndex: number) => void,
   dismissedStopId: number | null,
-  /** Fired the instant gpsStepPhase.ts's reducer reports `arrived` for
-   * the *current* stop step - the moment it's both within
-   * STOP_ARRIVAL_RADIUS_METERS and reads a fresh below-STOPPED_SPEED_MPS
-   * speed. This is "the bus has physically stopped here," not "the stop
-   * is done" (onStopAndGoDetected's own job, once it's held long enough
-   * and moving again) - StepScreen's own implementation uses it to
-   * finally let that stop's own full arrival announcement speak, which
-   * it otherwise holds back the instant this step becomes current (see
+  /** Fired the instant gpsStepPhase.ts's reducer reports
+   * `enteredApproachNear` for the *current* stop step - close enough
+   * (STOP_TERSE_DISTANCE_METERS, or STOP_TERSE_LEAD_SECONDS out at
+   * real speed) that a driver needs this stop's full instruction now,
+   * while there's still real distance left to react to it. Deliberately
+   * NOT gated on speed the way `arrived` (STOP_ARRIVAL_RADIUS_METERS +
+   * STOPPED_SPEED_MPS) is - a real, physical stop is what
+   * onStopAndGoDetected's own job needs (has this stop actually been
+   * dealt with), but a spoken instruction that only ever arrived after
+   * the bus had already come to a halt read as "nothing told me when to
+   * stop," not a heads-up - StepScreen's own implementation uses this to
+   * finally let that stop's own full announcement speak, which it
+   * otherwise holds back the instant this step becomes current (see
    * useRouteStepper.ts's own arrivedStopId doc comment for why:
    * becoming "current" only ever means the *previous* step cleared, not
-   * that the bus has actually reached this one yet). */
+   * that the bus is anywhere near this one yet). */
   onStopArrived: (stepId: number) => void,
 ): void {
   const { onRoute, speedMps, instantSpeedMps, distanceToWaypoint, waypointDistances } = progress;
@@ -183,19 +188,26 @@ export function useGpsAutoAdvance(
       speedMps,
       instantSpeedMps,
       onRoute,
-      // Approach-warning staging is useNavigationPrompts.ts's own job
-      // for the *upcoming* step - this hook only cares about the
-      // current step's Action/Completed transitions, so sameCorner:
-      // true skips that branch entirely rather than tracking an
-      // approachStage nothing here ever reads.
-      sameCorner: true,
+      // Approach-warning *speech* (the "In 700 feet, stop at..."/"Stop
+      // ahead." phrases themselves) is still entirely
+      // useNavigationPrompts.ts's own job, tracked there for the
+      // *upcoming* step. This hook cares about the same underlying
+      // classification for a different reason once a stop step is the
+      // one that's actually *current*: distanceToWaypoint(step.id) is
+      // just as real and meaningful then (still counting down to the
+      // same physical waypoint, whatever it's called becoming
+      // "current" only ever meant) - see onStopArrived's own doc
+      // comment above for what reading enteredApproachNear here
+      // unlocks. sameCorner: false lets that classification run;
+      // harmless, unread noise for every non-stop step kind.
+      sameCorner: false,
       isStop,
       isFinalStep,
       nowMs: Date.now(),
     });
     phaseStateRef.current = { stepId: step.id, state: nextPhaseState };
 
-    if (events.includes("arrived")) onStopArrived(step.id);
+    if (isStop && events.includes("enteredApproachNear")) onStopArrived(step.id);
 
     if (events.includes("stopAndGo")) {
       advancedForStepIdRef.current = step.id;

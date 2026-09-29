@@ -25,10 +25,17 @@
  * "Action" is the real-world moment a stop step is
  * physically being dealt with - GPS confirms both close enough
  * (STOP_ARRIVAL_RADIUS_METERS) and actually stopped
- * (STOPPED_SPEED_MPS), the `arrived` event (useGpsAutoAdvance.ts's own
- * onStopArrived - what finally lets a stop's full arrival announcement
- * speak, per useRouteStepper.ts's own stopArrivalPending gate). A
- * turn/depart/arrive/proceed step has no real Action to pause on - it
+ * (STOPPED_SPEED_MPS), the `arrived` event. This is purely internal
+ * bookkeeping now (what lets `stopAndGo` below time a real dwell) -
+ * what actually lets a stop's full announcement speak
+ * (useRouteStepper.ts's own stopArrivalPending gate) is
+ * `enteredApproachNear`, above, read for the *current* step the same
+ * way useNavigationPrompts.ts already reads it for the *upcoming* one
+ * (useGpsAutoAdvance.ts's own onStopArrived - see its own doc comment):
+ * a driver needs to hear "this is the stop" while there's still real
+ * distance to react to it, not only once the bus has already come to a
+ * halt. A turn/depart/arrive/proceed step has no real Action to pause
+ * on - it
  * collapses straight through into Completed the instant it clears,
  * same as today. "Completed" is a step's own real done-ness: a stop
  * that held long enough and is moving again (`stopAndGo`), a stop that
