@@ -100,6 +100,7 @@ export function StepScreen({
   onRiderTap,
   onAddRider,
   canEditWaypoints,
+  logRiders,
   onEditWaypoint,
 }: {
   route: Route;
@@ -147,6 +148,10 @@ export function StepScreen({
    * showing them disabled, since there's nothing a non-admin driver
    * could do with them anyway. */
   canEditWaypoints: boolean;
+  /** CurrentUser.logRiders (currentUser.ts) - false means the rider
+   * check-in box is never offered: no automatic pop-up at a stop, and
+   * no manual toggle on the map. */
+  logRiders: boolean;
   /** Opens the same edit-waypoint popup EditRouteScreen's own Waypoints
    * list uses, auto-opened to this current step and pre-navigated away
    * from the driving screen (see page.tsx's quickEdit wiring) - false
@@ -206,8 +211,10 @@ export function StepScreen({
   // Whether this route has any rider-tracked stop at all - routes with
   // nobody expected at any stop get no roster box, automatic or manual,
   // and RouteMap gets no toggle control for one (see its own
-  // onToggleRoster prop).
-  const hasRosterStops = stopSteps.some((s) => (s.step.studentCount ?? 0) > 0);
+  // onToggleRoster prop). Same for a driver who's turned "Log riders"
+  // off (UserMenu) - they don't count riders at all.
+  const hasRosterStops =
+    logRiders && stopSteps.some((s) => (s.step.studentCount ?? 0) > 0);
 
   // Which stop's roster the check-in box is currently showing - null
   // while it's closed. `rosterOrigin` tracks how *this* open session
@@ -240,6 +247,7 @@ export function StepScreen({
   // flags a raw setState call written directly in an effect body.
   const currentExpectedCount = isStop ? (step.studentCount ?? 0) : 0;
   const shouldAutoOpenRoster =
+    logRiders &&
     !paused &&
     isStop &&
     currentExpectedCount > 0 &&
@@ -733,7 +741,7 @@ export function StepScreen({
             deliberate pause - and just as deliberately doesn't touch
             viewedStepIndex either: the box comes right back the instant
             the bus actually stops again, exactly as it left off. */}
-        {!paused && !hideRosterForSafety && viewedEntry && (
+        {logRiders && !paused && !hideRosterForSafety && viewedEntry && (
           <>
             {/* Dim the map rather than hiding it - the check-in card
                 floats above it as its own smaller, opaque, shadowed
