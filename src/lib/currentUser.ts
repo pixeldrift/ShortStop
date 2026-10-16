@@ -17,6 +17,12 @@ export interface CurrentUser {
   email: string;
   phone: string;
   permissions: Permissions;
+  /** Whether the rider check-in box (StepScreen's count-who-got-on/off
+   * popup) is offered at all - off for a driver who doesn't count
+   * riders. Gates both the automatic pop-up at a stop and the map's own
+   * manual toggle for it. On by default (every existing route's
+   * behavior before this setting existed). */
+  logRiders: boolean;
 }
 
 /** Every permission granted, same as ADMIN_PERMISSIONS itself
@@ -30,4 +36,5 @@ export const DEFAULT_CURRENT_USER: CurrentUser = {
   email: "j.smith@example.com",
   phone: "555-123-4567",
   permissions: ADMIN_PERMISSIONS,
+  logRiders: true,
 };

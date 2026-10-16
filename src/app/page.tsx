@@ -629,6 +629,7 @@ export default function Home() {
         onViewSchool={(schoolName) => navigate({ kind: "school-routes", schoolName })}
         onArrived={handleRouteArrived}
         canEditWaypoints={permissions.canEditWaypoints}
+        logRiders={currentUser.logRiders}
         onEditWaypoint={(rowIndex, insertNewAfter) =>
           navigate({
             kind: "edit-route",
@@ -744,6 +745,7 @@ function RouteApp({
   onViewSchool,
   onArrived,
   canEditWaypoints,
+  logRiders,
   onEditWaypoint,
 }: {
   route: Route;
@@ -783,6 +785,10 @@ function RouteApp({
    * buttons entirely when this is false (always true for now - see
    * permissionsFor's own doc comment, permissions.ts). */
   canEditWaypoints: boolean;
+  /** CurrentUser.logRiders (currentUser.ts) - passed straight through to
+   * StepScreen, which never offers its rider check-in box (automatic or
+   * manual) when this is false. */
+  logRiders: boolean;
   /** Opens the quick-edit detour for `currentStep` (StepScreen's own
    * Edit/Add buttons) - `rowIndex` is always currentStep.rowIndex (see
    * NavigationStep.rowIndex's own doc comment, types.ts: the raw row's
@@ -879,6 +885,7 @@ function RouteApp({
       onRiderTap={fillTo}
       onAddRider={addUnexpectedRider}
       canEditWaypoints={canEditWaypoints}
+      logRiders={logRiders}
       onEditWaypoint={(insertNewAfter) => {
         if (currentStep.rowIndex != null) onEditWaypoint(currentStep.rowIndex, insertNewAfter);
       }}

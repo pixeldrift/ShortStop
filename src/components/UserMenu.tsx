@@ -168,6 +168,24 @@ export function UserMenu({
 
             <div className="mt-5 border-t border-zinc-200 pt-4">
               <p className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
+                Settings
+              </p>
+              <button
+                type="button"
+                onClick={() => onChange({ ...user, logRiders: !user.logRiders })}
+                aria-pressed={user.logRiders}
+                className="mt-2 flex items-center gap-2 rounded-lg py-1.5 text-left text-sm font-medium text-zinc-900 active:bg-zinc-100"
+              >
+                <CheckboxIcon
+                  checked={user.logRiders}
+                  className="h-5 w-5 shrink-0 text-blue-600"
+                />
+                Log riders
+              </button>
+            </div>
+
+            <div className="mt-4 border-t border-zinc-200 pt-4">
+              <p className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
                 Permissions
               </p>
               {/* Demo-only framing, not app copy that belongs anywhere
