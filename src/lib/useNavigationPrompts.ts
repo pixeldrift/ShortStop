@@ -289,7 +289,7 @@ export function useNavigationPrompts(
   // gone out yet.
   const previewSpokenForStepIdRef = useRef(-1);
 
-  const { onRoute, speedMps, distanceToWaypoint, waypointDistances } = progress;
+  const { onRoute, speedMps, instantSpeedMps, distanceToWaypoint, waypointDistances } = progress;
 
   // The approach warning - see this hook's own doc comment above.
   useEffect(() => {
@@ -321,6 +321,7 @@ export function useNavigationPrompts(
     const { next, events } = advanceStepPhase(approachStateRef.current.state, {
       distanceMeters,
       speedMps,
+      instantSpeedMps,
       onRoute,
       sameCorner: false,
       isStop: upcoming.kind === "stop",
@@ -349,6 +350,7 @@ export function useNavigationPrompts(
     paused,
     onRoute,
     speedMps,
+    instantSpeedMps,
     distanceToWaypoint,
     waypointDistances,
   ]);
