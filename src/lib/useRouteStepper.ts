@@ -47,10 +47,11 @@ function schedulePhrase(departureTime: string, actualStartMs: number): string | 
   return rounded > 0 ? `${minutes} ${unit} behind schedule.` : `${minutes} ${unit} ahead of schedule.`;
 }
 
-/** How long a stop's own full arrival announcement waits on real GPS
- * confirmation (arrivedStopId, below) before speaking anyway - see that
- * state's own doc comment for the full reasoning on why this is so much
- * longer than this file's other timeouts. */
+/** How long a stop's own full announcement waits on real GPS
+ * confirmation that the bus is actually near it (arrivedStopId, below)
+ * before speaking anyway - see that state's own doc comment for the
+ * full reasoning on why this is so much longer than this file's other
+ * timeouts. */
 const STOP_ARRIVAL_FALLBACK_MS = 60000;
 
 /**
@@ -156,20 +157,24 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
   const currentStep = route.steps[currentIndex];
   const totalSteps = route.steps.length;
 
-  // Which stop's own full arrival announcement is actually clear to
-  // speak - StepScreen's own onStopArrived prop (below) sets this the
-  // instant live GPS confirms the bus has physically stopped there
-  // (useGpsAutoAdvance's own onStopArrived - see its own doc comment).
-  // A stop step becoming *current* only ever means the *previous* step
-  // cleared, not that the bus has actually reached this one yet (a
-  // stop several minutes' drive past the last turn shouldn't have its
-  // own rider count read out the instant it becomes the on-screen
-  // step) - so the announcement effect below holds a stop's own speech
-  // back until this matches its id, unlike every other step kind,
-  // which still speaks the moment it's current exactly as before this
+  // Which stop's own full announcement is actually clear to speak -
+  // StepScreen's own onStopArrived prop (below) sets this the instant
+  // live GPS shows the bus close enough to this stop that it's time to
+  // say so (useGpsAutoAdvance's own onStopArrived - see its own doc
+  // comment for exactly what "close enough" means: real distance/lead-
+  // time left to react, not a full physical stop - that used to gate
+  // this same announcement and produced the opposite of a heads-up,
+  // speaking only once the bus had already come to a halt). A stop
+  // step becoming *current* only ever means the *previous* step
+  // cleared, not that the bus is anywhere near this one yet (a stop
+  // several minutes' drive past the last turn shouldn't have its own
+  // rider count read out the instant it becomes the on-screen step) -
+  // so the announcement effect below holds a stop's own speech back
+  // until this matches its id, unlike every other step kind, which
+  // still speaks the moment it's current exactly as before this
   // existed. On-screen content is entirely unaffected either way - the
   // step itself, its map pin, its heading/subheading text, all still
-  // update immediately on becoming current; only the *spoken* arrival
+  // update immediately on becoming current; only the *spoken*
   // announcement waits.
   const [arrivedStopId, setArrivedStopId] = useState<number | null>(null);
   // The one exception: forced through anyway once STOP_ARRIVAL_FALLBACK_MS
@@ -181,9 +186,9 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
   // simply a normal multi-minute leg away from wherever the *previous*
   // step cleared is exactly the same "still waiting, not stuck" state
   // as the "GPS never confirms" case this actually exists to protect
-  // against, so a short timeout would speak the arrival announcement
-  // early on a perfectly ordinary route far more often than it would
-  // ever rescue a genuinely broken one.
+  // against, so a short timeout would speak the announcement early on
+  // a perfectly ordinary route far more often than it would ever
+  // rescue a genuinely broken one.
   const [forcedStopId, setForcedStopId] = useState<number | null>(null);
   useEffect(() => {
     if (phase !== "step" || currentStep.kind !== "stop" || arrivedStopId === currentStep.id) {
@@ -192,9 +197,9 @@ export function useRouteStepper(route: Route, resumeAtStepIndex?: number) {
     const id = window.setTimeout(() => setForcedStopId(currentStep.id), STOP_ARRIVAL_FALLBACK_MS);
     return () => window.clearTimeout(id);
   }, [phase, currentStep, arrivedStopId]);
-  // A stop step is waiting on GPS (or the fallback above) before its own
-  // announcement can speak - see arrivedStopId's own doc comment. Every
-  // other phase/step kind is never pending at all.
+  // A stop step is waiting on GPS proximity (or the fallback above)
+  // before its own announcement can speak - see arrivedStopId's own
+  // doc comment. Every other phase/step kind is never pending at all.
   const stopArrivalPending =
     phase === "step" &&
     currentStep.kind === "stop" &&

@@ -25,10 +25,17 @@
  * "Action" is the real-world moment a stop step is
  * physically being dealt with - GPS confirms both close enough
  * (STOP_ARRIVAL_RADIUS_METERS) and actually stopped
- * (STOPPED_SPEED_MPS), the `arrived` event (useGpsAutoAdvance.ts's own
- * onStopArrived - what finally lets a stop's full arrival announcement
- * speak, per useRouteStepper.ts's own stopArrivalPending gate). A
- * turn/depart/arrive/proceed step has no real Action to pause on - it
+ * (STOPPED_SPEED_MPS), the `arrived` event. This is purely internal
+ * bookkeeping now (what lets `stopAndGo` below time a real dwell) -
+ * what actually lets a stop's full announcement speak
+ * (useRouteStepper.ts's own stopArrivalPending gate) is
+ * `enteredApproachNear`, above, read for the *current* step the same
+ * way useNavigationPrompts.ts already reads it for the *upcoming* one
+ * (useGpsAutoAdvance.ts's own onStopArrived - see its own doc comment):
+ * a driver needs to hear "this is the stop" while there's still real
+ * distance to react to it, not only once the bus has already come to a
+ * halt. A turn/depart/arrive/proceed step has no real Action to pause
+ * on - it
  * collapses straight through into Completed the instant it clears,
  * same as today. "Completed" is a step's own real done-ness: a stop
  * that held long enough and is moving again (`stopAndGo`), a stop that
@@ -180,8 +187,27 @@ export interface StepPhaseInput {
    * negative once the live fix already reads past it. Null whenever
    * there's no fix/route trust yet to measure from. */
   distanceMeters: number | null;
-  /** Smoothed current speed, m/s (LiveRouteProgress's own speedMps). */
+  /** Smoothed current speed, m/s (LiveRouteProgress's own speedMps) -
+   * used for the approach-warning's own time-to-maneuver math and the
+   * MOVING_THRESHOLD_MPS check (has the bus resumed moving after a real
+   * stop). Deliberately NOT used for STOPPED_SPEED_MPS's own check
+   * below (see instantSpeedMps's own doc comment for why). */
   speedMps: number | null;
+  /** The same tick's speed, without speedMps' own smoothing
+   * (LiveRouteProgress's own instantSpeedMps) - used only for the
+   * STOPPED_SPEED_MPS check below (has the bus actually come to a stop
+   * at this stop yet). speedMps' own exponential blend against the
+   * previous tick means it takes several ticks to decay down under a
+   * low threshold like STOPPED_SPEED_MPS even though the bus itself
+   * stopped on the very first of those ticks - gating the stop's own
+   * arrival announcement on that smoothed value meant a real, if
+   * brief, "did we already drive through it" window every single stop,
+   * not the deliberate STOP_HOLD_MS dwell (that one's scoped to
+   * stopAndGo below, not arrival, and stays on the smoothed value -
+   * confirming the bus has *resumed* moving doesn't have the same
+   * time-pressure a driver approaching a stop that still hasn't been
+   * announced does). */
+  instantSpeedMps: number | null;
   onRoute: boolean;
   /** True whenever this step's own waypoint sits within the same-
    * corner threshold of the step immediately before it - no real
@@ -226,7 +252,8 @@ export function advanceStepPhase(
   let approachStage = prev.approachStage;
   let stoppedSinceMs = prev.stoppedSinceMs;
 
-  const { distanceMeters, speedMps, onRoute, sameCorner, isStop, isFinalStep, nowMs } = input;
+  const { distanceMeters, speedMps, instantSpeedMps, onRoute, sameCorner, isStop, isFinalStep, nowMs } =
+    input;
   const moving = speedMps != null && speedMps >= MOVING_THRESHOLD_MPS;
   const clearThreshold = isFinalStep ? PAST_FINAL_WAYPOINT_METERS : PAST_WAYPOINT_METERS;
 
@@ -286,7 +313,11 @@ export function advanceStepPhase(
   // --- Action / Completed ---
   if (isStop) {
     const withinArrivalRadius = distanceMeters != null && distanceMeters <= STOP_ARRIVAL_RADIUS_METERS;
-    if (speedMps != null && speedMps < STOPPED_SPEED_MPS) {
+    // instantSpeedMps, not speedMps - see instantSpeedMps' own doc
+    // comment above for why the smoothed value would delay this by
+    // several real seconds past when the bus actually stopped.
+    const stoppedCheckSpeedMps = instantSpeedMps ?? speedMps;
+    if (stoppedCheckSpeedMps != null && stoppedCheckSpeedMps < STOPPED_SPEED_MPS) {
       if (withinArrivalRadius) {
         if (stoppedSinceMs == null) {
           stoppedSinceMs = nowMs;
