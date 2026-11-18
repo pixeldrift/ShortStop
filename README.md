@@ -19,6 +19,11 @@ can mark who's boarded without losing their place.
 routes, reorder and edit individual stops/turns, resolve stop locations
 to real coordinates, and publish, unpublish, or delete routes.
 
+**Documentation:** operators and admins, see the
+[User Guide](docs/user-guide/README.md) - managing routes, building
+waypoint lists, and the tricky situations (roads passed twice, loops,
+manual pin placement).
+
 ## Stack
 
 - [Next.js](https://nextjs.org) 16 (App Router), React 19, TypeScript
