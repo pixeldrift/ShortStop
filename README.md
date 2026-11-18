@@ -19,10 +19,12 @@ can mark who's boarded without losing their place.
 routes, reorder and edit individual stops/turns, resolve stop locations
 to real coordinates, and publish, unpublish, or delete routes.
 
-**Documentation:** operators and admins, see the
-[User Guide](docs/user-guide/README.md) - managing routes, building
-waypoint lists, and the tricky situations (roads passed twice, loops,
-manual pin placement).
+**Documentation:** the user guide lives in the app itself - account menu
+(person icon, top right) → **Help & user guide**. It covers driving a
+route first, then (for administrators) managing routes, building waypoint
+lists and the tricky situations (roads passed twice, loops, manual pin
+placement). Its screenshots are regenerated with
+`scripts/help-screenshots/shots.mjs` (see the header comment there).
 
 ## Stack
 

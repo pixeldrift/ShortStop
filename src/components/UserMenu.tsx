@@ -56,9 +56,12 @@ const ROLE_OPTIONS = ["Admin", "Driver", "Tech"];
 export function UserMenu({
   user,
   onChange,
+  onOpenHelp,
 }: {
   user: CurrentUser;
   onChange: (user: CurrentUser) => void;
+  /** Opens the in-app Help screen (closing this popup first). */
+  onOpenHelp: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [speechLabOpen, setSpeechLabOpen] = useState(false);
@@ -167,6 +170,25 @@ export function UserMenu({
             </div>
 
             <div className="mt-5 border-t border-zinc-200 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenHelp();
+                }}
+                className="flex w-full items-center gap-2 rounded-lg py-1.5 text-left text-sm font-medium text-blue-600 active:bg-blue-50"
+              >
+                <span
+                  aria-hidden
+                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-current text-xs font-black"
+                >
+                  ?
+                </span>
+                Help &amp; user guide
+              </button>
+            </div>
+
+            <div className="mt-4 border-t border-zinc-200 pt-4">
               <p className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">
                 Settings
               </p>

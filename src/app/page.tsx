@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EditRouteScreen } from "@/components/EditRouteScreen";
+import HelpScreen from "@/components/HelpScreen";
 import { Logo } from "@/components/Logo";
 import { RouteListScreen } from "@/components/RouteListScreen";
 import { SchoolListScreen } from "@/components/SchoolListScreen";
@@ -114,6 +115,7 @@ type Screen =
       quickEdit?: { rowIndex: number; insertNewAfter: boolean };
     }
   | { kind: "schools" }
+  | { kind: "help" }
   | { kind: "school-routes"; schoolName: string };
 
 /** ScreenTransition's own `screenKey` for a given Screen - identifies
@@ -134,6 +136,8 @@ function screenKey(screen: Screen): string {
       return `edit-route:${screen.route.id}`;
     case "schools":
       return "schools";
+    case "help":
+      return "help";
     case "school-routes":
       return `school-routes:${screen.schoolName}`;
   }
@@ -235,7 +239,10 @@ export default function Home() {
 
   // Every screen kind but "trip" always wants the pinned logo; "trip"
   // does too, but only for its own StartScreen (before tripStarted).
-  const showsPinnedLogo = screen.kind !== "trip" || !tripStarted;
+  // The help screen has its own header (and a long page to scroll),
+  // so it skips the pinned logo and account button too.
+  const showsPinnedLogo =
+    screen.kind === "help" ? false : screen.kind !== "trip" || !tripStarted;
 
   // Session-only admin edits/new routes, keyed by route id - overlaid
   // on top of whatever realRoutes loaded from Postgres (see
@@ -648,6 +655,8 @@ export default function Home() {
         onBack={goBack}
       />
     );
+  } else if (screen.kind === "help") {
+    content = <HelpScreen onBack={goBack} />;
   } else if (screen.kind === "school-routes") {
     const scrollKey = `school:${screen.schoolName}`;
     content = (
@@ -705,7 +714,11 @@ export default function Home() {
           ExpandableMap's own expand button there (see UserMenu's own
           doc comment). */}
       {showsPinnedLogo && (
-        <UserMenu user={currentUser} onChange={setCurrentUser} />
+        <UserMenu
+          user={currentUser}
+          onChange={setCurrentUser}
+          onOpenHelp={() => navigate({ kind: "help" })}
+        />
       )}
       {/* Rendered once here, outside ScreenTransition entirely, rather
           than by each screen component itself (RouteListScreen,
